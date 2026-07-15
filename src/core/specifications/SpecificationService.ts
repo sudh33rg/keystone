@@ -265,19 +265,30 @@ export class SpecificationService {
     workflowId: string,
     title: string
   ): KeystoneSpecification {
-    const intent = this.intentEngine.analyze("", "spec-driven");
+    const intent = this.intentEngine.getIntent(intentId);
+    if (!intent) {
+      throw new KeystoneError({
+        code: "INTENT_NOT_FOUND",
+        category: "INTERNAL",
+        message: `Intent ${intentId} not found.`,
+        operation: "spec.generateFromIntent",
+        recoverable: false,
+        recommendedAction: "Create an intent first before generating a specification."
+      });
+    }
+
     const spec = this.create(intentId, title, workflowId);
 
     spec.intent = {
-      originalRequest: intent.record.originalText,
-      normalizedIntent: intent.record.normalizedObjective,
-      businessObjective: intent.record.expectedOutcome,
-      outcome: intent.record.expectedOutcome
+      originalRequest: intent.originalText,
+      normalizedIntent: intent.normalizedObjective,
+      businessObjective: intent.expectedOutcome,
+      outcome: intent.expectedOutcome
     };
 
-    spec.scope.modules = intent.record.affectedAreas.map((a) => a.reference);
-    spec.existingBehavior.constraints = intent.record.constraints.map((c) => c.description);
-    spec.criteria = this.generateCriteria(intent.record, title);
+    spec.scope.modules = intent.affectedAreas.map((a) => a.reference);
+    spec.existingBehavior.constraints = intent.constraints.map((c) => c.description);
+    spec.criteria = this.generateCriteria(intent, title);
 
     return spec;
   }
@@ -323,13 +334,13 @@ export class SpecificationService {
   }
 
   private generateCriteria(
-    intent: { record: { normalizedObjective: string; expectedOutcome: string } },
+    intent: IntentRecord,
     title: string
   ): AcceptanceCriterion[] {
-    return [
+    const criteria: AcceptanceCriterion[] = [
       {
         id: crypto.randomUUID(),
-        description: `${title} is implemented as specified.`,
+        description: `Implement ${intent.normalizedObjective}.`,
         required: true,
         sourceRequirementIds: [],
         validationMethod: "manual",
@@ -350,5 +361,21 @@ export class SpecificationService {
         evidenceReferences: []
       }
     ];
+
+    if (intent.expectedOutcome) {
+      criteria.push({
+        id: crypto.randomUUID(),
+        description: intent.expectedOutcome,
+        required: true,
+        sourceRequirementIds: [],
+        validationMethod: "manual",
+        expectedEvidenceType: "code-review",
+        coveringTaskIds: [],
+        result: "unverified",
+        evidenceReferences: []
+      });
+    }
+
+    return criteria;
   }
 }

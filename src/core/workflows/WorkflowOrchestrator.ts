@@ -6,7 +6,8 @@ import {
   WorkflowSchema,
   TaskSchema,
   TaskGraphSchema,
-  SCHEMA_VERSION
+  SCHEMA_VERSION,
+  type WorkflowStatus
 } from "../../shared/contracts/domain";
 import { KeystoneError } from "../../shared/errors/KeystoneError";
 import type { TaskGraphService } from "../tasks/TaskGraphService";
@@ -36,18 +37,18 @@ export class WorkflowOrchestrator {
   }
 
   startWorkflow(workflow: Workflow): Workflow {
-    if (workflow.status !== "draft" && workflow.status !== "paused") {
+    if (workflow.status !== "draft") {
       throw new KeystoneError({
         code: "WORKFLOW_INVALID_STATUS",
         category: "WORKFLOW",
         message: `Cannot start workflow in status ${workflow.status}.`,
         operation: "workflow.start",
         recoverable: false,
-        recommendedAction: "Set the workflow to draft or paused before starting."
+        recommendedAction: "Set the workflow to draft before starting."
       });
     }
 
-    const updated = { ...workflow, status: "running", updatedAt: new Date().toISOString() };
+    const updated = { ...workflow, status: "drafting", updatedAt: new Date().toISOString() };
     const validated = WorkflowSchema.safeParse(updated);
     if (!validated.success) {
       throw new KeystoneError({
@@ -77,7 +78,7 @@ export class WorkflowOrchestrator {
       });
     }
 
-    const updated = { ...workflow, status: "paused", updatedAt: new Date().toISOString() };
+    const updated = { ...workflow, status: "drafting", updatedAt: new Date().toISOString() };
     const validated = WorkflowSchema.safeParse(updated);
     if (!validated.success) {
       throw new KeystoneError({

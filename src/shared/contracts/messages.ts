@@ -111,7 +111,8 @@ export const HostMessageSchema = z.discriminatedUnion("type", [
   TaskStaleEventSchema,
   ContextUpdatedEventSchema,
   ValidationProgressEventSchema,
-  ValidationUpdatedEventSchema
+  ValidationUpdatedEventSchema,
+  WorkflowUpdatedEventSchema
 ]);
 
 export type HostMessage =
@@ -131,7 +132,8 @@ export type HostMessage =
   | MessageEnvelope<"task/stale", z.infer<typeof TaskStaleEventSchema>>
   | MessageEnvelope<"context/updated", z.infer<typeof ContextUpdatedEventSchema>>
   | MessageEnvelope<"validation/progress", z.infer<typeof ValidationProgressEventSchema>>
-  | MessageEnvelope<"validation/updated", z.infer<typeof ValidationUpdatedEventSchema>>;
+  | MessageEnvelope<"validation/updated", z.infer<typeof ValidationUpdatedEventSchema>>
+  | MessageEnvelope<"workflow/updated", z.infer<typeof WorkflowUpdatedEventSchema>>;
 
 export interface MessageEnvelope<TType extends string, TPayload> {
   eventId: string;

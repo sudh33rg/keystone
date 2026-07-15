@@ -19,11 +19,20 @@ export interface IntentAnalysis {
 
 export class IntentEngine {
   private workflowIdCounter = 0;
+  private intents = new Map<string, IntentRecord>();
 
   constructor(
     private readonly workspace: WorkspaceAdapter,
     private readonly index: RepositoryIndexService
   ) {}
+
+  registerIntent(intent: IntentRecord): void {
+    this.intents.set(intent.id, intent);
+  }
+
+  getIntent(intentId: string): IntentRecord | undefined {
+    return this.intents.get(intentId);
+  }
 
   analyze(text: string, mode: "quick" | "guided" | "spec-driven", workspaceRoot?: string): IntentAnalysis {
     const workflowId = `wf-${++this.workflowIdCounter}`;

@@ -469,6 +469,7 @@ export interface Task {
     gitBase?: string;
     contextFingerprint?: string;
   };
+  attemptNumber?: number;
 }
 
 export interface TaskAttempt {
@@ -812,7 +813,38 @@ export const TaskSchema = z.object({
     indexVersion: z.number(),
     gitBase: z.string().optional(),
     contextFingerprint: z.string().optional()
-  })
+  }),
+  attemptNumber: z.number().int().nonnegative().optional()
+});
+
+export const TaskAttemptSchema = z.object({
+  id: z.string().uuid(),
+  attemptNumber: z.number().int().nonnegative(),
+  taskId: z.string(),
+  agentAssignmentSnapshot: z.object({
+    agentId: z.string(),
+    selectionMode: z.string(),
+    capabilityFingerprint: z.string()
+  }),
+  contextPackageId: z.string(),
+  delegationMethod: z.enum(["direct", "assisted"]),
+  startedAt: z.string().datetime(),
+  completedAt: z.string().datetime().optional(),
+  externalHandle: z.string().optional(),
+  state: z.string(),
+  result: z.string().optional(),
+  observedChanges: z.object({
+    files: z.array(z.string()),
+    commits: z.array(z.string())
+  }).optional(),
+  userConfirmations: z.array(z.object({
+    action: z.string(),
+    timestamp: z.string()
+  })),
+  failure: z.object({
+    error: z.string(),
+    recoverable: z.boolean()
+  }).optional()
 });
 
 export const AcceptanceCriterionSchema = z.object({
@@ -963,6 +995,18 @@ export const ContextPackageSchema = z.object({
   reviewedAt: z.string().optional(),
   delegationAttemptId: z.string().optional()
 });
+
+export const ExternalChangeSchema = z.object({
+  taskId: z.string(),
+  detectedAt: z.string(),
+  type: z.enum(["external-commit", "file-change", "branch-switch"]),
+  severity: z.enum(["low", "medium", "high", "critical"]),
+  details: z.string(),
+  impactedFiles: z.array(z.string()).optional(),
+  stale: z.boolean()
+});
+
+export type ExternalChange = z.infer<typeof ExternalChangeSchema>;
 
 export const ValidationRunSchema = z.object({
   id: z.string().uuid(),
@@ -1234,7 +1278,8 @@ export const ChangeDetectRequestSchema = z.object({
   ...envelopeFields,
   type: z.literal("change/detect"),
   payload: z.object({
-    taskId: z.string()
+    taskId: z.string(),
+    branch: z.string().optional()
   }).strict()
 });
 

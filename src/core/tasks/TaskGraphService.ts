@@ -3,8 +3,10 @@ import {
   type Task,
   type TaskGraph,
   type AcceptanceCriterion,
+  type AgentAssignment,
   TaskSchema,
   TaskGraphSchema,
+  TaskAttemptSchema,
   SCHEMA_VERSION
 } from "../../shared/contracts/domain";
 import { KeystoneError } from "../../shared/errors/KeystoneError";
@@ -12,6 +14,7 @@ import { KeystoneError } from "../../shared/errors/KeystoneError";
 export class TaskGraphService {
   private taskGraphs = new Map<string, TaskGraph>();
   private tasks = new Map<string, Task>();
+  private attempts = new Map<string, TaskAttempt>();
 
   constructor(
     private readonly store: WorkspaceStateStore
@@ -148,7 +151,58 @@ export class TaskGraphService {
     return validated.data;
   }
 
-  transitionTask(taskId: string, from: string, to: string): Task {
+  createAttempt(
+    taskId: string,
+    agentAssignment: AgentAssignment,
+    contextPackageId: string,
+    delegationMethod: "direct" | "assisted"
+  ): TaskAttempt {
+    const task = this.tasks.get(taskId);
+    if (!task) {
+      throw new KeystoneError({
+        code: "TASK_NOT_FOUND",
+        category: "INTERNAL",
+        message: `Task ${taskId} not found.`,
+        operation: "task.createAttempt",
+        recoverable: false,
+        recommendedAction: "Generate a task graph first."
+      });
+    }
+
+    const attemptNumber = (task as any).attemptNumber ?? 0 + 1;
+
+    const attempt: TaskAttempt = {
+      attemptNumber,
+      taskId,
+      agentAssignmentSnapshot: {
+        agentId: agentAssignment.agentId,
+        selectionMode: agentAssignment.selectionMode,
+        capabilityFingerprint: agentAssignment.capabilityFingerprint
+      },
+      contextPackageId,
+      delegationMethod,
+      startedAt: new Date().toISOString(),
+      state: "delegating"
+    };
+
+    const validated = TaskAttemptSchema.safeParse(attempt);
+    if (!validated.success) {
+      throw new KeystoneError({
+        code: "ATTEMPT_VALIDATION_FAILED",
+        category: "INTERNAL",
+        message: "Task attempt failed validation.",
+        operation: "task.createAttempt",
+        recoverable: false,
+        recommendedAction: "Review the attempt fields and retry."
+      });
+    }
+
+    this.attempts.set(attempt.id, validated.data);
+    (task as any).attemptNumber = attemptNumber;
+    return validated.data;
+  }
+
+  transitionTask(taskId: string, from: string, to: string, agentAssignment?: AgentAssignment, contextPackageId?: string): Task {
     const task = this.tasks.get(taskId);
     if (!task) {
       throw new KeystoneError({
@@ -186,6 +240,11 @@ export class TaskGraphService {
         recoverable: false,
         recommendedAction: "Review the task state machine and retry."
       });
+    }
+
+    // Record attempt when entering delegating state
+    if (to === "delegating" && agentAssignment && contextPackageId) {
+      this.createAttempt(taskId, agentAssignment, contextPackageId, "assisted");
     }
 
     return this.updateTask(taskId, { status: to });

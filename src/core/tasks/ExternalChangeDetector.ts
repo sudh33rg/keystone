@@ -1,41 +1,53 @@
 import type { GitAdapter } from "../../extension/adapters/GitAdapter";
 import type { WorkspaceAdapter } from "../../extension/adapters/WorkspaceAdapter";
 import {
-  type Task,
   type ExternalChange,
-  TaskSchema
+  ExternalChangeSchema
 } from "../../shared/contracts/domain";
-import { KeystoneError } from "../../shared/errors/KeystoneError";
 
 export class ExternalChangeDetector {
-  private baselines = new Map<string, { timestamp: string; commitHash: string; files: Set<string> }>();
+  private baselines = new Map<string, { timestamp: string; commitHash: string; branch: string; files: Set<string> }>();
 
   constructor(
     private readonly git: GitAdapter,
     private readonly workspace: WorkspaceAdapter
   ) {}
 
-  setBaseline(taskId: string, commitHash: string, files: string[]): void {
+  setBaseline(taskId: string, commitHash: string, branch: string, files: string[]): void {
     this.baselines.set(taskId, {
       timestamp: new Date().toISOString(),
       commitHash,
+      branch,
       files: new Set(files)
     });
   }
 
-  detectChanges(taskId: string): ExternalChange | undefined {
+  detectChanges(taskId: string, branch?: string): ExternalChange | undefined {
     const baseline = this.baselines.get(taskId);
     if (!baseline) return undefined;
 
-    // Check for new commits
-    const currentHead = this.git.getCurrentBranch();
+    // Use provided branch or get current branch
+    const currentBranch = branch ?? this.git.getCurrentBranch();
+    if (currentBranch && currentBranch !== baseline.branch) {
+      return {
+        taskId,
+        detectedAt: new Date().toISOString(),
+        type: "branch-switch",
+        severity: "high",
+        details: `Switched from ${baseline.branch} to ${currentBranch}`,
+        stale: true
+      };
+    }
+
+    // Check for new commits on the same branch
+    const currentHead = this.git.getHeadCommit();
     if (currentHead && currentHead !== baseline.commitHash) {
       return {
         taskId,
         detectedAt: new Date().toISOString(),
         type: "external-commit",
         severity: "high",
-        details: `New commit detected: ${currentHead.slice(0, 8)}`,
+        details: `New commit detected on ${currentBranch}: ${currentHead.slice(0, 8)}`,
         stale: true
       };
     }
@@ -63,7 +75,9 @@ export class ExternalChangeDetector {
   markResolved(taskId: string): void {
     const baseline = this.baselines.get(taskId);
     if (baseline) {
-      this.setBaseline(taskId, baseline.commitHash, Array.from(baseline.files));
+      const currentBranch = this.git.getCurrentBranch();
+      const currentHead = this.git.getHeadCommit();
+      this.setBaseline(taskId, currentHead ?? baseline.commitHash, currentBranch ?? baseline.branch, Array.from(baseline.files));
     }
   }
 

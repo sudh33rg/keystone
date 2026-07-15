@@ -278,7 +278,7 @@ export class WebviewMessageRouter {
         break;
       }
       case "change/detect": {
-        const change = this.services.externalChangeDetector.detectChanges(request.payload.taskId);
+        const change = this.services.externalChangeDetector.detectChanges(request.payload.taskId, request.payload.branch);
         await this.sendSuccess(request.requestId, change);
         break;
       }
