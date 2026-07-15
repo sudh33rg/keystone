@@ -1,12 +1,11 @@
-import * as vscode from "vscode";
+import { spawn } from "node:child_process";
 import type { WorkspaceAdapter } from "../../extension/adapters/WorkspaceAdapter";
 import type { GitAdapter } from "../../extension/adapters/GitAdapter";
 import {
   type ValidationRun,
   type ValidationCheck,
   type OverrideRecord,
-  ValidationRunSchema,
-  SCHEMA_VERSION
+  ValidationRunSchema
 } from "../../shared/contracts/domain";
 import { KeystoneError } from "../../shared/errors/KeystoneError";
 
@@ -22,6 +21,10 @@ export interface ValidationPlan {
   checks: string[];
 }
 
+function joinUriPath(rootUri: string, relativePath: string): string {
+  return `${rootUri.replace(/\/$/, "")}/${relativePath}`;
+}
+
 export class ValidationEngine {
   constructor(
     private readonly workspace: WorkspaceAdapter,
@@ -29,6 +32,9 @@ export class ValidationEngine {
   ) {}
 
   async plan(workflowId: string, specificationRevision: number, taskIds: string[]): Promise<ValidationPlan> {
+    void workflowId;
+    void specificationRevision;
+    void taskIds;
     const commands: ValidationCommand[] = [];
     const checks: string[] = [];
 
@@ -85,7 +91,7 @@ export class ValidationEngine {
 
     // Detect file changes first
     try {
-      const changed = await this.detectChangedFiles(runContext?.baseCommit, runContext);
+      const changed = await this.detectChangedFiles(runContext?.baseCommit);
       if (changed.expected.length > 0) {
         run.changedFiles.push(...changed.expected);
       }
@@ -100,12 +106,12 @@ export class ValidationEngine {
     try {
       const root = this.workspace.getRoots()[0];
       if (root) {
-        const permChanges = await this.detectPermissionChanges(root.uri.fsPath);
+        const permChanges = await this.detectPermissionChanges(root.uri);
         if (permChanges.length > 0) {
           run.driftFindings.push(...permChanges.map(f => ({ description: `Permission changed: ${f}`, affectedCriteria: [] })));
         }
 
-        const sensitiveTouches = await this.detectSensitiveFileTouches(root.uri.fsPath);
+        const sensitiveTouches = await this.detectSensitiveFileTouches(root.uri);
         if (sensitiveTouches.length > 0) {
           run.driftFindings.push(...sensitiveTouches.map(f => ({ description: `Sensitive file touched: ${f}`, affectedCriteria: [] })));
         }
@@ -187,40 +193,35 @@ export class ValidationEngine {
     };
   }
 
-  async detectChangedFiles(
-    baseCommit?: string,
-    runContext?: { workflowId: string; specificationRevision: number; branch?: string }
-  ): Promise<{ expected: string[]; actual: string[]; preExisting: string[]; uncertain: string[] }> {
+  async detectChangedFiles(baseCommit?: string): Promise<{ expected: string[]; actual: string[]; preExisting: string[]; uncertain: string[] }> {
     const roots = this.workspace.getRoots();
     if (roots.length === 0) return { expected: [], actual: [], preExisting: [], uncertain: [] };
 
     const root = roots[0]!;
-    const branch = runContext?.branch ?? this.git.getCurrentBranch(root.uri.fsPath);
-
     let expected: string[] = [];
-    let actual: string[] = [];
-    let preExisting: string[] = [];
+    const actual: string[] = [];
+    const preExisting: string[] = [];
 
     try {
       // Get files changed since base commit or current HEAD
-      const changed = await this.git.getChangedFiles(root.uri.fsPath, baseCommit);
+      const changed = await this.git.getChangedFiles(root.uri, baseCommit);
       if (changed) {
-        expected = changed.map(f => f.path);
+        expected = changed;
       }
     } catch {
       // Fallback: get current HEAD changes
-      const currentHead = await this.git.getCurrentBranch(root.uri.fsPath);
+      const currentHead = this.git.getCurrentBranch(root.uri);
       if (currentHead) {
-        const changed = await this.git.getChangedFiles(root.uri.fsPath, currentHead);
-        expected = changed?.map(f => f.path) ?? [];
+        const changed = await this.git.getChangedFiles(root.uri, currentHead);
+        expected = changed ?? [];
       }
     }
 
     // Get all modified tracked files
     try {
-      const modified = await this.git.getChangedFiles(root.uri.fsPath);
+      const modified = await this.git.getChangedFiles(root.uri);
       if (modified) {
-        const modifiedFiles = modified.map(f => f.path);
+        const modifiedFiles = modified;
         for (const file of modifiedFiles) {
           if (expected.includes(file)) continue;
           // File is modified but not in expected list - could be pre-existing change
@@ -245,8 +246,7 @@ export class ValidationEngine {
       if (!current) return changes;
 
       const changedFiles = index
-        .filter(f => current.some(c => c.path === f.path))
-        .map(f => f.path);
+        .filter(file => current.includes(file));
 
       for (const file of changedFiles) {
         changes.push(file);
@@ -273,8 +273,7 @@ export class ValidationEngine {
       if (!current) return changes;
 
       const changedFiles = index
-        .filter(f => current.some(c => c.path === f.path))
-        .map(f => f.path);
+        .filter(file => current.includes(file));
 
       for (const file of changedFiles) {
         if (sensitivePatterns.some(p => p.test(file))) {
@@ -296,9 +295,7 @@ export class ValidationEngine {
 
     const root = roots[0]!;
     try {
-      const packageJson = await this.workspace.readTextFile(
-        vscode.Uri.joinPath(root.uri, "package.json")
-      );
+      const packageJson = await this.workspace.readTextFile(joinUriPath(root.uri, "package.json"));
       const pkg = JSON.parse(packageJson) as { scripts?: Record<string, string> };
       if (pkg.scripts?.[type]) {
         return { label: `${type.charAt(0).toUpperCase() + type.slice(1)}`, command: `npm run ${type}` };
@@ -314,7 +311,7 @@ export class ValidationEngine {
     if (roots.length === 0) return false;
 
     const root = roots[0]!;
-    const tsconfigPath = vscode.Uri.joinPath(root.uri, "tsconfig.json");
+    const tsconfigPath = joinUriPath(root.uri, "tsconfig.json");
     try {
       await this.workspace.readFile(tsconfigPath);
       return true;
@@ -324,37 +321,36 @@ export class ValidationEngine {
   }
 
   private async executeCommand(command: string, timeoutMs = 60000): Promise<{ exitCode: number; output: string; stderr: string }> {
-    return new Promise<{ exitCode: number; output: string; stderr: string }>((resolve) => {
-      const timeout = setTimeout(() => {
-        resolve({ exitCode: -1, output: "", stderr: "command timed out" });
-      }, timeoutMs);
-
-      const proc = require("child_process").spawnSync(command, {
-        shell: true,
-        maxBuffer: 16 * 1024 * 1024,
-        timeout: timeoutMs
-      });
-
-      clearTimeout(timeout);
-      const output = proc.stdout?.toString() ?? "";
-      const stderr = proc.stderr?.toString() ?? "";
-      const redactedOutput = this.redactSecrets(output);
-      const redactedStderr = this.redactSecrets(stderr);
-
-      resolve({ exitCode: proc.status ?? -1, output: redactedOutput, stderr: redactedStderr });
+    return new Promise((resolve) => {
+      const child = spawn(command, { shell: true, stdio: ["ignore", "pipe", "pipe"] });
+      let output = "";
+      let stderr = "";
+      let settled = false;
+      const appendBounded = (current: string, chunk: Buffer): string => (current + chunk.toString()).slice(-16 * 1024 * 1024);
+      child.stdout.on("data", (chunk: Buffer) => { output = appendBounded(output, chunk); });
+      child.stderr.on("data", (chunk: Buffer) => { stderr = appendBounded(stderr, chunk); });
+      const finish = (exitCode: number): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        resolve({ exitCode, output: this.redactSecrets(output), stderr: this.redactSecrets(stderr) });
+      };
+      const timeout = setTimeout(() => { child.kill(); finish(-1); }, timeoutMs);
+      child.once("error", () => finish(-1));
+      child.once("close", (code) => finish(code ?? -1));
     });
   }
 
   private redactSecrets(text: string): string {
     // Redact common secret patterns
     const patterns: RegExp[] = [
-      /password\s*[=:]\s*["']?[\w\-]+["']?/gi,
-      /api[_-]?key\s*[=:]\s*["']?[\w\-]+["']?/gi,
-      /token\s*[=:]\s*["']?[\w\-]+["']?/gi,
-      /secret\s*[=:]\s*["']?[\w\-]+["']?/gi,
-      /PRIVATE[_-]?KEY\s*[=:]\s*[\w\-]+/gi,
-      /AKIA[\w\-]{16}/gi,
-      /ghp_[\w\-]{36}/gi
+      /password\s*[=:]\s*["']?[\w-]+["']?/gi,
+      /api[_-]?key\s*[=:]\s*["']?[\w-]+["']?/gi,
+      /token\s*[=:]\s*["']?[\w-]+["']?/gi,
+      /secret\s*[=:]\s*["']?[\w-]+["']?/gi,
+      /PRIVATE[_-]?KEY\s*[=:]\s*[\w-]+/gi,
+      /AKIA[\w-]{16}/gi,
+      /ghp_[\w-]{36}/gi
     ];
 
     let redacted = text;
@@ -370,7 +366,6 @@ export class ValidationEngine {
 
   determineStatus(checks: ValidationCheck[], driftFindings: Array<{ description: string; affectedCriteria: string[] }>): "passed" | "warning" | "failed" {
     const failedChecks = checks.filter(c => c.status === "failed");
-    const passedChecks = checks.filter(c => c.status === "passed");
 
     if (failedChecks.length > 0) {
       return "failed";
@@ -379,7 +374,6 @@ export class ValidationEngine {
     // Check for warnings
     const nonPassedChecks = checks.filter(c => c.status !== "passed");
     const driftCount = driftFindings.length;
-    const totalChecks = checks.length;
 
     // Warning if there are any non-passed checks or drift findings
     if (nonPassedChecks.length > 0 || driftCount > 0) {

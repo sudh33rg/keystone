@@ -7,11 +7,8 @@ import {
   type SpecificationRevision,
   type AcceptanceCriterion,
   type ApprovalRecord,
-  type SpecificationStatus,
-  SpecificationStatus as SpecStatus,
-  KeystoneSpecificationSchema,
-  SpecificationRevisionSchema,
-  SCHEMA_VERSION
+  type IntentRecord,
+  KeystoneSpecificationSchema
 } from "../../shared/contracts/domain";
 import { KeystoneError } from "../../shared/errors/KeystoneError";
 
@@ -288,7 +285,7 @@ export class SpecificationService {
 
     spec.scope.modules = intent.affectedAreas.map((a) => a.reference);
     spec.existingBehavior.constraints = intent.constraints.map((c) => c.description);
-    spec.criteria = this.generateCriteria(intent, title);
+    spec.criteria = this.generateCriteria(intent);
 
     return spec;
   }
@@ -333,10 +330,7 @@ export class SpecificationService {
     this.revisions.set(specificationId, existing);
   }
 
-  private generateCriteria(
-    intent: IntentRecord,
-    title: string
-  ): AcceptanceCriterion[] {
+  private generateCriteria(intent: IntentRecord): AcceptanceCriterion[] {
     const criteria: AcceptanceCriterion[] = [
       {
         id: crypto.randomUUID(),

@@ -8,7 +8,7 @@ describe("ValidationEngine", () => {
 
   beforeEach(() => {
     const workspace = {
-      getRoots: () => [{ name: "test", uri: { scheme: "file", path: "/test" } }],
+      getRoots: () => [{ name: "test", uri: "file:///test" }],
       readTextFile: vi.fn(),
       readFile: vi.fn(),
       onDidCreate: vi.fn(),

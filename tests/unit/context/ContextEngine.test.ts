@@ -14,14 +14,14 @@ describe("ContextEngine", () => {
 
   beforeEach(() => {
     workspace = {
-      getRoots: () => [{ name: "test", uri: { scheme: "file", path: "/test" } }],
+      getRoots: () => [{ name: "test", uri: "file:///test" }],
       readTextFile: vi.fn(),
       readFile: vi.fn(),
       onDidCreate: vi.fn(),
       onDidDelete: vi.fn(),
       onDidRename: vi.fn(),
       onDidChange: vi.fn(),
-      getConfiguration: vi.fn()
+      getConfiguration: () => ({ get: (_section: string, defaultValue: unknown) => defaultValue })
     } as unknown as WorkspaceAdapter;
 
     index = {
@@ -31,7 +31,7 @@ describe("ContextEngine", () => {
     } as unknown as RepositoryIndexService;
 
     agentRegistry = {
-      getProfile: () => ({ defaultContextPolicy: { maxEstimatedTokens: 12000 } }),
+      getProfile: () => ({ defaultContextPolicy: { maxEstimatedTokens: 12000, includeTests: true } }),
       getProfiles: () => [],
       getSelectionMode: () => "recommended",
       setSelectionMode: vi.fn(),
@@ -53,11 +53,14 @@ describe("ContextEngine", () => {
     expect(result.package.taskId).toBe("task-1");
     expect(result.package.specificationRevision).toBe(1);
     expect(result.package.items.length).toBeGreaterThan(0);
-    expect(result.package.items[0].isMandatory).toBe(true);
+    expect(result.package.items[0]?.isMandatory).toBe(true);
   });
 
   it("should respect budget limits", async () => {
-    agentRegistry.getProfile = () => ({ defaultContextPolicy: { maxEstimatedTokens: 100 } });
+    agentRegistry.getProfile = () => ({
+      ...agentRegistry.getProfiles()[0],
+      defaultContextPolicy: { maxEstimatedTokens: 100, includeTests: true }
+    } as ReturnType<AgentRegistry["getProfile"]>);
 
     const result = await engine.buildPackage("task-1", 1);
 

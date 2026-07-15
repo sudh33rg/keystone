@@ -1,5 +1,4 @@
 import type { ContextPackage, ContextItem } from "../../shared/contracts/domain";
-import { KeystoneError } from "../../shared/errors/KeystoneError";
 import type { ContextCompressionEngine } from "./ContextCompressionEngine";
 
 export interface ContextPreview {

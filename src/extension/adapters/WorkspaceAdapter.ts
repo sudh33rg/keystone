@@ -1,105 +1,141 @@
 import * as vscode from "vscode";
+import { posix } from "node:path";
+import { normalizeRelativePath } from "../../core/intelligence/StableId";
+
+export interface WorkspaceRootReference {
+  name: string;
+  uri: string;
+}
+
+export interface WorkspaceFileReference {
+  root: WorkspaceRootReference;
+  uri: string;
+  relativePath: string;
+}
+
+export interface WorkspaceFileStat {
+  byteSize: number;
+  modifiedAt: string;
+  type: "file" | "directory" | "symbolic-link" | "unknown";
+}
+
+export interface IndexingConfiguration {
+  enabled: boolean;
+  onWorkspaceOpen: boolean;
+  onBranchChange: boolean;
+  maxFiles: number;
+  maxFileSizeBytes: number;
+  workerCount: number;
+  retainedGenerations: number;
+  exclusions: string[];
+}
+
+export interface ConfigurationReader {
+  get<T>(section: string, defaultValue: T): T;
+}
 
 export interface WorkspaceAdapter {
-  getRoots(): readonly vscode.WorkspaceFolder[];
+  getRoots(): readonly WorkspaceRootReference[];
   getWorkspaceId(): string;
   getWorkspaceRoot(rootIndex: number): string;
-  readFile(uri: vscode.Uri): Promise<Uint8Array>;
-  readTextFile(uri: vscode.Uri): Promise<string>;
-  getConfiguration(section: string): vscode.WorkspaceConfiguration;
-  openTextDocument(uri: vscode.Uri): Promise<vscode.TextDocument>;
-  onDidOpenTextDocument(listener: (doc: vscode.TextDocument) => void): vscode.Disposable;
-  onDidCloseTextDocument(listener: (doc: vscode.TextDocument) => void): vscode.Disposable;
-  onDidChangeTextDocument(listener: (e: vscode.TextDocumentChangeEvent) => void): vscode.Disposable;
-  onDidCreateFiles(listener: (e: vscode.FileCreateEvent) => void): vscode.Disposable;
-  onDidDeleteFiles(listener: (e: vscode.FileDeleteEvent) => void): vscode.Disposable;
-  onDidRenameFiles(listener: (e: vscode.FileRenameEvent) => void): vscode.Disposable;
-  onDidChangeConfiguration(listener: (e: vscode.ConfigurationChangeEvent) => void): vscode.Disposable;
-  createFileSystemWatcher(globPattern: vscode.GlobPattern, ignoreCreate?: boolean, ignoreChange?: boolean, ignoreDelete?: boolean): vscode.FileSystemWatcher;
-  getWorkspaceSettings(): {
-    fileExclusions: Record<string, boolean>;
-    trustedFolders: readonly vscode.WorkspaceFolder[];
-  };
+  isTrusted(): boolean;
+  listFiles(root: WorkspaceRootReference, maxFiles: number): Promise<WorkspaceFileReference[]>;
+  resolveFile(uri: string): WorkspaceFileReference | undefined;
+  fileReference(root: WorkspaceRootReference, relativePath: string): WorkspaceFileReference;
+  statFile(uri: string): Promise<WorkspaceFileStat>;
+  readFile(uri: string): Promise<Uint8Array>;
+  readTextFile(uri: string): Promise<string>;
+  getIndexingConfiguration(): IndexingConfiguration;
+  getConfiguration(section: string): ConfigurationReader;
 }
 
 export class VsCodeWorkspaceAdapter implements WorkspaceAdapter {
-  constructor(private readonly context: vscode.ExtensionContext) {}
-
-  getRoots(): readonly vscode.WorkspaceFolder[] {
-    return vscode.workspace.workspaceFolders ?? [];
+  getRoots(): readonly WorkspaceRootReference[] {
+    return (vscode.workspace.workspaceFolders ?? []).map((root) => ({ name: root.name, uri: root.uri.toString() }));
   }
 
   getWorkspaceId(): string {
-    const roots = this.getRoots();
-    if (roots.length === 0) return "no-workspace";
-    if (roots.length === 1) return roots[0].uri.toString();
-    return roots.map((r) => r.uri.toString()).sort().join("|");
+    return this.getRoots().map((root) => root.uri).sort().join("|") || "no-workspace";
   }
 
   getWorkspaceRoot(rootIndex: number): string {
-    const roots = this.getRoots();
-    return roots[rootIndex]?.uri.toString() ?? "";
+    return this.getRoots()[rootIndex]?.uri ?? "";
   }
 
-  async readFile(uri: vscode.Uri): Promise<Uint8Array> {
-    return vscode.workspace.fs.readFile(uri);
+  isTrusted(): boolean {
+    return vscode.workspace.isTrusted;
   }
 
-  async readTextFile(uri: vscode.Uri): Promise<string> {
-    const bytes = await this.readFile(uri);
-    return new TextDecoder().decode(bytes);
+  async listFiles(root: WorkspaceRootReference, maxFiles: number): Promise<WorkspaceFileReference[]> {
+    const rootUri = vscode.Uri.parse(root.uri);
+    const uris = await vscode.workspace.findFiles(new vscode.RelativePattern(rootUri, "**/*"), undefined, maxFiles);
+    const output: WorkspaceFileReference[] = [];
+    for (let index = 0; index < uris.length; index++) {
+      const uri = uris[index];
+      if (!uri) continue;
+      output.push({ root, uri: uri.toString(), relativePath: normalizeRelativePath(posix.relative(rootUri.path, uri.path)) });
+      if ((index + 1) % 500 === 0) await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+    return output;
   }
 
-  getConfiguration(section: string): vscode.WorkspaceConfiguration {
-    return vscode.workspace.getConfiguration(section);
+  resolveFile(uri: string): WorkspaceFileReference | undefined {
+    const target = vscode.Uri.parse(uri);
+    const root = this.getRoots()
+      .filter((item) => {
+        const rootUri = vscode.Uri.parse(item.uri);
+        return rootUri.scheme === target.scheme && rootUri.authority === target.authority && (target.path === rootUri.path || target.path.startsWith(`${rootUri.path.replace(/\/$/, "")}/`));
+      })
+      .sort((left, right) => vscode.Uri.parse(right.uri).path.length - vscode.Uri.parse(left.uri).path.length)[0];
+    if (!root) return undefined;
+    const rootUri = vscode.Uri.parse(root.uri);
+    return { root, uri: target.toString(), relativePath: normalizeRelativePath(posix.relative(rootUri.path, target.path)) };
   }
 
-  async openTextDocument(uri: vscode.Uri): Promise<vscode.TextDocument> {
-    return vscode.workspace.openTextDocument(uri);
+  fileReference(root: WorkspaceRootReference, relativePath: string): WorkspaceFileReference {
+    const normalized = normalizeRelativePath(relativePath);
+    return { root, relativePath: normalized, uri: vscode.Uri.joinPath(vscode.Uri.parse(root.uri), ...normalized.split("/")).toString() };
   }
 
-  onDidOpenTextDocument(listener: (doc: vscode.TextDocument) => void): vscode.Disposable {
-    return vscode.workspace.onDidOpenTextDocument(listener);
-  }
-
-  onDidCloseTextDocument(listener: (doc: vscode.TextDocument) => void): vscode.Disposable {
-    return vscode.workspace.onDidCloseTextDocument(listener);
-  }
-
-  onDidChangeTextDocument(listener: (e: vscode.TextDocumentChangeEvent) => void): vscode.Disposable {
-    return vscode.workspace.onDidChangeTextDocument(listener);
-  }
-
-  onDidCreateFiles(listener: (e: vscode.FileCreateEvent) => void): vscode.Disposable {
-    return vscode.workspace.onDidCreateFiles(listener);
-  }
-
-  onDidDeleteFiles(listener: (e: vscode.FileDeleteEvent) => void): vscode.Disposable {
-    return vscode.workspace.onDidDeleteFiles(listener);
-  }
-
-  onDidRenameFiles(listener: (e: vscode.FileRenameEvent) => void): vscode.Disposable {
-    return vscode.workspace.onDidRenameFiles(listener);
-  }
-
-  onDidChangeConfiguration(listener: (e: vscode.ConfigurationChangeEvent) => void): vscode.Disposable {
-    return vscode.workspace.onDidChangeConfiguration(listener);
-  }
-
-  createFileSystemWatcher(
-    globPattern: vscode.GlobPattern,
-    ignoreCreate = false,
-    ignoreChange = false,
-    ignoreDelete = false
-  ): vscode.FileSystemWatcher {
-    return vscode.workspace.createFileSystemWatcher(globPattern, ignoreCreate, ignoreChange, ignoreDelete);
-  }
-
-  getWorkspaceSettings(): { fileExclusions: Record<string, boolean>; trustedFolders: readonly vscode.WorkspaceFolder[] } {
-    const settings = vscode.workspace.getConfiguration("files");
+  async statFile(uri: string): Promise<WorkspaceFileStat> {
+    const stat = await vscode.workspace.fs.stat(vscode.Uri.parse(uri));
     return {
-      fileExclusions: settings.get("exclude", {}) as Record<string, boolean>,
-      trustedFolders: vscode.workspace.workspaceFolders?.filter((f) => f.uri.scheme === "file" && vscode.workspace.isTrusted) ?? []
+      byteSize: stat.size,
+      modifiedAt: new Date(stat.mtime).toISOString(),
+      type: fileType(stat.type)
     };
   }
+
+  async readFile(uri: string): Promise<Uint8Array> {
+    return vscode.workspace.fs.readFile(vscode.Uri.parse(uri));
+  }
+
+  async readTextFile(uri: string): Promise<string> {
+    return new TextDecoder().decode(await this.readFile(uri));
+  }
+
+  getIndexingConfiguration(): IndexingConfiguration {
+    const configuration = vscode.workspace.getConfiguration("keystone.indexing");
+    return {
+      enabled: configuration.get("enabled", true),
+      onWorkspaceOpen: configuration.get("onWorkspaceOpen", true),
+      onBranchChange: configuration.get("onBranchChange", true),
+      maxFiles: configuration.get("maxFiles", 25_000),
+      maxFileSizeBytes: configuration.get("maxFileSizeKb", 1024) * 1024,
+      workerCount: configuration.get("workerCount", 0),
+      retainedGenerations: configuration.get("retainedGenerations", 2),
+      exclusions: configuration.get<string[]>("exclusions", [])
+    };
+  }
+
+  getConfiguration(section: string): ConfigurationReader {
+    return vscode.workspace.getConfiguration(section);
+  }
+}
+
+function fileType(type: vscode.FileType): WorkspaceFileStat["type"] {
+  if ((type & vscode.FileType.File) !== 0) return "file";
+  if ((type & vscode.FileType.Directory) !== 0) return "directory";
+  if ((type & vscode.FileType.SymbolicLink) !== 0) return "symbolic-link";
+  return "unknown";
 }

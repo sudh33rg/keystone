@@ -1,7 +1,22 @@
-import { describe, it, expect, vi } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "vitest";
 import type { WorkspaceStateStore } from "../../../src/core/persistence/WorkspaceStateStore";
 import { TaskGraphService } from "../../../src/core/tasks/TaskGraphService";
 import { KeystoneError } from "../../../src/shared/errors/KeystoneError";
+import type { AcceptanceCriterion } from "../../../src/shared/contracts/domain";
+
+function criterion(id: string, description: string): AcceptanceCriterion {
+  return {
+    id,
+    description,
+    required: true,
+    sourceRequirementIds: [],
+    validationMethod: "manual",
+    expectedEvidenceType: "manual-observation",
+    coveringTaskIds: [],
+    result: "unverified",
+    evidenceReferences: []
+  };
+}
 
 describe("TaskGraphService", () => {
   let service: TaskGraphService;
@@ -17,11 +32,7 @@ describe("TaskGraphService", () => {
   });
 
   it("should generate a task graph from acceptance criteria", () => {
-    const criteria = [{
-      id: "criterion-1",
-      description: "User can log in",
-      coveringTaskIds: []
-    }];
+    const criteria = [criterion("criterion-1", "User can log in")];
 
     const graph = service.generateFromSpecification("spec-1", 1, criteria);
 
@@ -32,8 +43,8 @@ describe("TaskGraphService", () => {
 
   it("should perform topological sort", () => {
     const criteria = [
-      { id: "c1", description: "A", coveringTaskIds: [] },
-      { id: "c2", description: "B", coveringTaskIds: [] }
+      criterion("c1", "A"),
+      criterion("c2", "B")
     ];
 
     const graph = service.generateFromSpecification("spec-1", 1, criteria);
@@ -42,20 +53,20 @@ describe("TaskGraphService", () => {
   });
 
   it("should transition task status", () => {
-    const criteria = [{ id: "c1", description: "Test", coveringTaskIds: [] }];
+    const criteria = [criterion("c1", "Test")];
     const graph = service.generateFromSpecification("spec-1", 1, criteria);
-    const taskId = graph.taskIds[0];
+    const taskId = graph.taskIds[0]!;
 
     const updated = service.transitionTask(taskId, "pending", "ready");
     expect(updated.status).toBe("ready");
   });
 
   it("should reject invalid transitions", () => {
-    const criteria = [{ id: "c1", description: "Test", coveringTaskIds: [] }];
+    const criteria = [criterion("c1", "Test")];
     const graph = service.generateFromSpecification("spec-1", 1, criteria);
-    const taskId = graph.taskIds[0];
+    const taskId = graph.taskIds[0]!;
 
-    expect(() => service.transitionTask(taskId, "pending", "completed"))
+    expect(() => service.transitionTask(taskId, "pending", "passed"))
       .toThrow(KeystoneError);
   });
 });

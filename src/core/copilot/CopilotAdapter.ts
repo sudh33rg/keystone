@@ -92,7 +92,8 @@ export class VsCodeCopilotAdapter implements CopilotAdapter {
 
     if (copilotExtension?.isActive) {
       capabilities.push("inline-completion");
-      version = copilotExtension.packageJSON.version ?? "unknown";
+      const packageVersion: unknown = (copilotExtension.packageJSON as { version?: unknown }).version;
+      version = typeof packageVersion === "string" ? packageVersion : "unknown";
     }
 
     if (copilotChatExtension?.isActive) {
@@ -131,7 +132,7 @@ export class VsCodeCopilotAdapter implements CopilotAdapter {
   }
 
   isAvailable(): boolean {
-    return this.capabilityFingerprint?.capabilities.length ?? 0 > 0;
+    return (this.capabilityFingerprint?.capabilities.length ?? 0) > 0;
   }
 
   getCapabilityFingerprint(): CopilotCapabilityFingerprint | undefined {
@@ -230,7 +231,7 @@ export class VsCodeCopilotAdapter implements CopilotAdapter {
     };
   }
 
-  getAgentContextRestrictions(agentId: string): ContextRestrictions {
+  getAgentContextRestrictions(): ContextRestrictions {
     return {
       maxEstimatedTokens: 12000,
       includeTests: true,

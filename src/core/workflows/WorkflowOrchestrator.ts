@@ -2,12 +2,7 @@ import type { WorkspaceStateStore } from "../../core/persistence/WorkspaceStateS
 import {
   type Workflow,
   type Task,
-  type TaskGraph,
-  WorkflowSchema,
-  TaskSchema,
-  TaskGraphSchema,
-  SCHEMA_VERSION,
-  type WorkflowStatus
+  WorkflowSchema
 } from "../../shared/contracts/domain";
 import { KeystoneError } from "../../shared/errors/KeystoneError";
 import type { TaskGraphService } from "../tasks/TaskGraphService";
@@ -37,10 +32,10 @@ export class WorkflowOrchestrator {
   }
 
   startWorkflow(workflow: Workflow): Workflow {
-    if (workflow.status !== "draft") {
+    if (workflow.status !== "drafting") {
       throw new KeystoneError({
         code: "WORKFLOW_INVALID_STATUS",
-        category: "WORKFLOW",
+        category: "INTERNAL",
         message: `Cannot start workflow in status ${workflow.status}.`,
         operation: "workflow.start",
         recoverable: false,
@@ -53,7 +48,7 @@ export class WorkflowOrchestrator {
     if (!validated.success) {
       throw new KeystoneError({
         code: "WORKFLOW_VALIDATION_FAILED",
-        category: "WORKFLOW",
+        category: "INTERNAL",
         message: "Workflow start failed validation.",
         operation: "workflow.start",
         recoverable: false,
@@ -70,7 +65,7 @@ export class WorkflowOrchestrator {
     if (!workflow) {
       throw new KeystoneError({
         code: "WORKFLOW_NOT_FOUND",
-        category: "WORKFLOW",
+        category: "INTERNAL",
         message: `Workflow ${workflowId} not found.`,
         operation: "workflow.pause",
         recoverable: false,
@@ -83,7 +78,7 @@ export class WorkflowOrchestrator {
     if (!validated.success) {
       throw new KeystoneError({
         code: "WORKFLOW_VALIDATION_FAILED",
-        category: "WORKFLOW",
+        category: "INTERNAL",
         message: "Workflow pause failed validation.",
         operation: "workflow.pause",
         recoverable: false,
@@ -100,7 +95,7 @@ export class WorkflowOrchestrator {
     if (!workflow) {
       throw new KeystoneError({
         code: "WORKFLOW_NOT_FOUND",
-        category: "WORKFLOW",
+        category: "INTERNAL",
         message: `Workflow ${workflowId} not found.`,
         operation: "workflow.skip",
         recoverable: false,
@@ -119,7 +114,7 @@ export class WorkflowOrchestrator {
     if (!workflow) {
       throw new KeystoneError({
         code: "WORKFLOW_NOT_FOUND",
-        category: "WORKFLOW",
+        category: "INTERNAL",
         message: `Workflow ${workflowId} not found.`,
         operation: "workflow.cancel",
         recoverable: false,
@@ -132,7 +127,7 @@ export class WorkflowOrchestrator {
     if (!validated.success) {
       throw new KeystoneError({
         code: "WORKFLOW_VALIDATION_FAILED",
-        category: "WORKFLOW",
+        category: "INTERNAL",
         message: "Workflow cancellation failed validation.",
         operation: "workflow.cancel",
         recoverable: false,
@@ -149,7 +144,7 @@ export class WorkflowOrchestrator {
     if (!workflow) {
       throw new KeystoneError({
         code: "WORKFLOW_NOT_FOUND",
-        category: "WORKFLOW",
+        category: "INTERNAL",
         message: `Workflow ${workflowId} not found.`,
         operation: "workflow.complete",
         recoverable: false,
@@ -162,7 +157,7 @@ export class WorkflowOrchestrator {
     if (!validated.success) {
       throw new KeystoneError({
         code: "WORKFLOW_VALIDATION_FAILED",
-        category: "WORKFLOW",
+        category: "INTERNAL",
         message: "Workflow completion failed validation.",
         operation: "workflow.complete",
         recoverable: false,
@@ -189,7 +184,7 @@ export class WorkflowOrchestrator {
     return this.taskGraphService.getAllTasks().filter(task => task.status === "ready");
   }
 
-  requiresApproval(taskId: string): boolean {
+  requiresApproval(): boolean {
     return this.approvalPolicy === "required";
   }
 }

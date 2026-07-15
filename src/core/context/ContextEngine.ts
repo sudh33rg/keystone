@@ -5,8 +5,7 @@ import type { IgnorePolicy } from "../intelligence/IgnorePolicy";
 import {
   type ContextPackage,
   type ContextItem,
-  ContextPackageSchema,
-  SCHEMA_VERSION
+  ContextPackageSchema
 } from "../../shared/contracts/domain";
 import { KeystoneError } from "../../shared/errors/KeystoneError";
 
@@ -31,6 +30,7 @@ export class ContextEngine {
     baseCommit?: string,
     pinnedItems?: string[]
   ): Promise<ContextEngineResult> {
+    await Promise.resolve();
     const fingerprint = this.computeFingerprint(taskId, specificationRevision, pinnedItems);
     const agentProfile = this.agentRegistry.getProfile("default");
     const budget = agentProfile?.defaultContextPolicy.maxEstimatedTokens ?? 12000;
@@ -71,7 +71,7 @@ export class ContextEngine {
       });
     }
 
-    return { package: validated.data, estimate: { tokens: estimatedTokens, bytes: estimatedBytes } };
+    return { package: packageData, estimate: { tokens: estimatedTokens, bytes: estimatedBytes } };
   }
 
   private selectCandidates(taskId: string, specificationRevision: number): ContextItem[] {

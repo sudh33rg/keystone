@@ -2,8 +2,7 @@ import type { WorkspaceAdapter } from "../../extension/adapters/WorkspaceAdapter
 import type { RepositoryIndexService } from "../intelligence/RepositoryIndexService";
 import {
   type IntentRecord,
-  IntentRecordSchema,
-  SCHEMA_VERSION
+  IntentRecordSchema
 } from "../../shared/contracts/domain";
 import { KeystoneError } from "../../shared/errors/KeystoneError";
 
@@ -35,13 +34,14 @@ export class IntentEngine {
   }
 
   analyze(text: string, mode: "quick" | "guided" | "spec-driven", workspaceRoot?: string): IntentAnalysis {
+    void workspaceRoot;
     const workflowId = `wf-${++this.workflowIdCounter}`;
     const intentId = crypto.randomUUID();
 
     const normalized = this.normalize(text);
     const category = this.categorize(text);
     const risk = this.assessRisk(text);
-    const affectedAreas = this.findAffectedAreas(text, workspaceRoot);
+    const affectedAreas = this.findAffectedAreas(text);
     const ambiguities = this.extractAmbiguities(text);
     const constraints = this.extractConstraints(text);
     const recommendedAgents = this.recommendAgents(category);
@@ -96,7 +96,7 @@ export class IntentEngine {
     const lines = trimmed.split(/\n/);
     if (lines.length === 1) return trimmed;
 
-    const firstLine = lines[0].trim();
+    const firstLine = lines[0]?.trim() ?? "";
     if (firstLine.length > 0) return firstLine;
     return trimmed;
   }
@@ -133,9 +133,8 @@ export class IntentEngine {
     return "low";
   }
 
-  private findAffectedAreas(text: string, workspaceRoot?: string): { reference: string; reason: string }[] {
+  private findAffectedAreas(text: string): { reference: string; reason: string }[] {
     const areas: { reference: string; reason: string }[] = [];
-    const lower = text.toLowerCase();
 
     // Extract file mentions
     const fileMentions = text.match(/\b(?:src\/|lib\/|app\/|packages\/|src\/|lib\/|app\/)[\w/.-]+\.(?:ts|tsx|js|jsx|py|go|rs|java|c|h|cpp)\b/g);

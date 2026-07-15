@@ -20,6 +20,7 @@
     "development workflow"
   ],
   "activationEvents": [
+    "onStartupFinished",
     "onView:keystone.controlCenter",
     "onCommand:keystone.open"
   ],
@@ -89,7 +90,7 @@
         "keystone.indexing.onWorkspaceOpen": {
           "type": "boolean",
           "default": true,
-          "description": "Start local indexing after the Keystone UI opens."
+          "description": "Start local intelligence reconciliation after the workspace opens."
         },
         "keystone.indexing.onBranchChange": {
           "type": "boolean",
@@ -107,6 +108,20 @@
           "default": 25000,
           "minimum": 100,
           "description": "Maximum number of files considered in one repository index."
+        },
+        "keystone.indexing.workerCount": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 32,
+          "description": "Persistent intelligence worker count. Use 0 to select a safe automatic value."
+        },
+        "keystone.indexing.retainedGenerations": {
+          "type": "number",
+          "default": 2,
+          "minimum": 2,
+          "maximum": 20,
+          "description": "Number of complete local intelligence generations retained for recovery."
         },
         "keystone.indexing.exclusions": {
           "type": "array",

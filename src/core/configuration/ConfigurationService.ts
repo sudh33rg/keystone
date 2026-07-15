@@ -11,6 +11,8 @@ export interface KeystoneConfiguration {
     onBranchChange: boolean;
     maxFileSizeKb: number;
     maxFiles: number;
+    workerCount: number;
+    retainedGenerations: number;
     exclusions: string[];
   };
   context: {
@@ -54,6 +56,8 @@ export class ConfigurationService {
         onBranchChange: indexing.get("onBranchChange", true),
         maxFileSizeKb: bounded(indexing.get("maxFileSizeKb", 1024), 16, 1_048_576),
         maxFiles: bounded(indexing.get("maxFiles", 25_000), 100, 1_000_000),
+        workerCount: bounded(indexing.get("workerCount", 0), 0, 32),
+        retainedGenerations: bounded(indexing.get("retainedGenerations", 2), 2, 20),
         exclusions: indexing.get<string[]>("exclusions", []).filter((value) => typeof value === "string" && value.trim().length > 0)
       },
       context: {
@@ -94,4 +98,3 @@ function bounded(value: number, minimum: number, maximum: number): number {
 function enumValue<T extends string>(value: string, allowed: readonly T[], fallback: T): T {
   return allowed.includes(value as T) ? value as T : fallback;
 }
-

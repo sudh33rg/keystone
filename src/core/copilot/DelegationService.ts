@@ -1,12 +1,10 @@
-import type { CopilotAdapter, DelegationRequest, DelegationResult } from "./CopilotAdapter";
-import type { AgentRegistry, AgentSelectionResult } from "./AgentRegistry";
-import type { ContextEngine, ContextEngineResult } from "../context/ContextEngine";
+import type { CopilotAdapter, DelegationRequest } from "./CopilotAdapter";
+import type { AgentRegistry } from "./AgentRegistry";
+import type { ContextEngine } from "../context/ContextEngine";
 import {
   type Workflow,
-  type AgentAssignment,
   type Task,
-  WorkflowSchema,
-  AgentAssignmentSchema
+  WorkflowSchema
 } from "../../shared/contracts/domain";
 import { KeystoneError } from "../../shared/errors/KeystoneError";
 
@@ -55,7 +53,12 @@ export class DelegationService {
       objective: task.objective,
       description: task.description,
       contextPackage: {
-        items: contextResult.package.items,
+        items: contextResult.package.items.map((item) => ({
+          kind: item.kind,
+          content: item.sourceReference,
+          sourceReference: item.sourceReference,
+          selectionReason: item.selectionReason
+        })),
         fingerprint: contextResult.package.fingerprint,
         estimatedTokens: contextResult.package.estimatedTokens
       },
@@ -81,28 +84,26 @@ export class DelegationService {
     id: string,
     specificationId: string,
     title: string,
-    status: Workflow["status"] = "draft"
+    status: Workflow["status"] = "drafting"
   ): Workflow {
     const workflow: Workflow = {
       id,
-      specificationId,
-      title,
+      repositoryId: specificationId,
+      activeIntentRevision: 0,
+      activeSpecificationRevision: 0,
       status,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      taskIds: [],
-      validationRuns: [],
-      lastValidationId: undefined,
-      agentAssignments: [],
-      contextPackages: [],
-      metadata: {}
+      validationRunIds: [],
+      uiResumeRoute: "/intelligence",
+      activitySummary: title
     };
 
     const validated = WorkflowSchema.safeParse(workflow);
     if (!validated.success) {
       throw new KeystoneError({
         code: "WORKFLOW_VALIDATION_FAILED",
-        category: "WORKFLOW",
+        category: "INTERNAL",
         message: "Workflow creation failed validation.",
         operation: "workflow.create",
         recoverable: false,

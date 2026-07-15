@@ -1,5 +1,4 @@
 import type { ContextPackage, ContextItem } from "../../shared/contracts/domain";
-import { KeystoneError } from "../../shared/errors/KeystoneError";
 
 export interface CompressionResult {
   package: ContextPackage;
@@ -26,7 +25,7 @@ export class ContextCompressionEngine {
     // Run pre-computation hooks
     for (const hook of this.hooks) {
       if (hook.phase === "pre") {
-        current = this.applyHook(current, hook);
+        current = this.applyHook(current);
       }
     }
 
@@ -45,7 +44,7 @@ export class ContextCompressionEngine {
     // Post-computation hooks
     for (const hook of this.hooks) {
       if (hook.phase === "post") {
-        current = this.applyHook(current, hook);
+        current = this.applyHook(current);
       }
     }
 
@@ -61,7 +60,7 @@ export class ContextCompressionEngine {
     };
   }
 
-  private applyHook(current: ContextPackage, hook: CompressionHook): ContextPackage {
+  private applyHook(current: ContextPackage): ContextPackage {
     // Hook applies biases to rank scores
     return current;
   }

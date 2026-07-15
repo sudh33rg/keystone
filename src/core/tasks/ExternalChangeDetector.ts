@@ -1,9 +1,6 @@
 import type { GitAdapter } from "../../extension/adapters/GitAdapter";
 import type { WorkspaceAdapter } from "../../extension/adapters/WorkspaceAdapter";
-import {
-  type ExternalChange,
-  ExternalChangeSchema
-} from "../../shared/contracts/domain";
+import { type ExternalChange } from "../../shared/contracts/domain";
 
 export class ExternalChangeDetector {
   private baselines = new Map<string, { timestamp: string; commitHash: string; branch: string; files: Set<string> }>();
@@ -22,12 +19,14 @@ export class ExternalChangeDetector {
     });
   }
 
-  detectChanges(taskId: string, branch?: string): ExternalChange | undefined {
+  async detectChanges(taskId: string, branch?: string): Promise<ExternalChange | undefined> {
     const baseline = this.baselines.get(taskId);
     if (!baseline) return undefined;
 
     // Use provided branch or get current branch
-    const currentBranch = branch ?? this.git.getCurrentBranch();
+    const rootUri = this.workspace.getRoots()[0]?.uri;
+    if (!rootUri) return undefined;
+    const currentBranch = branch ?? this.git.getCurrentBranch(rootUri);
     if (currentBranch && currentBranch !== baseline.branch) {
       return {
         taskId,
@@ -40,7 +39,7 @@ export class ExternalChangeDetector {
     }
 
     // Check for new commits on the same branch
-    const currentHead = this.git.getHeadCommit();
+    const currentHead = this.git.getHeadCommit(rootUri);
     if (currentHead && currentHead !== baseline.commitHash) {
       return {
         taskId,
@@ -53,8 +52,8 @@ export class ExternalChangeDetector {
     }
 
     // Check for file changes
-    const changedFiles = this.git.getChangedFiles();
-    const changedSet = new Set(changedFiles.map(f => f.path));
+    const changedFiles = await this.git.getChangedFiles(rootUri);
+    const changedSet = new Set(changedFiles);
     const impactedFiles = Array.from(baseline.files).filter(f => changedSet.has(f));
 
     if (impactedFiles.length > 0) {
@@ -75,8 +74,10 @@ export class ExternalChangeDetector {
   markResolved(taskId: string): void {
     const baseline = this.baselines.get(taskId);
     if (baseline) {
-      const currentBranch = this.git.getCurrentBranch();
-      const currentHead = this.git.getHeadCommit();
+      const rootUri = this.workspace.getRoots()[0]?.uri;
+      if (!rootUri) return;
+      const currentBranch = this.git.getCurrentBranch(rootUri);
+      const currentHead = this.git.getHeadCommit(rootUri);
       this.setBaseline(taskId, currentHead ?? baseline.commitHash, currentBranch ?? baseline.branch, Array.from(baseline.files));
     }
   }

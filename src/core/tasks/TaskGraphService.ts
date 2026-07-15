@@ -4,10 +4,9 @@ import {
   type TaskGraph,
   type AcceptanceCriterion,
   type AgentAssignment,
+  type TaskAttempt,
   TaskSchema,
-  TaskGraphSchema,
-  TaskAttemptSchema,
-  SCHEMA_VERSION
+  TaskAttemptSchema
 } from "../../shared/contracts/domain";
 import { KeystoneError } from "../../shared/errors/KeystoneError";
 
@@ -126,7 +125,7 @@ export class TaskGraphService {
       });
     }
 
-    const next: Task = { ...task, ...updates, revision: (task as any).revision ?? 0 + 1 };
+    const next: Task = { ...task, ...updates };
     const validated = TaskSchema.safeParse(next);
     if (!validated.success) {
       throw new KeystoneError({
@@ -169,9 +168,10 @@ export class TaskGraphService {
       });
     }
 
-    const attemptNumber = (task as any).attemptNumber ?? 0 + 1;
+    const attemptNumber = (task.attemptNumber ?? 0) + 1;
 
     const attempt: TaskAttempt = {
+      id: crypto.randomUUID(),
       attemptNumber,
       taskId,
       agentAssignmentSnapshot: {
@@ -182,7 +182,8 @@ export class TaskGraphService {
       contextPackageId,
       delegationMethod,
       startedAt: new Date().toISOString(),
-      state: "delegating"
+      state: "delegating",
+      userConfirmations: []
     };
 
     const validated = TaskAttemptSchema.safeParse(attempt);
@@ -198,11 +199,11 @@ export class TaskGraphService {
     }
 
     this.attempts.set(attempt.id, validated.data);
-    (task as any).attemptNumber = attemptNumber;
+    task.attemptNumber = attemptNumber;
     return validated.data;
   }
 
-  transitionTask(taskId: string, from: string, to: string, agentAssignment?: AgentAssignment, contextPackageId?: string): Task {
+  transitionTask(taskId: string, from: Task["status"], to: Task["status"], agentAssignment?: AgentAssignment, contextPackageId?: string): Task {
     const task = this.tasks.get(taskId);
     if (!task) {
       throw new KeystoneError({

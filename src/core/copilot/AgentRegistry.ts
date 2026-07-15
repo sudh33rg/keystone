@@ -2,8 +2,8 @@ import type { CopilotAdapter } from "./CopilotAdapter";
 import {
   type AgentProfile,
   type AgentAssignment,
-  AgentProfileSchema,
-  SCHEMA_VERSION
+  type AgentTaskCategory,
+  AgentProfileSchema
 } from "../../shared/contracts/domain";
 import { KeystoneError } from "../../shared/errors/KeystoneError";
 
@@ -170,8 +170,8 @@ export class AgentRegistry {
     return candidates.sort((a, b) => b.score - a.score);
   }
 
-  private inferTaskCategories(capabilities: string[]): string[] {
-    const categories: string[] = [];
+  private inferTaskCategories(capabilities: string[]): AgentTaskCategory[] {
+    const categories: AgentTaskCategory[] = [];
 
     if (capabilities.includes("chat") || capabilities.includes("edit")) categories.push("implementation");
     if (capabilities.includes("test")) categories.push("testing");

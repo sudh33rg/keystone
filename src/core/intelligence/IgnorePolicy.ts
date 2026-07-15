@@ -1,4 +1,10 @@
+import type { ClassificationDecision, IntelligenceFileCategory } from "../../shared/contracts/intelligence";
+import { normalizeRelativePath } from "./StableId";
+
+export type FileCategory = IntelligenceFileCategory;
+
 export interface IgnorePolicy {
+  decide(path: string, content?: Uint8Array): ClassificationDecision;
   isExcluded(path: string, category?: FileCategory): boolean;
   isSecret(path: string, content?: string): boolean;
   isBinary(content: Uint8Array): boolean;
@@ -6,160 +12,144 @@ export interface IgnorePolicy {
   classify(path: string, content?: string): FileCategory;
 }
 
-export type FileCategory = "source" | "test" | "config" | "manifest" | "documentation" | "other";
+const SOURCE_EXTENSIONS = new Set([
+  ".c", ".cc", ".cpp", ".cs", ".go", ".h", ".hpp", ".java", ".js", ".jsx", ".kt", ".kts",
+  ".php", ".py", ".rb", ".rs", ".scala", ".swift", ".ts", ".tsx", ".vue", ".svelte"
+]);
+
+const BINARY_EXTENSIONS = new Set([
+  ".7z", ".a", ".avi", ".bin", ".bmp", ".bz2", ".class", ".dat", ".db", ".deb", ".dll",
+  ".dmg", ".doc", ".docx", ".eot", ".exe", ".flv", ".gif", ".gz", ".ico", ".iso", ".jar",
+  ".jpeg", ".jpg", ".lib", ".mov", ".mp3", ".mp4", ".o", ".obj", ".pdf", ".pkg", ".png",
+  ".ppt", ".pptx", ".pyd", ".pyc", ".pyo", ".rar", ".rpm", ".so", ".sqlite", ".sqlite3",
+  ".tar", ".ttf", ".war", ".webp", ".woff", ".woff2", ".wmv", ".xls", ".xlsx", ".zip"
+]);
+
+const ASSET_EXTENSIONS = new Set([".css", ".less", ".sass", ".scss", ".svg"]);
+const DOCUMENTATION_EXTENSIONS = new Set([".adoc", ".md", ".mdx", ".org", ".rst", ".txt"]);
+const CONFIG_EXTENSIONS = new Set([".ini", ".json", ".json5", ".toml", ".xml", ".yaml", ".yml"]);
 
 export class DefaultIgnorePolicy implements IgnorePolicy {
-  private readonly hardExcludedPatterns = [
-    /\.git\//,
-    /\.hg\//,
-    /\.svn\//,
-    /\.cargo\/registry\//,
-    /node_modules\//,
-    /vendor\//,
-    /\.vscode\/extensions\//,
-    /\.vscode-insiders\/extensions\//,
-    /\.vscode-exploration\/extensions\//
-  ];
+  decide(inputPath: string, content?: Uint8Array): ClassificationDecision {
+    const path = normalizeRelativePath(inputPath);
+    const lower = path.toLowerCase();
+    const name = lower.split("/").at(-1) ?? lower;
+    const extension = extensionOf(name);
 
-  private readonly secretPatterns = [
-    /\.env(\..+)?$/,
-    /\.pem$/,
-    /\.key$/,
-    /\.p12$/,
-    /\.pfx$/,
-    /\.jks$/,
-    /credentials\.json$/,
-    /\.netrc$/,
-    /id_rsa$/,
-    /id_ed25519$/,
-    /\.aws\/credentials$/,
-    /\.ssh\/authorized_keys$/,
-    /\.ssh\/known_hosts$/,
-    /token\.txt$/,
-    /\.token$/,
-    /\.credentials$/,
-    /\.secret$/,
-    /\.secret\.json$/,
-    /\.htpasswd$/,
-    /\.pgpass$/,
-    /\.netrc$/,
-    /\.npmrc$/,
-    /\.pypirc$/,
-    /\.pypirc$/,
-    /\.npmrc$/,
-    /\.gitlab-ci\.yml$/,
-    /\.circleci\/config\.yml$/,
-    /\.travis\.yml$/,
-    /\.github\/workflows\//,
-    /\.gitlab\/ci\.yml$/,
-    /\.travis\.yml$/,
-    /\.circleci\/config\.yml$/,
-    /\.github\/workflows\//,
-    /\.gitlab\/ci\.yml$/,
-    /secrets\.(yml|yaml|json|toml|env)/,
-    /credentials\.(yml|yaml|json|toml|env)/,
-    /config\.(yml|yaml|json|toml|env)$/,
-    /settings\.(yml|yaml|json|toml|env)$/,
-    /passwords\.(yml|yaml|json|toml|env)/,
-    /tokens\.(yml|yaml|json|toml|env)/
-  ];
-
-  private readonly binaryExtensions = [
-    ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".svg", ".webp",
-    ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
-    ".zip", ".tar", ".gz", ".bz2", ".7z", ".rar",
-    ".exe", ".dll", ".so", ".dylib", ".o", ".a", ".lib",
-    ".class", ".pyc", ".pyo", ".pyd",
-    ".woff", ".woff2", ".ttf", ".eot",
-    ".mp3", ".mp4", ".avi", ".mov", ".wmv", ".flv",
-    ".iso", ".dmg", ".pkg", ".deb", ".rpm",
-    ".bin", ".dat", ".db", ".sqlite", ".sqlite3"
-  ];
-
-  private readonly generatedPatterns = [
-    /\.min\.(js|css)$/,
-    /\.map$/,
-    /__pycache__\//,
-    /\.pyc$/,
-    /\.pyo$/,
-    /\.pyd$/,
-    /\.egg-info\//,
-    /dist\//,
-    /build\//,
-    /out\//,
-    /\.next\//,
-    /\.nuxt\//,
-    /\.svelte-kit\//,
-    /\.astro\//,
-    /coverage\//,
-    /\.nyc_output\//,
-    /test-results\//,
-    /\.turbo\//,
-    /node_modules\//,
-    /vendor\//,
-    /__tests__\//,
-    /\.spec\.(js|ts|jsx|tsx)$/,
-    /\.test\.(js|ts|jsx|tsx)$/
-  ];
-
-  isExcluded(path: string, category?: FileCategory): boolean {
-    for (const pattern of this.hardExcludedPatterns) {
-      if (pattern.test(path)) return true;
+    if (lower === ".keystone" || lower.startsWith(".keystone/")) return decision("other", "excluded", false, true, false, false, "exclude.keystone-intelligence", "Keystone-generated intelligence is monitored separately and never ingested as repository source.");
+    if (isTestPath(lower)) return decision("test", "deep", true, false, false, false, "include.test", "Tests are first-class source intelligence.");
+    if (isSensitivePath(lower)) return decision("configuration", "metadata-only", true, false, false, true, "sensitive.metadata", "Sensitive file content is not read or persisted.");
+    if (isDependencyOrOutputPath(lower)) return decision("other", "excluded", false, true, false, false, "exclude.directory", "Dependency, cache, temporary, or generated output directory.");
+    if (isMinifiedOrGenerated(lower)) return decision("asset", "excluded", false, true, false, false, "exclude.generated", "Generated or minified file.");
+    if (BINARY_EXTENSIONS.has(extension) || (content !== undefined && this.isBinary(content))) {
+      return decision("asset", "excluded", false, false, true, false, "exclude.binary", "Binary, archive, media, or office artifact.");
     }
-    return false;
+    if (isCiPath(lower)) return decision("ci", "structural", true, false, false, false, "include.ci", "Continuous-integration configuration is included.");
+    if (isInfrastructurePath(lower, name, extension)) return decision("infrastructure", "structural", true, false, false, false, "include.infrastructure", "Infrastructure definition is included.");
+    if (isMigrationPath(lower)) return decision("migration", "structural", true, false, false, false, "include.migration", "Database migration is included.");
+    if (isSchemaPath(lower, name, extension)) return decision("schema", "structural", true, false, false, false, "include.schema", "API, ORM, or data schema is included.");
+    if (isManifest(name, lower)) return decision("manifest", "structural", true, false, false, false, "include.manifest", "Build or package manifest is included.");
+    if (DOCUMENTATION_EXTENSIONS.has(extension)) return decision("documentation", "structural", true, false, false, false, "include.documentation", "Documentation is included.");
+    if (SOURCE_EXTENSIONS.has(extension)) return decision("source", "deep", true, false, false, false, "include.source", "Supported source file.");
+    if (ASSET_EXTENSIONS.has(extension)) return decision("asset", "metadata-only", true, false, false, false, "include.asset-metadata", "Ordinary static asset is metadata-only.");
+    if (CONFIG_EXTENSIONS.has(extension) || isSourceConfiguration(name)) return decision("configuration", "structural", true, false, false, false, "include.configuration", "Source configuration is included.");
+    return decision("other", "metadata-only", true, false, false, false, "include.metadata", "Unsupported file retained as metadata.");
   }
 
-  isSecret(path: string, content?: string): boolean {
-    for (const pattern of this.secretPatterns) {
-      if (pattern.test(path)) return true;
-    }
-    return false;
+  isExcluded(path: string): boolean {
+    return !this.decide(path).included;
+  }
+
+  isSecret(path: string): boolean {
+    return this.decide(path).sensitive;
   }
 
   isBinary(content: Uint8Array): boolean {
     if (content.length === 0) return false;
-    const chunk = content.slice(0, Math.min(512, content.length));
-    let nullBytes = 0;
-    for (let i = 0; i < chunk.length; i++) {
-      if (chunk[i] === 0) nullBytes++;
+    const chunk = content.subarray(0, Math.min(8192, content.length));
+    let suspicious = 0;
+    for (const byte of chunk) {
+      if (byte === 0) return true;
+      if (byte < 7 || (byte > 13 && byte < 32)) suspicious++;
     }
-    return nullBytes > chunk.length * 0.1;
+    return suspicious / chunk.length > 0.1;
   }
 
-  isGenerated(path: string, content?: string): boolean {
-    for (const pattern of this.generatedPatterns) {
-      if (pattern.test(path)) return true;
-    }
-    if (content && content.length > 100_000) return true;
-    return false;
+  isGenerated(path: string): boolean {
+    return this.decide(path).generated;
   }
 
-  classify(path: string, content?: string): FileCategory {
-    const lower = path.toLowerCase();
-    if (lower.endsWith(".test.js") || lower.endsWith(".test.ts") || lower.endsWith(".spec.js") ||
-        lower.endsWith(".spec.ts") || lower.endsWith(".test.jsx") || lower.endsWith(".test.tsx") ||
-        lower.includes("/__tests__/") || lower.includes("/tests/")) {
-      return "test";
-    }
-    if (lower.endsWith(".json") || lower.endsWith(".json5") || lower.endsWith(".yaml") ||
-        lower.endsWith(".yml") || lower.endsWith(".toml") || lower.endsWith(".xml") ||
-        lower.endsWith(".env") || lower.endsWith(".envrc") || lower.endsWith(".editorconfig") ||
-        lower.endsWith(".prettierrc") || lower.endsWith(".eslintrc") || lower.endsWith(".babelrc") ||
-        lower.endsWith(".vscode") || lower.endsWith("tsconfig") || lower.endsWith("jsconfig")) {
-      return "config";
-    }
-    if (lower.endsWith("package.json") || lower.endsWith("Cargo.toml") || lower.endsWith("go.mod") ||
-        lower.endsWith("pom.xml") || lower.endsWith("build.gradle") || lower.endsWith("requirements.txt") ||
-        lower.endsWith("setup.py") || lower.endsWith("pyproject.toml") || lower.endsWith("composer.json") ||
-        lower.endsWith("Gemfile") || lower.endsWith("Makefile") || lower.endsWith("CMakeLists.txt") ||
-        lower.endsWith("go.sum") || lower.endsWith("package-lock.json") || lower.endsWith("yarn.lock") ||
-        lower.endsWith("pnpm-lock.yaml") || lower.endsWith("pnpm-workspace.yaml")) {
-      return "manifest";
-    }
-    if (lower.endsWith(".md") || lower.endsWith(".rst") || lower.endsWith(".txt") ||
-        lower.endsWith(".adoc") || lower.endsWith(".org")) {
-      return "documentation";
-    }
-    return "other";
+  classify(path: string): FileCategory {
+    return this.decide(path).category;
   }
+}
+
+function decision(
+  category: FileCategory,
+  analysisLevel: ClassificationDecision["analysisLevel"],
+  included: boolean,
+  generated: boolean,
+  binary: boolean,
+  sensitive: boolean,
+  ruleId: string,
+  reason: string
+): ClassificationDecision {
+  return { category, analysisLevel, included, generated, binary, sensitive, ruleId, reason };
+}
+
+function extensionOf(name: string): string {
+  const index = name.lastIndexOf(".");
+  return index <= 0 ? "" : name.slice(index);
+}
+
+function isTestPath(path: string): boolean {
+  return /(^|\/)(__tests__|tests?|specs?)(\/|$)/.test(path) || /\.(spec|test)\.[^.]+$/.test(path);
+}
+
+function isSensitivePath(path: string): boolean {
+  const name = path.split("/").at(-1) ?? path;
+  return /^\.env(?:\..+)?$/.test(name) || /\.(pem|key|p12|pfx|jks)$/.test(name) ||
+    /^(id_rsa|id_ed25519|credentials(?:\..+)?|secrets?(?:\..+)?|tokens?(?:\..+)?)$/.test(name) ||
+    /(^|\/)(\.aws\/credentials|\.ssh\/(?:authorized_keys|known_hosts)|\.netrc|\.npmrc|\.pypirc|\.pgpass|\.htpasswd)$/.test(path);
+}
+
+function isDependencyOrOutputPath(path: string): boolean {
+  return /(^|\/)(\.git|\.hg|\.svn|node_modules|vendor|bower_components|dist|build|out|bin|obj|target|coverage|\.coverage|\.nyc_output|test-results|__pycache__|\.pytest_cache|\.mypy_cache|\.ruff_cache|\.cache|\.turbo|\.next|\.nuxt|\.svelte-kit|\.astro|\.gradle|\.idea|\.venv|venv|env|tmp|temp)(\/|$)/.test(path);
+}
+
+function isMinifiedOrGenerated(path: string): boolean {
+  return /\.min\.(?:js|css)$/.test(path) || /\.map$/.test(path) || /(^|\/)generated(\/|$)/.test(path) || /\.g\.[^.]+$/.test(path);
+}
+
+function isCiPath(path: string): boolean {
+  return /(^|\/)\.github\/workflows\//.test(path) || /(^|\/)\.circleci\//.test(path) ||
+    /(^|\/)(\.gitlab-ci\.ya?ml|\.travis\.ya?ml|azure-pipelines\.ya?ml|jenkinsfile)$/.test(path);
+}
+
+function isInfrastructurePath(path: string, name: string, extension: string): boolean {
+  return extension === ".tf" || extension === ".tfvars" || /^dockerfile(?:\..+)?$/.test(name) ||
+    /^compose(?:\..+)?\.ya?ml$/.test(name) || /(^|\/)(k8s|kubernetes|helm|terraform)(\/|$)/.test(path);
+}
+
+function isMigrationPath(path: string): boolean {
+  return /(^|\/)(migrations?|db\/migrate)(\/|$)/.test(path);
+}
+
+function isSchemaPath(path: string, name: string, extension: string): boolean {
+  return extension === ".graphql" || extension === ".gql" || extension === ".sql" || extension === ".prisma" ||
+    /(^|\/)(openapi|swagger)(?:\.[^/]+)?$/.test(path) || /(^|\/)(schema|schemas)(\/|$)/.test(path) ||
+    /^(openapi|swagger)\.ya?ml$/.test(name);
+}
+
+function isManifest(name: string, path: string): boolean {
+  return new Set([
+    "package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "pnpm-workspace.yaml", "cargo.toml",
+    "cargo.lock", "go.mod", "go.sum", "pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle",
+    "requirements.txt", "setup.py", "pyproject.toml", "poetry.lock", "composer.json", "gemfile", "gemfile.lock",
+    "makefile", "cmakelists.txt", "meson.build"
+  ]).has(name) || /(^|\/)gradle\/.*\.toml$/.test(path);
+}
+
+function isSourceConfiguration(name: string): boolean {
+  return /^(tsconfig|jsconfig)(?:\..+)?\.json$/.test(name) || /^\.(editorconfig|prettierrc|eslintrc|babelrc)(?:\..+)?$/.test(name);
 }

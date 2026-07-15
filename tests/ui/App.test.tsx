@@ -6,6 +6,7 @@ import { App } from "../../src/ui/App";
 import type { HostMessage } from "../../src/shared/contracts/messages";
 import { hostMessage } from "../../src/shared/contracts/messages";
 import type { BootstrapSnapshot } from "../../src/shared/contracts/domain";
+import { emptyIntelligenceOverview } from "../../src/shared/contracts/intelligence";
 import type { HostBridge } from "../../src/ui/services/HostBridge";
 
 function createBridge() {
@@ -30,7 +31,7 @@ describe("App", () => {
     act(() => {
       const snapshot: BootstrapSnapshot = {
         extensionVersion: "0.1.0",
-        workspace: { name: "fixture-repository", rootCount: 1, trust: "trusted", indexStatus: "not-started" },
+        workspace: { name: "fixture-repository", rootCount: 1, trust: "trusted", indexStatus: "not-indexed" },
         state: { schemaVersion: 1, revision: 0, activeSection: "home", workflowCount: 0, updatedAt: new Date().toISOString() },
         activity: { operation: "Foundation ready", detail: "Ready", status: "completed", progress: 100, cancellable: false, updatedAt: new Date().toISOString() },
         implementation: { phase: 1, phaseName: "Extension foundation", completedTasks: ["T-101", "T-102"], nextTask: "T-201 · Workspace adapters" }
@@ -43,6 +44,19 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Intelligence" }));
     expect(fake.request).toHaveBeenCalledWith("navigation/set", { section: "intelligence" });
-    expect(screen.getByText("This capability is intentionally unavailable until its approved implementation phase.")).toBeTruthy();
+    act(() => fake.emit(hostMessage("intelligence/updated", emptyIntelligenceOverview("not-indexed"))));
+    expect(screen.getByText("No local intelligence snapshot exists yet.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Scan repository" })).toBeTruthy();
+
+    const scanning = emptyIntelligenceOverview("scanning", true);
+    scanning.runtime = { phase: "reconciling", queueDepth: 1, activeWorkers: 1, workerCapacity: 3, pendingFiles: 5, completedJobs: 2, failedJobs: 0, staleResultsDiscarded: 1, workerRestarts: 0, throughputFilesPerSecond: 3.5, currentFiles: ["src/index.ts"], health: "healthy", trigger: "file", progress: { stage: "inventory", fileCount: 2, totalFiles: 5, currentFiles: ["src/index.ts"] } };
+    act(() => fake.emit(hostMessage("intelligence/updated", scanning)));
+    expect(screen.getByText("inventory 2 / 5")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Pause ingestion" }));
+    expect(fake.request).toHaveBeenCalledWith("intelligence/runtime/pause", {});
+    const paused = { ...scanning, runtime: { ...scanning.runtime, phase: "paused" as const } };
+    act(() => fake.emit(hostMessage("intelligence/updated", paused)));
+    fireEvent.click(screen.getByRole("button", { name: "Resume ingestion" }));
+    expect(fake.request).toHaveBeenCalledWith("intelligence/runtime/resume", {});
   });
 });

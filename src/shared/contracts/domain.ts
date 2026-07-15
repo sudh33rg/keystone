@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { IntelligenceStatusSchema } from "./intelligence";
 
 export const SCHEMA_VERSION = 1 as const;
 
@@ -45,7 +46,7 @@ export const WorkspaceSummarySchema = z.object({
   name: z.string().min(1),
   rootCount: z.number().int().nonnegative(),
   trust: z.enum(["trusted", "restricted"]),
-  indexStatus: z.enum(["not-started", "unavailable"])
+  indexStatus: IntelligenceStatusSchema
 });
 
 export type WorkspaceSummary = z.infer<typeof WorkspaceSummarySchema>;
@@ -473,6 +474,7 @@ export interface Task {
 }
 
 export interface TaskAttempt {
+  id: string;
   attemptNumber: number;
   taskId: string;
   agentAssignmentSnapshot: {
@@ -977,7 +979,7 @@ export const ContextPackageSchema = z.object({
     sourceReference: z.string(),
     sourceFingerprint: z.string(),
     selectionReason: z.string(),
-    rankScoreComponents: z.record(z.number()),
+    rankScoreComponents: z.record(z.string(), z.number()),
     compressionForm: z.string(),
     estimatedTokens: z.number(),
     estimatedBytes: z.number(),
@@ -1136,7 +1138,7 @@ export const SpecUpdateRequestSchema = z.object({
   payload: z.object({
     specificationId: z.string(),
     revision: z.number().int().nonnegative(),
-    patch: z.record(z.unknown())
+    patch: z.record(z.string(), z.unknown())
   }).strict()
 });
 

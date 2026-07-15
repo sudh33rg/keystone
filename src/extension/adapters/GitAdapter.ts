@@ -1,175 +1,204 @@
 import * as vscode from "vscode";
 
+export interface GitMetadata {
+  branch?: string;
+  headCommit?: string;
+  remoteIdentity?: string;
+  dirtyFingerprint?: string;
+}
+
+export interface GitFileChange {
+  uri: string;
+  originalUri?: string;
+  kind: "added" | "modified" | "deleted" | "renamed";
+}
+
 export interface GitAdapter {
-  isGitRepository(root: string): boolean;
-  getRepository(root: string): vscode.SourceControl | undefined;
-  getCurrentBranch(root: string): string | undefined;
-  getHeadCommit(root: string): string | undefined;
-  getRemoteUrl(root: string): string | undefined;
-  getChangedFiles(root: string, from?: string, to?: string): Promise<vscode.Uri[]>;
-  getStagedFiles(root: string): Promise<vscode.Uri[]>;
-  getUntrackedFiles(root: string): Promise<vscode.Uri[]>;
-  getRemoteIdentityHash(root: string): string | undefined;
-  onDidCommit(listener: () => void): vscode.Disposable;
-  onDidChangeState(listener: (state: vscode.SourceControlState) => void): vscode.Disposable;
+  getMetadata(rootUri: string): Promise<GitMetadata>;
+  isGitRepository(rootUri: string): boolean;
+  getCurrentBranch(rootUri: string): string | undefined;
+  getHeadCommit(rootUri: string): string | undefined;
+  getRemoteUrl(rootUri: string): string | undefined;
+  getChangedFiles(rootUri: string, from?: string, to?: string): Promise<string[]>;
+  getStagedFiles(rootUri: string): Promise<string[]>;
+  getUntrackedFiles(rootUri: string): Promise<string[]>;
+  getReconciliationChanges(rootUri: string, from?: string, to?: string): Promise<GitFileChange[]>;
+  getRemoteIdentityHash(rootUri: string): string | undefined;
+  onDidCommit(listener: () => void): { dispose(): void };
+  onDidChangeState(listener: () => void): { dispose(): void };
+}
+
+interface GitChange {
+  uri: vscode.Uri;
+  originalUri?: vscode.Uri;
+  status?: number;
+}
+
+interface GitRepository {
+  rootUri: vscode.Uri;
+  state: {
+    HEAD?: { name?: string; commit?: string };
+    remotes: Array<{ name: string; fetchUrl?: string; pushUrl?: string }>;
+    indexChanges: GitChange[];
+    workingTreeChanges: GitChange[];
+    onDidChange(listener: () => void): vscode.Disposable;
+  };
+  diffBetween(from: string, to: string): Promise<GitChange[]>;
+}
+
+interface GitApi {
+  repositories: GitRepository[];
+  getRepository(uri: vscode.Uri): GitRepository | null;
+  onDidCommit?(listener: () => void): vscode.Disposable;
+  onDidOpenRepository?(listener: (repository: GitRepository) => void): vscode.Disposable;
+  onDidCloseRepository?(listener: (repository: GitRepository) => void): vscode.Disposable;
+}
+
+interface GitExtensionExports {
+  getAPI(version: 1): GitApi;
 }
 
 export class VsCodeGitAdapter implements GitAdapter {
-  constructor(private readonly context: vscode.ExtensionContext) {}
-
-  getRepository(root: string): vscode.SourceControl | undefined {
-    const extensions = vscode.extensions.all;
-    const gitExtension = extensions.find((ext) => ext.id === "vscode.git");
-    if (!gitExtension?.isActive) return undefined;
-
-    const gitExports = gitExtension.exports as { getAPI(version: number): vscode.GitAPI | undefined };
-    const api = gitExports.getAPI(1);
-    if (!api) return undefined;
-
-    const repo = api.getRepository(vscode.Uri.parse(root));
-    return repo?.sourceControl;
+  async getMetadata(rootUri: string): Promise<GitMetadata> {
+    const api = await this.getApi(true);
+    const repository = api?.getRepository(vscode.Uri.parse(rootUri));
+    if (!repository) return {};
+    const remote = repository.state.remotes.find((item) => item.name === "origin");
+    const remoteUrl = remote?.pushUrl ?? remote?.fetchUrl;
+    const dirty = [...repository.state.indexChanges, ...repository.state.workingTreeChanges];
+    return {
+      ...(repository.state.HEAD?.name ? { branch: repository.state.HEAD.name } : {}),
+      ...(repository.state.HEAD?.commit ? { headCommit: repository.state.HEAD.commit } : {}),
+      ...(remoteUrl ? { remoteIdentity: await digestRemote(remoteUrl) } : {}),
+      ...(dirty.length > 0 ? { dirtyFingerprint: await digestChanges(dirty) } : {})
+    };
   }
 
-  isGitRepository(root: string): boolean {
-    return this.getRepository(root) !== undefined;
+  isGitRepository(rootUri: string): boolean {
+    return this.repository(rootUri) !== undefined;
   }
 
-  getCurrentBranch(root: string): string | undefined {
-    const extensions = vscode.extensions.all;
-    const gitExtension = extensions.find((ext) => ext.id === "vscode.git");
-    if (!gitExtension?.isActive) return undefined;
-
-    const gitExports = gitExtension.exports as { getAPI(version: number): vscode.GitAPI | undefined };
-    const api = gitExports.getAPI(1);
-    if (!api) return undefined;
-
-    const repo = api.getRepository(vscode.Uri.parse(root));
-    return repo?.state.HEAD?.name;
+  getCurrentBranch(rootUri: string): string | undefined {
+    return this.repository(rootUri)?.state.HEAD?.name;
   }
 
-  getHeadCommit(root: string): string | undefined {
-    const extensions = vscode.extensions.all;
-    const gitExtension = extensions.find((ext) => ext.id === "vscode.git");
-    if (!gitExtension?.isActive) return undefined;
-
-    const gitExports = gitExtension.exports as { getAPI(version: number): vscode.GitAPI | undefined };
-    const api = gitExports.getAPI(1);
-    if (!api) return undefined;
-
-    const repo = api.getRepository(vscode.Uri.parse(root));
-    return repo?.state.HEAD?.commit;
+  getHeadCommit(rootUri: string): string | undefined {
+    return this.repository(rootUri)?.state.HEAD?.commit;
   }
 
-  getRemoteUrl(root: string): string | undefined {
-    const extensions = vscode.extensions.all;
-    const gitExtension = extensions.find((ext) => ext.id === "vscode.git");
-    if (!gitExtension?.isActive) return undefined;
-
-    const gitExports = gitExtension.exports as { getAPI(version: number): vscode.GitAPI | undefined };
-    const api = gitExports.getAPI(1);
-    if (!api) return undefined;
-
-    const repo = api.getRepository(vscode.Uri.parse(root));
-    const remote = repo?.state.remotes?.find((r) => r.name === "origin");
+  getRemoteUrl(rootUri: string): string | undefined {
+    const remote = this.repository(rootUri)?.state.remotes.find((item) => item.name === "origin");
     return remote?.pushUrl ?? remote?.fetchUrl;
   }
 
-  async getChangedFiles(root: string, from?: string, to?: string): Promise<vscode.Uri[]> {
-    const extensions = vscode.extensions.all;
-    const gitExtension = extensions.find((ext) => ext.id === "vscode.git");
-    if (!gitExtension?.isActive) return [];
-
-    const gitExports = gitExtension.exports as { getAPI(version: number): vscode.GitAPI | undefined };
-    const api = gitExports.getAPI(1);
-    if (!api) return [];
-
-    const repo = api.getRepository(vscode.Uri.parse(root));
-    if (!repo) return [];
-
-    const diff = from && to ? await repo.diff(from, to) : repo.state.index;
-    return diff.map((entry) => entry.uri);
+  async getChangedFiles(rootUri: string, from?: string, to?: string): Promise<string[]> {
+    const repository = this.repository(rootUri);
+    if (!repository) return [];
+    if (from && to) return (await repository.diffBetween(from, to)).map((item) => item.uri.toString());
+    return repository.state.workingTreeChanges.map((item) => item.uri.toString());
   }
 
-  async getStagedFiles(root: string): Promise<vscode.Uri[]> {
-    const extensions = vscode.extensions.all;
-    const gitExtension = extensions.find((ext) => ext.id === "vscode.git");
-    if (!gitExtension?.isActive) return [];
-
-    const gitExports = gitExtension.exports as { getAPI(version: number): vscode.GitAPI | undefined };
-    const api = gitExports.getAPI(1);
-    if (!api) return [];
-
-    const repo = api.getRepository(vscode.Uri.parse(root));
-    if (!repo) return [];
-
-    return repo.state.index.map((entry) => entry.uri);
+  getStagedFiles(rootUri: string): Promise<string[]> {
+    return Promise.resolve(this.repository(rootUri)?.state.indexChanges.map((item) => item.uri.toString()) ?? []);
   }
 
-  async getUntrackedFiles(root: string): Promise<vscode.Uri[]> {
-    const extensions = vscode.extensions.all;
-    const gitExtension = extensions.find((ext) => ext.id === "vscode.git");
-    if (!gitExtension?.isActive) return [];
-
-    const gitExports = gitExtension.exports as { getAPI(version: number): vscode.GitAPI | undefined };
-    const api = gitExports.getAPI(1);
-    if (!api) return [];
-
-    const repo = api.getRepository(vscode.Uri.parse(root));
-    if (!repo) return [];
-
-    return repo.state.workingTreeChanges
-      .filter((entry) => entry.original?.type === vscode.SourceControlInputBoxState.Untracked)
-      .map((entry) => entry.uri);
+  getUntrackedFiles(rootUri: string): Promise<string[]> {
+    return Promise.resolve(this.repository(rootUri)?.state.workingTreeChanges
+      .filter((item) => item.status === 7)
+      .map((item) => item.uri.toString()) ?? []);
   }
 
-  getRemoteIdentityHash(root: string): string | undefined {
-    const extensions = vscode.extensions.all;
-    const gitExtension = extensions.find((ext) => ext.id === "vscode.git");
-    if (!gitExtension?.isActive) return undefined;
-
-    const gitExports = gitExtension.exports as { getAPI(version: number): vscode.GitAPI | undefined };
-    const api = gitExports.getAPI(1);
-    if (!api) return undefined;
-
-    const repo = api.getRepository(vscode.Uri.parse(root));
-    const remote = repo?.state.remotes?.find((r) => r.name === "origin");
-    if (!remote?.pushUrl && !remote?.fetchUrl) return undefined;
-
-    const url = remote.pushUrl ?? remote.fetchUrl;
-    return url ? hashString(url) : undefined;
+  async getReconciliationChanges(rootUri: string, from?: string, to?: string): Promise<GitFileChange[]> {
+    const repository = this.repository(rootUri);
+    if (!repository) return [];
+    const committed = from && to ? await repository.diffBetween(from, to) : [];
+    const changes = [...committed, ...repository.state.indexChanges, ...repository.state.workingTreeChanges];
+    const output = new Map<string, GitFileChange>();
+    for (const change of changes) {
+      const kind = gitChangeKind(change);
+      const record: GitFileChange = {
+        uri: change.uri.toString(),
+        kind,
+        ...(change.originalUri && change.originalUri.toString() !== change.uri.toString() ? { originalUri: change.originalUri.toString() } : {})
+      };
+      output.set(record.uri, record);
+    }
+    return [...output.values()].sort((left, right) => left.uri.localeCompare(right.uri));
   }
 
-  onDidCommit(listener: () => void): vscode.Disposable {
-    const extensions = vscode.extensions.all;
-    const gitExtension = extensions.find((ext) => ext.id === "vscode.git");
-    if (!gitExtension?.isActive) return { dispose: () => {} };
-
-    const gitExports = gitExtension.exports as { getAPI(version: number): vscode.GitAPI | undefined };
-    const api = gitExports.getAPI(1);
-    if (!api) return { dispose: () => {} };
-
-    return api.onDidCommit(listener);
+  getRemoteIdentityHash(rootUri: string): string | undefined {
+    const remote = this.getRemoteUrl(rootUri);
+    if (!remote) return undefined;
+    return legacyHash(remote);
   }
 
-  onDidChangeState(listener: (state: vscode.SourceControlState) => void): vscode.Disposable {
-    const extensions = vscode.extensions.all;
-    const gitExtension = extensions.find((ext) => ext.id === "vscode.git");
-    if (!gitExtension?.isActive) return { dispose: () => {} };
+  onDidCommit(listener: () => void): { dispose(): void } {
+    const api = this.getApi(false);
+    return typeof api?.onDidCommit === "function" ? api.onDidCommit(listener) : { dispose: () => undefined };
+  }
 
-    const gitExports = gitExtension.exports as { getAPI(version: number): vscode.GitAPI | undefined };
-    const api = gitExports.getAPI(1);
-    if (!api) return { dispose: () => {} };
+  onDidChangeState(listener: () => void): { dispose(): void } {
+    const api = this.getApi(false);
+    if (!api) return { dispose: () => undefined };
+    const repositories = new Map<GitRepository, vscode.Disposable>();
+    const subscribe = (repository: GitRepository): void => {
+      if (!repositories.has(repository)) repositories.set(repository, repository.state.onDidChange(listener));
+    };
+    const unsubscribe = (repository: GitRepository): void => {
+      repositories.get(repository)?.dispose();
+      repositories.delete(repository);
+    };
+    for (const repository of api.repositories) subscribe(repository);
+    const apiDisposables = [
+      ...(typeof api.onDidOpenRepository === "function" ? [api.onDidOpenRepository(subscribe)] : []),
+      ...(typeof api.onDidCloseRepository === "function" ? [api.onDidCloseRepository(unsubscribe)] : [])
+    ];
+    return {
+      dispose: () => {
+        for (const disposable of repositories.values()) disposable.dispose();
+        repositories.clear();
+        for (const disposable of apiDisposables) disposable.dispose();
+      }
+    };
+  }
 
-    return api.onDidChangeState(listener);
+  private repository(rootUri: string): GitRepository | undefined {
+    return this.getApi(false)?.getRepository(vscode.Uri.parse(rootUri)) ?? undefined;
+  }
+
+  private getApi(activate: false): GitApi | undefined;
+  private getApi(activate: true): Promise<GitApi | undefined>;
+  private getApi(activate: boolean): GitApi | undefined | Promise<GitApi | undefined> {
+    const extension = vscode.extensions.getExtension<GitExtensionExports>("vscode.git");
+    if (!extension) return activate ? Promise.resolve(undefined) : undefined;
+    if (!activate) return extension.isActive ? extension.exports.getAPI(1) : undefined;
+    return Promise.resolve(extension.activate()).then((exports) => exports.getAPI(1));
   }
 }
 
-function hashString(input: string): string {
+async function digestRemote(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function digestChanges(changes: readonly GitChange[]): Promise<string> {
+  const value = changes
+    .map((change) => `${change.status ?? -1}:${change.originalUri?.toString() ?? ""}:${change.uri.toString()}`)
+    .sort()
+    .join("\n");
+  return `sha256:${await digestRemote(value)}`;
+}
+
+function gitChangeKind(change: GitChange): GitFileChange["kind"] {
+  if (change.originalUri && change.originalUri.toString() !== change.uri.toString()) return "renamed";
+  if (change.status === 1 || change.status === 7 || change.status === 9) return "added";
+  if (change.status === 2 || change.status === 6) return "deleted";
+  if (change.status === 3 || change.status === 10) return "renamed";
+  return "modified";
+}
+
+function legacyHash(value: string): string {
   let hash = 0;
-  for (let i = 0; i < input.length; i++) {
-    const char = input.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash |= 0;
-  }
+  for (const character of value) hash = ((hash << 5) - hash + character.charCodeAt(0)) | 0;
   return Math.abs(hash).toString(16);
 }

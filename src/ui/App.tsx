@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Activity, BootstrapSnapshot, NavigationSection, PersistedFoundationState } from "../shared/contracts/domain";
+import type { IntelligenceOverview as IntelligenceOverviewModel } from "../shared/contracts/intelligence";
 import { Icon } from "./components/Icon";
+import { IntelligenceOverview } from "./components/intelligence/IntelligenceOverview";
 import type { HostBridge } from "./services/HostBridge";
 
 interface AppProps {
@@ -18,11 +20,10 @@ const navigation: { id: NavigationSection; label: string; icon: Parameters<typeo
   { id: "settings", label: "Settings", icon: "settings" }
 ];
 
-const sections: Record<Exclude<NavigationSection, "home" | "settings">, { eyebrow: string; title: string; description: string; phase: string; icon: Parameters<typeof Icon>[0]["name"] }> = {
+const sections: Record<Exclude<NavigationSection, "home" | "settings" | "intelligence">, { eyebrow: string; title: string; description: string; phase: string; icon: Parameters<typeof Icon>[0]["name"] }> = {
   intent: { eyebrow: "Understand the work", title: "Intent", description: "Capture raw requests, choose a development mode, and turn repository evidence into a structured objective.", phase: "Planned for Phase 3 · T-301", icon: "intent" },
   specifications: { eyebrow: "Approve before execution", title: "Specifications", description: "Review scope, behavior, constraints, acceptance criteria, revisions, and decisions before implementation begins.", phase: "Planned for Phase 3 · T-302–T-304", icon: "spec" },
   tasks: { eyebrow: "Controlled execution", title: "Tasks", description: "Inspect dependency order, agent assignments, expected files, execution attempts, and retry history.", phase: "Planned for Phase 5 · T-501–T-504", icon: "tasks" },
-  intelligence: { eyebrow: "Local repository model", title: "Intelligence", description: "Index files, symbols, relationships, commands, frameworks, and test mappings without an LLM dependency.", phase: "Next · Phase 2 · T-201–T-207", icon: "intelligence" },
   context: { eyebrow: "Minimum useful evidence", title: "Context", description: "Preview why files and symbols were selected, control inclusions, and keep every delegation inside its budget.", phase: "Planned for Phase 4 · T-403–T-405", icon: "context" },
   validation: { eyebrow: "Evidence over assumption", title: "Validation", description: "Trace build, lint, tests, changed files, and specification criteria into a completion decision.", phase: "Planned for Phase 6 · T-601–T-604", icon: "validation" }
 };
@@ -31,6 +32,7 @@ export function App({ bridge }: AppProps): React.JSX.Element {
   const [bootstrap, setBootstrap] = useState<BootstrapSnapshot>();
   const [state, setState] = useState<PersistedFoundationState>();
   const [activity, setActivity] = useState<Activity>();
+  const [overview, setOverview] = useState<IntelligenceOverviewModel>();
   const [error, setError] = useState<string>();
 
   useEffect(() => {
@@ -42,10 +44,20 @@ export function App({ bridge }: AppProps): React.JSX.Element {
       }
       if (message.type === "state/updated") setState(message.payload);
       if (message.type === "activity/updated") setActivity(message.payload);
+      if (message.type === "intelligence/updated") setOverview(message.payload);
     });
     void bridge.request("app/bootstrap", {}).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)));
     return unsubscribe;
   }, [bridge]);
+
+  useEffect(() => {
+    if (state?.activeSection !== "intelligence") return;
+    const controller = new AbortController();
+    void bridge.request("intelligence/overview", {}, { signal: controller.signal }).then(setOverview).catch((cause: unknown) => {
+      if (!(cause instanceof DOMException && cause.name === "AbortError")) setError(cause instanceof Error ? cause.message : String(cause));
+    });
+    return () => controller.abort();
+  }, [bridge, state?.activeSection]);
 
   const activeSection = state?.activeSection ?? "home";
   const implementationProgress = useMemo(() => bootstrap ? `${bootstrap.implementation.completedTasks.length} foundation tasks complete` : "Connecting to Extension Host", [bootstrap]);
@@ -73,7 +85,17 @@ export function App({ bridge }: AppProps): React.JSX.Element {
 
       <main className="main-content">
         {error && <div className="error-banner" role="alert"><span>{error}</span><button onClick={() => setError(undefined)} aria-label="Dismiss error">×</button></div>}
-        {!bootstrap ? <LoadingView/> : activeSection === "home" ? <Home bootstrap={bootstrap} onNavigate={navigate}/> : activeSection === "settings" ? <Settings bridge={bridge}/> : <PlannedSection section={sections[activeSection]}/>} 
+        {!bootstrap ? <LoadingView/> : activeSection === "home" ? <Home bootstrap={bootstrap} onNavigate={navigate}/> : activeSection === "settings" ? <Settings bridge={bridge}/> : activeSection === "intelligence" ? (
+          <IntelligenceOverview
+            bridge={bridge}
+            overview={overview}
+            onStart={() => { void bridge.request("intelligence/scan/start", {}).catch(showError(setError)); }}
+            onCancel={() => { void bridge.request("intelligence/scan/cancel", {}).catch(showError(setError)); }}
+            onPause={() => { void bridge.request("intelligence/runtime/pause", {}).catch(showError(setError)); }}
+            onResume={() => { void bridge.request("intelligence/runtime/resume", {}).catch(showError(setError)); }}
+            onRefresh={() => { void bridge.request("intelligence/overview", {}).then(setOverview).catch(showError(setError)); }}
+          />
+        ) : <PlannedSection section={sections[activeSection]}/>}
       </main>
 
       <aside className={`activity-panel ${activity?.status ?? "idle"}`} aria-label="Current activity">
@@ -95,8 +117,8 @@ function Home({ bootstrap, onNavigate }: { bootstrap: BootstrapSnapshot; onNavig
       <div className="hero">
         <div className="eyebrow"><Icon name="spark" size={14}/> Phase {bootstrap.implementation.phase} is operational</div>
         <h1>Intent becomes<br/><em>controlled work.</em></h1>
-        <p>Keystone now has a secure, reload-safe foundation. Repository intelligence is the next progressive implementation slice.</p>
-        <button className="primary-button" onClick={() => onNavigate("intelligence")}>View next phase <Icon name="arrow" size={16}/></button>
+        <p>Keystone maintains a local, evidence-backed repository inventory with restart-safe storage and a bounded overview.</p>
+        <button className="primary-button" onClick={() => onNavigate("intelligence")}>View intelligence <Icon name="arrow" size={16}/></button>
       </div>
 
       <div className="status-grid">
@@ -105,7 +127,7 @@ function Home({ bootstrap, onNavigate }: { bootstrap: BootstrapSnapshot; onNavig
           <dl>
             <div><dt>Roots</dt><dd>{bootstrap.workspace.rootCount}</dd></div>
             <div><dt>Trust</dt><dd className="good">{bootstrap.workspace.trust}</dd></div>
-            <div><dt>Index</dt><dd>Not started</dd></div>
+            <div><dt>Index</dt><dd>{bootstrap.workspace.indexStatus.replace("-", " ")}</dd></div>
           </dl>
         </article>
 
@@ -118,7 +140,7 @@ function Home({ bootstrap, onNavigate }: { bootstrap: BootstrapSnapshot; onNavig
 
         <article className="status-card privacy-card">
           <div className="card-heading"><span className="card-icon"><Icon name="lock"/></span><span><small>PRIVACY BASELINE</small><strong>Local by default</strong></span></div>
-          <p>No repository context has been indexed or transmitted. Future delegation will require an explicit, visible user action.</p>
+          <p>Repository intelligence is stored in extension-managed local files. No repository content is transmitted by this milestone.</p>
         </article>
       </div>
 
@@ -129,6 +151,10 @@ function Home({ bootstrap, onNavigate }: { bootstrap: BootstrapSnapshot; onNavig
       </div>
     </section>
   );
+}
+
+function showError(setError: (message: string) => void): (cause: unknown) => void {
+  return (cause) => setError(cause instanceof Error ? cause.message : String(cause));
 }
 
 function PlannedSection({ section }: { section: (typeof sections)[keyof typeof sections] }): React.JSX.Element {
@@ -159,4 +185,3 @@ function Settings({ bridge }: { bridge: HostBridge }): React.JSX.Element {
     </section>
   );
 }
-
