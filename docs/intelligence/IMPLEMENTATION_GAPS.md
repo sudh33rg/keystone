@@ -1,108 +1,147 @@
-# Current Keystone Intelligence Implementation Gaps
+# OKF Implementation Status
 
-## Purpose
+**Date:** 2026-07-15
 
-This document records the known gap categories that Codex must verify against the current repository before changing code. It is not proof of current behavior. Every item must be grounded in exact files and functions during the audit.
+## Overview
 
-## Likely foundation gaps
+The OKF (OKF) Projection milestone has been initiated with foundational components created. The implementation is incomplete and requires TypeScript fixes before proceeding.
 
-- Repository indexing may scan files without persisting complete file records
-- Extracted symbols may be temporary or inaccessible after restart
-- Stable entity and edge IDs may be missing
-- Relationship creation may include placeholders or guessed edges
-- Evidence may be incomplete or not linked to entities and relationships
-- Persistence may cover UI state but not canonical intelligence
-- Query APIs may be missing or only partially implemented
+## Completed Work
 
-## Classification and exclusion gaps
+### Core Components Created
 
-Verify that:
+| File | Status | Description |
+|------|--------|-------------|
+| `src/core/intelligence/okf/OkfConcept.ts` | Partial | Concept model with frontmatter and body schemas |
+| `src/core/intelligence/okf/OkfConceptIdFactory.ts` | Partial | Deterministic path generation, canonical IDs |
+| `src/core/intelligence/okf/OkfConceptMapper.ts` | Partial | Entity-to-concept translation |
 
-- Tests are never classified as generated
-- CI configuration is included
-- Build manifests, ORM schemas, migrations, OpenAPI, GraphQL, Docker, Kubernetes, and Terraform are included
-- Dependency folders, build output, virtual environments, caches, binaries, archives, and minified assets are excluded
-- CSS and static assets follow relationship-only or metadata-only policy rather than expensive deep analysis
-- Secret values are never indexed
-- Every exclusion has an explainable reason
+### Architecture Decisions Made
 
-## Continuous-ingestion gaps
+- OKF concepts are generated from canonical intelligence entity IDs
+- Path generation uses normalized file paths and symbol names
+- Relationships are preserved with confidence and derivation metadata
+- User annotations are preserved across regenerations by canonical ID
 
-Verify implementation of:
+## TypeScript Errors Requiring Fix
 
-- Startup reconciliation
-- File create, change, delete, and rename updates
-- Change coalescing
-- Persistent worker pools
-- Stale-job cancellation
-- Git branch and HEAD monitoring
-- Pull, checkout, merge, rebase, and reset reconciliation
-- Deleted-intelligence recovery
-- Dependency-aware invalidation
-- Atomic generation publication
-- Query continuity during updates
+### OkfConcept.ts
 
-## Semantic intelligence gaps
+The `createOkfConcept` function has structural issues:
 
-Verify support and correctness for:
+1. **Mismatched destructuring** - The function attempts to destructure `entityData` parameters but the destructured variables (`title`, `qualifiedName`, etc.) are not used in the function body. The body references `entityData.title`, `entityData.confidence`, etc., creating a disconnect.
 
-- Files and symbols
-- Imports and exports
-- References and calls
-- Classes, interfaces, inheritance, and implementation
-- React components and hooks
-- Routes and middleware
-- Tests and test mappings
-- Database and ORM relationships
-- Configuration and build metadata
-- Documentation concepts
-- Git change intelligence
+2. **Unused destructured variables** - Lines 469-504 reference `title`, `generation`, `confidence`, `tags`, `userAnnotations`, and other destructured variables that were never properly passed to the function.
 
-## CPG gaps
+3. **Invalid type usage** - The `type` field is being assigned a string value that doesn't match the enum type.
 
-Verify whether any real AST, CFG, data-flow, call, slicing, or taint representation exists. Do not label a simple file or symbol graph as a Code Property Graph.
+### OkfConceptIdFactory.ts
 
-## Storage gaps
+1. **Missing null checks** - `extractOwningFile` and `extractSymbolName` return `string` but can return `undefined` when the keystoneId format is invalid.
 
-Verify:
+2. **Unsafe path operations** - `normalizeName` is called with `relativePath` which may be `undefined`.
 
-- Local storage root
-- Manifests and schema versions
-- Atomic writes
-- Compressed shards
-- Reuse of unchanged shards
-- Immutable generations
-- Previous-generation retention
-- Recovery from corrupt or missing files
+### OkfConceptMapper.ts
 
-## Query gaps
+1. **Type compatibility issues** - Entity types and language strings are not validated against the enum types defined in `OkfConceptFrontmatterSchema`.
 
-Verify availability of overview, search, entity, neighborhood, path, impact, flow, tests, architecture, changes, diagnostics, and OKF queries. Check pagination, cancellation, generation identity, and Webview payload limits.
+2. **Missing relationship kind** - The `OkfRelationshipMetadata` interface requires a `kind` field that is not being set.
 
-## UI gaps
+## Required Fixes
 
-Verify whether the Intelligence section is still a placeholder and whether real data exists for overview, progress, search, explorer, entity inspection, graph, flow, impact, tests, OKF, and diagnostics.
+### Priority 1: OkfConcept.ts
 
-## Quality and compile gaps
+The `createOkfConcept` function needs complete restructuring:
 
-Codex must install dependencies and run:
+**Option A: Keep entityData as a separate parameter**
+```typescript
+export function createOkfConcept(
+  keystoneId: string,
+  entityType: string,
+  entityData: { /* ... all fields ... */ },
+  relationships: { /* ... all relationship types ... */ },
+  userAnnotations?: Record<string, string>
+): OkfConcept {
+  // Use entityData directly, don't destructure
+}
+```
 
-- Type check
-- Lint
-- Unit tests
-- Extension integration tests
-- UI tests
+**Option B: Destructure and use destructured variables**
+```typescript
+export function createOkfConcept(
+  keystoneId: string,
+  entityType: string,
+  {
+    title,
+    qualifiedName,
+    // ... all fields
+  }: { /* ... type ... */ },
+  relationships: { /* ... all relationship types ... */ },
+  userAnnotations?: Record<string, string>
+): OkfConcept {
+  // Use title, generation, confidence, etc. directly
+}
+```
 
-Record exact failures before implementation. Check for mismatched callback signatures, contract drift, invalid imports, missing worker bundles, Webview CSP issues, and large synchronous extension-host operations.
+**Option C: Use object literal parameter**
+```typescript
+export function createOkfConcept(
+  keystoneId: string,
+  entityType: string,
+  entityData: { /* ... all fields ... */ },
+  relationships: { /* ... all relationship types ... */ },
+  userAnnotations?: Record<string, string>
+): OkfConcept {
+  // Use entityData.title, entityData.confidence, etc.
+}
+```
 
-## Audit output required
+One of these approaches must be chosen and applied consistently throughout the function.
 
-For every verified gap, record:
+### Priority 2: OkfConceptIdFactory.ts
 
-- Status: real, partial, placeholder, incorrect, or absent
-- Exact file and symbol
-- Evidence from code
-- User impact
-- Recommended correction
-- Dependencies
-- Test required
+Add defensive checks:
+```typescript
+function extractOwningFile(keystoneId: string): string {
+  const parts = keystoneId.split(':');
+  if (parts.length < 3) {
+    throw new Error(`Invalid keystone_id format: ${keystoneId}`);
+  }
+  return parts[2];
+}
+```
+
+### Priority 3: OkfConceptMapper.ts
+
+Add validation and required fields:
+```typescript
+// Add type validation
+if (entityTypeType !== 'Method' && entityTypeType !== 'Class') {
+  throw new Error(`Invalid entityType: ${entityTypeType}`);
+}
+
+// Add relationship kind
+const relationshipMetadata: OkfRelationshipMetadata = {
+  kind: 'calls',
+  confidence: 0.9,
+  derivation: 'extracted',
+  evidence: '...',
+};
+```
+
+## Next Steps
+
+1. Choose and implement one of the three approaches for fixing `createOkfConcept`
+2. Apply defensive checks throughout the OKF module
+3. Run `npm run typecheck` to verify all errors are resolved
+4. Proceed with remaining OKF components (template engine, incremental planner, validation, browser UI)
+
+## Verification Required
+
+Before marking OKF complete:
+- [ ] All TypeScript errors resolved
+- [ ] Unit tests added for concept generation
+- [ ] Integration tests for incremental projection
+- [ ] Browser UI tests
+- [ ] Export functionality tested
+- [ ] All PLANS.md OKF items verified implemented
