@@ -1,5 +1,7 @@
 import {
   IntelligenceEntityDetailsSchema,
+  IntelligenceDiagnosticsRequestSchema,
+  IntelligenceDiagnosticsResultSchema,
   IntelligenceNeighborhoodRequestSchema,
   IntelligenceNeighborhoodSchema,
   IntelligenceOverviewSchema,
@@ -8,6 +10,8 @@ import {
   emptyIntelligenceOverview,
   type IntelligenceDiagnostic,
   type IntelligenceEntityDetails,
+  type IntelligenceDiagnosticsRequest,
+  type IntelligenceDiagnosticsResult,
   type IntelligenceNeighborhood,
   type IntelligenceOverview,
   type IntelligenceSearchRequest,
@@ -135,6 +139,7 @@ export class IntelligenceQueryService {
         currentFiles: runtime.currentFiles,
         health: runtime.health,
         ...(runtime.healthMessage ? { healthMessage: runtime.healthMessage } : {}),
+        ...(runtime.error ? { error: runtime.error } : {}),
         ...(runtime.trigger ? { trigger: runtime.trigger } : {}),
         ...(runtime.progress ? { progress: runtime.progress } : {})
       },
@@ -188,6 +193,24 @@ export class IntelligenceQueryService {
     const offset = parseCursor(query.cursor);
     const items = candidates.slice(offset, offset + query.limit);
     return IntelligenceSearchResultSchema.parse({ generation: snapshot.manifest.generation, items, total: candidates.length, ...(offset + items.length < candidates.length ? { nextCursor: String(offset + items.length) } : {}) });
+  }
+
+  async diagnostics(raw: IntelligenceDiagnosticsRequest, signal?: AbortSignal): Promise<IntelligenceDiagnosticsResult> {
+    const request = IntelligenceDiagnosticsRequestSchema.parse(raw);
+    const snapshot = this.store.getSnapshot();
+    if (!snapshot) return { generation: 0, items: [], total: 0 };
+    const matches: IntelligenceDiagnostic[] = [];
+    for (let index = 0; index < snapshot.diagnostics.length; index++) {
+      const diagnostic = snapshot.diagnostics[index]; if (!diagnostic) continue;
+      if ((index + 1) % 500 === 0) { throwIfCancelled(signal); await yieldToHost(); }
+      if (request.codes?.length && !request.codes.includes(diagnostic.code)) continue;
+      if (request.codePrefix && !diagnostic.code.startsWith(request.codePrefix)) continue;
+      if (request.severities?.length && !request.severities.includes(diagnostic.severity)) continue;
+      if (request.relativePath && diagnostic.relativePath !== request.relativePath) continue;
+      matches.push(diagnostic);
+    }
+    const offset = parseCursor(request.cursor); const items = matches.slice(offset, offset + request.limit);
+    return IntelligenceDiagnosticsResultSchema.parse({ generation: snapshot.manifest.generation, items, total: matches.length, ...(offset + items.length < matches.length ? { nextCursor: String(offset + items.length) } : {}) });
   }
 
   async entity(id: string, signal?: AbortSignal): Promise<IntelligenceEntityDetails | undefined> {
@@ -353,6 +376,7 @@ function runtimeOverview(runtime: ContinuousIntelligenceState): IntelligenceOver
     currentFiles: runtime.currentFiles,
     health: runtime.health,
     ...(runtime.healthMessage ? { healthMessage: runtime.healthMessage } : {}),
+    ...(runtime.error ? { error: runtime.error } : {}),
     ...(runtime.trigger ? { trigger: runtime.trigger } : {}),
     ...(runtime.progress ? { progress: runtime.progress } : {})
   };

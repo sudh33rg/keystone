@@ -191,6 +191,23 @@ export const IntelligenceDiagnosticSchema = z.object({
 }).strict();
 export type IntelligenceDiagnostic = z.infer<typeof IntelligenceDiagnosticSchema>;
 
+export const IntelligenceDiagnosticsRequestSchema = z.object({
+  codes: z.array(z.string().min(1)).max(50).optional(),
+  codePrefix: z.string().min(1).max(128).optional(),
+  severities: z.array(z.enum(["info", "warning", "error"])).max(3).optional(),
+  relativePath: z.string().max(1024).optional(),
+  limit: z.number().int().min(1).max(100).default(50),
+  cursor: z.string().max(64).optional()
+}).strict();
+export type IntelligenceDiagnosticsRequest = z.input<typeof IntelligenceDiagnosticsRequestSchema>;
+export const IntelligenceDiagnosticsResultSchema = z.object({
+  generation: z.number().int().nonnegative(),
+  items: z.array(IntelligenceDiagnosticSchema).max(100),
+  total: z.number().int().nonnegative(),
+  nextCursor: z.string().optional()
+}).strict();
+export type IntelligenceDiagnosticsResult = z.infer<typeof IntelligenceDiagnosticsResultSchema>;
+
 export const IntelligenceManifestSchema = z.object({
   schemaVersion: z.literal(INTELLIGENCE_SCHEMA_VERSION),
   generation: z.number().int().positive(),
@@ -284,8 +301,9 @@ export const IntelligenceRuntimeOverviewSchema = z.object({
   workerRestarts: z.number().int().nonnegative(),
   throughputFilesPerSecond: z.number().nonnegative(),
   currentFiles: z.array(z.string()).max(20),
-  health: z.enum(["healthy", "missing", "damaged", "recovering"]),
+  health: z.enum(["healthy", "missing", "damaged", "recovering", "building", "failed"]),
   healthMessage: z.string().optional(),
+  error: z.object({ code: z.string(), message: z.string(), technicalDetails: z.string().optional(), recommendedAction: z.string().optional() }).strict().optional(),
   trigger: z.enum(["manual", "file", "active-editor", "git", "startup", "storage-recovery", "workspace"]).optional(),
   progress: z.object({
     stage: z.enum(["inventory", "symbols", "publishing"]),

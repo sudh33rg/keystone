@@ -37,9 +37,9 @@ export class DefaultIgnorePolicy implements IgnorePolicy {
     const extension = extensionOf(name);
 
     if (lower === ".keystone" || lower.startsWith(".keystone/")) return decision("other", "excluded", false, true, false, false, "exclude.keystone-intelligence", "Keystone-generated intelligence is monitored separately and never ingested as repository source.");
+    if (isDependencyOrOutputPath(lower)) return decision("other", "excluded", false, true, false, false, "exclude.directory", "Dependency, cache, temporary, or generated output directory.");
     if (isTestPath(lower)) return decision("test", "deep", true, false, false, false, "include.test", "Tests are first-class source intelligence.");
     if (isSensitivePath(lower)) return decision("configuration", "metadata-only", true, false, false, true, "sensitive.metadata", "Sensitive file content is not read or persisted.");
-    if (isDependencyOrOutputPath(lower)) return decision("other", "excluded", false, true, false, false, "exclude.directory", "Dependency, cache, temporary, or generated output directory.");
     if (isMinifiedOrGenerated(lower)) return decision("asset", "excluded", false, true, false, false, "exclude.generated", "Generated or minified file.");
     if (BINARY_EXTENSIONS.has(extension) || (content !== undefined && this.isBinary(content))) {
       return decision("asset", "excluded", false, false, true, false, "exclude.binary", "Binary, archive, media, or office artifact.");
@@ -114,7 +114,7 @@ function isSensitivePath(path: string): boolean {
 }
 
 function isDependencyOrOutputPath(path: string): boolean {
-  return /(^|\/)(\.git|\.hg|\.svn|node_modules|vendor|bower_components|dist|build|out|bin|obj|target|coverage|\.coverage|\.nyc_output|test-results|__pycache__|\.pytest_cache|\.mypy_cache|\.ruff_cache|\.cache|\.turbo|\.next|\.nuxt|\.svelte-kit|\.astro|\.gradle|\.idea|\.venv|venv|env|tmp|temp)(\/|$)/.test(path);
+  return /(^|\/)(\.git|\.hg|\.svn|\.vscode-test|node_modules|vendor|bower_components|site-packages|\.pnpm-store|\.yarn|dist|build|out|bin|obj|target|coverage|\.coverage|\.nyc_output|test-results|__pycache__|\.pytest_cache|\.mypy_cache|\.ruff_cache|\.tox|\.nox|\.cache|\.turbo|\.next|\.nuxt|\.svelte-kit|\.astro|\.gradle|\.idea|\.venv|venv|env|tmp|temp)(\/|$)/.test(path);
 }
 
 function isMinifiedOrGenerated(path: string): boolean {

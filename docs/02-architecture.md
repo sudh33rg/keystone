@@ -2,6 +2,8 @@
 
 ## 1. Architectural drivers
 
+The active architecture contains only the Extension Host, React Webview, extension-managed local storage/workers, repository tools, and capability-proven GitHub Copilot integration. It has no centralized intelligence runtime, local inference/training process, or provider branch beyond deterministic services, GitHub Copilot, manual action, and unsupported results.
+
 1. Keystone is one VS Code extension repository and one deployed extension package.
 2. Repository access, Git, persistence, terminals, indexing, validation, and Copilot integration are trusted Extension Host operations.
 3. The React Webview is an untrusted presentation boundary and never accesses the repository directly.
@@ -67,7 +69,7 @@ flowchart TB
   subgraph HOST["Extension Host"]
     PROVIDER["KeystoneViewProvider"]
     ROUTER["WebviewMessageRouter"]
-    ORCH["WorkflowOrchestrator"]
+    ORCH["OrchestrationService"]
     INTENT["IntentService"]
     SPEC["SpecificationService"]
     TASKS["TaskGraphService"]
@@ -303,4 +305,3 @@ Persistence uses versioned snapshots plus an append-only bounded transition jour
 All errors contain code, safe message, technical details, operation, recoverability, recommended action, retry capability, correlation ID, and optional cause. Error categories are workspace, indexing, parsing, persistence, Copilot, agent, context, validation, terminal, Webview, and configuration.
 
 Errors affect the smallest possible scope. A single parse failure becomes an index warning; an unavailable agent blocks delegation for that task; corrupt persisted state enters recovery mode without deleting the original data.
-

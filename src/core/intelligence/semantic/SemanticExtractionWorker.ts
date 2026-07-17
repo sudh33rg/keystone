@@ -39,7 +39,11 @@ export class SemanticExtractionWorker implements SemanticExtractor {
         pending.abort = () => {
           this.pending.delete(id);
           pending.reject(abortError());
-          this.restart(this.workerPath, abortError(), false);
+          // The worker keeps its project context and finishes the already-running
+          // extraction off-thread. Its late result is ignored, and the next request
+          // is processed afterwards. Restarting here turns every preemption into an
+          // expensive full rebuild because the incremental compiler context is lost.
+          this.emit();
         };
         signal.addEventListener("abort", pending.abort, { once: true });
       }

@@ -28,7 +28,7 @@
 function normalizeName(name: string): string {
   return name
     .toLowerCase()
-    .replace(/[\/\\]+/g, '-')
+    .replace(/[/\\]+/g, '-')
     .replace(/\s+/g, '-')
     .replace(/-+/g, '-')
     .trim();
@@ -49,7 +49,7 @@ function extractOwningFile(keystoneId: string): string {
   if (parts.length < 3) {
     throw new Error(`Invalid keystone_id format: ${keystoneId}`);
   }
-  return parts[2];
+  return parts[2]!;
 }
 
 /**
@@ -64,7 +64,7 @@ function extractSymbolName(keystoneId: string): string {
   if (parts.length < 4) {
     throw new Error(`Invalid keystone_id format: ${keystoneId}`);
   }
-  return parts[3];
+  return parts[3]!;
 }
 
 /**
@@ -73,20 +73,6 @@ function extractSymbolName(keystoneId: string): string {
  * @param path - The file path
  * @returns The parent directory path
  */
-function getParentPath(path: string): string {
-  return path.split('/').slice(0, -1).join('/') || '.';
-}
-
-/**
- * Get the base name (file name) from a given file path
- *
- * @param path - The file path
- * @returns The base name (file name)
- */
-function getBaseName(path: string): string {
-  return path.split('/').pop() || path;
-}
-
 /**
  * Generate a stable OKF path for a concept.
  *
@@ -108,7 +94,7 @@ export function generateOkfPath(
     throw new Error(`Invalid keystone_id format: ${keystoneId}`);
   }
 
-  const owningFile = extractOwningFile(keystoneId);
+  extractOwningFile(keystoneId);
   const symbolName = extractSymbolName(keystoneId);
   const normalizedFileName = normalizeName(symbolName);
   const normalizedExtension = normalizeName(language);
@@ -222,7 +208,7 @@ export function validateKeystoneId(keystoneId: string, language: string): void {
   }
 
   const relativePath = parts[2];
-  if (relativePath.startsWith('/') || relativePath.startsWith('..')) {
+  if (!relativePath || relativePath.startsWith('/') || relativePath.startsWith('..')) {
     throw new Error(`Invalid keystone_id path: must be relative to workspace root in "${keystoneId}"`);
   }
 }

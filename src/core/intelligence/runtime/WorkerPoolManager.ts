@@ -233,7 +233,7 @@ export class WorkerPoolManager {
   constructor(requestedWorkerCount = 0, legacyStorageCapacity?: number) {
     const processors = availableParallelism();
     const total = legacyStorageCapacity === undefined
-      ? requestedWorkerCount > 0 ? Math.max(2, Math.min(requestedWorkerCount, Math.max(2, processors - 1))) : Math.max(2, Math.min(6, processors - 2))
+      ? requestedWorkerCount > 0 ? Math.max(2, Math.min(requestedWorkerCount, Math.max(2, processors - 1))) : 2
       : Math.max(2, requestedWorkerCount + legacyStorageCapacity);
     const storageCapacity = legacyStorageCapacity ?? 1;
     this.fastPool = new PersistentWorkerPool(Math.max(1, total - storageCapacity), this.handleStatus);

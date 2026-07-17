@@ -4,6 +4,11 @@ import type { IntelligenceOverview as IntelligenceOverviewModel } from "../share
 import { Icon } from "./components/Icon";
 import { IntelligenceOverview } from "./components/intelligence/IntelligenceOverview";
 import type { HostBridge } from "./services/HostBridge";
+import { DevelopmentWorkspace } from "./components/delegation/DevelopmentWorkspace";
+import { ExecutionValidationWorkspace } from "./components/execution/ExecutionValidationWorkspace";
+import { DeliveryWorkspace } from "./components/delivery/DeliveryWorkspace";
+import { TeamWorkflowWorkspace } from "./components/team/TeamWorkflowWorkspace";
+import { OrchestrationWorkspace } from "./components/orchestration/OrchestrationWorkspace";
 
 interface AppProps {
   bridge: HostBridge;
@@ -11,21 +16,19 @@ interface AppProps {
 
 const navigation: { id: NavigationSection; label: string; icon: Parameters<typeof Icon>[0]["name"] }[] = [
   { id: "home", label: "Home", icon: "home" },
-  { id: "intent", label: "Intent", icon: "intent" },
-  { id: "specifications", label: "Specifications", icon: "spec" },
-  { id: "tasks", label: "Tasks", icon: "tasks" },
   { id: "intelligence", label: "Intelligence", icon: "intelligence" },
-  { id: "context", label: "Context", icon: "context" },
-  { id: "validation", label: "Validation", icon: "validation" },
+  { id: "intent", label: "Intent & Specs", icon: "intent" },
+  { id: "tasks", label: "Tasks", icon: "tasks" },
+  { id: "orchestration", label: "Active Workflow", icon: "pulse" },
+  { id: "validation", label: "Validation & QA", icon: "validation" },
+  { id: "delivery", label: "Delivery", icon: "repo" },
+  { id: "team", label: "Task Handoff", icon: "tasks" },
+  { id: "diagnostics", label: "Diagnostics", icon: "pulse" },
   { id: "settings", label: "Settings", icon: "settings" }
 ];
 
-const sections: Record<Exclude<NavigationSection, "home" | "settings" | "intelligence">, { eyebrow: string; title: string; description: string; phase: string; icon: Parameters<typeof Icon>[0]["name"] }> = {
-  intent: { eyebrow: "Understand the work", title: "Intent", description: "Capture raw requests, choose a development mode, and turn repository evidence into a structured objective.", phase: "Planned for Phase 3 · T-301", icon: "intent" },
-  specifications: { eyebrow: "Approve before execution", title: "Specifications", description: "Review scope, behavior, constraints, acceptance criteria, revisions, and decisions before implementation begins.", phase: "Planned for Phase 3 · T-302–T-304", icon: "spec" },
-  tasks: { eyebrow: "Controlled execution", title: "Tasks", description: "Inspect dependency order, agent assignments, expected files, execution attempts, and retry history.", phase: "Planned for Phase 5 · T-501–T-504", icon: "tasks" },
-  context: { eyebrow: "Minimum useful evidence", title: "Context", description: "Preview why files and symbols were selected, control inclusions, and keep every delegation inside its budget.", phase: "Planned for Phase 4 · T-403–T-405", icon: "context" },
-  validation: { eyebrow: "Evidence over assumption", title: "Validation", description: "Trace build, lint, tests, changed files, and specification criteria into a completion decision.", phase: "Planned for Phase 6 · T-601–T-604", icon: "validation" }
+const sections: Record<"validation", { eyebrow: string; title: string; description: string; phase: string; icon: Parameters<typeof Icon>[0]["name"] }> = {
+  validation: { eyebrow: "Evidence over assumption", title: "Validation", description: "Trace build, lint, tests, changed files, and specification criteria into a completion decision.", phase: "Recommended next milestone · not started", icon: "validation" }
 };
 
 export function App({ bridge }: AppProps): React.JSX.Element {
@@ -45,6 +48,7 @@ export function App({ bridge }: AppProps): React.JSX.Element {
       if (message.type === "state/updated") setState(message.payload);
       if (message.type === "activity/updated") setActivity(message.payload);
       if (message.type === "intelligence/updated") setOverview(message.payload);
+      if (message.type === "intelligence/runtime") setOverview((current) => current ? { ...current, status: message.payload.status, pendingUpdate: message.payload.pendingUpdate, runtime: message.payload } : current);
     });
     void bridge.request("app/bootstrap", {}).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)));
     return unsubscribe;
@@ -60,7 +64,9 @@ export function App({ bridge }: AppProps): React.JSX.Element {
   }, [bridge, state?.activeSection]);
 
   const activeSection = state?.activeSection ?? "home";
-  const implementationProgress = useMemo(() => bootstrap ? `${bootstrap.implementation.completedTasks.length} foundation tasks complete` : "Connecting to Extension Host", [bootstrap]);
+  const intentActive = ["intent", "specifications"].includes(activeSection);
+  const tasksActive = ["tasks", "context"].includes(activeSection);
+  const implementationProgress = useMemo(() => bootstrap ? `${bootstrap.implementation.completedTasks.length} milestone capabilities complete` : "Connecting to Extension Host", [bootstrap]);
 
   const navigate = (section: NavigationSection): void => {
     if (state) setState({ ...state, activeSection: section });
@@ -77,7 +83,7 @@ export function App({ bridge }: AppProps): React.JSX.Element {
 
       <nav className="navigation" aria-label="Keystone sections">
         {navigation.map((item) => (
-          <button key={item.id} className={activeSection === item.id ? "nav-item active" : "nav-item"} onClick={() => navigate(item.id)} aria-current={activeSection === item.id ? "page" : undefined}>
+          <button key={item.id} className={activeSection === item.id || (item.id === "intent" && intentActive) || (item.id === "tasks" && tasksActive) ? "nav-item active" : "nav-item"} onClick={() => navigate(item.id)} aria-current={activeSection === item.id || (item.id === "intent" && intentActive) || (item.id === "tasks" && tasksActive) ? "page" : undefined}>
             <Icon name={item.icon}/><span>{item.label}</span>
           </button>
         ))}
@@ -95,7 +101,7 @@ export function App({ bridge }: AppProps): React.JSX.Element {
             onResume={() => { void bridge.request("intelligence/runtime/resume", {}).catch(showError(setError)); }}
             onRefresh={() => { void bridge.request("intelligence/overview", {}).then(setOverview).catch(showError(setError)); }}
           />
-        ) : <PlannedSection section={sections[activeSection]}/>}
+        ) : activeSection === "intent" || activeSection === "specifications" || activeSection === "tasks" || activeSection === "context" ? <><nav className="orchestration-tabs" aria-label="Development workflow views">{(["intent", "specifications", "tasks", "context"] as const).map((section) => <button key={section} className={activeSection === section ? "active" : ""} onClick={() => navigate(section)}>{section === "specifications" ? "Specification" : section[0]!.toUpperCase() + section.slice(1)}</button>)}</nav><DevelopmentWorkspace bridge={bridge} section={activeSection}/></> : activeSection === "validation" ? <ExecutionValidationWorkspace bridge={bridge}/> : activeSection === "delivery" ? <DeliveryWorkspace bridge={bridge}/> : activeSection === "team" ? <TeamWorkflowWorkspace bridge={bridge}/> : activeSection === "orchestration" ? <OrchestrationWorkspace bridge={bridge}/> : activeSection === "diagnostics" ? <Diagnostics bootstrap={bootstrap} overview={overview} activity={activity}/> : <PlannedSection section={sections.validation}/>}
       </main>
 
       <aside className={`activity-panel ${activity?.status ?? "idle"}`} aria-label="Current activity">
@@ -105,6 +111,10 @@ export function App({ bridge }: AppProps): React.JSX.Element {
       </aside>
     </div>
   );
+}
+
+function Diagnostics({ bootstrap, overview, activity }: { bootstrap: BootstrapSnapshot; overview?: IntelligenceOverviewModel; activity?: Activity }): React.JSX.Element {
+  return <section className="page settings-page"><div className="eyebrow">Bounded product health</div><h1>Diagnostics</h1><p>Current Extension Host, repository, Intelligence, and operation state. No credentials or repository source are included.</p><div className="settings-list"><div><span><strong>Workspace trust</strong><small>Executable and mutating actions require a trusted workspace</small></span><span className="setting-value">{bootstrap.workspace.trust}</span></div><div><span><strong>Intelligence</strong><small>Canonical local generation</small></span><span className="setting-value">{overview?.status ?? bootstrap.workspace.indexStatus} · generation {overview?.generation ?? 0}</span></div><div><span><strong>Current operation</strong><small>{activity?.detail ?? "No active operation"}</small></span><span className="setting-value">{activity?.status ?? "idle"}</span></div><div><span><strong>Persistence</strong><small>Extension-managed files; no external database or backend</small></span><span className="setting-value">Local</span></div></div></section>;
 }
 
 function LoadingView(): React.JSX.Element {
@@ -140,7 +150,7 @@ function Home({ bootstrap, onNavigate }: { bootstrap: BootstrapSnapshot; onNavig
 
         <article className="status-card privacy-card">
           <div className="card-heading"><span className="card-icon"><Icon name="lock"/></span><span><small>PRIVACY BASELINE</small><strong>Local by default</strong></span></div>
-          <p>Repository intelligence is stored in extension-managed local files. No repository content is transmitted by this milestone.</p>
+          <p>Canonical intelligence stays in extension-managed local files. Only an explicitly reviewed and approved task prompt may be handed to Copilot.</p>
         </article>
       </div>
 

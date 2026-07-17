@@ -1,22 +1,14 @@
 # Keystone
 
-Keystone is a VS Code extension that turns developer intent into visible, repository-aware, specification-driven work delegated to GitHub Copilot.
+Keystone is a VS Code extension that builds deterministic repository intelligence, converts developer intent into approved specifications and task plans, constructs token-efficient context, delegates approved implementation tasks to GitHub Copilot, validates results, supports QA/security/performance checks, prepares Git and PR delivery, and enables Task Handoff.
 
 The project is being implemented progressively from the approved specification in the `docs/` directory.
 
 ## Current implementation
 
-Foundation Phase 1:
+Keystone remains one VS Code extension package with a React/Vite Webview, extension-managed local persistence, deterministic repository Intelligence/semantic graph/CPG/query services, intent/specification/task workflows, bounded context construction, capability-driven Copilot delegation, execution and validation tracking, Git/PR delivery, and portable Task Handoff.
 
-- single VS Code extension package;
-- lazy Activity Bar Webview activation;
-- React/Vite control-center shell;
-- typed, runtime-validated Webview bridge;
-- versioned workspace persistence and recovery;
-- structured redacted logging and errors;
-- configuration baseline and foundation tests.
-
-Repository intelligence begins in Phase 2. Unimplemented capabilities are labeled as unavailable in the UI; Keystone does not mock Copilot or task-completion behavior.
+There is no backend, external database, centralized intelligence service, or active local-model/training runtime. Future ideas are separated in [the roadmap](docs/10-future-roadmap.md) and do not affect current builds or release gates.
 
 ## Development
 

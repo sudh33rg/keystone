@@ -12,16 +12,27 @@ export class CpgShardStore {
   async writeGeneration(pendingGeneration: string, previousGeneration: string | undefined, delta: CpgDelta, beforeCommit?: () => void): Promise<CpgGenerationManifest> {
     const cpgRoot = join(pendingGeneration, "cpg");
     await mkdir(join(cpgRoot, "scopes"), { recursive: true });
+    const previousScopes = await this.loadPreviousScopes(previousGeneration);
     let shardBytes = 0;
-    for (const artifact of delta.scopes) {
-      const target = join(pendingGeneration, artifact.descriptor.shard);
-      const previous = previousGeneration ? join(previousGeneration, artifact.descriptor.shard) : undefined;
-      let reused = false;
-      if (artifact.reused && previous) {
-        try { await mkdir(dirname(target), { recursive: true }); await link(previous, target); reused = true; } catch { reused = false; }
-      }
-      if (!reused) await this.writer.write(target, this.serializeCompressed(artifact), beforeCommit);
-      shardBytes += (await stat(target)).size;
+    let scopesReused = 0;
+    const concurrency = 8;
+    for (let index = 0; index < delta.scopes.length; index += concurrency) {
+      const sizes = await Promise.all(delta.scopes.slice(index, index + concurrency).map(async (artifact) => {
+        beforeCommit?.();
+        const target = join(pendingGeneration, artifact.descriptor.shard);
+        const previousDescriptor = previousScopes.get(artifact.descriptor.id);
+        const previous = previousGeneration && previousDescriptor && canReuse(previousDescriptor, artifact.descriptor)
+          ? join(previousGeneration, previousDescriptor.shard)
+          : undefined;
+        let reused = false;
+        if (previous) {
+          try { await mkdir(dirname(target), { recursive: true }); await link(previous, target); reused = true; } catch { reused = false; }
+        }
+        if (!reused) await this.writer.write(target, this.serializeCompressed(artifact), beforeCommit);
+        if (reused) scopesReused += 1;
+        return (await stat(target)).size;
+      }));
+      shardBytes += sizes.reduce((sum, size) => sum + size, 0);
     }
     const manifest: CpgGenerationManifest = {
       schemaVersion: 1,
@@ -30,8 +41,8 @@ export class CpgShardStore {
       scopes: delta.scopes.map((artifact) => artifact.descriptor).sort((left, right) => left.id.localeCompare(right.id)),
       indexes: buildIndexes(delta),
       metrics: {
-        scopesBuilt: delta.scopes.filter((artifact) => !artifact.reused).length,
-        scopesReused: delta.scopes.filter((artifact) => artifact.reused).length,
+        scopesBuilt: delta.scopes.length - scopesReused,
+        scopesReused,
         buildTimeMs: delta.buildTimeMs,
         shardBytes,
         analysisFailures: delta.scopes.reduce((count, artifact) => count + artifact.diagnostics.filter((item) => item.severity === "error").length, 0),
@@ -49,8 +60,8 @@ export class CpgShardStore {
     try {
       const parsed = CpgGenerationManifestSchema.parse(await this.parseJson(await readFile(join(generationRoot, "cpg", "manifest.json"), "utf8")));
       if (parsed.semanticGeneration !== expectedGeneration) throw new Error("The CPG manifest targets a different semantic generation.");
-      for (const descriptor of parsed.scopes) await stat(join(generationRoot, descriptor.shard));
-      for (const file of ["scope-by-symbol", "calls", "reads", "writes", "data-flow"]) await stat(join(generationRoot, "cpg", "indexes", `${file}.json.gz`));
+      await statInBatches(parsed.scopes.map((descriptor) => join(generationRoot, descriptor.shard)));
+      await Promise.all(["scope-by-symbol", "calls", "reads", "writes", "data-flow"].map((file) => stat(join(generationRoot, "cpg", "indexes", `${file}.json.gz`))));
       return parsed;
     } catch (cause) { if (isMissing(cause)) return undefined; throw cause; }
   }
@@ -66,10 +77,27 @@ export class CpgShardStore {
   private async *serializeCompressed(value: unknown): AsyncGenerator<Uint8Array> { const serialized = this.worker.stringifyJson ? await this.worker.stringifyJson(value) : JSON.stringify(value); yield this.worker.gzip ? await this.worker.gzip(new TextEncoder().encode(serialized)) : await gzip(new TextEncoder().encode(serialized)); }
   private parseJson(value: string): Promise<unknown> { return this.worker.parseJson(value); }
   private async parseGzipJson(value: Uint8Array): Promise<unknown> { if (this.worker.parseGzipJson) return this.worker.parseGzipJson(value); const output = await gunzip(value); return this.worker.parseJson(new TextDecoder().decode(output)); }
+
+  private async loadPreviousScopes(previousGeneration: string | undefined): Promise<Map<string, CpgGenerationManifest["scopes"][number]>> {
+    if (!previousGeneration) return new Map();
+    try {
+      const manifest = CpgGenerationManifestSchema.parse(await this.parseJson(await readFile(join(previousGeneration, "cpg", "manifest.json"), "utf8")));
+      return new Map(manifest.scopes.map((descriptor) => [descriptor.id, descriptor]));
+    } catch {
+      return new Map();
+    }
+  }
 }
 
 function gzip(value: Uint8Array): Promise<Uint8Array> { return new Promise((resolve, reject) => gzipCallback(value, (error, output) => error ? reject(error) : resolve(output))); }
 function gunzip(value: Uint8Array): Promise<Uint8Array> { return new Promise((resolve, reject) => gunzipCallback(value, (error, output) => error ? reject(error) : resolve(output))); }
 function isMissing(value: unknown): boolean { return Boolean(value && typeof value === "object" && "code" in value && value.code === "ENOENT"); }
+function canReuse(previous: CpgGenerationManifest["scopes"][number], next: CpgGenerationManifest["scopes"][number]): boolean {
+  return previous.structuralHash === next.structuralHash
+    && previous.providerId === next.providerId
+    && previous.providerVersion === next.providerVersion
+    && previous.schemaVersion === next.schemaVersion;
+}
+async function statInBatches(paths: string[], concurrency = 64): Promise<void> { for (let index = 0; index < paths.length; index += concurrency) await Promise.all(paths.slice(index, index + concurrency).map((path) => stat(path))); }
 function buildIndexes(delta: CpgDelta): CpgGenerationManifest["indexes"] { const scopeBySymbol: Record<string, string[]> = {}; const calls: Record<string, number> = {}; const reads: Record<string, number> = {}; const writes: Record<string, number> = {}; const dataFlow: Record<string, number> = {}; for (const artifact of delta.scopes) { (scopeBySymbol[artifact.descriptor.semanticSymbolId] ??= []).push(artifact.descriptor.id); calls[artifact.descriptor.id] = artifact.descriptor.summary.calls; reads[artifact.descriptor.id] = artifact.descriptor.summary.reads; writes[artifact.descriptor.id] = artifact.descriptor.summary.writes; dataFlow[artifact.descriptor.id] = artifact.edges.filter((edge) => ["FLOWS_TO", "REACHING_DEFINITION", "ARGUMENT_TO_PARAMETER", "RETURN_TO_CALL"].includes(edge.type)).length; } return { scopeBySymbol, calls, reads, writes, dataFlow }; }
 function indexFile(name: string): string { return name === "scopeBySymbol" ? "scope-by-symbol" : name === "dataFlow" ? "data-flow" : name; }

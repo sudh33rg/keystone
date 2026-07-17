@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { IngestionScheduler } from "../../../../src/core/intelligence/runtime/IngestionScheduler";
 
 describe("IngestionScheduler", () => {
@@ -48,5 +48,28 @@ describe("IngestionScheduler", () => {
     expect(completed).toBe(true);
     expect(scheduler.getStatus()).toMatchObject({ paused: false, queueDepth: 0, completedJobs: 1, failedJobs: 0 });
     scheduler.dispose();
+  });
+
+  it("fails and cancels ingestion that exceeds its time budget", async () => {
+    vi.useFakeTimers();
+    const onError = vi.fn();
+    let aborted = false;
+    const scheduler = new IngestionScheduler(onError, 100);
+    scheduler.enqueue({
+      key: "stalled",
+      reason: "startup",
+      priority: 5,
+      paths: [],
+      baseGeneration: 0,
+      run: ({ signal }) => new Promise<void>(() => signal.addEventListener("abort", () => { aborted = true; }, { once: true }))
+    });
+
+    await vi.advanceTimersByTimeAsync(101);
+
+    expect(aborted).toBe(true);
+    expect(scheduler.getStatus()).toMatchObject({ queueDepth: 0, failedJobs: 1 });
+    expect(onError.mock.calls[0]?.[0]).toMatchObject({ code: "INTELLIGENCE_INGESTION_TIMEOUT" });
+    scheduler.dispose();
+    vi.useRealTimers();
   });
 });

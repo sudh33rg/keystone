@@ -51,13 +51,16 @@ export class SemanticGraphBuilder {
 }
 
 export function emptyIndexes(): IntelligenceIndexes {
-  return { byName: {}, byQualifiedName: {}, byPath: {}, byType: {}, byLanguage: {}, incoming: {}, outgoing: {}, routeHandlers: {}, testTargets: {}, packageMembership: {}, configurationUsage: {} };
+  return { byName: stringIndex(), byQualifiedName: stringIndex(), byPath: stringIndex(), byType: stringIndex(), byLanguage: stringIndex(), incoming: stringIndex(), outgoing: stringIndex(), routeHandlers: stringIndex(), testTargets: stringIndex(), packageMembership: stringIndex(), configurationUsage: stringIndex() };
 }
 
 function add(index: Record<string, string[]>, key: string, id: string): void {
-  const values = index[key] ?? (index[key] = []);
+  const existing = Object.prototype.hasOwnProperty.call(index, key) ? index[key] : undefined;
+  const values = Array.isArray(existing) ? existing : (index[key] = []);
   if (!values.includes(id)) values.push(id);
 }
+
+function stringIndex(): Record<string, string[]> { return Object.create(null) as Record<string, string[]>; }
 
 function addRelationshipIndexes(indexes: IntelligenceIndexes, relationship: IntelligenceSnapshot["relationships"][number]): void {
   add(indexes.outgoing, relationship.sourceId, relationship.id);

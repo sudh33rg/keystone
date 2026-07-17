@@ -27,5 +27,21 @@ describe("WebviewRequestSchema", () => {
     const result = WebviewRequestSchema.safeParse({ ...validBase, type: "settings/open", payload: { query: "keystone", injected: true } });
     expect(result.success).toBe(false);
   });
-});
 
+  it("accepts typed team assignment requests and rejects unbounded notes", () => {
+    const ids = { workflowId: crypto.randomUUID(), taskId: crypto.randomUUID(), assignedBy: crypto.randomUUID(), assignedTo: crypto.randomUUID() };
+    expect(WebviewRequestSchema.safeParse({ ...validBase, type: "assignment/create", payload: ids }).success).toBe(true);
+    expect(WebviewRequestSchema.safeParse({ ...validBase, type: "assignment/create", payload: { ...ids, notes: "x".repeat(20_001) } }).success).toBe(false);
+  });
+
+  it("keeps repository-artifact export explicit and typed", () => {
+    expect(WebviewRequestSchema.safeParse({ ...validBase, type: "handoff/export", payload: { packageId: crypto.randomUUID(), mode: "repository-artifact" } }).success).toBe(true);
+    expect(WebviewRequestSchema.safeParse({ ...validBase, type: "handoff/export", payload: { packageId: crypto.randomUUID(), mode: "auto-push" } }).success).toBe(false);
+  });
+
+  it("rejects removed future-roadmap request surfaces", () => {
+    for (const type of ["hub/search", "hub/publish", "model/list", "training/start", "routing/decide"]) {
+      expect(WebviewRequestSchema.safeParse({ ...validBase, type, payload: {} }).success).toBe(false);
+    }
+  });
+});

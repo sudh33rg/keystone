@@ -38,7 +38,7 @@ export interface IntelligenceRuntimeState {
   scanRevision: number;
   trigger?: RepositoryChangeReason | "manual";
   progress?: IndexProgress;
-  error?: { code: string; message: string };
+  error?: { code: string; message: string; technicalDetails?: string; recommendedAction?: string };
 }
 
 export interface IntelligenceHasher {
@@ -208,7 +208,7 @@ export class RepositoryIndexService {
     }
 
     this.progress(run, { stage: "inventory", fileCount: 0, totalFiles: candidates.length, currentFiles: [] });
-    const concurrency = Math.max(1, Math.min(4, configuration.workerCount || 2));
+    const concurrency = Math.max(1, Math.min(4, configuration.workerCount || 1));
     for (let index = 0; index < candidates.length; index += concurrency) {
       this.assertCurrent(run);
       const batch = candidates.slice(index, index + concurrency);
@@ -272,7 +272,7 @@ export class RepositoryIndexService {
       snapshot.manifest.extractorVersions[semantic.parserId] = semantic.parserVersion;
       cpgDelta = semantic.cpg;
       adapterState = semantic.adapterState;
-      for (const capability of adapterState?.capabilities ?? []) snapshot.manifest.extractorVersions[capability.adapterId] = capability.version;
+      for (const capability of adapterState?.capabilities ?? []) snapshot.manifest.extractorVersions[capability.adapterId] ??= capability.version;
       if (cpgDelta && cpgDelta.semanticGeneration !== generation) throw this.error("INTELLIGENCE_CPG_STALE", "The CPG worker result targets a different semantic generation.", true);
       if (cpgDelta) snapshot.manifest.extractorVersions[cpgDelta.providerId] = cpgDelta.providerVersion;
     }
@@ -302,7 +302,10 @@ export class RepositoryIndexService {
     for (const root of roots) {
       if (remaining <= 0) break;
       const found = await this.workspace.listFiles(root, remaining);
-      const relevant = found.filter((file) => this.ignorePolicy.decide(file.relativePath).ruleId !== "exclude.keystone-intelligence");
+      const relevant = found.filter((file) => {
+        const decision = this.ignorePolicy.decide(file.relativePath);
+        return decision.included || !["exclude.directory", "exclude.generated", "exclude.binary", "exclude.keystone-intelligence"].includes(decision.ruleId);
+      });
       candidates.push(...relevant);
       remaining -= relevant.length;
       await yieldToHost();
@@ -411,7 +414,7 @@ export class RepositoryIndexService {
     const error = KeystoneError.fromUnknown(cause, "intelligence.update");
     this.logger.error(error);
     const snapshot = this.store.getSnapshot();
-    this.state = { status: snapshot?.manifest.status ?? "failed", pendingUpdate: false, scanRevision: run.revision, trigger: run.trigger, error: { code: error.code, message: error.message } };
+    this.state = { status: snapshot?.manifest.status ?? "failed", pendingUpdate: false, scanRevision: run.revision, trigger: run.trigger, error: { code: error.code, message: error.message, ...(error.technicalDetails ? { technicalDetails: error.technicalDetails } : {}), recommendedAction: error.recommendedAction } };
     this.emit();
     run.reject(error);
   }

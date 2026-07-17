@@ -33,7 +33,8 @@ export class TypeScriptCpgProvider implements CodeAnalysisProvider {
     for (const input of request.files.filter((file) => this.supports(file.language))) {
       const source = request.program.getSourceFiles().find((item) => item.fileName.replace(/\\/g, "/").endsWith(`/${input.relativePath}`));
       if (!source) continue;
-      const context: CpgBuildContext = { repositoryId: request.repositoryId, generation: request.generation, providerVersion: this.version, program: request.program, input, source, entities: request.entities, relationships: request.relationships, evidence: request.evidence, analysisLevel: request.analysisLevel };
+      const entityIndex = new Map(request.entities.filter((entity) => entity.fileId === input.fileId).map((entity) => [`${entity.name}:${entity.range.startLine}`, entity.id]));
+      const context: CpgBuildContext = { repositoryId: request.repositoryId, generation: request.generation, providerVersion: this.version, program: request.program, input, source, entities: request.entities, entityIndex, relationships: request.relationships, evidence: request.evidence, analysisLevel: request.analysisLevel };
       contexts.push(context); artifacts.push(...this.builder.buildFile(context, this.cache, false));
     }
     this.builder.bindProject(artifacts, contexts);

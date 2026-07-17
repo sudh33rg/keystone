@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { IntelligenceEntityDetails, IntelligenceNeighborhood, IntelligenceSearchResult } from "../../../shared/contracts/intelligence";
 import type { HostBridge } from "../../services/HostBridge";
 import { CodeAnalysis } from "./CodeAnalysis";
@@ -15,6 +15,8 @@ const EXPLORER_GROUPS = [
   { label: "Documentation", types: ["keystone.core.Document", "keystone.core.Section", "keystone.core.ArchitectureDecision"] },
   { label: "Configuration", types: ["keystone.core.ConfigurationKey", "keystone.core.EnvironmentVariable"] }
 ];
+
+export interface IntelligenceBrowseDetail { query?: string; entityTypes?: string[]; languages?: string[] }
 
 export function SemanticBrowser({ bridge }: { bridge: HostBridge }): React.JSX.Element {
   const [query, setQuery] = useState("");
@@ -46,6 +48,17 @@ export function SemanticBrowser({ bridge }: { bridge: HostBridge }): React.JSX.E
     setQuery(""); setEntityType(""); setLoading(true); setError(undefined);
     void bridge.request("intelligence/search", { query: "", limit: 20, entityTypes: types }).then(setResult).catch(showError(setError)).finally(() => setLoading(false));
   };
+  useEffect(() => {
+    const listener = (event: Event): void => {
+      const detail = (event as CustomEvent<IntelligenceBrowseDetail>).detail;
+      const nextQuery = detail.query ?? ""; const types = detail.entityTypes; const languages = detail.languages;
+      setQuery(nextQuery); setEntityType(types?.length === 1 ? types[0]! : ""); setLanguage(languages?.length === 1 ? languages[0]! : ""); setLoading(true); setError(undefined); setEntity(undefined); setNeighborhood(undefined);
+      void bridge.request("intelligence/search", { query: nextQuery, limit: 20, ...(types?.length ? { entityTypes: types } : {}), ...(languages?.length ? { languages } : {}) }).then(setResult).catch(showError(setError)).finally(() => setLoading(false));
+      window.requestAnimationFrame(() => document.querySelector(".semantic-search")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    };
+    window.addEventListener("keystone:intelligence-browse", listener);
+    return () => window.removeEventListener("keystone:intelligence-browse", listener);
+  }, [bridge]);
 
   return (
     <section className="semantic-browser" aria-label="Semantic intelligence browser">

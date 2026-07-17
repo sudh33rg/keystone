@@ -15,10 +15,11 @@ describe("SemanticBrowser", () => {
       if (type === "intelligence/cpg/scope") return Promise.resolve(cpgResult());
       if (type === "intelligence/technologies") return Promise.resolve({ generation: 3, total: 1, items: [{ technologyId: "openapi", adapterId: "keystone.adapter.contract", adapterVersion: "1.0.0", capabilityLevel: "structural", filesDiscovered: 1, filesParsed: 1, filesFailed: 0, filesMetadataOnly: 0, entitiesExtracted: 3, relationshipsResolved: 2, unresolvedReferences: 0, unsupportedConstructs: 0, lastSuccessfulUpdate: "2026-07-15T00:00:00.000Z", freshness: "current" }], detections: [] });
       if (type === "intelligence/adapter-diagnostics") return Promise.resolve({ generation: 3, total: 1, items: [{ code: "partial-support", severity: "info", message: "Only structural contract parsing is available.", adapterId: "keystone.adapter.contract", technologyId: "openapi", limitation: true }] });
+      if (type === "intelligence/query/templates") return Promise.resolve({ templates: [] });
       return Promise.resolve(undefined);
     });
     render(<SemanticBrowser bridge={{ request } as unknown as HostBridge}/>);
-    expect(await screen.findByText("openapi")).toBeTruthy();
+    expect((await screen.findAllByText("openapi")).length).toBeGreaterThan(0);
     expect(screen.getByText("structural")).toBeTruthy();
     expect(screen.getByText("Adapter diagnostics (1)")).toBeTruthy();
     fireEvent.change(screen.getByLabelText("Search semantic intelligence"), { target: { value: "run" } });

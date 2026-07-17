@@ -64,7 +64,8 @@ describe("RepositoryIndexService", () => {
     await completed;
 
     const snapshot = store.getSnapshot();
-    expect(snapshot?.files).toHaveLength(5);
+    expect(snapshot?.files).toHaveLength(4);
+    expect(snapshot?.files.some((file) => file.relativePath.startsWith("dist/"))).toBe(false);
     expect(snapshot?.files.find((file) => file.relativePath === "tests/index.test.ts")?.classification).toMatchObject({ category: "test", included: true, generated: false });
     expect(snapshot?.files.find((file) => file.relativePath === "src/excluded.ts")?.classification).toMatchObject({ included: false, analysisLevel: "excluded", ruleId: "exclude.user" });
     expect(snapshot?.files.find((file) => file.relativePath === ".env")?.contentHash).toBeUndefined();

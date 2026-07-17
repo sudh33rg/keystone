@@ -1,3 +1,4 @@
+import ts from "typescript";
 import type {
   AdapterCapability,
   AdapterDetection,
@@ -75,8 +76,24 @@ export function detection(adapterId: string, technologyId: string, level: Adapte
 }
 
 export function matches(path: string, expressions: readonly RegExp[]): boolean { return expressions.some((expression) => expression.test(path)); }
+export function importsModule(file: SemanticSourceFileInput, modules: readonly string[]): boolean {
+  if (!["typescript", "typescriptreact", "javascript", "javascriptreact"].includes(file.language)) return false;
+  const source = ts.createSourceFile(file.relativePath, file.content, ts.ScriptTarget.Latest, false, scriptKind(file.language));
+  const matchesModule = (value: string): boolean => modules.some((module) => value === module || value.startsWith(`${module}/`));
+  let found = false;
+  const visit = (node: ts.Node): void => {
+    if (found) return;
+    if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier && ts.isStringLiteralLike(node.moduleSpecifier) && matchesModule(node.moduleSpecifier.text)) found = true;
+    else if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference) && node.moduleReference.expression && ts.isStringLiteralLike(node.moduleReference.expression) && matchesModule(node.moduleReference.expression.text)) found = true;
+    else if (ts.isCallExpression(node) && (node.expression.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(node.expression) && node.expression.text === "require")) && node.arguments[0] && ts.isStringLiteralLike(node.arguments[0]) && matchesModule(node.arguments[0].text)) found = true;
+    if (!found) ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return found;
+}
 export function lines(content: string): Array<{ text: string; start: number; end: number }> {
   const result = []; let offset = 0;
   for (const text of content.split(/\n/)) { result.push({ text, start: offset, end: offset + text.length }); offset += text.length + 1; }
   return result;
 }
+function scriptKind(language: string): ts.ScriptKind { return language === "typescriptreact" ? ts.ScriptKind.TSX : language === "javascriptreact" ? ts.ScriptKind.JSX : language === "javascript" ? ts.ScriptKind.JS : ts.ScriptKind.TS; }

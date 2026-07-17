@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 
 export type DevelopmentMode = "quick" | "guided" | "spec-driven";
-export type AgentSelectionMode = "manual" | "recommended" | "automatic" | "fixed";
+export type AgentSelectionMode = "manual" | "recommended" | "rule-based" | "fixed-workflow";
 export type LogLevel = "debug" | "info" | "warning" | "error";
 
 export interface KeystoneConfiguration {
@@ -69,7 +69,7 @@ export class ConfigurationService {
         requireSpecApproval: workflow.get("requireSpecApproval", true)
       },
       agents: {
-        selectionMode: enumValue(agents.get("selectionMode", "recommended"), ["manual", "recommended", "automatic", "fixed"], "recommended")
+        selectionMode: enumValue(agents.get("selectionMode", "recommended"), ["manual", "recommended", "rule-based", "fixed-workflow"], "recommended")
       },
       validation: {
         runBuild: validation.get("runBuild", true),

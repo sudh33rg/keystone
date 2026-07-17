@@ -21,7 +21,6 @@
   ],
   "activationEvents": [
     "onStartupFinished",
-    "onView:keystone.controlCenter",
     "onCommand:keystone.open"
   ],
   "main": "./dist/extension/extension.js",
@@ -40,24 +39,6 @@
     "package": "npm run verify && vsce package --allow-missing-repository"
   },
   "contributes": {
-    "viewsContainers": {
-      "activitybar": [
-        {
-          "id": "keystone",
-          "title": "Keystone",
-          "icon": "resources/keystone.svg"
-        }
-      ]
-    },
-    "views": {
-      "keystone": [
-        {
-          "id": "keystone.controlCenter",
-          "name": "Control Center",
-          "type": "webview"
-        }
-      ]
-    },
     "commands": [
       {
         "command": "keystone.open",
@@ -70,15 +51,6 @@
         "icon": "$(output)"
       }
     ],
-    "menus": {
-      "view/title": [
-        {
-          "command": "keystone.showLogs",
-          "when": "view == keystone.controlCenter",
-          "group": "navigation"
-        }
-      ]
-    },
     "configuration": {
       "title": "Keystone",
       "properties": {
@@ -114,7 +86,7 @@
           "default": 0,
           "minimum": 0,
           "maximum": 32,
-          "description": "Persistent intelligence worker count. Use 0 to select a safe automatic value."
+          "description": "Persistent intelligence worker count. Use 0 for the low-impact automatic default (two utility workers plus one semantic worker)."
         },
         "keystone.indexing.retainedGenerations": {
           "type": "number",
@@ -162,11 +134,29 @@
           "enum": [
             "manual",
             "recommended",
-            "automatic",
-            "fixed"
+            "rule-based",
+            "fixed-workflow"
           ],
           "default": "recommended",
           "description": "Default Copilot agent-selection policy."
+        },
+        "keystone.agents.profiles": {
+          "type": "array",
+          "default": [],
+          "description": "Inert, schema-validated agent metadata. Configuration does not prove runtime availability.",
+          "items": { "type": "object" }
+        },
+        "keystone.agents.aliases": {
+          "type": "array",
+          "default": [],
+          "description": "User aliases with an explicit aliasFor target. Aliases inherit only evidence-backed target availability.",
+          "items": { "type": "object" }
+        },
+        "keystone.agents.rules": {
+          "type": "array",
+          "default": [],
+          "description": "Deterministic task-category/capability to agent mappings used only for rule-based or fixed-workflow selection.",
+          "items": { "type": "object" }
         },
         "keystone.validation.runBuild": {
           "type": "boolean",
@@ -187,6 +177,11 @@
           "type": "boolean",
           "default": false,
           "description": "Store specifications in the repository. Disabled keeps them in extension-managed workspace storage."
+        },
+        "keystone.team.repositoryArtifactsEnabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow explicit handoff export under .keystone/handoffs. Keystone never commits the artifact automatically."
         },
         "keystone.logging.level": {
           "type": "string",

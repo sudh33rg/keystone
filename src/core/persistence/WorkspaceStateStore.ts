@@ -5,10 +5,44 @@ import {
   type PersistedFoundationState
 } from "../../shared/contracts/domain";
 import { KeystoneError } from "../../shared/errors/KeystoneError";
+import { readFile, rename } from "node:fs/promises";
+import { AtomicFileWriter } from "./AtomicFileWriter";
 
 export interface MementoLike {
   get<T>(key: string): T | undefined;
   update(key: string, value: unknown): PromiseLike<void>;
+}
+
+/** Repository-local replacement for VS Code's opaque workspace memento. */
+export class FileMemento implements MementoLike {
+  private values: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
+  private writeChain = Promise.resolve();
+
+  private constructor(private readonly path: string, private readonly writer = new AtomicFileWriter()) {}
+
+  static async open(path: string): Promise<FileMemento> {
+    const memento = new FileMemento(path);
+    try {
+      const parsed = JSON.parse(await readFile(path, "utf8")) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) memento.values = parsed as Record<string, unknown>;
+    } catch (cause) {
+      if (!(cause instanceof Error && "code" in cause && cause.code === "ENOENT")) {
+        await rename(path, `${path}.invalid-${Date.now()}`).catch(() => undefined);
+      }
+    }
+    return memento;
+  }
+
+  get<T>(key: string): T | undefined {
+    return this.values[key] as T | undefined;
+  }
+
+  update(key: string, value: unknown): PromiseLike<void> {
+    this.values = { ...this.values, [key]: value };
+    const snapshot = structuredClone(this.values);
+    this.writeChain = this.writeChain.catch(() => undefined).then(() => this.writer.writeJson(this.path, snapshot));
+    return this.writeChain;
+  }
 }
 
 const STATE_KEY = "keystone.workspaceState";
@@ -105,6 +139,10 @@ export function createDefaultState(): PersistedFoundationState {
 function migrateLegacyState(raw: unknown): PersistedFoundationState | undefined {
   if (!raw || typeof raw !== "object") return undefined;
   const candidate = raw as Record<string, unknown>;
+  if (candidate.schemaVersion === SCHEMA_VERSION && (candidate.activeSection === "hub" || candidate.activeSection === "models")) {
+    const result = PersistedFoundationStateSchema.safeParse({ ...candidate, activeSection: "intelligence", revision: typeof candidate.revision === "number" ? candidate.revision + 1 : 1, updatedAt: new Date().toISOString() });
+    return result.success ? result.data : undefined;
+  }
   if (candidate.schemaVersion !== 0) return undefined;
   const activeSection = typeof candidate.activeSection === "string" ? candidate.activeSection : "home";
   const result = PersistedFoundationStateSchema.safeParse({
@@ -114,4 +152,3 @@ function migrateLegacyState(raw: unknown): PersistedFoundationState | undefined 
   });
   return result.success ? result.data : undefined;
 }
-

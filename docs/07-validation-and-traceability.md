@@ -1,5 +1,9 @@
 # Validation and traceability
 
+## Current release-scope boundary
+
+Release validation covers the single local VS Code extension, deterministic Intelligence, GitHub Copilot delegation, validation/review, delivery, and Task Handoff. It has no release criterion for cross-product publication, a centralized service, local inference, training datasets, fine-tuning, model evaluation, or hybrid provider routing.
+
 ## 1. Validation policy
 
 Keystone is complete only when required product behavior is demonstrated with evidence. Compilation alone is insufficient. Evidence may be an automated test, VS Code extension test, command output, performance measurement, security review, or explicitly identified manual scenario.
@@ -182,4 +186,3 @@ The report includes specification/revision, task attempts and agents, reviewed c
 13. Run build/lint/type/tests and review criteria/drift/changed files.
 14. Demonstrate failed/unverified completion blocking, then provide valid evidence (not an override for the release run).
 15. Complete and export/view the traceable completion report.
-

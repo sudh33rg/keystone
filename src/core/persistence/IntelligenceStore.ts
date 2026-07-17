@@ -67,6 +67,8 @@ const CurrentPointerSchema = z.object({
 type CurrentPointer = z.infer<typeof CurrentPointerSchema>;
 
 const SHARDS = ["manifest", "repository", "files", "symbols", "relationships", "evidence", "diagnostics", "contributions", "indexes", "adapters"] as const;
+const PERSISTENCE_ARRAY_CHUNK_SIZE = 500;
+const MAX_SHARD_REUSE_HASH_BYTES = 4 * 1024 * 1024;
 const OPTIONAL_SEMANTIC_SHARDS = new Set<(typeof SHARDS)[number]>(["contributions", "indexes", "adapters"]);
 const SHARD_FILES: Record<(typeof SHARDS)[number], string> = {
   manifest: "manifest.json",
@@ -100,6 +102,8 @@ export class IntelligenceStore implements IntelligenceSnapshotReader {
   private readonly currentPath: string | undefined;
   private deletionWatcher: FSWatcher | undefined;
   private healthTimer: ReturnType<typeof setInterval> | undefined;
+  private healthCheckInFlight: Promise<void> | undefined;
+  private cpgHealthCursor = 0;
   private deletionKnownPresent = false;
   private readonly deletionListeners = new Set<() => void>();
   private readonly healthListeners = new Set<(health: IntelligencePersistenceHealth) => void>();
@@ -302,7 +306,12 @@ export class IntelligenceStore implements IntelligenceSnapshotReader {
   }
 
   async checkHealth(): Promise<IntelligencePersistenceHealth> {
+    await this.healthCheckInFlight;
     const next = await this.inspectHealth();
+    return this.applyHealth(next);
+  }
+
+  private applyHealth(next: IntelligencePersistenceHealth): IntelligencePersistenceHealth {
     const changed = next.status !== this.health.status || next.message !== this.health.message || next.pendingGenerations !== this.health.pendingGenerations;
     const wasHealthy = this.health.status === "healthy";
     this.health = next;
@@ -417,12 +426,20 @@ export class IntelligenceStore implements IntelligenceSnapshotReader {
       void this.checkDeletion();
     });
     this.deletionWatcher.on("error", () => undefined);
-    this.healthTimer = setInterval(() => { void this.checkHealth(); }, 1_000);
+    this.healthTimer = setInterval(() => this.scheduleRollingHealthCheck(), 1_000);
     this.healthTimer.unref?.();
   }
 
   private async checkDeletion(): Promise<void> {
     await this.checkHealth();
+  }
+
+  private scheduleRollingHealthCheck(): void {
+    if (this.healthCheckInFlight) return;
+    this.healthCheckInFlight = this.inspectHealth(100)
+      .then((health) => { this.applyHealth(health); })
+      .catch((cause: unknown) => { this.applyHealth({ status: "damaged", message: safeMessage(cause), pendingGenerations: this.health.pendingGenerations }); })
+      .finally(() => { this.healthCheckInFlight = undefined; });
   }
 
   private async finishInitialization(): Promise<void> {
@@ -445,7 +462,7 @@ export class IntelligenceStore implements IntelligenceSnapshotReader {
     }
   }
 
-  private async inspectHealth(): Promise<IntelligencePersistenceHealth> {
+  private async inspectHealth(cpgShardLimit?: number): Promise<IntelligencePersistenceHealth> {
     if (!this.currentPath || !this.intelligenceRoot) return { status: "missing", message: "Extension-managed intelligence storage is unavailable.", pendingGenerations: 0 };
     const generationsRoot = join(this.intelligenceRoot, "generations");
     let pendingGenerations = 0;
@@ -466,7 +483,7 @@ export class IntelligenceStore implements IntelligenceSnapshotReader {
     if (this.activeSnapshot && pointer.generation !== this.activeSnapshot.manifest.generation) {
       return { status: "damaged", message: "The active intelligence pointer changed outside the generation publisher.", pendingGenerations };
     }
-    const observedFingerprints = new Map<string, string>();
+    const observedFingerprints = cpgShardLimit === undefined ? new Map<string, string>() : new Map(this.shardFingerprints);
     let contentChanged = false;
     for (const shard of SHARDS) {
       const path = join(generationRoot, SHARD_FILES[shard]);
@@ -483,12 +500,24 @@ export class IntelligenceStore implements IntelligenceSnapshotReader {
       }
     }
     if (this.activeCpgManifest) {
-      for (const relative of [join("cpg", "manifest.json"), ...["scope-by-symbol", "calls", "reads", "writes", "data-flow"].map((file) => join("cpg", "indexes", `${file}.json.gz`)), ...this.activeCpgManifest.scopes.map((scope) => scope.shard)]) {
-        const path = join(generationRoot, relative);
-        try {
-          const value = await stat(path); const fingerprint = `${value.size}:${value.mtimeMs}`; observedFingerprints.set(path, fingerprint);
-          const previous = this.shardFingerprints.get(path); if (previous !== undefined && previous !== fingerprint) contentChanged = true;
-        } catch { return { status: "damaged", message: `The active generation is missing ${relative}.`, pendingGenerations }; }
+      const scopeShards = this.activeCpgManifest.scopes.map((scope) => scope.shard);
+      const selectedScopes = cpgShardLimit === undefined || scopeShards.length <= cpgShardLimit
+        ? scopeShards
+        : Array.from({ length: cpgShardLimit }, (_, index) => scopeShards[(this.cpgHealthCursor + index) % scopeShards.length]!).filter(Boolean);
+      if (cpgShardLimit !== undefined && scopeShards.length > 0) this.cpgHealthCursor = (this.cpgHealthCursor + selectedScopes.length) % scopeShards.length;
+      const relatives = [join("cpg", "manifest.json"), ...["scope-by-symbol", "calls", "reads", "writes", "data-flow"].map((file) => join("cpg", "indexes", `${file}.json.gz`)), ...selectedScopes];
+      for (let index = 0; index < relatives.length; index += 64) {
+        const batch = relatives.slice(index, index + 64);
+        const inspected = await Promise.all(batch.map(async (relative) => {
+          const path = join(generationRoot, relative);
+          try { return { relative, path, value: await stat(path) }; }
+          catch { return { relative, path, value: undefined }; }
+        }));
+        for (const item of inspected) {
+          if (!item.value) return { status: "damaged", message: `The active generation is missing ${item.relative}.`, pendingGenerations };
+          const fingerprint = `${item.value.size}:${item.value.mtimeMs}`; observedFingerprints.set(item.path, fingerprint);
+          const previous = this.shardFingerprints.get(item.path); if (previous !== undefined && previous !== fingerprint) contentChanged = true;
+        }
       }
     }
     if (contentChanged) {
@@ -509,9 +538,9 @@ export class IntelligenceStore implements IntelligenceSnapshotReader {
       return;
     }
     yield "[";
-    for (let index = 0; index < value.length; index += 100) {
+    for (let index = 0; index < value.length; index += PERSISTENCE_ARRAY_CHUNK_SIZE) {
       if (index > 0) yield ",";
-      const serialized = await this.parser.stringifyJson(value.slice(index, index + 100));
+      const serialized = await this.parser.stringifyJson(value.slice(index, index + PERSISTENCE_ARRAY_CHUNK_SIZE));
       yield serialized.slice(1, -1);
     }
     yield "]";
@@ -526,6 +555,8 @@ export class IntelligenceStore implements IntelligenceSnapshotReader {
     if (!this.intelligenceRoot || !this.activeSnapshot || !this.parser.sha256) return;
     const previousPath = join(this.intelligenceRoot, "generations", generationDirectory(this.activeSnapshot.manifest.generation), SHARD_FILES[shard]);
     try {
+      const pendingStat = await stat(pendingPath);
+      if (pendingStat.size > MAX_SHARD_REUSE_HASH_BYTES) return;
       const [previous, pending] = await Promise.all([readFile(previousPath), readFile(pendingPath)]);
       if (previous.byteLength !== pending.byteLength) return;
       const [previousHash, pendingHash] = await Promise.all([this.parser.sha256(previous), this.parser.sha256(pending)]);

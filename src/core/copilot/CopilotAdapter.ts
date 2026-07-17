@@ -1,246 +1,103 @@
-import * as vscode from "vscode";
+import {
+  CopilotAgentDescriptorSchema,
+  CopilotCapabilitiesSchema,
+  type CopilotAgentDescriptor,
+  type CopilotCapabilities,
+  type PreparedDelegation
+} from "../../shared/contracts/delegation";
 
-export type CopilotCapability =
-  | "code-action"
-  | "inline-completion"
-  | "chat"
-  | "terminal"
-  | "edit"
-  | "explain"
-  | "test"
-  | "review"
-  | "debug";
+export const COPILOT_COMMAND_ALLOWLIST = Object.freeze(["workbench.action.chat.open", "workbench.action.chat.openEditSession"] as const);
+export type SupportedCopilotCommand = typeof COPILOT_COMMAND_ALLOWLIST[number];
 
-export interface CopilotCapabilityFingerprint {
-  capabilities: CopilotCapability[];
-  version: string;
-  model?: string;
-  contextWindow?: number;
+export interface CopilotExtensionEvidence { id: string; version: string; active: boolean }
+export interface DirectInvocationResult { handle: string; status: "delegating" | "executing" }
+
+export interface CopilotEnvironment {
+  listExtensions(): Promise<CopilotExtensionEvidence[]>;
+  listCommands(): Promise<string[]>;
+  integrationMethods(): Promise<string[]>;
+  discoverAgents?(signal: AbortSignal): Promise<CopilotAgentDescriptor[]>;
+  invokeDirect?(prepared: PreparedDelegation, signal: AbortSignal): Promise<DirectInvocationResult>;
+  executeAllowedCommand(command: SupportedCopilotCommand): Promise<void>;
+  insertPrompt?(prompt: string): Promise<void>;
+  writeClipboard(prompt: string): Promise<void>;
 }
 
 export interface CopilotAdapter {
-  discoverCapabilities(): Promise<CopilotCapabilityFingerprint>;
-  isAvailable(): boolean;
-  getCapabilityFingerprint(): CopilotCapabilityFingerprint | undefined;
-  isCapable(capability: CopilotCapability): boolean;
-  listAgents(): Promise<AgentInfo[]>;
-  getAgentInfo(agentId: string): Promise<AgentInfo | undefined>;
-  delegate(task: DelegationRequest): Promise<DelegationResult>;
-  getAgentContextRestrictions(agentId: string): ContextRestrictions;
-  detectDegradation(): boolean;
+  refreshCapabilities(signal?: AbortSignal): Promise<CopilotCapabilities>;
+  getCapabilities(): CopilotCapabilities | undefined;
+  discoverAgents(signal?: AbortSignal): Promise<CopilotAgentDescriptor[]>;
+  invokeDirect(prepared: PreparedDelegation, signal?: AbortSignal): Promise<DirectInvocationResult>;
+  openCopilot(): Promise<void>;
+  insertPrompt(prompt: string): Promise<void>;
+  copyPrompt(prompt: string): Promise<void>;
 }
 
-export interface AgentInfo {
-  id: string;
-  displayName: string;
-  description: string;
-  capabilities: CopilotCapability[];
-  contextRestrictions: ContextRestrictions;
-}
+export class CopilotCapabilityDetector {
+  constructor(private readonly environment: CopilotEnvironment) {}
 
-export interface ContextRestrictions {
-  maxEstimatedTokens: number;
-  includeTests: boolean;
-  allowedFilePatterns: string[];
-  excludedFilePatterns: string[];
-}
-
-export interface DelegationRequest {
-  taskId: string;
-  objective: string;
-  description: string;
-  contextPackage: {
-    items: ContextItem[];
-    fingerprint: string;
-    estimatedTokens: number;
-  };
-  expectedOutput: string;
-  acceptanceCriteria: string[];
-  validationSteps: { command?: string; manualCheck?: string }[];
-}
-
-export interface ContextItem {
-  kind: string;
-  content: string;
-  sourceReference: string;
-  selectionReason: string;
-}
-
-export interface DelegationResult {
-  method: "direct" | "assisted";
-  success: boolean;
-  externalHandle?: string;
-  error?: string;
-  observedChanges?: { files: string[]; commits: string[] };
-}
-
-export class VsCodeCopilotAdapter implements CopilotAdapter {
-  private capabilityFingerprint: CopilotCapabilityFingerprint | undefined;
-  private agents: AgentInfo[] = [];
-
-  async discoverCapabilities(): Promise<CopilotCapabilityFingerprint> {
-    if (this.capabilityFingerprint) return this.capabilityFingerprint;
-
-    const extensions = vscode.extensions.all;
-    const copilotExtension = extensions.find((ext) => ext.id === "github.copilot");
-    const copilotChatExtension = extensions.find((ext) => ext.id === "github.copilot-chat");
-
-    const capabilities: CopilotCapability[] = [];
-    let version = "unknown";
-    let model: string | undefined;
-    let contextWindow: number | undefined;
-
-    if (copilotExtension?.isActive) {
-      capabilities.push("inline-completion");
-      const packageVersion: unknown = (copilotExtension.packageJSON as { version?: unknown }).version;
-      version = typeof packageVersion === "string" ? packageVersion : "unknown";
-    }
-
-    if (copilotChatExtension?.isActive) {
-      capabilities.push("chat");
-      capabilities.push("edit");
-      capabilities.push("explain");
-      capabilities.push("test");
-      capabilities.push("review");
-      capabilities.push("debug");
-    }
-
-    if (capabilities.length === 0) {
-      this.capabilityFingerprint = { capabilities, version };
-      return this.capabilityFingerprint;
-    }
-
-    try {
-      const agentInfo = await vscode.commands.executeCommand<unknown>(
-        "copilot.agent.list",
-        undefined,
-        undefined,
-        undefined,
-        undefined
-      );
-      if (agentInfo && typeof agentInfo === "object") {
-        const info = agentInfo as Record<string, unknown>;
-        if (typeof info.model === "string") model = info.model;
-        if (typeof info.contextWindow === "number") contextWindow = info.contextWindow;
-      }
-    } catch {
-      // Agent list not available; proceed without it
-    }
-
-    this.capabilityFingerprint = { capabilities, version, model, contextWindow };
-    return this.capabilityFingerprint;
-  }
-
-  isAvailable(): boolean {
-    return (this.capabilityFingerprint?.capabilities.length ?? 0) > 0;
-  }
-
-  getCapabilityFingerprint(): CopilotCapabilityFingerprint | undefined {
-    return this.capabilityFingerprint;
-  }
-
-  isCapable(capability: CopilotCapability): boolean {
-    return this.capabilityFingerprint?.capabilities.includes(capability) ?? false;
-  }
-
-  async listAgents(): Promise<AgentInfo[]> {
-    if (this.agents.length > 0) return this.agents;
-
-    const fingerprint = await this.discoverCapabilities();
-    if (!fingerprint.capabilities.includes("chat")) return [];
-
-    try {
-      const agents = await vscode.commands.executeCommand<AgentInfo[]>("copilot.agent.list", undefined, undefined, undefined, undefined);
-      if (agents && Array.isArray(agents)) {
-        this.agents = agents.map((agent) => ({
-          ...agent,
-          contextRestrictions: {
-            maxEstimatedTokens: 12000,
-            includeTests: true,
-            allowedFilePatterns: [],
-            excludedFilePatterns: []
-          }
-        }));
-      }
-    } catch {
-      // Fallback: create a default agent
-      this.agents = [
-        {
-          id: "default",
-          displayName: "Default",
-          description: "Default Copilot agent.",
-          capabilities: fingerprint.capabilities,
-          contextRestrictions: {
-            maxEstimatedTokens: 12000,
-            includeTests: true,
-            allowedFilePatterns: [],
-            excludedFilePatterns: []
-          }
-        }
-      ];
-    }
-
-    return this.agents;
-  }
-
-  async getAgentInfo(agentId: string): Promise<AgentInfo | undefined> {
-    const agents = await this.listAgents();
-    return agents.find((a) => a.id === agentId);
-  }
-
-  async delegate(request: DelegationRequest): Promise<DelegationResult> {
-    const fingerprint = await this.discoverCapabilities();
-
-    if (!fingerprint.capabilities.includes("chat")) {
-      return {
-        method: "assisted",
-        success: false,
-        error: "Copilot chat is not available. Use assisted delegation."
-      };
-    }
-
-    try {
-      const result = await vscode.commands.executeCommand<DelegationResult>(
-        "copilot.agent.delegate",
-        request.objective,
-        request.contextPackage.items.map((item) => item.content).join("\n"),
-        request.expectedOutput,
-        request.validationSteps
-      );
-
-      if (result) {
-        return {
-          method: "direct",
-          success: true,
-          externalHandle: result.externalHandle,
-          observedChanges: result.observedChanges
-        };
-      }
-    } catch (error) {
-      return {
-        method: "assisted",
-        success: false,
-        error: error instanceof Error ? error.message : "Delegation failed."
-      };
-    }
-
-    return {
-      method: "assisted",
-      success: true,
-      error: "Copilot agent returned no result. Use assisted delegation."
-    };
-  }
-
-  getAgentContextRestrictions(): ContextRestrictions {
-    return {
-      maxEstimatedTokens: 12000,
-      includeTests: true,
-      allowedFilePatterns: [],
-      excludedFilePatterns: []
-    };
-  }
-
-  detectDegradation(): boolean {
-    return false;
+  async detect(signal: AbortSignal = new AbortController().signal): Promise<CopilotCapabilities> {
+    const started = performance.now(); signal.throwIfAborted();
+    const [extensions, commands, methods] = await Promise.all([this.environment.listExtensions(), this.environment.listCommands(), this.environment.integrationMethods()]);
+    signal.throwIfAborted();
+    const copilotExtensions = extensions.filter((item) => item.id === "github.copilot" || item.id === "github.copilot-chat");
+    const extensionDetected = copilotExtensions.length > 0;
+    const extensionVersions = Object.fromEntries(copilotExtensions.map((item) => [item.id, item.version]));
+    const activeChat = copilotExtensions.some((item) => item.id === "github.copilot-chat" && item.active);
+    const chatAvailable = activeChat && commands.includes("workbench.action.chat.open");
+    const agentModeAvailable = activeChat && commands.includes("workbench.action.chat.openEditSession") && methods.includes("agent-mode-ui-v1");
+    const agentDiscoveryAvailable = methods.includes("agent-discovery-v1") && typeof this.environment.discoverAgents === "function";
+    const directInvocationAvailable = methods.includes("direct-agent-delegation-v1") && typeof this.environment.invokeDirect === "function";
+    const promptInsertionAvailable = methods.includes("chat-prompt-insertion-v1") && typeof this.environment.insertPrompt === "function";
+    const completionEventsAvailable = methods.includes("delegation-completion-events-v1");
+    const resultCaptureAvailable = methods.includes("delegation-result-capture-v1");
+    const diagnostics = [];
+    if (!extensionDetected) diagnostics.push({ code: "copilot-absent", severity: "warning" as const, message: "No GitHub Copilot extension is installed; context preparation remains available." });
+    else if (!activeChat) diagnostics.push({ code: "copilot-chat-inactive", severity: "warning" as const, message: "GitHub Copilot Chat is not active in this VS Code window." });
+    if (!agentDiscoveryAvailable) diagnostics.push({ code: "agent-discovery-unavailable", severity: "info" as const, message: "No supported runtime agent-discovery method is available. Configured profiles remain non-authoritative." });
+    if (!directInvocationAvailable) diagnostics.push({ code: "direct-invocation-unavailable", severity: "info" as const, message: "No supported direct agent invocation method is available; Keystone will use an assisted or clipboard workflow." });
+    if (!completionEventsAvailable) diagnostics.push({ code: "completion-events-unavailable", severity: "info" as const, message: "Copilot completion events are unavailable, so Keystone will require user confirmation." });
+    const fingerprint = await digest(JSON.stringify({ extensionVersions, chatAvailable, agentModeAvailable, agentDiscoveryAvailable, directInvocationAvailable, promptInsertionAvailable, completionEventsAvailable, resultCaptureAvailable, methods: [...methods].sort() }));
+    return CopilotCapabilitiesSchema.parse({ schemaVersion: 1, detectedAt: new Date().toISOString(), extensionDetected, extensionVersions, chatAvailable, agentModeAvailable, agentDiscoveryAvailable, directInvocationAvailable, promptInsertionAvailable, completionEventsAvailable, resultCaptureAvailable, supportedInvocationMethods: methods.slice(0, 20), diagnostics, fingerprint, discoveryDurationMs: performance.now() - started });
   }
 }
+
+export class CapabilityDrivenCopilotAdapter implements CopilotAdapter {
+  private current?: CopilotCapabilities;
+  constructor(private readonly environment: CopilotEnvironment, private readonly detector = new CopilotCapabilityDetector(environment)) {}
+
+  async refreshCapabilities(signal?: AbortSignal): Promise<CopilotCapabilities> { this.current = await this.detector.detect(signal); return this.current; }
+  getCapabilities(): CopilotCapabilities | undefined { return this.current; }
+
+  async discoverAgents(signal: AbortSignal = new AbortController().signal): Promise<CopilotAgentDescriptor[]> {
+    const capabilities = this.current ?? await this.refreshCapabilities(signal);
+    if (!capabilities.agentDiscoveryAvailable || !this.environment.discoverAgents) return [];
+    const agents = await this.environment.discoverAgents(signal); signal.throwIfAborted();
+    return agents.slice(0, 100).map((agent) => CopilotAgentDescriptorSchema.parse({ ...agent, source: "copilot-discovered", availability: "available", evidence: [...agent.evidence, { kind: "runtime", source: "supported-agent-discovery", statement: "The active Copilot adapter returned this agent through a supported discovery method." }] }));
+  }
+
+  async invokeDirect(prepared: PreparedDelegation, signal: AbortSignal = new AbortController().signal): Promise<DirectInvocationResult> {
+    const capabilities = this.current ?? await this.refreshCapabilities(signal);
+    if (!capabilities.directInvocationAvailable || !this.environment.invokeDirect) throw unavailable("direct agent invocation");
+    const result = await this.environment.invokeDirect(prepared, signal);
+    if (!result.handle.trim()) throw new Error("The supported Copilot invocation returned no execution handle.");
+    return result;
+  }
+
+  async openCopilot(): Promise<void> {
+    const capabilities = this.current ?? await this.refreshCapabilities();
+    if (!capabilities.chatAvailable) throw unavailable("Copilot Chat");
+    await this.environment.executeAllowedCommand(capabilities.agentModeAvailable ? "workbench.action.chat.openEditSession" : "workbench.action.chat.open");
+  }
+
+  async insertPrompt(prompt: string): Promise<void> {
+    const capabilities = this.current ?? await this.refreshCapabilities();
+    if (!capabilities.promptInsertionAvailable || !this.environment.insertPrompt) throw unavailable("prompt insertion");
+    await this.environment.insertPrompt(prompt);
+  }
+
+  copyPrompt(prompt: string): Promise<void> { return this.environment.writeClipboard(prompt); }
+}
+
+function unavailable(capability: string): Error { const error = new Error(`Copilot capability unavailable: ${capability}.`); error.name = "CopilotCapabilityUnavailableError"; return error; }
+async function digest(value: string): Promise<string> { const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)); return `sha256:${Array.from(new Uint8Array(bytes), (item) => item.toString(16).padStart(2, "0")).join("")}`; }

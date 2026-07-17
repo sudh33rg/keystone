@@ -24,6 +24,10 @@ export const NavigationSectionSchema = z.enum([
   "intelligence",
   "context",
   "validation",
+  "delivery",
+  "team",
+  "orchestration",
+  "diagnostics",
   "settings"
 ]);
 

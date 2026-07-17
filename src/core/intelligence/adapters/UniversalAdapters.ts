@@ -5,7 +5,7 @@ import type { IntelligenceSymbolRecord } from "../../../shared/contracts/intelli
 import type { SemanticSourceFileInput } from "../semantic/SemanticModel";
 import { rangeAt, safePropertyName, wholeRange } from "./AdapterEvidenceFactory";
 import type { AdapterOutputBuilder} from "./BaseAdapter";
-import { DeterministicAdapter, detection, lines } from "./BaseAdapter";
+import { DeterministicAdapter, detection, importsModule, lines } from "./BaseAdapter";
 
 const ONE_MIB = 1024 * 1024;
 const LANGUAGE_BY_ID: Record<string, { extensions: string[]; limitations: string[] }> = {
@@ -230,8 +230,13 @@ export class DeterministicFrameworkAdapter extends DeterministicAdapter {
   readonly version = "1.0.0";
   capability(): AdapterCapability { return capability(this, "framework", ["react", "express", "nestjs", "fastify", "nextjs", "spring", "django", "flask", "rails", "laravel"], "tier-3", "structural", ["keystone.core.Route", "keystone.core.Component", "keystone.core.Service"], ["keystone.core.ROUTES_TO", "keystone.core.HANDLES", "keystone.core.DECORATES"], ["Detection does not imply lifecycle or dependency-injection resolution.", "Only explicit framework registrations emitted by a language adapter are canonical relationships."]); }
   detect(files: readonly SemanticSourceFileInput[]): AdapterDetection[] {
-    const indicators: Record<string, RegExp> = { react: /(?:from\s+["']react["']|require\(["']react["']\))/, express: /(?:from\s+["']express["']|require\(["']express["']\))/, nestjs: /@nestjs\//, fastify: /(?:from\s+["']fastify["']|require\(["']fastify["']\))/, nextjs: /(?:from\s+["']next\/|next\.config)/, spring: /(?:org\.springframework|@SpringBootApplication|@RestController)/, django: /(?:from\s+django\.|import\s+django\b)/, flask: /(?:from\s+flask\s+import|import\s+flask\b)/, rails: /(?:Rails\.application|ApplicationRecord)/, laravel: /(?:Illuminate\\|Route::(?:get|post|put|delete))/ };
-    return Object.entries(indicators).flatMap(([technology, expression]) => { const selected = files.filter((file) => expression.test(file.content)); return selected.length ? [detection(this.id, technology, "structural", selected, "import", `Explicit ${technology} import or framework marker matched.`, 0.95, this.capability().limitations)] : []; });
+    const indicators: Record<string, (file: SemanticSourceFileInput) => boolean> = {
+      react: (file) => importsModule(file, ["react"]), express: (file) => importsModule(file, ["express"]), nestjs: (file) => importsModule(file, ["@nestjs"]), fastify: (file) => importsModule(file, ["fastify"]), nextjs: (file) => importsModule(file, ["next"]),
+      spring: (file) => ["java", "kotlin"].includes(file.language) && /(?:org\.springframework|@SpringBootApplication|@RestController)/.test(file.content),
+      django: (file) => file.language === "python" && /(?:from\s+django\.|import\s+django\b)/.test(file.content), flask: (file) => file.language === "python" && /(?:from\s+flask\s+import|import\s+flask\b)/.test(file.content),
+      rails: (file) => file.language === "ruby" && /(?:Rails\.application|ApplicationRecord)/.test(file.content), laravel: (file) => file.language === "php" && /(?:Illuminate\\|Route::(?:get|post|put|delete))/.test(file.content)
+    };
+    return Object.entries(indicators).flatMap(([technology, matches]) => { const selected = files.filter(matches); return selected.length ? [detection(this.id, technology, "structural", selected, "import", `Explicit ${technology} import or framework marker matched.`, 0.95, this.capability().limitations)] : []; });
   }
   protected extract(files: readonly SemanticSourceFileInput[], output: AdapterOutputBuilder): void {
     for (const file of files) output.diagnostic("partial-framework-support", "info", "Framework technology was detected; only explicit language-adapter framework facts are canonical.", file, undefined, { technologyId: output.input.context.detections.find((item) => item.adapterId === this.id && item.fileIds.includes(file.fileId))?.technologyId, limitation: true });

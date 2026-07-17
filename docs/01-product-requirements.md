@@ -4,6 +4,8 @@
 
 Keystone is a VS Code extension that converts developer intent into visible, repository-aware, spec-driven work delegated to GitHub Copilot. Keystone prepares, controls, enriches, and tracks work; it does not replace Copilot or claim capabilities the installed Copilot surface does not expose.
 
+The current product also carries results through deterministic validation, QA/security/performance review, Git/PR preparation, and Task Handoff. It does not provide a centralized intelligence service, cross-product publication, local inference/training, or hybrid model routing; those concepts are future-roadmap items only.
+
 The MVP is one repository, one extension package, and one React single-page application rendered in a VS Code Webview. There is no HTTP backend or hosted Keystone service.
 
 ## 2. Product outcome
@@ -184,4 +186,3 @@ The MVP succeeds when one clean install can demonstrate this uninterrupted scena
 6. Track task state and repository changes without inventing completion signals.
 7. Run detected validation workflows and trace evidence to every required criterion.
 8. Close and reopen VS Code and recover the workflow.
-

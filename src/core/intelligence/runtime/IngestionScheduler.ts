@@ -1,4 +1,7 @@
 import type { RepositoryChangeReason } from "./ChangeCollector";
+import { KeystoneError } from "../../../shared/errors/KeystoneError";
+
+const DEFAULT_INGESTION_TIME_BUDGET_MS = 5 * 60 * 1_000;
 
 export interface IngestionJobContext {
   revision: number;
@@ -39,7 +42,10 @@ export class IngestionScheduler {
   private completedJobs = 0;
   private failedJobs = 0;
 
-  constructor(private readonly onError: (cause: unknown, job: IngestionJob) => void = () => undefined) {}
+  constructor(
+    private readonly onError: (cause: unknown, job: IngestionJob) => void = () => undefined,
+    private readonly timeBudgetMs = DEFAULT_INGESTION_TIME_BUDGET_MS
+  ) {}
 
   enqueue(job: IngestionJob): number {
     if (this.disposed) throw new Error("The intelligence ingestion scheduler is disposed.");
@@ -108,15 +114,34 @@ export class IngestionScheduler {
     const controller = new AbortController();
     this.active = { job, controller };
     this.emit();
+    let timedOut = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      await job.run({ revision: job.revision, signal: controller.signal });
+      const timeBudget = new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          timedOut = true;
+          controller.abort();
+          reject(new KeystoneError({
+            code: "INTELLIGENCE_INGESTION_TIMEOUT",
+            category: "INDEXING",
+            message: "Repository ingestion exceeded its bounded time budget.",
+            technicalDetails: `The ${job.reason} ingestion job exceeded ${this.timeBudgetMs} ms.`,
+            operation: "intelligence.scheduler.run",
+            recoverable: true,
+            recommendedAction: "Review the Keystone logs for the stalled phase, reduce repository scope if necessary, and retry.",
+            retryable: true
+          }));
+        }, this.timeBudgetMs);
+      });
+      await Promise.race([job.run({ revision: job.revision, signal: controller.signal }), timeBudget]);
       if (!controller.signal.aborted) this.completedJobs += 1;
     } catch (cause) {
-      if (!controller.signal.aborted) {
+      if (timedOut || !controller.signal.aborted) {
         this.failedJobs += 1;
         this.onError(cause, job);
       }
     } finally {
+      if (timer) clearTimeout(timer);
       if (this.active?.job === job) this.active = undefined;
       this.emit();
       void this.drain();

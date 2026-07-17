@@ -1,5 +1,26 @@
 # Implementation plan
 
+## Current 16-milestone progression
+
+1. Repository Intelligence foundation
+2. Continuous ingestion
+3. Semantic graph
+4. Progressive CPG
+5. Repository adapters
+6. Query and analysis engine
+7. OKF projection
+8. Complete Intelligence UI and hardening
+9. Intent capture and specification workflow
+10. Copilot agent discovery, context construction, and controlled delegation
+11. Execution tracking, validation, retry, and completion
+12. Git and PR delivery
+13. Task Handoff and team workflow
+14. AI-driven SDLC orchestration
+15. Product integration and end-to-end hardening
+16. Release readiness and pilot validation
+
+Four milestones remain incomplete: 7, 8, 15, and 16. Production Observability and Incident Intelligence is optional post-pilot work, not a critical-path phase. The task IDs below remain the detailed implementation graph for their applicable milestones; `PLANS.md` is the live status authority.
+
 ## 1. Execution policy
 
 This plan becomes executable only after `KEYSTONE-SPEC-001` is approved. Tasks execute in dependency order. A task may start only when:

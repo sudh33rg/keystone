@@ -28,6 +28,7 @@ describe("TypeScriptJavaScriptParser", () => {
     expect(result.relationships.some((item) => item.type === "keystone.core.TESTS" && item.confidence === 1 && item.properties?.evidenceLevel === 1)).toBe(true);
     expect(result.relationships.some((item) => item.type === "keystone.core.TESTS" && item.confidence < 0.5 && item.resolution === "candidate")).toBe(true);
     expect(result.entities.some((item) => item.type === "keystone.core.ConfigurationKey" && item.name === "API_KEY")).toBe(true);
+    expect(result.entities.filter((item) => item.type === "keystone.core.Route").every((item) => item.name.startsWith("/") || item.name === "*")).toBe(true);
     expect(JSON.stringify(result)).not.toContain("super-secret-value");
     expect(result.diagnostics.some((item) => item.code === "unresolved-call")).toBe(true);
     expect(result.relationships.every((item) => item.evidenceIds.length > 0 && item.sourceId !== "" && item.targetId !== "")).toBe(true);
@@ -48,6 +49,8 @@ describe("TypeScriptJavaScriptParser", () => {
     const deprecated = result.entities.find((item) => item.name === "Base");
     expect(deprecated).toMatchObject({ deprecated: true, decorators: ["sealed"] });
     expect(deprecated?.jsDocRange).toBeDefined();
+    expect(result.adapterState?.coverage.find((item) => item.technologyId === "typescript")).toMatchObject({ capabilityLevel: "semantic" });
+    expect(result.adapterState?.coverage.find((item) => item.technologyId === "typescript")?.entitiesExtracted).toBeGreaterThan(0);
   });
 
   it("keeps identities deterministic and removes deleted or changed-signature contributions", async () => {
@@ -78,6 +81,13 @@ describe("TypeScriptJavaScriptParser", () => {
     expect(result.relationships.filter((item) => !entityIds.has(item.sourceId) || !entityIds.has(item.targetId))).toEqual([]);
     expect([...result.entities, ...result.relationships].flatMap((item) => item.evidenceIds.filter((id) => evidence.get(id)?.subjectId !== item.id))).toEqual([]);
     expect(result.adapterState?.coverage.map((item) => item.technologyId)).toEqual(expect.arrayContaining(["openapi", "sql", "sql-migration", "documentation"]));
+  });
+
+  it("does not report external fluent APIs or configuration getters as routes", async () => {
+    const files = [file("src/schema.ts", "typescript", "source", "import { z } from 'zod';\nconst schema = z.object({ name: z.string().min(1) }).strict();\nconst indexing = { get: (_key: string) => true };\nconst enabled = indexing.get('enabled');")];
+    const result = await new TypeScriptJavaScriptParser().extract(request(1, true, files));
+    expect(result.entities.filter((item) => item.type === "keystone.core.Route")).toEqual([]);
+    expect(result.diagnostics.filter((item) => item.code === "unresolved-call" && /z\.|\.strict/.test(item.message))).toEqual([]);
   });
 });
 

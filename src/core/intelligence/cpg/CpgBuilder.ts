@@ -14,6 +14,7 @@ export interface CpgBuildContext {
   input: SemanticSourceFileInput;
   source: ts.SourceFile;
   entities: IntelligenceSymbolRecord[];
+  entityIndex: ReadonlyMap<string, string>;
   relationships: IntelligenceRelationshipRecord[];
   evidence: IntelligenceEvidenceRecord[];
   analysisLevel: "basic" | "enriched";
@@ -39,7 +40,7 @@ export class CpgBuilder {
     return artifacts;
   }
 
-  bindProject(artifacts: CpgScopeArtifact[], contexts: CpgBuildContext[]): void { const analyzer = new CallBindingAnalyzer(this.nodes, this.edges); for (const context of contexts) analyzer.bind(artifacts, context); }
+  bindProject(artifacts: CpgScopeArtifact[], contexts: CpgBuildContext[]): void { new CallBindingAnalyzer(this.nodes, this.edges).bindProject(artifacts, contexts); }
 
   private buildScope(context: CpgBuildContext, candidate: ScopeCandidate, scopeId: string, structuralHash: string): CpgScopeArtifact {
     const range = rangeOf(candidate.node, context.source);
@@ -82,7 +83,7 @@ class ScopeState {
     const existing = this.nodeByAst.get(node); if (existing) return existing;
     const kind = normalizedKind(node);
     const range = rangeOf(node, this.context.source);
-    const referenced = referencedSemanticEntity(node, this.context.program.getTypeChecker(), this.context.entities);
+    const referenced = referencedSemanticEntity(node, this.context.program.getTypeChecker(), this.context.source, this.context.entityIndex);
     const properties = nodeProperties(node, this.context.source);
     const created = this.nodeFactory.create({ identity, fileId: this.context.input.fileId, scopeId: this.scopeId, semanticSymbolId: this.candidate.semantic.id, ...(referenced ? { referencedSemanticEntityId: referenced } : {}), kind, code: compactCode(sanitizedCode(node, this.context.source)), range, ...(properties.typeName ? { typeName: properties.typeName } : {}), evidenceIds: this.evidenceIds, parserVersion: this.context.providerVersion, generation: this.context.generation, ...(Object.keys(properties.values).length ? { properties: properties.values } : {}) });
     this.nodeByAst.set(node, created); this.astByNode.set(created.id, node); this.nodeList.push(created); return created;
@@ -262,16 +263,31 @@ export class DefUseAnalyzer {
 
 export class CallBindingAnalyzer {
   constructor(private readonly nodes: CpgNodeFactory, private readonly edges: CpgEdgeFactory) {}
-  bind(artifacts: CpgScopeArtifact[], context: CpgBuildContext): void {
+  bind(artifacts: CpgScopeArtifact[], context: CpgBuildContext): void { this.bindProject(artifacts, [context]); }
+  bindProject(artifacts: CpgScopeArtifact[], contexts: CpgBuildContext[]): void {
     const bySemantic = new Map<string, CpgScopeArtifact>();
     for (const artifact of artifacts) if (!bySemantic.has(artifact.descriptor.semanticSymbolId)) bySemantic.set(artifact.descriptor.semanticSymbolId, artifact);
-    const evidenceById = new Map(context.evidence.map((item) => [item.id, item]));
+    const evidenceById = new Map(contexts.flatMap((context) => context.evidence).map((item) => [item.id, item]));
+    const relationsByFileRange = new Map<string, IntelligenceRelationshipRecord[]>();
+    for (const relation of contexts[0]?.relationships ?? []) {
+      if (!relation.ownerFileId || (relation.type !== "keystone.core.CALLS" && relation.type !== "keystone.core.INSTANTIATES")) continue;
+      for (const evidenceId of relation.evidenceIds) {
+        const range = evidenceById.get(evidenceId)?.range; if (!range) continue;
+        const key = `${relation.ownerFileId}:${rangeKey(range)}`; const values = relationsByFileRange.get(key) ?? []; values.push(relation); relationsByFileRange.set(key, values);
+      }
+    }
+    for (const context of contexts) this.bindContext(artifacts, context, bySemantic, relationsByFileRange);
+  }
+  private bindContext(artifacts: CpgScopeArtifact[], context: CpgBuildContext, bySemantic: ReadonlyMap<string, CpgScopeArtifact>, relationsByFileRange: ReadonlyMap<string, IntelligenceRelationshipRecord[]>): void {
+    const callsByRange = new Map<string, ts.CallExpression | ts.NewExpression>();
+    const visit = (node: ts.Node): void => { if (ts.isCallExpression(node) || ts.isNewExpression(node)) callsByRange.set(rangeKey(rangeOf(node, context.source)), node); ts.forEachChild(node, visit); };
+    visit(context.source);
     for (const artifact of artifacts.filter((item) => item.descriptor.fileId === context.input.fileId)) {
       const callNodes = artifact.nodes.filter((node) => node.kind === "CALL" || node.kind === "CONSTRUCTOR_CALL");
       for (const call of callNodes) {
-        const ast = findAstForRange(context.source, call.range);
+        const ast = call.range ? callsByRange.get(rangeKey(call.range)) : undefined;
         const calleeRange = ast && (ts.isCallExpression(ast) || ts.isNewExpression(ast)) ? rangeOf(ast.expression, context.source) : call.range;
-        const relation = context.relationships.find((item) => item.ownerFileId === artifact.descriptor.fileId && (item.type === "keystone.core.CALLS" || item.type === "keystone.core.INSTANTIATES") && item.evidenceIds.some((id) => { const range = evidenceById.get(id)?.range; return Boolean(range && calleeRange && sameRange(range, calleeRange)); }));
+        const relation = calleeRange ? relationsByFileRange.get(`${artifact.descriptor.fileId}:${rangeKey(calleeRange)}`)?.[0] : undefined;
         const targetArtifact = relation ? bySemantic.get(relation.targetId) : undefined;
         let targetId: string;
         if (targetArtifact) { targetId = targetArtifact.entryNodeId; addProxyNode(artifact, targetArtifact.nodes.find((node) => node.id === targetId)); }
@@ -300,6 +316,8 @@ export class CallBindingAnalyzer {
     }
   }
 }
+
+function rangeKey(range: SourceRange): string { return `${range.startLine}:${range.startColumn}:${range.endLine}:${range.endColumn}`; }
 
 function discoverScopes(context: CpgBuildContext): ScopeCandidate[] {
   const candidates: ScopeCandidate[] = [];
@@ -343,7 +361,7 @@ function nodeProperties(node: ts.Node, source: ts.SourceFile): { typeName?: stri
   return { ...(type ? { typeName: sanitizedCode(type, source).slice(0, 500) } : {}), values };
 }
 
-function referencedSemanticEntity(node: ts.Node, checker: ts.TypeChecker, entities: IntelligenceSymbolRecord[]): string | undefined { if (!ts.isIdentifier(node) && !ts.isPrivateIdentifier(node)) return undefined; const symbol = checker.getSymbolAtLocation(node); if (!symbol) return undefined; const declaration = symbol.declarations?.[0]; if (!declaration) return undefined; const source = declaration.getSourceFile(); const name = symbol.getName(); return entities.find((entity) => entity.name === name && entity.range.startLine === source.getLineAndCharacterOfPosition(declaration.getStart(source)).line)?.id; }
+function referencedSemanticEntity(node: ts.Node, checker: ts.TypeChecker, source: ts.SourceFile, entities: ReadonlyMap<string, string>): string | undefined { if (!ts.isIdentifier(node) && !ts.isPrivateIdentifier(node)) return undefined; const symbol = checker.getSymbolAtLocation(node); if (!symbol) return undefined; const declaration = symbol.declarations?.[0]; if (!declaration || declaration.getSourceFile() !== source) return undefined; const line = source.getLineAndCharacterOfPosition(declaration.getStart(source)).line; return entities.get(`${symbol.getName()}:${line}`); }
 function definitionsFor(node: ts.Node): Array<{ name: string; approximate: boolean }> { if (ts.isVariableDeclaration(node)) return bindingNames(node.name).map((name) => ({ name, approximate: false })); if (ts.isBinaryExpression(node) && isAssignmentOperator(node.operatorToken.kind)) return [{ name: accessPath(node.left), approximate: !ts.isIdentifier(node.left) }]; if ((ts.isPrefixUnaryExpression(node) || ts.isPostfixUnaryExpression(node)) && [ts.SyntaxKind.PlusPlusToken, ts.SyntaxKind.MinusMinusToken].includes(node.operator)) return [{ name: accessPath(node.operand), approximate: !ts.isIdentifier(node.operand) }]; return []; }
 function isReadIdentifier(node: ts.Identifier): boolean { const parent = node.parent; if ((ts.isVariableDeclaration(parent) || ts.isParameter(parent)) && parent.name === node) return false; if (ts.isBinaryExpression(parent) && parent.left === node && isAssignmentOperator(parent.operatorToken.kind)) return parent.operatorToken.kind !== ts.SyntaxKind.EqualsToken; if ((ts.isPropertyAccessExpression(parent) && parent.name === node) || (ts.isPropertyAssignment(parent) && parent.name === node)) return false; return true; }
 function accessPath(node: ts.Node): string { if (ts.isIdentifier(node) || ts.isPrivateIdentifier(node)) { if (ts.isPropertyAccessExpression(node.parent) && node.parent.name === node) return `${accessPath(node.parent.expression)}.${node.text}`; return node.text; } if (ts.isPropertyAccessExpression(node)) return `${accessPath(node.expression)}.${node.name.text}`; if (ts.isElementAccessExpression(node)) return `${accessPath(node.expression)}[${node.argumentExpression && ts.isLiteralExpression(node.argumentExpression) ? node.argumentExpression.text : "*"}]`; if (ts.isObjectBindingPattern(node) || ts.isArrayBindingPattern(node)) return node.getText(); return node.getText().replace(/\s+/g, " ").slice(0, 120); }
@@ -359,9 +377,7 @@ function statementList(statement: ts.Statement): readonly ts.Statement[] { retur
 function isLoop(node: ts.Node): node is ts.IterationStatement { return ts.isForStatement(node) || ts.isForInStatement(node) || ts.isForOfStatement(node) || ts.isWhileStatement(node) || ts.isDoStatement(node); }
 function isAssignmentOperator(kind: ts.SyntaxKind): boolean { return kind >= ts.SyntaxKind.FirstAssignment && kind <= ts.SyntaxKind.LastAssignment; }
 function rangeOf(node: ts.Node, source: ts.SourceFile): SourceRange { const start = source.getLineAndCharacterOfPosition(node.getStart(source, false)); const end = source.getLineAndCharacterOfPosition(node.getEnd()); return { startLine: start.line, startColumn: start.character, endLine: end.line, endColumn: end.character }; }
-function sameRange(left: SourceRange, right: SourceRange): boolean { return left.startLine === right.startLine && left.startColumn === right.startColumn && left.endLine === right.endLine && left.endColumn === right.endColumn; }
 function findNodeByRange(artifact: CpgScopeArtifact, range: SourceRange): CpgNode | undefined { return artifact.nodes.filter((node) => node.range && containsRange(node.range, range)).sort((left, right) => rangeSize(left.range!) - rangeSize(right.range!))[0]; }
-function findAstForRange(source: ts.SourceFile, range?: SourceRange): ts.Node | undefined { if (!range) return undefined; let best: ts.Node | undefined; const visit = (node: ts.Node): void => { const candidate = rangeOf(node, source); if (containsRange(candidate, range)) { if (!best || rangeSize(candidate) < rangeSize(rangeOf(best, source))) best = node; ts.forEachChild(node, visit); } }; visit(source); return best; }
 function isExternalCpgCall(node: ts.Node | undefined, checker: ts.TypeChecker): boolean { return Boolean(node && (ts.isCallExpression(node) || ts.isNewExpression(node)) && checker.getResolvedSignature(node)?.declaration?.getSourceFile().isDeclarationFile); }
 function isKnownExternalCall(node: ts.Node | undefined): boolean { if (!node || !ts.isCallExpression(node) && !ts.isNewExpression(node)) return false; let expression = node.expression; while (ts.isPropertyAccessExpression(expression) || ts.isElementAccessExpression(expression)) expression = expression.expression; return ts.isIdentifier(expression) && ["Promise", "console", "Math", "JSON", "Object", "Array", "Date", "RegExp", "Reflect"].includes(expression.text); }
 function rangeSize(range: SourceRange): number { return (range.endLine - range.startLine) * 100000 + range.endColumn - range.startColumn; }

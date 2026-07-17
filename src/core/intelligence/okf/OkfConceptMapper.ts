@@ -12,8 +12,8 @@
  * - User annotations are preserved across regenerations
  */
 
-import { generateOkfPath, validateKeystoneId, createCanonicalId, generateConceptId } from './OkfConceptIdFactory';
-import type { OkfConcept } from './OkfConcept';
+import { generateOkfPath, validateKeystoneId } from './OkfConceptIdFactory';
+import { OkfConceptBodySchema, OkfConceptFrontmatterSchema, type OkfConcept } from './OkfConcept';
 
 /**
  * Relationship kind for OKF concepts
@@ -38,6 +38,9 @@ export type OkfRelationshipKind =
  */
 export interface OkfRelationshipMetadata {
   kind: OkfRelationshipKind;
+  id: string;
+  title: string;
+  path: string;
   confidence: number;
   derivation: 'extracted' | 'resolved' | 'calculated' | 'framework-rule' | 'convention' | 'candidate';
   evidence: string;
@@ -101,7 +104,7 @@ export function mapEntityToConcept(
 
   // Create the concept
   const concept: OkfMappedConcept = {
-    frontmatter: {
+    frontmatter: OkfConceptFrontmatterSchema.parse({
       type: entityType,
       title: entityData.title,
       keystone_id: keystoneId,
@@ -113,7 +116,7 @@ export function mapEntityToConcept(
       qualified_name: entityData.qualifiedName,
       module: entityData.moduleName,
       visibility: entityData.visibility,
-      source: entityData.sourcePath !== undefined ? {
+      source: entityData.sourcePath !== undefined && entityData.sourceStartLine !== undefined && entityData.sourceEndLine !== undefined ? {
         path: entityData.sourcePath,
         start_line: entityData.sourceStartLine,
         end_line: entityData.sourceEndLine,
@@ -125,30 +128,28 @@ export function mapEntityToConcept(
       parser_version: entityData.parserVersion,
       tags: entityData.tags,
       user_annotations: userAnnotations,
-    },
-    body: {
+    }),
+    body: OkfConceptBodySchema.parse({
       signature: generateSignature(entityType, entityData),
-      evidence: generateEvidence(entityData),
-      changes: generateChanges(entityData),
-      limitations: generateLimitations(entityData),
-    },
+      declaration: [generateEvidence(entityData), generateChanges(entityData), generateLimitations(entityData)].filter(Boolean).join('\n\n'),
+    }),
     path: okfPath,
     contentHash: entityData.contentHash || generateContentHash(keystoneId, entityType, entityData.confidence),
     hasUserAnnotations: userAnnotations !== undefined && Object.keys(userAnnotations).length > 0,
     relationships: {
-      calls: extractRelationships(relationships.calls, entityData.language || 'typescript'),
-      called_by: extractRelationships(relationships.called_by, entityData.language || 'typescript'),
-      imports: extractRelationships(relationships.imports, entityData.language || 'typescript'),
-      exports: extractRelationships(relationships.exports, entityData.language || 'typescript'),
-      references: extractRelationships(relationships.references, entityData.language || 'typescript'),
-      reads: extractRelationships(relationships.reads, entityData.language || 'typescript'),
-      writes: extractRelationships(relationships.writes, entityData.language || 'typescript'),
-      routes: extractRelationships(relationships.routes, entityData.language || 'typescript'),
-      middleware: extractRelationships(relationships.middleware, entityData.language || 'typescript'),
-      tests: extractRelationships(relationships.tests, entityData.language || 'typescript'),
-      covered_by: extractRelationships(relationships.covered_by, entityData.language || 'typescript'),
-      configuration: extractRelationships(relationships.configuration, entityData.language || 'typescript'),
-      belongs_to: extractRelationships(relationships.belongs_to, entityData.language || 'typescript'),
+      calls: extractRelationships(relationships.calls, 'calls'),
+      called_by: extractRelationships(relationships.called_by, 'called_by'),
+      imports: extractRelationships(relationships.imports, 'imports'),
+      exports: extractRelationships(relationships.exports, 'exports'),
+      references: extractRelationships(relationships.references, 'references'),
+      reads: extractRelationships(relationships.reads, 'reads'),
+      writes: extractRelationships(relationships.writes, 'writes'),
+      routes: extractRelationships(relationships.routes, 'routes'),
+      middleware: extractRelationships(relationships.middleware, 'middleware'),
+      tests: extractRelationships(relationships.tests, 'tests'),
+      covered_by: extractRelationships(relationships.covered_by, 'covered_by'),
+      configuration: extractRelationships(relationships.configuration, 'configuration'),
+      belongs_to: extractRelationships(relationships.belongs_to, 'belongs_to'),
     },
   };
 
@@ -351,18 +352,10 @@ function extractRelationships(
     derivation: 'extracted' | 'resolved' | 'calculated' | 'framework-rule' | 'convention' | 'candidate';
     evidence: string;
   }>,
-  language: string
-): Array<{
-  id: string;
-  title: string;
-  path: string;
-  confidence: number;
-  derivation: 'extracted' | 'resolved' | 'calculated' | 'framework-rule' | 'convention' | 'candidate';
-  evidence: string;
-}> {
-  return allRelationships
-    .filter(r => r.kind === language)
-    .map(r => ({
+  relationshipKind: OkfRelationshipKind
+): OkfRelationshipMetadata[] {
+  return (allRelationships ?? []).map(r => ({
+      kind: relationshipKind,
       id: r.targetId,
       title: r.targetTitle,
       path: r.targetPath,

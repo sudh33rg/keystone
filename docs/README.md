@@ -26,6 +26,13 @@ This document set is the approved implementation authority for the Keystone MVP.
 | [06-implementation-plan.md](06-implementation-plan.md) | Ordered task graph, dependencies, expected outputs, agents, and phase gates |
 | [07-validation-and-traceability.md](07-validation-and-traceability.md) | Acceptance criteria, verification methods, task coverage, and release gates |
 | [08-decision-log.md](08-decision-log.md) | Approved design decisions, assumptions, open decisions, and rejected approaches |
+| [09-team-workflow.md](09-team-workflow.md) | Local assignment, Task Handoff, reconciliation, and continuity boundaries |
+| [10-future-roadmap.md](10-future-roadmap.md) | Explicitly excluded future product ideas; not current implementation scope |
+| [11-sdlc-orchestration.md](11-sdlc-orchestration.md) | Controlled workflow definitions, policies, readiness, scheduling, approvals, recovery, and UI boundaries |
+
+## Active milestone progression
+
+The current progression is Repository Intelligence foundation → continuous ingestion → semantic graph → Progressive CPG → repository adapters → query/analysis → OKF → complete Intelligence UI → intent/specification → Copilot context/delegation → execution/validation → Git/PR delivery → Task Handoff → SDLC orchestration → integration/hardening → pilot readiness. `PLANS.md` is the status authority; four milestones remain incomplete (7, 8, 15, and 16).
 
 ## Authority and precedence
 

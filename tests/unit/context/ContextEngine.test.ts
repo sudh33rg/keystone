@@ -1,76 +1,46 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { WorkspaceAdapter } from "../../../src/extension/adapters/WorkspaceAdapter";
-import type { RepositoryIndexService } from "../../../src/core/intelligence/RepositoryIndexService";
-import type { AgentRegistry } from "../../../src/core/copilot/AgentRegistry";
-import type { IgnorePolicy } from "../../../src/core/intelligence/IgnorePolicy";
-import { ContextEngine } from "../../../src/core/context/ContextEngine";
+import { describe, expect, it } from "vitest";
+import { ContextBudgetService, ContextCompressor, ContextRanker } from "../../../src/core/context/ContextEngine";
+import { ContextItemSchema } from "../../../src/shared/contracts/delegation";
 
-describe("ContextEngine", () => {
-  let engine: ContextEngine;
-  let workspace: WorkspaceAdapter;
-  let index: RepositoryIndexService;
-  let agentRegistry: AgentRegistry;
-  let ignorePolicy: IgnorePolicy;
+function candidate(id: string, content: string, options: { required?: boolean; pinned?: boolean; priority?: number } = {}) {
+  return ContextItemSchema.parse({
+    id,
+    kind: "symbol",
+    title: id,
+    content,
+    reason: "Evidence-backed task relationship.",
+    relationshipToTask: "direct",
+    tier: options.required ? "required" : "optional",
+    required: options.required ?? false,
+    pinned: options.pinned ?? false,
+    included: true,
+    priority: options.priority ?? 0,
+    confidence: 1,
+    evidenceIds: [],
+    estimatedCharacters: content.length,
+    estimatedTokens: Math.ceil(content.length / 4),
+    freshness: "current",
+    compression: "structured-summary"
+  });
+}
 
-  beforeEach(() => {
-    workspace = {
-      getRoots: () => [{ name: "test", uri: "file:///test" }],
-      readTextFile: vi.fn(),
-      readFile: vi.fn(),
-      onDidCreate: vi.fn(),
-      onDidDelete: vi.fn(),
-      onDidRename: vi.fn(),
-      onDidChange: vi.fn(),
-      getConfiguration: () => ({ get: (_section: string, defaultValue: unknown) => defaultValue })
-    } as unknown as WorkspaceAdapter;
-
-    index = {
-      getIndex: () => ({ indexVersion: 1 }),
-      start: vi.fn(),
-      cancel: vi.fn()
-    } as unknown as RepositoryIndexService;
-
-    agentRegistry = {
-      getProfile: () => ({ defaultContextPolicy: { maxEstimatedTokens: 12000, includeTests: true } }),
-      getProfiles: () => [],
-      getSelectionMode: () => "recommended",
-      setSelectionMode: vi.fn(),
-      assign: vi.fn(),
-      getAssignment: vi.fn()
-    } as unknown as AgentRegistry;
-
-    ignorePolicy = {
-      classify: () => "source",
-      isExcluded: () => false
-    } as unknown as IgnorePolicy;
-
-    engine = new ContextEngine(workspace, index, agentRegistry, ignorePolicy);
+describe("deterministic context ranking and compression", () => {
+  it("keeps mandatory task context ahead of optional candidates", () => {
+    const ranked = new ContextRanker().rank([candidate("optional", "source", { priority: 900 }), candidate("required", "objective", { required: true })]);
+    expect(ranked[0]?.id).toBe("required");
   });
 
-  it("should build a context package with mandatory items", async () => {
-    const result = await engine.buildPackage("task-1", 1);
-
-    expect(result.package.taskId).toBe("task-1");
-    expect(result.package.specificationRevision).toBe(1);
-    expect(result.package.items.length).toBeGreaterThan(0);
-    expect(result.package.items[0]?.isMandatory).toBe(true);
+  it("protects required items and removes optional items first at the budget", () => {
+    const budget = new ContextBudgetService().resolve({ maxEstimatedTokens: 500, maxCharacters: 2_000 });
+    const result = new ContextCompressor().compress([candidate("required", "required", { required: true }), candidate("optional", "x".repeat(2_100))], budget);
+    expect(result.included.map((item) => item.id)).toEqual(["required"]);
+    expect(result.excluded).toMatchObject([{ item: { id: "optional" }, reason: "over-budget" }]);
   });
 
-  it("should respect budget limits", async () => {
-    agentRegistry.getProfile = () => ({
-      ...agentRegistry.getProfiles()[0],
-      defaultContextPolicy: { maxEstimatedTokens: 100, includeTests: true }
-    } as ReturnType<AgentRegistry["getProfile"]>);
-
-    const result = await engine.buildPackage("task-1", 1);
-
-    expect(result.estimate.tokens).toBeLessThanOrEqual(100);
-  });
-
-  it("should compute a deterministic fingerprint", async () => {
-    const result1 = await engine.buildPackage("task-1", 1);
-    const result2 = await engine.buildPackage("task-1", 1);
-
-    expect(result1.package.fingerprint).toBe(result2.package.fingerprint);
+  it("deduplicates identical repository evidence deterministically", () => {
+    const budget = new ContextBudgetService().resolve();
+    const result = new ContextCompressor().compress([candidate("a", "same"), candidate("b", "same")], budget);
+    expect(result.included).toHaveLength(1);
+    expect(result.excluded[0]?.reason).toBe("duplicate");
   });
 });

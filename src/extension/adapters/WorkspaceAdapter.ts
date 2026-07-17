@@ -68,7 +68,7 @@ export class VsCodeWorkspaceAdapter implements WorkspaceAdapter {
 
   async listFiles(root: WorkspaceRootReference, maxFiles: number): Promise<WorkspaceFileReference[]> {
     const rootUri = vscode.Uri.parse(root.uri);
-    const uris = await vscode.workspace.findFiles(new vscode.RelativePattern(rootUri, "**/*"), undefined, maxFiles);
+    const uris = await vscode.workspace.findFiles(new vscode.RelativePattern(rootUri, "**/*"), DEFAULT_DISCOVERY_EXCLUDE, maxFiles);
     const output: WorkspaceFileReference[] = [];
     for (let index = 0; index < uris.length; index++) {
       const uri = uris[index];
@@ -132,6 +132,8 @@ export class VsCodeWorkspaceAdapter implements WorkspaceAdapter {
     return vscode.workspace.getConfiguration(section);
   }
 }
+
+const DEFAULT_DISCOVERY_EXCLUDE = "{**/.git/**,**/.hg/**,**/.svn/**,**/.keystone/**,**/.vscode-test/**,**/node_modules/**,**/vendor/**,**/bower_components/**,**/site-packages/**,**/.pnpm-store/**,**/.yarn/**,**/dist/**,**/build/**,**/out/**,**/bin/**,**/obj/**,**/target/**,**/coverage/**,**/.coverage/**,**/.nyc_output/**,**/test-results/**,**/__pycache__/**,**/.pytest_cache/**,**/.mypy_cache/**,**/.ruff_cache/**,**/.tox/**,**/.nox/**,**/.cache/**,**/.turbo/**,**/.next/**,**/.nuxt/**,**/.svelte-kit/**,**/.astro/**,**/.gradle/**,**/.idea/**,**/.venv/**,**/venv/**,**/env/**,**/tmp/**,**/temp/**}";
 
 function fileType(type: vscode.FileType): WorkspaceFileStat["type"] {
   if ((type & vscode.FileType.File) !== 0) return "file";

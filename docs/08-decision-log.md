@@ -1,5 +1,9 @@
 # Decision log
 
+## Scope correction — 2026-07-16
+
+Business-unit intelligence publication and local-model adaptation remain future-roadmap ideas only. Current routing is limited to deterministic Keystone services, capability-proven GitHub Copilot, explicit manual action, or unsupported. No backend, external database, model runtime, or training dependency is part of the active architecture.
+
 ## 1. Approved baseline decisions
 
 These decisions originate in the product brief and are treated as locked for revision 1 unless the reviewer explicitly changes them.

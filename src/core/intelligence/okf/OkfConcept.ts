@@ -79,7 +79,7 @@ export const OkfConceptFrontmatterSchema = z.object({
   parser_id: z.string().optional(),
   parser_version: z.string().optional(),
   tags: z.array(z.string()).optional(),
-  user_annotations: z.record(z.string()).optional(),
+  user_annotations: z.record(z.string(), z.string()).optional(),
 });
 
 type OkfConceptFrontmatter = z.infer<typeof OkfConceptFrontmatterSchema>;
@@ -159,7 +159,7 @@ export const OkfConceptBodySchema = z.object({
   })).optional(),
   routes: z.array(z.object({
     method: z.string().optional(),
-    path: z.string(),
+    route_path: z.string(),
     id: z.string(),
     title: z.string(),
     path: z.string(),
@@ -243,7 +243,7 @@ export const OkfConceptBodySchema = z.object({
     derivation: z.enum(['extracted', 'resolved', 'calculated']),
     evidence: z.string(),
   })).optional(),
-  user_annotation: z.record(z.string()).optional(),
+  user_annotation: z.record(z.string(), z.string()).optional(),
 });
 
 type OkfConceptBody = z.infer<typeof OkfConceptBodySchema>;
@@ -466,13 +466,13 @@ export function createOkfConcept(
   }
 
   // Validate confidence range
-  if (entityData.confidence < 0 || entityData.confidence > 1) {
-    throw new Error(`Confidence must be between 0 and 1: ${entityData.confidence}`);
+  if (confidence < 0 || confidence > 1) {
+    throw new Error(`Confidence must be between 0 and 1: ${confidence}`);
   }
 
   // Validate tags
-  if (entityData.tags !== undefined && entityData.tags !== null) {
-    for (const tag of entityData.tags) {
+  if (tags !== undefined) {
+    for (const tag of tags) {
       if (typeof tag !== 'string' || tag.trim() === '') {
         throw new Error('Tags must be non-empty strings');
       }
@@ -491,35 +491,45 @@ export function createOkfConcept(
     }
   }
 
-  return {
-    frontmatter: {
+  const frontmatter = OkfConceptFrontmatterSchema.parse({
       type: entityType,
-      title: entityData.title,
+      title,
       keystone_id: keystoneId,
-      repository_id: entityData.repositoryId,
-      branch: entityData.branch,
-      head_commit: entityData.headCommit,
-      generation: generation,
-      language: entityData.language,
-      qualified_name: entityData.qualifiedName,
-      module: entityData.moduleName,
-      visibility: entityData.visibility,
-      source: entityData.sourcePath !== undefined ? {
-        path: entityData.sourcePath,
-        start_line: entityData.sourceStartLine,
-        end_line: entityData.sourceEndLine,
+      repository_id: repositoryId,
+      branch,
+      head_commit: headCommit,
+      generation,
+      language,
+      qualified_name: qualifiedName,
+      module: moduleName,
+      visibility,
+      source: sourcePath !== undefined && sourceStartLine !== undefined && sourceEndLine !== undefined ? {
+        path: sourcePath,
+        start_line: sourceStartLine,
+        end_line: sourceEndLine,
       } : undefined,
       derivation: 'extracted',
-      confidence: entityData.confidence,
-      content_hash: entityData.contentHash,
-      parser_id: entityData.parserId,
-      parser_version: entityData.parserVersion,
-      tags: entityData.tags,
+      confidence,
+      content_hash: contentHash,
+      parser_id: parserId,
+      parser_version: parserVersion,
+      tags,
       user_annotations: userAnnotations,
-    },
-    body: entityData.body,
-    path: entityData.path,
-    contentHash: entityData.contentHash,
+    });
+  const body = OkfConceptBodySchema.parse({
+    calls: relationships.calls?.map((item) => ({ id: item.targetId, title: item.targetTitle, path: item.targetPath, confidence: item.confidence, derivation: item.derivation, evidence: item.evidence })),
+    called_by: relationships.calledBy?.map((item) => ({ id: item.sourceId, title: item.sourceTitle, path: item.sourcePath, confidence: item.confidence, derivation: item.derivation, evidence: item.evidence })),
+    changes: relationships.changes,
+    evidence: relationships.evidence?.map((item) => ({ source_kind: item.sourceKind, path: item.path, start_line: item.startLine, end_line: item.endLine, parser_id: item.parserId, parser_version: item.parserVersion, derivation: item.derivation, content_hash: item.contentHash, branch: item.branch, commit: item.commit, generation: item.generation, confidence: item.confidence, statement: item.statement })),
+    limitations: relationships.limitations,
+    user_annotation: userAnnotations,
+  });
+  const path = `concepts/${keystoneId.replace(/[^A-Za-z0-9._-]+/g, '-')}.md`;
+  return {
+    frontmatter,
+    body,
+    path,
+    contentHash: contentHash ?? `${keystoneId}:${generation}`,
     hasUserAnnotations: userAnnotations !== undefined && Object.keys(userAnnotations).length > 0,
   };
 }

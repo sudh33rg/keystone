@@ -56,6 +56,7 @@ const rules: Rule[] = [
 export class QueryParser {
   parse(input: string, context: { generation?: number; branch?: string; currentFile?: string; limits?: Partial<ReturnType<typeof QueryLimitsSchema.parse>> } = {}): QueryCompilation {
     const text = normalize(input);
+    if (/<[^>]+>/.test(text)) return QueryCompilationSchema.parse({ input, parsed: false, rule: "incomplete-template", diagnostics: [{ code: "query-placeholder-required", severity: "error", message: "Replace every template placeholder with a concrete repository value before running the query.", limitation: true }], suggestedTemplates: [] });
     for (const rule of rules) {
       const match = text.match(rule.expression); if (!match) continue;
       const raw = rule.compile(match);

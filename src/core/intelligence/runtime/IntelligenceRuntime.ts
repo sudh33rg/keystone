@@ -16,7 +16,7 @@ export interface ContinuousIntelligenceState extends IntelligenceRuntimeOverview
   status: IntelligenceStatus;
   pendingUpdate: boolean;
   scanRevision: number;
-  error?: { code: string; message: string };
+  error?: { code: string; message: string; technicalDetails?: string; recommendedAction?: string };
 }
 
 type RuntimeListener = (state: ContinuousIntelligenceState) => void;
@@ -68,7 +68,10 @@ export class IntelligenceRuntime {
     await this.health.refresh();
     this.disposables.push(
       this.index.onDidChange(() => this.emit()),
-      this.scheduler.onDidChange(() => this.emit()),
+      this.scheduler.onDidChange((state) => {
+        if (state.activeJob && this.phase === "failed") this.phase = state.activeJob.reason === "storage-recovery" ? "recovering" : "reconciling";
+        this.emit();
+      }),
       this.workers.onDidChange(() => this.emit()),
       this.health.onDidChange((state) => {
         if (state.status !== "healthy" && state.status !== "recovering" && (this.phase === "ready" || this.phase === "stale") && !this.disposed) this.enqueueFull("storage-recovery");
@@ -124,24 +127,39 @@ export class IntelligenceRuntime {
     const scheduler = this.scheduler.getStatus();
     const workers = this.workers.getStatus();
     const health = this.health.getState();
-    const currentFiles = indexing.progress?.currentFiles.length ? indexing.progress.currentFiles : scheduler.currentFiles;
+    const snapshot = this.store.getSnapshot();
+    const schedulerIdle = scheduler.queueDepth === 0 && scheduler.activeJob === undefined && workers.active === 0;
+    const generationIdle = schedulerIdle && health.status === "healthy" && snapshot !== undefined && !indexing.error;
+    const effectivePhase: IntelligenceRuntimePhase = scheduler.paused
+      ? "paused"
+      : generationIdle
+        ? "ready"
+        : this.phase === "rebuilding" || this.phase === "recovering" || this.phase === "failed" || this.phase === "stale"
+          ? this.phase
+          : "reconciling";
+    const currentFiles = generationIdle ? [] : indexing.progress?.currentFiles.length ? indexing.progress.currentFiles : scheduler.currentFiles;
+    const isFirstBuild = !this.store.getSnapshot() && health.status === "missing";
+    const displayHealth = isFirstBuild && ["rebuilding", "reconciling"].includes(this.phase) ? "building" : isFirstBuild && this.phase === "failed" ? "failed" : health.status;
     return {
       ...indexing,
-      phase: scheduler.paused ? "paused" : this.phase,
-      pendingUpdate: indexing.pendingUpdate || scheduler.queueDepth > 0 || scheduler.activeJob !== undefined,
+      status: generationIdle ? snapshot.manifest.status : indexing.status,
+      phase: effectivePhase,
+      pendingUpdate: generationIdle ? false : indexing.pendingUpdate || scheduler.queueDepth > 0 || scheduler.activeJob !== undefined,
       queueDepth: scheduler.queueDepth,
       activeWorkers: workers.active,
       workerCapacity: workers.capacity,
-      pendingFiles: this.pendingFiles,
+      pendingFiles: generationIdle ? 0 : this.pendingFiles,
       completedJobs: scheduler.completedJobs,
       failedJobs: scheduler.failedJobs,
       staleResultsDiscarded: this.staleResultsDiscarded,
       workerRestarts: workers.failedRestarts,
       throughputFilesPerSecond: this.throughput(),
       currentFiles: currentFiles.slice(0, 20),
-      health: health.status,
-      ...(health.message ? { healthMessage: health.message } : {}),
-      ...(scheduler.activeJob && !indexing.trigger ? { trigger: scheduler.activeJob.reason } : {})
+      health: displayHealth,
+      ...(indexing.error ? { error: indexing.error } : {}),
+      ...(isFirstBuild && displayHealth === "building" ? { healthMessage: "Creating the first complete local generation." } : health.message ? { healthMessage: health.message } : {}),
+      ...(scheduler.activeJob && !indexing.trigger ? { trigger: scheduler.activeJob.reason } : {}),
+      ...(generationIdle ? { progress: undefined, trigger: undefined } : {})
     };
   }
 
@@ -220,6 +238,7 @@ export class IntelligenceRuntime {
       run: async ({ signal }) => {
         await this.index.rebuild(reason, signal);
         this.processedFiles += this.store.getSnapshot()?.files.length ?? 0;
+        this.pendingFiles = 0;
         await this.health.refresh();
         this.phase = "ready";
       }

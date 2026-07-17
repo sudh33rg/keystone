@@ -1,196 +1,107 @@
 import type { CopilotAdapter } from "./CopilotAdapter";
+import type { DelegationPersistenceStore } from "../persistence/DelegationPersistenceStore";
 import {
-  type AgentProfile,
-  type AgentAssignment,
-  type AgentTaskCategory,
-  AgentProfileSchema
-} from "../../shared/contracts/domain";
-import { KeystoneError } from "../../shared/errors/KeystoneError";
+  AgentRecommendationSchema,
+  CopilotAgentDescriptorSchema,
+  type AgentCapability,
+  type AgentRecommendation,
+  type CopilotAgentDescriptor,
+  type DevelopmentTask
+} from "../../shared/contracts/delegation";
 
-export type AgentSelectionMode = "manual" | "recommended" | "automatic" | "fixed";
+export type AgentSelectionMode = "manual" | "recommended" | "rule-based" | "fixed-workflow";
+export interface AgentSelectionRule { id: string; category?: DevelopmentTask["category"]; requiredCapability?: AgentCapability; agentId: string }
 
-export interface AgentSelectionResult {
-  agentId: string;
-  mode: AgentSelectionMode;
-  candidates: { agentId: string; reason: string; score: number }[];
-  confidence: number;
+export class CopilotAgentDiscoveryService {
+  constructor(private readonly adapter: CopilotAdapter) {}
+  discover(signal?: AbortSignal): Promise<CopilotAgentDescriptor[]> { return this.adapter.discoverAgents(signal); }
+
+  parseConfigured(value: unknown, source: "workspace-configured" | "repository-configured" | "keystone-profile" | "user-alias"): CopilotAgentDescriptor[] {
+    if (!Array.isArray(value)) return [];
+    return value.slice(0, 100).flatMap((raw) => {
+      if (!raw || typeof raw !== "object") return [];
+      const candidate = raw as Record<string, unknown>;
+      const parsed = CopilotAgentDescriptorSchema.safeParse({
+        id: candidate.id, displayName: candidate.displayName, description: candidate.description, source,
+        availability: "unknown", capabilities: candidate.capabilities ?? [], taskCategories: candidate.taskCategories ?? [],
+        invocationMethod: candidate.invocationMethod, restrictions: candidate.restrictions ?? [{ kind: "invocation", description: "Configured metadata does not prove runtime invocation availability.", blocking: false }],
+        confidence: typeof candidate.confidence === "number" ? Math.min(candidate.confidence, 0.8) : 0.6,
+        evidence: [{ kind: source === "user-alias" ? "alias" : "configuration", source, statement: "Loaded as inert, schema-validated configuration; no code or commands were executed." }],
+        aliasFor: candidate.aliasFor
+      });
+      return parsed.success ? [parsed.data] : [];
+    });
+  }
 }
 
-export class AgentRegistry {
-  private profiles = new Map<string, AgentProfile>();
-  private assignments = new Map<string, AgentAssignment>();
-  private selectionMode: AgentSelectionMode = "recommended";
-
-  constructor(
-    private readonly copilotAdapter: CopilotAdapter,
-    private readonly configuration: { read(): { agents: { selectionMode: AgentSelectionMode } } }
-  ) {
-    this.selectionMode = configuration.read().agents.selectionMode;
-  }
-
-  async discover(): Promise<AgentProfile[]> {
-    const agents = await this.copilotAdapter.listAgents();
-    const fingerprint = this.copilotAdapter.getCapabilityFingerprint();
-
-    for (const agent of agents) {
-      const profile: AgentProfile = {
-        id: agent.id,
-        displayName: agent.displayName,
-        description: agent.description,
-        source: "copilot",
-        availability: "available",
-        supportedTaskCategories: this.inferTaskCategories(agent.capabilities),
-        toolsAndActions: agent.capabilities,
-        repositoryAccessExpectations: [],
-        strengths: this.inferStrengths(agent.capabilities),
-        restrictions: [],
-        defaultContextPolicy: {
-          maxEstimatedTokens: agent.contextRestrictions.maxEstimatedTokens,
-          includeTests: agent.contextRestrictions.includeTests
-        },
-        discoveredAt: new Date().toISOString(),
-        capabilityFingerprint: fingerprint ? JSON.stringify(fingerprint) : ""
-      };
-
-      const validated = AgentProfileSchema.safeParse(profile);
-      if (validated.success) {
-        this.profiles.set(profile.id, validated.data);
-      }
+export class AgentProfileService {
+  merge(discovered: CopilotAgentDescriptor[], configured: CopilotAgentDescriptor[]): CopilotAgentDescriptor[] {
+    const result = new Map<string, CopilotAgentDescriptor>();
+    for (const agent of configured) result.set(agent.id, agent);
+    for (const agent of discovered) result.set(agent.id, agent);
+    for (const agent of [...result.values()]) if (agent.source === "user-alias" && agent.aliasFor) {
+      const target = result.get(agent.aliasFor);
+      result.set(agent.id, { ...agent, availability: target?.availability ?? "unknown", capabilities: agent.capabilities.length ? agent.capabilities : target?.capabilities ?? [], taskCategories: agent.taskCategories.length ? agent.taskCategories : target?.taskCategories ?? [], invocationMethod: target?.invocationMethod, evidence: [...agent.evidence, ...(target ? [{ kind: "alias" as const, source: target.id, statement: "Availability is inherited from the explicitly referenced agent." }] : [])] });
     }
-
-    return Array.from(this.profiles.values());
-  }
-
-  getProfiles(): AgentProfile[] {
-    return Array.from(this.profiles.values());
-  }
-
-  getProfile(agentId: string): AgentProfile | undefined {
-    return this.profiles.get(agentId);
-  }
-
-  setSelectionMode(mode: AgentSelectionMode): void {
-    this.selectionMode = mode;
-  }
-
-  getSelectionMode(): AgentSelectionMode {
-    return this.selectionMode;
-  }
-
-  assign(taskId: string, workflowId: string, agentId: string): AgentAssignment {
-    const profile = this.profiles.get(agentId);
-    if (!profile) {
-      throw new KeystoneError({
-        code: "AGENT_NOT_FOUND",
-        category: "AGENT",
-        message: `Agent ${agentId} not found.`,
-        operation: "agent.assign",
-        recoverable: false,
-        recommendedAction: "Discover available agents and retry."
-      });
-    }
-
-    const assignment: AgentAssignment = {
-      selectionMode: this.selectionMode,
-      taskId,
-      workflowId,
-      agentId,
-      recommendationCandidates: [],
-      userConfirmed: true,
-      assignedAt: new Date().toISOString(),
-      capabilityFingerprint: profile.capabilityFingerprint
-    };
-
-    this.assignments.set(taskId, assignment);
-    return assignment;
-  }
-
-  getAssignment(taskId: string): AgentAssignment | undefined {
-    return this.assignments.get(taskId);
-  }
-
-  select(taskId: string): AgentSelectionResult {
-    const mode = this.selectionMode;
-    const profiles = this.getProfiles();
-
-    if (mode === "manual") {
-      return {
-        agentId: profiles[0]?.id ?? "",
-        mode: "manual",
-        candidates: profiles.map((p) => ({ agentId: p.id, reason: p.description, score: 1 })),
-        confidence: profiles.length > 0 ? 0.5 : 0
-      };
-    }
-
-    if (mode === "fixed") {
-      const fixed = profiles.find((p) => p.id === "default") ?? profiles[0];
-      return {
-        agentId: fixed?.id ?? "",
-        mode: "fixed",
-        candidates: fixed ? [{ agentId: fixed.id, reason: fixed.description, score: 1 }] : [],
-        confidence: fixed ? 0.9 : 0
-      };
-    }
-
-    // Automatic or recommended: pick the best agent for the task
-    const candidates = this.rankCandidates(taskId, profiles);
-    const best = candidates[0];
-
-    return {
-      agentId: best?.agentId ?? "",
-      mode: mode,
-      candidates: candidates.map((c) => ({ agentId: c.agentId, reason: c.reason, score: c.score })),
-      confidence: best?.score ?? 0
-    };
-  }
-
-  private rankCandidates(taskId: string, profiles: AgentProfile[]): { agentId: string; reason: string; score: number }[] {
-    const candidates: { agentId: string; reason: string; score: number }[] = [];
-
-    for (const profile of profiles) {
-      let score = 0;
-
-      // Higher availability score
-      if (profile.availability === "available") score += 10;
-      else if (profile.availability === "configured") score += 5;
-      else if (profile.availability === "unknown") score += 2;
-
-      // Task category match
-      if (profile.supportedTaskCategories.includes("implementation")) score += 5;
-      if (profile.supportedTaskCategories.includes("testing")) score += 3;
-      if (profile.supportedTaskCategories.includes("review")) score += 3;
-
-      candidates.push({
-        agentId: profile.id,
-        reason: profile.description,
-        score
-      });
-    }
-
-    return candidates.sort((a, b) => b.score - a.score);
-  }
-
-  private inferTaskCategories(capabilities: string[]): AgentTaskCategory[] {
-    const categories: AgentTaskCategory[] = [];
-
-    if (capabilities.includes("chat") || capabilities.includes("edit")) categories.push("implementation");
-    if (capabilities.includes("test")) categories.push("testing");
-    if (capabilities.includes("review")) categories.push("review");
-    if (capabilities.includes("debug")) categories.push("debugging");
-    if (capabilities.includes("explain")) categories.push("documentation");
-
-    return categories;
-  }
-
-  private inferStrengths(capabilities: string[]): string[] {
-    const strengths: string[] = [];
-    if (capabilities.includes("chat")) strengths.push("Conversational reasoning");
-    if (capabilities.includes("edit")) strengths.push("Code editing");
-    if (capabilities.includes("inline-completion")) strengths.push("Inline completion");
-    if (capabilities.includes("test")) strengths.push("Test generation");
-    if (capabilities.includes("review")) strengths.push("Code review");
-    if (capabilities.includes("debug")) strengths.push("Debugging");
-    if (capabilities.includes("explain")) strengths.push("Explanation");
-    return strengths;
+    return [...result.values()].sort((left, right) => availabilityRank(right.availability) - availabilityRank(left.availability) || left.displayName.localeCompare(right.displayName));
   }
 }
+
+export const AGENT_RECOMMENDATION_WEIGHTS = Object.freeze({ available: 100, unknown: 10, capability: 45, category: 30, userRule: 80, priorSelection: 20, restriction: -60, missingCapability: -100 });
+
+export class AgentRecommendationService {
+  recommend(task: DevelopmentTask, agents: CopilotAgentDescriptor[], mode: AgentSelectionMode = "recommended", rules: AgentSelectionRule[] = [], priorAgentId?: string): AgentRecommendation {
+    const rule = rules.find((item) => (!item.category || item.category === task.category) && (!item.requiredCapability || task.requiredCapabilities.includes(item.requiredCapability)));
+    const candidates = agents.map((agent) => {
+      const matching = task.requiredCapabilities.filter((item) => agent.capabilities.includes(item));
+      const missing = task.requiredCapabilities.filter((item) => !agent.capabilities.includes(item));
+      const blocking = agent.restrictions.filter((item) => item.blocking);
+      let score = agent.availability === "available" ? AGENT_RECOMMENDATION_WEIGHTS.available : agent.availability === "unknown" ? AGENT_RECOMMENDATION_WEIGHTS.unknown : -1000;
+      score += matching.length * AGENT_RECOMMENDATION_WEIGHTS.capability + (agent.taskCategories.includes(task.category) ? AGENT_RECOMMENDATION_WEIGHTS.category : 0) + missing.length * AGENT_RECOMMENDATION_WEIGHTS.missingCapability + blocking.length * AGENT_RECOMMENDATION_WEIGHTS.restriction;
+      if (rule?.agentId === agent.id) score += AGENT_RECOMMENDATION_WEIGHTS.userRule;
+      if (priorAgentId === agent.id) score += AGENT_RECOMMENDATION_WEIGHTS.priorSelection;
+      const reasons = [`availability=${agent.availability}`, `${matching.length}/${task.requiredCapabilities.length} required capabilities match`, ...(agent.taskCategories.includes(task.category) ? [`task category ${task.category} matches`] : []), ...(rule?.agentId === agent.id ? [`explicit rule ${rule.id} matches`] : []), ...(blocking.length ? [`${blocking.length} blocking restriction(s)`] : []), ...(missing.length ? [`missing: ${missing.join(", ")}`] : [])];
+      return { agent, score, matchingCapabilities: matching, missingCapabilities: missing, restrictions: agent.restrictions, reasons };
+    }).sort((left, right) => right.score - left.score || left.agent.id.localeCompare(right.agent.id)).map((item, index) => ({ ...item, rank: index + 1 }));
+    const selectedAgentId = (mode === "rule-based" || mode === "fixed-workflow") && rule && candidates.some((item) => item.agent.id === rule.agentId && item.agent.availability !== "unavailable") ? rule.agentId : undefined;
+    return AgentRecommendationSchema.parse({ taskId: task.id, candidates, ...(selectedAgentId ? { selectedAgentId } : {}), selectionMode: mode });
+  }
+}
+
+export class AgentSelectionService {
+  constructor(private readonly persistence?: DelegationPersistenceStore) {}
+  get(taskId: string): string | undefined { return this.persistence?.snapshot.selections[taskId]; }
+  async select(taskId: string, agent: CopilotAgentDescriptor, confirmed: boolean): Promise<string> {
+    if (!confirmed) throw new Error("Agent selection requires explicit user confirmation.");
+    if (agent.availability === "unavailable") throw new Error(`Agent ${agent.displayName} is unavailable.`);
+    if (this.persistence) await this.persistence.update((state) => ({ ...state, selections: { ...state.selections, [taskId]: agent.id } }));
+    return agent.id;
+  }
+}
+
+export class CopilotAgentRegistry {
+  private agents: CopilotAgentDescriptor[] = [];
+  private configured: CopilotAgentDescriptor[] = [];
+  private rules: AgentSelectionRule[] = [];
+  readonly discovery: CopilotAgentDiscoveryService;
+  readonly profiles = new AgentProfileService();
+  readonly recommendations = new AgentRecommendationService();
+  readonly selections: AgentSelectionService;
+  constructor(private readonly adapter: CopilotAdapter, private readonly persistence?: DelegationPersistenceStore) { this.discovery = new CopilotAgentDiscoveryService(adapter); this.selections = new AgentSelectionService(persistence); }
+
+  setConfiguredProfiles(configured: CopilotAgentDescriptor[]): void { this.configured = structuredClone(configured).slice(0, 200); }
+  setSelectionRules(rules: AgentSelectionRule[]): void { this.rules = structuredClone(rules).slice(0, 100); }
+  async refresh(configured: CopilotAgentDescriptor[] = this.configured, signal?: AbortSignal): Promise<CopilotAgentDescriptor[]> {
+    this.setConfiguredProfiles(configured); const discovered = await this.discovery.discover(signal); this.agents = this.profiles.merge(discovered, this.configured);
+    if (this.persistence) await this.persistence.update((state) => ({ ...state, agents: this.agents }));
+    return this.getProfiles();
+  }
+  restore(): void { this.agents = this.persistence?.snapshot.agents ?? []; }
+  getProfiles(): CopilotAgentDescriptor[] { return structuredClone(this.agents); }
+  getProfile(agentId: string): CopilotAgentDescriptor | undefined { return this.agents.find((item) => item.id === agentId); }
+  recommend(task: DevelopmentTask, mode?: AgentSelectionMode, rules: AgentSelectionRule[] = this.rules): AgentRecommendation { return this.recommendations.recommend(task, this.agents, mode, rules, this.selections.get(task.id)); }
+}
+
+/** Backward-compatible name retained while the production registry moves to evidence-backed descriptors. */
+export class AgentRegistry extends CopilotAgentRegistry {}
+function availabilityRank(value: CopilotAgentDescriptor["availability"]): number { return value === "available" ? 3 : value === "unknown" ? 2 : 1; }

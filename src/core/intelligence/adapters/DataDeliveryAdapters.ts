@@ -5,7 +5,7 @@ import type { IntelligenceSymbolRecord } from "../../../shared/contracts/intelli
 import type { SemanticSourceFileInput } from "../semantic/SemanticModel";
 import { rangeAt, safePropertyName, wholeRange } from "./AdapterEvidenceFactory";
 import type { AdapterOutputBuilder} from "./BaseAdapter";
-import { DeterministicAdapter, detection, lines } from "./BaseAdapter";
+import { DeterministicAdapter, detection, importsModule, lines } from "./BaseAdapter";
 import { capability } from "./UniversalAdapters";
 
 export class DeterministicDatabaseAdapter extends DeterministicAdapter {
@@ -84,7 +84,7 @@ export class DeterministicOrmAdapter extends DeterministicAdapter {
       ["entity-framework", files.filter((file) => /\bDbContext\b|\[Table\s*\(/.test(file.content) && /\.cs$/i.test(file.relativePath)), "syntax"],
       ["django-orm", files.filter((file) => /models\.Model\b/.test(file.content) && /\.py$/i.test(file.relativePath)), "syntax"],
       ["sqlalchemy", files.filter((file) => /__tablename__\s*=|declarative_base\s*\(/.test(file.content) && /\.py$/i.test(file.relativePath)), "syntax"],
-      ["typeorm", files.filter((file) => /@Entity\s*\(/.test(file.content) && /\.[jt]sx?$/i.test(file.relativePath)), "syntax"],
+      ["typeorm", files.filter((file) => importsModule(file, ["typeorm"]) && /@Entity\s*\(/.test(file.content)), "syntax"],
       ["gorm", files.filter((file) => /gorm\.Model|TableName\s*\(/.test(file.content) && /\.go$/i.test(file.relativePath)), "syntax"]
     ];
     return groups.filter(([, selected]) => selected.length).map(([technology, selected, kind]) => detection(this.id, technology, "structural", selected, kind, `Explicit ${technology} schema syntax matched.`, 0.95, this.capability().limitations));
@@ -125,7 +125,7 @@ export class DeterministicTestFrameworkAdapter extends DeterministicAdapter {
   capability(): AdapterCapability { return capability(this, "test", ["junit", "testng", "pytest", "unittest", "xunit", "nunit", "mstest", "go-testing", "rust-test", "rspec", "phpunit", "playwright", "cypress", "vitest", "jest", "mocha"], "tier-3", "structural", ["keystone.core.TestSuite", "keystone.core.TestCase", "keystone.core.Fixture", "keystone.core.Mock", "keystone.core.TestHook"], ["keystone.core.CONTAINS", "keystone.core.TESTS", "keystone.core.MOCKS"], ["Naming-only production mappings are candidates at confidence 0.35.", "Coverage-file ingestion is not implemented."]); }
   detect(files: readonly SemanticSourceFileInput[]): AdapterDetection[] {
     const signatures: Record<string, RegExp> = { junit: /org\.junit|@ParameterizedTest|@Test\b/, testng: /org\.testng/, pytest: /pytest|@pytest\./, unittest: /unittest\.TestCase/, xunit: /\[(?:Fact|Theory)\]/, nunit: /\[(?:Test|TestCase)\]/, mstest: /\[TestMethod\]/, "go-testing": /\*testing\.T|func\s+Test\w+/, "rust-test": /#\[test\]/, rspec: /RSpec\.describe|\bdescribe\s+["']/, phpunit: /PHPUnit|extends\s+TestCase/, playwright: /@playwright\/test|\btest\s*\(/, cypress: /\bcy\./, vitest: /from\s+["']vitest["']/, jest: /@jest\/|jest\./, mocha: /from\s+["']mocha["']|\bdescribe\s*\(/ };
-    return Object.entries(signatures).flatMap(([technology, expression]) => { const selected = files.filter((file) => expression.test(file.content)); return selected.length ? [detection(this.id, technology, "structural", selected, "syntax", `Explicit ${technology} import or syntax matched.`, 0.95)] : []; });
+    return Object.entries(signatures).flatMap(([technology, expression]) => { const selected = files.filter((file) => testFrameworkMatches(file, technology, expression)); return selected.length ? [detection(this.id, technology, "structural", selected, "syntax", `Explicit ${technology} import or syntax matched.`, 0.95)] : []; });
   }
   protected extract(files: readonly SemanticSourceFileInput[], output: AdapterOutputBuilder): void {
     for (const file of files) {
@@ -146,4 +146,18 @@ function splitSqlColumns(body: string): Array<{ text: string; start: number }> {
 function detectDialect(content: string): string { if (/\bSERIAL\b|\bplpgsql\b|::\w+/.test(content)) return "postgresql"; if (/\bAUTO_INCREMENT\b|ENGINE\s*=/.test(content)) return "mysql"; if (/\bAUTOINCREMENT\b|PRAGMA\b/.test(content)) return "sqlite"; return "ansi"; }
 function pluralizeConvention(name: string): string { const snake = name.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase(); return snake.endsWith("s") ? snake : `${snake}s`; }
 function ormName(file: SemanticSourceFileInput): string { if (/\.java$/i.test(file.relativePath)) return "jpa"; if (/\.cs$/i.test(file.relativePath)) return "entity-framework"; if (/\.py$/i.test(file.relativePath)) return /__tablename__/.test(file.content) ? "sqlalchemy" : "django-orm"; if (/\.go$/i.test(file.relativePath)) return "gorm"; return "typeorm"; }
-function detectedTestFramework(file: SemanticSourceFileInput): string { const checks: Array<[string, RegExp]> = [["junit", /org\.junit|@ParameterizedTest/], ["pytest", /pytest|@pytest/], ["xunit", /\[(?:Fact|Theory)\]/], ["go-testing", /\*testing\.T/], ["rust-test", /#\[test\]/], ["phpunit", /PHPUnit/], ["playwright", /@playwright\/test/], ["cypress", /\bcy\./], ["vitest", /from\s+["']vitest/], ["jest", /jest\./], ["mocha", /\bdescribe\s*\(/]]; return checks.find(([, expression]) => expression.test(file.content))?.[0] ?? "unknown"; }
+function detectedTestFramework(file: SemanticSourceFileInput): string {
+  const checks: Array<[string, RegExp]> = [["playwright", /@playwright\/test/], ["cypress", /\bcy\./], ["vitest", /from\s+["']vitest/], ["jest", /jest\./], ["mocha", /\bdescribe\s*\(/], ["junit", /org\.junit|@ParameterizedTest|@Test\b/], ["pytest", /pytest|@pytest/], ["xunit", /\[(?:Fact|Theory)\]/], ["go-testing", /\*testing\.T/], ["rust-test", /#\[test\]/], ["phpunit", /PHPUnit/]];
+  return checks.find(([technology, expression]) => testFrameworkMatches(file, technology, expression))?.[0] ?? "unknown";
+}
+function testFrameworkMatches(file: SemanticSourceFileInput, technology: string, expression: RegExp): boolean {
+  const languageFamilies: Record<string, string[]> = { junit: ["java", "kotlin"], testng: ["java", "kotlin"], pytest: ["python"], unittest: ["python"], xunit: ["csharp"], nunit: ["csharp"], mstest: ["csharp"], "go-testing": ["go"], "rust-test": ["rust"], rspec: ["ruby"], phpunit: ["php"] };
+  const allowed = languageFamilies[technology];
+  if (allowed) return allowed.includes(file.language) && expression.test(file.content);
+  if (technology === "playwright") return importsModule(file, ["@playwright/test"]);
+  if (technology === "vitest") return importsModule(file, ["vitest"]);
+  if (technology === "mocha") return importsModule(file, ["mocha"]);
+  if (technology === "jest") return importsModule(file, ["@jest/globals", "jest"]);
+  if (technology === "cypress") return importsModule(file, ["cypress"]) || /(?:^|\/)cypress(?:\/|$)|\.cy\.[jt]sx?$/.test(file.relativePath);
+  return false;
+}

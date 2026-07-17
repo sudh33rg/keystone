@@ -304,7 +304,7 @@ class GraphAccumulator implements SemanticExtractionContext {
         for (const binding of bindings) {
           const alias = this.addNodeEntity(binding, input, "keystone.core.Alias", binding.text, qualifiedName(binding, binding.text), undefined, { parentId: input.fileId });
           const symbol = checker.getSymbolAtLocation(binding);
-          const target = symbol ? this.symbolIds.get(resolveAlias(symbol, checker)) : undefined;
+          const target = named && ts.isNamespaceImport(named) && named.name === binding ? targetId : symbol ? this.symbolIds.get(resolveAlias(symbol, checker)) : undefined;
           const typeOnly = statement.importClause?.isTypeOnly === true || ts.isImportSpecifier(binding.parent) && binding.parent.isTypeOnly;
           if (target) {
             this.addRelationship(alias.id, target, "keystone.core.ALIASES", input, rangeOf(binding, source), "resolved", 1, "compiler", { alias: binding.text, typeOnly });
@@ -453,7 +453,7 @@ class GraphAccumulator implements SemanticExtractionContext {
           }
           const targetEntity = this.entities.get(target);
           if (targetEntity?.type === "keystone.core.Hook" || /^use[A-Z0-9]/.test(targetEntity?.name ?? "")) this.addRelationship(caller, target, "keystone.core.USES_HOOK", input, rangeOf(node.expression, source), "framework-rule", 1, "framework");
-        } else if (!isKnownFrameworkCall(node) && !isExternalCall(node, checker)) {
+        } else if (!isKnownFrameworkCall(node) && !isNonRepositoryCall(node, checker)) {
           this.resolutionDiagnostics.add("unresolved-call", `The compiler could not resolve call target ${node.expression.getText(source)}.`, input.fileId, input.workspaceRootId, input.relativePath, rangeOf(node.expression, source), caller);
         }
         if (ts.isCallExpression(node) && expressionName(node.expression) === "useContext" && node.arguments[0]) {
@@ -487,7 +487,6 @@ class GraphAccumulator implements SemanticExtractionContext {
           const test = this.enclosingTest(node);
           if (test && !this.isTestEntity(target)) this.addRelationship(test, target, "keystone.core.TESTS", input, rangeOf(node, source), "resolved", 0.9, "compiler", { evidenceLevel: 2 });
         }
-        else if (!target && symbol?.declarations?.some((declaration) => declaration.getSourceFile().isDeclarationFile)) this.resolutionDiagnostics.add("external-definition-unavailable", `External definition for ${node.text} is not part of canonical repository intelligence.`, input.fileId, input.workspaceRootId, input.relativePath, rangeOf(node, source), owner, "info");
         else if (!symbol && !KNOWN_GLOBALS.has(node.text)) this.resolutionDiagnostics.add("unresolved-symbol", `The compiler could not resolve ${node.text}.`, input.fileId, input.workspaceRootId, input.relativePath, rangeOf(node, source), owner, "info");
       }
       ts.forEachChild(node, visit);
@@ -543,7 +542,7 @@ class GraphAccumulator implements SemanticExtractionContext {
     let routeName: string | undefined;
     let method: string | undefined;
     let handlerArguments: readonly ts.Expression[] = [];
-    if (routeMethods.has(name) && first && ts.isStringLiteralLike(first) && ts.isPropertyAccessExpression(node.expression)) {
+    if (routeMethods.has(name) && first && ts.isStringLiteralLike(first) && (first.text.startsWith("/") || first.text === "*") && ts.isPropertyAccessExpression(node.expression) && isRouterReceiver(node.expression.expression)) {
       method = name.toUpperCase(); routeName = first.text; handlerArguments = node.arguments.slice(1);
     } else if (name === "registerCommand" && first && ts.isStringLiteralLike(first)) {
       method = "COMMAND"; routeName = first.text; handlerArguments = node.arguments.slice(1);
@@ -754,14 +753,31 @@ class GraphAccumulator implements SemanticExtractionContext {
 function createCompilerHost(options: ts.CompilerOptions, virtual: Map<string, SemanticSourceFileInput>): ts.CompilerHost {
   const fallback = ts.createCompilerHost(options, true);
   const content = new Map([...virtual].map(([path, input]) => [normalizeFileName(path), input.content]));
+  const libraryRoot = posix.dirname(normalizeFileName(ts.getDefaultLibFilePath(options)));
+  const libraryFile = (fileName: string): boolean => {
+    const normalized = normalizeFileName(fileName);
+    return posix.dirname(normalized) === libraryRoot && /^lib(?:\..+)?\.d\.ts$/.test(posix.basename(normalized));
+  };
   return {
     ...fallback,
-    fileExists: (fileName) => content.has(normalizeFileName(fileName)) || fallback.fileExists(fileName),
-    readFile: (fileName) => content.get(normalizeFileName(fileName)) ?? fallback.readFile(fileName),
+    fileExists: (fileName) => content.has(normalizeFileName(fileName)) || libraryFile(fileName) && fallback.fileExists(fileName),
+    readFile: (fileName) => content.get(normalizeFileName(fileName)) ?? (libraryFile(fileName) ? fallback.readFile(fileName) : undefined),
     getSourceFile: (fileName, languageVersion) => {
       const value = content.get(normalizeFileName(fileName));
-      return value === undefined ? fallback.getSourceFile(fileName, languageVersion) : ts.createSourceFile(fileName, value, languageVersion, true, scriptKind(fileName));
+      return value === undefined ? (libraryFile(fileName) ? fallback.getSourceFile(fileName, languageVersion) : undefined) : ts.createSourceFile(fileName, value, languageVersion, true, scriptKind(fileName));
     },
+    resolveModuleNames: (moduleNames, containingFile) => moduleNames.map((specifier) => {
+      if (!specifier.startsWith(".")) return undefined;
+      const base = normalizeFileName(posix.resolve(posix.dirname(containingFile), specifier));
+      const resolvedFileName = [base, `${base}.ts`, `${base}.tsx`, `${base}.js`, `${base}.jsx`, `${base}/index.ts`, `${base}/index.tsx`, `${base}/index.js`, `${base}/index.jsx`].find((candidate) => content.has(candidate));
+      return resolvedFileName ? { resolvedFileName, extension: moduleExtension(resolvedFileName), isExternalLibraryImport: false } : undefined;
+    }),
+    directoryExists: (directoryName) => {
+      const normalized = normalizeFileName(directoryName);
+      return normalized === libraryRoot || normalized === "/__keystone__" || [...content.keys()].some((path) => path.startsWith(`${normalized}/`));
+    },
+    getDirectories: () => [],
+    realpath: normalizeFileName,
     writeFile: () => undefined,
     getCurrentDirectory: () => "/"
   };
@@ -770,6 +786,7 @@ function createCompilerHost(options: ts.CompilerOptions, virtual: Map<string, Se
 function virtualPath(input: SemanticSourceFileInput): string { return normalizeFileName(`/__keystone__/${input.workspaceRootId.replace(/[^a-zA-Z0-9_-]/g, "_")}/${input.relativePath}`); }
 function normalizeFileName(value: string): string { return value.replace(/\\/g, "/"); }
 function scriptKind(path: string): ts.ScriptKind { return path.endsWith(".tsx") ? ts.ScriptKind.TSX : path.endsWith(".jsx") ? ts.ScriptKind.JSX : path.endsWith(".js") || path.endsWith(".mjs") || path.endsWith(".cjs") ? ts.ScriptKind.JS : ts.ScriptKind.TS; }
+function moduleExtension(path: string): ts.Extension { return path.endsWith(".tsx") ? ts.Extension.Tsx : path.endsWith(".jsx") ? ts.Extension.Jsx : path.endsWith(".js") ? ts.Extension.Js : ts.Extension.Ts; }
 function structuralHash(source: ts.SourceFile): string { const scanner = ts.createScanner(ts.ScriptTarget.ES2022, true, source.languageVariant, source.text); const tokens: string[] = []; for (let token = scanner.scan(); token !== ts.SyntaxKind.EndOfFileToken; token = scanner.scan()) tokens.push(`${token}:${scanner.getTokenText()}`); return `sha256:${createHash("sha256").update(tokens.join("\u001f")).digest("hex")}`; }
 function sourceRoot(path: string): string { const first = path.split("/")[0]; return first && ["src", "lib", "app", "test", "tests"].includes(first) ? first : ""; }
 function cpgScopePriority(kind: string): number { return kind === "callback" || kind === "module" ? 1 : 0; }
@@ -843,6 +860,47 @@ function isJsxTag(node: ts.Node): node is ts.JsxOpeningElement | ts.JsxSelfClosi
 function isJsxTagName(node: ts.Identifier): boolean { return (isJsxTag(node.parent) && node.parent.tagName === node) || (ts.isJsxClosingElement(node.parent) && node.parent.tagName === node); }
 function isKnownFrameworkCall(node: ts.CallExpression | ts.NewExpression): boolean { const name = expressionName(node.expression); return ["describe", "suite", "it", "test", "expect", "mock", "spyOn", "beforeAll", "beforeEach", "afterAll", "afterEach", "before", "after", "registerCommand", "get", "post", "put", "patch", "delete", "use"].includes(name); }
 function isCallbackRegistration(expression: ts.Expression): boolean { return ["on", "once", "addEventListener", "subscribe", "then", "catch", "finally"].includes(expressionName(expression)); }
-function isExternalCall(node: ts.CallExpression | ts.NewExpression, checker: ts.TypeChecker): boolean { const symbol = symbolForExpression(node.expression, checker); return Boolean(symbol?.declarations?.some((declaration) => declaration.getSourceFile().isDeclarationFile)); }
+function isNonRepositoryCall(node: ts.CallExpression | ts.NewExpression, checker: ts.TypeChecker): boolean {
+  if (ts.isPropertyAccessExpression(node.expression) && NON_REPOSITORY_METHODS.has(node.expression.name.text)) return true;
+  const symbol = symbolForExpression(node.expression, checker);
+  if (symbol?.declarations?.some((declaration) => declaration.getSourceFile().isDeclarationFile)) return true;
+  const receiver = ts.isPropertyAccessExpression(node.expression) || ts.isElementAccessExpression(node.expression) ? node.expression.expression : node.expression;
+  const receiverType = checker.getTypeAtLocation(receiver);
+  if ((receiverType.flags & (ts.TypeFlags.StringLike | ts.TypeFlags.NumberLike | ts.TypeFlags.BooleanLike | ts.TypeFlags.BigIntLike | ts.TypeFlags.ESSymbolLike)) !== 0) return true;
+  if (checker.isArrayType(receiverType) || checker.isTupleType(receiverType)) return true;
+  if (receiverType.getSymbol()?.declarations?.some((declaration) => declaration.getSourceFile().isDeclarationFile)) return true;
+  const root = rootIdentifier(node.expression);
+  if (!root) return false;
+  if (KNOWN_GLOBALS.has(root.text)) return true;
+  const rootSymbol = checker.getSymbolAtLocation(root);
+  if (rootSymbol?.declarations?.some((declaration) => declaration.getSourceFile().isDeclarationFile || isExternalImportDeclaration(declaration)) || rootSymbol && isDerivedFromExternalImport(rootSymbol, checker)) return true;
+  return false;
+}
+function rootIdentifier(expression: ts.Expression): ts.Identifier | undefined {
+  let current: ts.Expression = expression;
+  while (true) {
+    if (ts.isPropertyAccessExpression(current) || ts.isElementAccessExpression(current) || ts.isCallExpression(current) || ts.isNewExpression(current)) current = current.expression;
+    else if (ts.isParenthesizedExpression(current) || ts.isAsExpression(current) || ts.isTypeAssertionExpression(current) || ts.isNonNullExpression(current)) current = current.expression;
+    else break;
+  }
+  return ts.isIdentifier(current) ? current : undefined;
+}
+function isRouterReceiver(expression: ts.Expression): boolean { const root = rootIdentifier(expression); return Boolean(root && /^(?:app|api|router|routes|server)$/i.test(root.text)); }
+function isExternalImportDeclaration(node: ts.Declaration): boolean {
+  for (let current: ts.Node | undefined = node; current; current = current.parent) if (ts.isImportDeclaration(current)) return ts.isStringLiteralLike(current.moduleSpecifier) && !current.moduleSpecifier.text.startsWith(".") && !current.moduleSpecifier.text.startsWith("/");
+  return false;
+}
+function isDerivedFromExternalImport(symbol: ts.Symbol, checker: ts.TypeChecker): boolean {
+  for (const declaration of symbol.declarations ?? []) {
+    let current: ts.Node | undefined = declaration;
+    while (current && !ts.isVariableDeclaration(current) && !ts.isSourceFile(current)) current = current.parent;
+    if (!current || !ts.isVariableDeclaration(current) || !current.initializer) continue;
+    const root = rootIdentifier(current.initializer);
+    const source = root ? checker.getSymbolAtLocation(root) : undefined;
+    if (source?.declarations?.some(isExternalImportDeclaration)) return true;
+  }
+  return false;
+}
 function configurationKey(node: ts.CallExpression): string | undefined { if (!ts.isPropertyAccessExpression(node.expression)) return undefined; if (node.expression.name.text === "getConfiguration" && node.arguments[0] && ts.isStringLiteralLike(node.arguments[0])) return node.arguments[0].text; if (node.expression.name.text === "get" && node.arguments[0] && ts.isStringLiteralLike(node.arguments[0]) && ts.isCallExpression(node.expression.expression)) { const parent = node.expression.expression; if (ts.isPropertyAccessExpression(parent.expression) && parent.expression.name.text === "getConfiguration" && parent.arguments[0] && ts.isStringLiteralLike(parent.arguments[0])) return `${parent.arguments[0].text}.${node.arguments[0].text}`; } return undefined; }
-const KNOWN_GLOBALS = new Set(["process", "require", "module", "exports", "console", "describe", "suite", "it", "test", "expect", "vi", "jest", "window", "document", "setTimeout", "clearTimeout"]);
+const NON_REPOSITORY_METHODS = new Set(["at", "catch", "charCodeAt", "concat", "endsWith", "every", "filter", "finally", "find", "findIndex", "flat", "flatMap", "forEach", "includes", "indexOf", "join", "lastIndexOf", "localeCompare", "map", "match", "matchAll", "pop", "push", "reduce", "reduceRight", "replace", "replaceAll", "reverse", "shift", "slice", "some", "sort", "splice", "split", "startsWith", "substring", "then", "toISOString", "toLocaleString", "toLowerCase", "toString", "toUpperCase", "trim", "trimEnd", "trimStart", "unshift"]);
+const KNOWN_GLOBALS = new Set(["AbortController", "AbortSignal", "Array", "ArrayBuffer", "BigInt", "BigInt64Array", "BigUint64Array", "Boolean", "Buffer", "DataView", "Date", "DOMException", "Error", "EvalError", "Float32Array", "Float64Array", "FormData", "Function", "Infinity", "Int16Array", "Int32Array", "Int8Array", "Intl", "JSON", "Map", "Math", "NaN", "Number", "Object", "Promise", "Proxy", "RangeError", "ReferenceError", "Reflect", "RegExp", "Set", "String", "Symbol", "SyntaxError", "TextDecoder", "TextEncoder", "TypeError", "URIError", "URL", "URLSearchParams", "Uint16Array", "Uint32Array", "Uint8Array", "Uint8ClampedArray", "WeakMap", "WeakSet", "WebSocket", "__dirname", "__filename", "atob", "btoa", "clearImmediate", "clearInterval", "clearTimeout", "console", "crypto", "decodeURI", "decodeURIComponent", "describe", "document", "encodeURI", "encodeURIComponent", "escape", "eval", "expect", "exports", "fetch", "global", "globalThis", "isFinite", "isNaN", "it", "jest", "localStorage", "module", "navigator", "parseFloat", "parseInt", "performance", "process", "queueMicrotask", "require", "sessionStorage", "setImmediate", "setInterval", "setTimeout", "structuredClone", "suite", "test", "undefined", "unescape", "vi", "window"]);

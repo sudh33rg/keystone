@@ -3,6 +3,7 @@
 .github/**
 .vscode/**
 .vscode-test/**
+.keystone/**
 node_modules/**
 src/**
 tests/**

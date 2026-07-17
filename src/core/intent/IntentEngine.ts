@@ -213,26 +213,10 @@ export class IntentEngine {
   }
 
   private recommendAgents(category: string): { agentId: string; reason: string }[] {
-    const agents: { agentId: string; reason: string }[] = [];
-
-    switch (category) {
-      case "bug-fix":
-        agents.push({ agentId: "copilot-debugging", reason: "Specialized in debugging and issue resolution." });
-        agents.push({ agentId: "copilot-coding", reason: "General implementation capability." });
-        break;
-      case "feature":
-        agents.push({ agentId: "copilot-coding", reason: "Primary implementation agent." });
-        agents.push({ agentId: "copilot-testing", reason: "Test coverage for new features." });
-        break;
-      case "security":
-        agents.push({ agentId: "copilot-security", reason: "Security-focused agent." });
-        agents.push({ agentId: "copilot-review", reason: "Security review capability." });
-        break;
-      default:
-        agents.push({ agentId: "copilot-coding", reason: "General implementation capability." });
-    }
-
-    return agents;
+    void category;
+    // Agent identities and capabilities are runtime evidence owned by CopilotAgentRegistry.
+    // Intent analysis may describe required capabilities later, but it must never invent agent IDs.
+    return [];
   }
 
   private identifyRequiredDecisions(text: string, risk: string): { id: string; question: string; blocking: boolean }[] {

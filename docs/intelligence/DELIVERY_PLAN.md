@@ -65,25 +65,7 @@ Exit criteria:
 - Real code navigation and impact queries work for supported repositories
 - Relationship evidence opens exact source ranges
 
-## Milestone 4 — Query engine and core UI
-
-Deliver:
-
-- Search
-- Entity details
-- Neighborhood
-- Path
-- Impact
-- Tests-for
-- Architecture basics
-- Explorer and entity inspector
-- Scoped graph canvas
-
-Exit criteria:
-
-- Users can browse and query intelligence without raw files or manual graph inspection
-
-## Milestone 5 — Progressive CPG
+## Milestone 4 — Progressive CPG
 
 Deliver:
 
@@ -98,13 +80,26 @@ Exit criteria:
 
 - Keystone can explain value origin, propagation, control branches, and path-level test gaps for supported code
 
-## Milestone 6 — Universal repository adapters
+## Milestone 5 — Universal repository adapters
+
+Deliver:
 
 Deliver structural and semantic adapters for documentation, SQL, migrations, ORM, OpenAPI, GraphQL, build systems, CI, containers, infrastructure, and additional languages.
 
 Exit criteria:
 
 - Coverage report honestly distinguishes deep, partial, metadata-only, and unsupported technologies
+
+## Milestone 6 — Query and analysis engine
+
+- Search, entity details, and neighborhoods
+- Path, impact, flow, tests, architecture, dependency, and change analysis
+- Deterministic grammar, ranking, explainability, cancellation, limits, pagination, and generation-aware caching
+- Query workspace and scoped result views
+
+Exit criteria:
+
+- Users can browse and query bounded evidence-backed intelligence without raw graph inspection
 
 ## Milestone 7 — OKF projection
 

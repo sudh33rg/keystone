@@ -5,8 +5,11 @@ import type { WorkspaceSummary } from "../../shared/contracts/domain";
 import type { KeystoneLogger } from "../../shared/logging/KeystoneLogger";
 import { WebviewMessageRouter, type IntelligenceServiceRegistry } from "./WebviewMessageRouter";
 
-export class KeystoneViewProvider implements vscode.WebviewViewProvider {
+export class KeystoneViewProvider implements vscode.Disposable {
   static readonly viewType = "keystone.controlCenter";
+  private panel: vscode.WebviewPanel | undefined;
+  private router: WebviewMessageRouter | undefined;
+  private receiver: vscode.Disposable | undefined;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -17,30 +20,65 @@ export class KeystoneViewProvider implements vscode.WebviewViewProvider {
     private readonly services: IntelligenceServiceRegistry
   ) {}
 
-  async resolveWebviewView(webviewView: vscode.WebviewView): Promise<void> {
+  async show(): Promise<void> {
+    if (this.panel) {
+      this.panel.reveal(vscode.ViewColumn.One);
+      return;
+    }
+    const panel = vscode.window.createWebviewPanel(
+      KeystoneViewProvider.viewType,
+      "Keystone Control Center",
+      vscode.ViewColumn.One,
+      { enableScripts: true, enableCommandUris: false, retainContextWhenHidden: true }
+    );
+    panel.iconPath = vscode.Uri.joinPath(this.extensionUri, "resources", "keystone.svg");
+    await this.attach(panel);
+  }
+
+  async restore(panel: vscode.WebviewPanel): Promise<void> {
+    this.disposePanel();
+    await this.attach(panel);
+  }
+
+  dispose(): void {
+    const panel = this.panel;
+    this.disposePanel();
+    panel?.dispose();
+  }
+
+  private async attach(panel: vscode.WebviewPanel): Promise<void> {
+    this.panel = panel;
     const assetsRoot = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
-    webviewView.webview.options = {
+    panel.webview.options = {
       enableScripts: true,
       enableCommandUris: false,
       localResourceRoots: [assetsRoot]
     };
-    webviewView.webview.html = await this.createHtml(webviewView.webview, assetsRoot);
+    panel.webview.html = await this.createHtml(panel.webview, assetsRoot);
 
-    const router = new WebviewMessageRouter(
+    this.router = new WebviewMessageRouter(
       this.store,
       this.configuration,
       this.logger,
       this.extensionVersion,
       () => this.workspaceSummary(),
-      (message) => webviewView.webview.postMessage(message),
+      (message) => panel.webview.postMessage(message),
       this.services
     );
-    const receiver = webviewView.webview.onDidReceiveMessage((message: unknown) => void router.handle(message));
-    webviewView.onDidDispose(() => {
-      receiver.dispose();
-      router.dispose();
+    this.receiver = panel.webview.onDidReceiveMessage((message: unknown) => void this.router?.handle(message));
+    panel.onDidDispose(() => {
+      if (this.panel !== panel) return;
+      this.disposePanel();
     });
-    this.logger.info("webview.resolve", "Keystone control center resolved.");
+    this.logger.info("webview.resolve", "Keystone control center opened in the editor area.");
+  }
+
+  private disposePanel(): void {
+    this.receiver?.dispose();
+    this.receiver = undefined;
+    this.router?.dispose();
+    this.router = undefined;
+    this.panel = undefined;
   }
 
   private workspaceSummary(): WorkspaceSummary {

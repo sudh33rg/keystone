@@ -2,7 +2,7 @@
 
 ## Objective
 
-Complete the repository intelligence runtime and Intelligence UI before expanding other Keystone features.
+Keystone is a single VS Code extension that builds deterministic repository intelligence, converts developer intent into approved specifications and task plans, constructs token-efficient context, delegates approved implementation tasks to GitHub Copilot, validates results, supports QA/security/performance checks, prepares Git and PR delivery, and enables Task Handoff.
 
 ## Working rules
 
@@ -1030,3 +1030,917 @@ Milestone 7 — implement deterministic OKF projection from the now-queryable ca
 - [ ] Test intelligence
 - [ ] OKF browser
 - [ ] Diagnostics and exclusions
+
+## Milestone 9 — Intent Capture and Spec-Driven Development prerequisite repair
+
+### Entry audit — 2026-07-16
+
+The requested Copilot delegation milestone cannot safely begin on the existing workflow scaffolding. The unchanged repository initially failed type checking in three tracked, unfinished OKF files; only the mechanical type/lint defects were repaired, without wiring or expanding OKF. After that repair, `npm run verify` passed type checking, linting, 29 test files/232 tests, and both production bundles.
+
+The intent/specification prerequisite itself is not implemented or stable. `IntentEngine` performs regex-only area extraction and fabricates hard-coded Copilot agent IDs. `SpecificationService`, `TaskGraphService`, and `WorkflowOrchestrator` keep authoritative aggregates only in memory. Generated specifications leave material sections empty, task graphs do not enforce approval or meaningful dependency/traceability rules, repository-generation staleness is not connected, and production activation/Webview routing/UI do not expose the workflow. The React pages explicitly label Intent, Specifications, Tasks, and Context as future phases. `VsCodeCopilotAdapter` also calls undocumented hard-coded commands, fabricates a default agent when discovery fails, and may report an assisted delegation as successful without execution. These are verified blockers for controlled delegation.
+
+### M9.1 — Restart-safe workflow contracts and repository-aware intent
+
+- [x] Add bounded, versioned workflow snapshots and atomic local persistence for intents, specification revisions, task graphs, and staleness state.
+- [x] Preserve original intent and implement quick, guided, and spec-driven modes with deterministic category/risk/constraints/decisions and Keystone Intelligence entity resolution.
+- [x] Remove every hard-coded or fabricated Copilot agent recommendation from intent processing.
+
+### M9.2 — Complete specification lifecycle and task graph
+
+- [x] Generate scope, requirements, constraints, acceptance criteria, test strategy, risks, decisions, repository evidence, and validation obligations deterministically.
+- [x] Enforce review/approval/material revision/reapproval with immutable revision snapshots and impacted-task stale reasons. Cancellation is represented at workflow/task level; a separate rejection status is not exposed.
+- [x] Generate dependency-ordered, cycle-validated tasks traceable to requirements and acceptance criteria; require acceptance criteria and validation steps before readiness.
+- [x] Mark affected tasks/specifications stale on relevant generation, branch, task-definition, or repository evidence changes and restore authoritative state after restart.
+
+### M9.3 — Focused prerequisite host/UI integration and gate
+
+- [x] Add typed validated workflow requests/events and focused Intent, Specification, and Task views sufficient to exercise modes, approval, revisions, traceability, readiness, and staleness.
+- [x] Prove no Copilot invocation occurs in the prerequisite workflow.
+- [x] Run typecheck, lint, unit/UI/integration/extension tests and both builds before enabling delegation.
+
+## Milestone 10 — Copilot Agent Discovery, Context Construction, and Controlled Delegation
+
+### M10.1 — Capability-driven adapter and truthful agent registry
+
+- [x] Isolate all VS Code/Copilot extension inspection and allowlisted command use behind `CopilotAdapter` and `CopilotCapabilityDetector`; treat unknown as unavailable and make refresh/version evidence explicit.
+- [x] Merge only evidence-backed discovered agents, inert repository/workspace profiles, Keystone profiles, and user aliases into `CopilotAgentRegistry` with availability, restrictions, provenance, confidence, and capability evidence.
+- [x] Implement manual, recommended, explicit rule-based, fixed-workflow, and per-task selection without enabling automatic delegation by default.
+- [x] Add centrally weighted deterministic recommendations with matching/missing capabilities, restrictions, availability, and explanations.
+
+### M10.2 — Eligibility, bounded context collection, ranking, and compression
+
+- [x] Implement `TaskEligibilityService` for approved/current spec, dependency readiness, decisions, branch/generation freshness, criteria/validation, overlap, agent selection, and reviewed prompt/context blockers.
+- [x] Collect bounded candidates through canonical Intelligence queries and exact/current-editor source ranges, with provenance, evidence, confidence, freshness, size, tier, reason, and pin state.
+- [x] Rank centrally and compress structurally using selected ranges, signatures/interfaces, targeted tests, bounded graph summaries, deduplication, and required/supporting/optional budget policy; never use an LLM.
+- [x] Enforce configurable estimated-token/character/file/fragment/path/test caps, secret/exclusion rules, required-item protection, deterministic fingerprints, cache identity, cancellation, and stale-build discard.
+
+### M10.3 — Preview, deterministic prompt, and controlled delegation
+
+- [x] Provide context add/remove/pin/restore/budget/regenerate/validate operations and an exact bounded preview with exclusions, diagnostics, fingerprints, and required-item override warning.
+- [x] Build a deterministic delegation prompt containing approved objective, requirements, criteria, constraints, repository context, tests, validation, prohibited changes, blocker protocol, and completion-report format.
+- [x] Persist reviewed context/prompt fingerprints, agent snapshot, specification revision, generation, user edits, sessions, baselines, changes, and diagnostics without credentials, secrets, conversation history, or duplicate large source.
+- [x] Require explicit approval; use direct mode only with proven invocation and a real handle, otherwise assisted prompt insertion/open-UI or explicit clipboard fallback without fabricated execution/completion.
+
+### M10.4 — Repository tracking, host/UI workflow, and completion gate
+
+- [x] Capture branch/HEAD/dirty/staged/untracked baseline, classify expected/related/unexpected/pre-existing/ambiguous changes, detect overlapping active sessions, and invalidate material pre-delegation changes.
+- [x] Track only truthful delegation states through cancellation, external-start confirmation, repository-change review, and reload; never mark a task completed in this milestone.
+- [x] Add all requested typed, bounded, cancellable, generation-aware Webview requests/events and a focused agent/readiness/context/prompt/status UI without beginning validation automation.
+- [x] Cover capability/fallback, discovery/profile, selection/recommendation, eligibility, context/security/budget/fingerprint, prompt, delegation, overlap/change, persistence/reload, validation-boundary, and bounded-payload behavior; run the full repository/extension/package/security gate.
+
+### Assumptions and explicit boundaries
+
+- VS Code 1.95 and installed GitHub extensions do not imply a supported agent-discovery or direct-invocation API. Production capabilities remain unavailable unless runtime evidence and an allowlisted adapter method prove otherwise.
+- Repository agent/profile files are parsed as inert bounded configuration; they never execute code or authorize arbitrary commands.
+- Context token counts are conservative estimates based on characters unless a supported tokenizer is explicitly available. Keystone does not claim Copilot billing/token usage or savings.
+- The milestone may prepare and initiate delegation and observe repository changes. It does not interpret Copilot responses, execute validation commands, claim task completion, retry automatically, create PRs, hand work off, or begin autonomous SDLC behavior.
+
+### Milestones 9–10 completion record — 2026-07-16
+
+Intent, specification, tasks, context, and controlled delegation are now production-wired. Versioned atomic local state restores workflows, agent evidence, selections, reviewed context/prompt fingerprints, sessions, and repository baselines. Intent terms resolve through the deterministic Intelligence query service. Specification approval and material revisions govern a cycle-checked task graph. Copilot capabilities default to unavailable, configured profiles remain `unknown`, aliases inherit only an explicit target, direct invocation requires both a supported runtime contract and a real handle, and fallback modes never claim progress or completion.
+
+Context ranking weights, budgets, exclusions, token estimates, evidence, current editor/selection proximity, exact source ranges, deterministic fingerprints, and approval invalidation live in the core service rather than UI code. Generation/branch changes reconcile workflow staleness and invalidate reviewed context and prompt approval. Direct completion/result events remain unavailable in the production VS Code 1.95 adapter because no supported integration method is exposed; the UI therefore uses assisted or explicit clipboard behavior and user confirmation.
+
+Prerequisite validation before Milestone 11: `npm run verify` passed 34 files/266 tests plus extension and Webview production builds; `npm run test:extension` passed VS Code 1.95.0 with exit code 0. The isolated VS Code runner again logged an unrelated remote chat-registry fetch failure after assertions. No dependency was added.
+
+## Milestone 11 — Task Execution Tracking, Result Capture, Validation, Retry, and Completion
+
+### M11.1 — Persisted execution lifecycle and repository attribution
+
+- [x] Add a separate versioned, atomic, restart-safe `TaskExecutionSession` store with an explicit tested transition table and immutable delegation baseline linkage.
+- [x] Require a current approved task/delegation, matching branch/revision, persisted baseline, and explicit external-start confirmation; opening Copilot never starts execution.
+- [x] Observe bounded Git reconciliation changes and classify expected, related, unexpected, pre-existing, ambiguous, excluded, and generated-output paths with confidence, reasons, evidence, and auditable user attribution overrides.
+- [x] Capture direct results only behind a supported result event, otherwise assisted claims or repository-only evidence; agent claims remain lower-reliability untrusted input.
+
+### M11.2 — Safe deterministic validation
+
+- [x] Build generation/fingerprint-aware plans from approved criteria, attributed changes, repository scripts, current canonical diagnostics/entities, specification scope, and optional architecture/security/performance capability checks.
+- [x] Replace the prior unsafe `shell: true` scaffold with typed executable/argument descriptors, allowlisted binaries, explicit working directories, sanitized environments, timeouts, cancellation/process-group termination, bounded tails, output truncation, control-character cleanup, and secret redaction.
+- [x] Run repository-discovered type-check, lint, test, build, integration, and end-to-end scripts through managed child processes; potentially mutating descriptors require explicit approval and prohibited commands cannot run.
+- [x] Map every required criterion to validation steps and return passed, failed, not-run, not-verifiable, manual-review, or overridden outcomes with evidence and blocking findings. Repository changes during/after validation stale the results.
+
+### M11.3 — Retry, completion, and dependency unlock
+
+- [x] Preserve failed attempts and create reduced repair context from incomplete criteria, retry-relevant findings, commands/evidence, and attributed changes for same-agent, different-agent, manual, or partial repair plans.
+- [x] Create a separate retry execution session and fresh repository baseline only after explicit retry start; retain the parent attempt and never auto-run or auto-delegate a dependent task.
+- [x] Block completion on missing/stale validation, failed or unverified required criteria, required step failure, blocking findings, unexpected changes, branch/specification drift, or stale repository fingerprints.
+- [x] Record explicit criterion/finding/manual overrides and explicit task completion; unlock only non-stale dependents whose dependencies are complete and generate a bounded local workflow report only when all tasks complete.
+
+### M11.4 — Typed host/UI integration and verification
+
+- [x] Add all requested typed/versioned/bounded execution, validation, retry, and completion request/event names. Core routes return validated persisted models; unsupported direct result capture fails rather than fabricating data.
+- [x] Add a focused execution/validation workspace for start/stop confirmation, attributed changes, result capture, planned safe commands, live bounded progress, criteria/findings, readiness, and explicit completion.
+- [x] Add real-process and deterministic tests for transitions, attribution families, result-capture honesty, command allowlisting/approval/bounds/redaction/cancellation, criterion outcomes, validation orchestration, retry preservation/fresh baselines, explicit completion, and dependency unlock.
+- [x] Run typecheck, lint, all unit/UI tests, extension integration tests, both production builds, package-content inspection, diff checks, and static shell/LLM/external-storage inspection.
+
+### Execution, validation, and completion design
+
+`TaskExecutionService` creates an execution record from a persisted delegation session and uses `ExecutionStateMachine` to reject invalid jumps. Change attribution combines baseline membership, exact approved files, repository-area proximity, canonical classification, Git change kind, and explicit user override; timing is never sufficient evidence. Direct Copilot result capture is rejected in production because result events are unavailable. Assisted text is sanitized and stored as an agent claim, while repository-only capture explicitly records the missing agent report.
+
+`ValidationPlanner` discovers only bounded known repository scripts and emits typed `CommandDescriptor` values. `CommandExecutionService` calls `spawn(executable, args)` with `shell: false`, a small environment allowlist, explicit cwd, timeout/cancellation, process-tree termination, and 20,000-character sanitized tails. Plans also perform exact diff/scope checks, current-generation changed-entity/diagnostic checks, and honest optional capability checks. Required criterion status is derived only from mapped step evidence; optional skipped security/architecture checks never imply assurance.
+
+Retries keep the original session, validation runs, baseline, context/prompt identities, findings, and reason. Repair context excludes unrelated successful material. A retry creates a child session with a fresh baseline and remains `awaiting-start`; it does not automatically contact Copilot. `CompletionDecisionService` distinguishes overridable findings/criteria from non-overridable missing validation, specification drift, and repository staleness. Completion requires an explicit user action. Dependency unlock changes eligible pending tasks to ready but never builds context or delegates them automatically.
+
+Persisted command data is limited to typed descriptors, summarized evidence, and bounded sanitized output tails. No credentials, complete environment, unbounded logs, Copilot chat history, external database, remote service, push, deployment, or PR action exists.
+
+Unsupported or conditional validation remains explicit: no direct Copilot completion/result event on the production adapter; no semantic equivalence proof; no baseline command-failure comparison unless a prior validation run exists; no coverage claim without coverage evidence; no arbitrary Webview command text; no production migration/deployment/push; no repository-wide security taint guarantee; security and architecture steps are skipped when precise changed-scope CPG/framework/rule evidence is absent; performance findings are structural candidates unless a configured measurement command runs; impacted-test selection is evidence-ready in Intelligence but command-specific per-test invocation is not synthesized for unknown frameworks; manual/runtime criteria require explicit evidence or override.
+
+Validation outcomes on 2026-07-16:
+
+- Controlled-delegation prerequisite `npm run verify`: passed 34 test files/266 tests and both builds after the final attribution and UI-race repairs.
+- Final `npm run verify`: passed typecheck, lint, 34 test files/268 tests, 1.1 MB extension bundle, 10.3 MB semantic worker, and Webview 399.70 KB/110.35 KB gzip JavaScript plus 27.73 KB/5.70 KB gzip CSS.
+- `npm run test:extension`: passed VS Code 1.95.0 with exit code 0.
+- `npx vsce ls`: 6 bounded package entries. `git diff --check` passed. Static review found one managed `spawn` using `shell: false`, no unsafe shell executor, LLM/embedding path, external database/vector/graph store, backend server, credential access, push, or deployment command.
+- Real command tests ran allowlisted `npm --version`, bounded repository scripts, and an abort-driven long-running process; cancellation terminated the managed process tree in under five seconds and output tails stayed at or below 20,000 characters.
+
+Files created for Milestones 9–11:
+
+- `src/shared/contracts/delegation.ts`
+- `src/shared/contracts/execution.ts`
+- `src/core/persistence/DelegationPersistenceStore.ts`
+- `src/core/persistence/ExecutionPersistenceStore.ts`
+- `src/core/workflows/DevelopmentWorkflowService.ts`
+- `src/core/context/TaskContextService.ts`
+- `src/core/execution/TaskExecutionService.ts`
+- `src/core/execution/CompletionService.ts`
+- `src/core/validation/TaskValidationService.ts`
+- `src/extension/copilot/VsCodeCopilotEnvironment.ts`
+- `src/extension/copilot/ConfiguredAgentLoader.ts`
+- `src/ui/components/delegation/DevelopmentWorkspace.tsx`
+- `src/ui/components/execution/ExecutionValidationWorkspace.tsx`
+- `tests/unit/copilot/ControlledDelegation.test.ts`
+- `tests/unit/workflows/DevelopmentWorkflowService.test.ts`
+- `tests/unit/execution/ExecutionValidation.test.ts`
+- `tests/ui/DevelopmentWorkspace.test.tsx`
+- `tests/ui/ExecutionValidationWorkspace.test.tsx`
+
+Files modified for Milestones 9–11:
+
+- `PLANS.md`, `package.json`
+- `src/shared/contracts/messages.ts`
+- `src/core/configuration/ConfigurationService.ts`
+- `src/core/context/ContextCompressionEngine.ts`, `ContextEngine.ts`, `ContextPreview.ts`
+- `src/core/copilot/AgentRegistry.ts`, `CopilotAdapter.ts`, `DelegationService.ts`
+- `src/core/intent/IntentEngine.ts`
+- `src/core/validation/ValidationEngine.ts`
+- `src/extension/extension.ts`, `src/extension/webview/WebviewMessageRouter.ts`
+- `src/ui/App.tsx`, `src/ui/services/HostBridge.ts`, `src/ui/styles/global.css`
+- `tests/unit/context/ContextEngine.test.ts`, `tests/unit/webview/WebviewMessageRouter.test.ts`
+- Mechanical prerequisite-only type/lint repairs in `src/core/intelligence/okf/OkfConcept.ts`, `OkfConceptIdFactory.ts`, and `OkfConceptMapper.ts`; OKF was not wired or advanced.
+
+No file was deleted and no dependency was added.
+
+### M11 hardening re-audit — 2026-07-16
+
+The completion claim above was re-audited against the full milestone text. The earlier vertical slice passed its tests but omitted several required facts and controls. This hardening pass repaired only verified defects: execution-start fingerprint/dependency/overlap revalidation; repository identity, generation, file-hash, diagnostic, and known-validation baselines; retained-generation changed-entity analysis; explicit test-impact ranking and selection; real changed-scope static/CPG providers; scoped validation fingerprints, cache reuse, and stale invalidation; restart recovery; exact step reruns; separate partial-repair tasks; audited overrides; and expanded workflow reports/metrics. It also corrected a prerequisite ingestion defect where an external Git CLI commit could advance same-branch `HEAD` without a VS Code Git event. `VsCodeRepositoryMonitor` now polls metadata once per second and schedules reconciliation only when branch, HEAD, or dirty fingerprint changes.
+
+Execution start now rechecks the approved delegation's persisted context and prompt fingerprints, task dependency readiness, overlapping active work, approved specification revision, branch, and current baseline. Active execution/validation is never restored as running after restart: interrupted sessions become blocked, running runs become cancelled, incomplete results become stale, and the workflow requires explicit reconciliation. State transitions remain explicit (`awaiting-start → executing → repository-changed → awaiting-result-capture → result-captured → planning-validation → validating → validation-passed|validation-failed|awaiting-user-review|stale`) with separate cancelled, blocked, retry-planned/retrying, accepted-with-override, and completed paths. Opening Copilot, observing a diff, receiving a claim, or finishing a validation command cannot itself complete a task.
+
+Change attribution retains path classification, confidence, reasons, evidence IDs, and user corrections. `ChangedEntityResolver` compares the retained baseline generation with the active canonical generation and reports file, symbol, signature, route, contract, schema, configuration, test, build, infrastructure, dependency, and architecture changes. Missing retained identity produces an `unresolved-mapping` limitation and never asserts rename continuity. Static diagnostics use the same SHA-256 fingerprint algorithm at baseline and validation, so existing findings are not relabeled as introduced.
+
+Validation plans discover allowlisted repository commands and run them as `spawn(executable, args)` with `shell: false`, workspace-bounded cwd, a minimal environment, timeout/abort process-tree termination, cross-chunk secret redaction, control cleanup, and 20,000-character tails. Deployment, publishing, login, remote push, and production-migration commands are rejected. Impacted mode runs only evidence-selected tests; if none can be selected, it reports and runs the configured full unit suite as a conservative fallback. Affected-suite mode likewise reports when no framework-safe selector exists instead of claiming narrower execution. Coverage-confirmed, exact call, exact reference/import, and framework bindings rank deterministically; naming candidates remain unselected suggestions. The UI can exclude selected candidates before rebuilding the plan.
+
+Acceptance-criterion outcomes are derived from required mapped steps and evidence. Manual evidence is permitted only for `requires-manual-review`, `not-verifiable`, `not-run`, or `partially-passed`; it cannot replace an automated failure. Overrides are separate persisted audit records with prior/resulting status, reason, user identity, risk acknowledgement, and timestamp. Missing validation, cancelled/stale runs, specification drift, repository/branch drift, and changed required-step fingerprints are non-overridable. Completion remains explicit, unlocks only non-stale dependents, and never runs, builds context for, or delegates the next task.
+
+Retries preserve every prior session/run and reduce repair context to failed criteria, retry-relevant findings/evidence, exact failed commands, and attributed changes. Same-agent and explicitly selected different-agent retries create a child session with a fresh baseline and remain `awaiting-start`. A partial repair creates a separate unassigned task covering only failed criteria under the unchanged approved specification; it must be reviewed and delegated separately. Manual repair changes are re-observed and revalidated rather than treated as successful by declaration.
+
+Unsupported or conditional validation remains explicit: production Copilot exposes no supported direct result/completion event; arbitrary Webview command text is rejected; framework-specific affected-suite selection falls back to the configured full unit suite when no safe selector exists; naming-only test mappings do not imply coverage; coverage percentages, flaky-test status, or performance regressions are not claimed without canonical measurements; contract/schema/architecture checks depend on current canonical entities/diagnostics; security analysis is bounded intraprocedural changed-scope CPG source-to-sink detection, not repository-wide taint assurance; and semantic equivalence is not proven.
+
+Final validation outcomes:
+
+- Initial hardening baseline: `npm run verify` passed typecheck, lint, 34 test files/268 tests, and both production builds.
+- Focused execution/workflow/UI suites passed 39 tests after baseline/change/provider/recovery/partial-repair additions; the final focused execution/UI suite passed 34 tests after manual-evidence and test-mode corrections.
+- Final `npm run verify` passed typecheck, lint, 35 test files/284 tests, the 1.2 MB extension bundle, the 10.3 MB semantic worker, and the Webview bundle at 410.10 KB/112.52 KB gzip JavaScript and 27.73 KB/5.70 KB gzip CSS. Unit/UI tests completed in 3.05 seconds; the real timeout test terminated in the bounded five-second assertion window.
+- The first extension-host run exposed the missed external-CLI same-branch HEAD reconciliation and failed its 30-second wait. After the monitor repair, two `npm run test:extension` runs passed VS Code 1.95.0 with exit code 0, covering activation responsiveness, continuous file create/modify/rename/delete, branch reconciliation, same-branch HEAD advance, semantic/CPG queries, and both production builds. The isolated runner's failed remote chat-registry fetch is unrelated to Keystone and did not affect assertions.
+- `git diff --check` passed. `npx vsce ls` returned ten bounded package entries. Static inspection found one managed child-process spawn with `shell: false`; no LLM/embedding invocation, backend/server, external database/graph/vector store, cloud persistence, credential store, push/deploy action, or new dependency. Runtime dependencies remain only React, React DOM, and Zod.
+
+Additional files created by the hardening pass:
+
+- `src/core/execution/ExecutionAnalysisServices.ts`
+- `src/core/validation/ValidationProviders.ts`
+- `tests/unit/execution/AdvancedExecutionValidation.test.ts`
+
+Additional files modified by the hardening pass:
+
+- `PLANS.md`
+- `src/shared/contracts/delegation.ts`
+- `src/shared/contracts/execution.ts`
+- `src/shared/contracts/messages.ts`
+- `src/core/persistence/ExecutionPersistenceStore.ts`
+- `src/core/copilot/DelegationService.ts`
+- `src/core/execution/TaskExecutionService.ts`
+- `src/core/execution/CompletionService.ts`
+- `src/core/validation/TaskValidationService.ts`
+- `src/core/workflows/DevelopmentWorkflowService.ts`
+- `src/extension/extension.ts`
+- `src/extension/intelligence/VsCodeRepositoryMonitor.ts`
+- `src/extension/webview/WebviewMessageRouter.ts`
+- `src/ui/components/execution/ExecutionValidationWorkspace.tsx`
+- `tests/unit/execution/ExecutionValidation.test.ts`
+- `tests/unit/workflows/DevelopmentWorkflowService.test.ts`
+
+No file was deleted and no dependency was added by the hardening pass.
+
+### Recommended next single milestone
+
+Milestone 12 — Git workflow, deterministic review/commit planning, and explicitly user-approved PR delivery. This approved milestone supersedes the earlier conservative no-mutation recommendation while retaining the prohibitions on deployment, task handoff, multi-user management, and autonomous sequential execution.
+
+## Milestone 12 — Git Workflow, Commit Planning, and Pull-Request Delivery
+
+### Entry gate — 2026-07-16
+
+- [x] Re-read the approved product/architecture/data/validation/decision documents and Intelligence architecture, ontology, ingestion, storage, query, UI, gap, and delivery documents.
+- [x] Run the prerequisite gate: `npm run verify` passed typecheck, lint, 35 test files/284 tests, extension production build, semantic-worker build, and React Webview build.
+- [x] Confirm completed execution sessions, evidence-backed validation, explicit completion, retry preservation, non-automatic dependency unlock, workflow reports, and claim/evidence separation remain implemented and tested.
+- [x] Audit existing Git integration. `VsCodeGitAdapter` exposes read-only metadata/change observation only; no commit-plan, staging, mutation, PR provider, or delivery persistence service exists to reuse.
+
+### M12.1 — Typed delivery state, capability adapters, and persistence
+
+- [x] Add bounded versioned Git capability, repository state, diff, change-set, commit-plan, mutation approval/result, PR capability/draft/result, and delivery-report contracts.
+- [x] Extend the stable internal Git adapter with supported VS Code Git API operations and an isolated controlled Git-executable fallback; sanitize remotes and fail closed on unsupported capabilities.
+- [x] Add atomic local delivery persistence without credentials, tokens, unbounded diffs, or credential-bearing remote URLs.
+
+### M12.2 — Readiness, review, and deterministic commit planning
+
+- [x] Build source-control readiness from completed workflow/task/validation state, branch/repository state, conflicts, attribution, sensitive/generated/binary policy, dependencies, schema/migration, tests, and documentation evidence.
+- [x] Construct fingerprinted reviewed change sets with expected-by-default inclusion and ambiguous, unrelated, sensitive, generated, and binary exclusions/diagnostics.
+- [x] Add deterministic task/dependency/category-aware commit grouping, editable conventional/plain/repository-detected messages, and merge/split/reorder/move/single-commit operations.
+
+### M12.3 — Explicit Git mutations and failure recovery
+
+- [x] Require a separate persisted explicit approval for stage, unstage, branch creation, each commit, push, and PR creation; revalidate fingerprints and repository state immediately before execution.
+- [x] Verify staged content and actual commit files/hashes, preserve remaining changes and plans, classify post-mutation verification failures as uncertain, and prohibit force push, hard reset, clean, amend, rebase, ref updates, destructive checkout, and branch/remote deletion.
+- [x] Add branch and push readiness, behind/non-fast-forward/conflict/detached/wrong-branch blocking, safe feature-branch naming, optional upstream setup, and result verification without pull/rebase/merge automation.
+
+### M12.4 — PR providers, focused UI, and completion gate
+
+- [x] Add capability-driven provider registry with supported GitHub integration only when proven, deterministic template-preserving PR drafts, validation/risk/review guidance, direct/assisted/clipboard modes, duplicate prevention, and bounded tracking.
+- [x] Add typed cancellable host requests/events and a focused Delivery workspace for readiness, grouped review, lazy bounded diffs, commit planning, explicit approvals/actions, PR drafting, results, and recovery.
+- [x] Add domain, adapter, mutation-safety, persistence/reload, Webview/UI, no-automation/no-secret/no-destructive-action tests and run the full verification/extension/package/static audit.
+
+### Milestone 12 completion record — 2026-07-16
+
+Keystone now has a local deterministic delivery layer from completed workflow evidence through reviewed change selection, commit planning, Git mutations, and PR preparation. `DeliveryCoordinator` composes capability, repository-state, readiness, change-set, commit-plan, approval, mutation, PR-provider, draft, validation, tracking, diagnostics, and report services. Versioned state is written atomically to `workflow/delivery-state.json`; corrupt data is quarantined, credentials and complete diffs are not persisted, and every mutation approval is bounded, fingerprinted, single-use, and retained with its sanitized result.
+
+The production adapter prefers documented built-in VS Code Git API methods when the active repository and exact operation are present. Read/state, unstage, bounded diff, history, and any unavailable mutation use an isolated `execFile("git", args)` fallback with `shell: false`, fixed argument construction, repository-bound paths, a minimal environment, timeouts, output bounds, secret/control-character redaction, and post-operation verification. No interface exposes force push, reset, clean, amend, rebase, arbitrary ref updates, destructive checkout, or deletion of branches/remotes.
+
+Readiness is derived from approved/current specification state, completed tasks, retained validation runs and criteria, blocking findings, branch/operation/conflict state, attribution, sensitive-file policy, remote availability, upstream divergence, and schema/migration test warnings. A change set combines Git base-to-HEAD and working/index state with execution attribution and canonical sensitive/generated classification. Only expected/related, non-sensitive, non-generated, non-binary files are included by default; explicit review changes the fingerprint and invalidates earlier approval identity. Staging rejects every path outside the included reviewed set.
+
+Commit plans group schema/migrations before implementation/tests, then documentation and build configuration. Repository commit subjects are sampled at a hard limit of 50 to select conventional/repository or plain formatting deterministically; the confidence/evidence count is exposed in plan diagnostics. Every proposal retains task, requirement, criterion, validation, risk, and file traceability. Users can edit messages, merge, split, reorder, move files, or collapse to one commit. A commit runs only when its exact proposal is approved and its exact files—and no extra files—are staged. HEAD hash and actual committed files are verified and recorded; remaining proposals stay available. A command that may have succeeded but cannot be verified is `uncertain`, never silently failed/retried.
+
+PR capability detection is fail-closed. The GitHub provider reports direct creation only when an injected supported provider method exists; the current production VS Code adapter proves assisted `pr.create` only when that command is actually registered. Otherwise the reviewed title/body is copied through VS Code's clipboard API and remains `awaiting-external-creation`. Repository PR templates are discovered locally and preserved ahead of the deterministic summary, scope, validation, API/schema, risk, review guidance, and traceability sections. Duplicate direct/assisted creation is suppressed by draft/result identity. No provider authentication token is read or stored, and Keystone does not report a direct PR as created without a provider result (or an explicit external confirmation record).
+
+The Delivery Webview exposes Git capability/state, readiness blockers/warnings, expected-vs-observed files, per-file lazy 50,000-byte diffs with truncation, inclusion decisions, editable commit plans, per-proposal staging/commit actions, branch creation, push, PR draft review/approval, provider result, and limitation text. Read-only diffs are cancellable. Mutating operations intentionally are not interrupted midway; each requires a dedicated user action ending in an ellipsis and a typed payload with `confirm: true`.
+
+Final validation commands and outcomes:
+
+- Prerequisite `npm run verify`: passed typecheck, lint, 35 test files/284 tests, extension/semantic-worker production builds, and React production build.
+- Final `npm run verify`: passed typecheck, lint, 38 test files/313 tests, the 1.3 MB extension and 10.3 MB semantic-worker production builds, and the React production build (433.05 KB/116.91 KB gzip JavaScript; 29.69 KB/6.01 KB gzip CSS).
+- `npm run test:extension`: passed on VS Code 1.95.0 outside the filesystem sandbox; the runner logged only the known unavailable remote chat-registry fetch.
+- `npx vsce ls`: reported the expected nine bounded package entries. `git diff --check` passed.
+- Static delivery-scope review found no `shell: true`, LLM/embedding path, external database/vector/graph store, backend server, force/reset/clean/amend/ref-update/deletion command, deployment command, or persisted credential/token.
+
+Created for Milestone 12:
+
+- `src/shared/contracts/delivery.ts`
+- `src/core/persistence/DeliveryPersistenceStore.ts`
+- `src/core/delivery/GitDeliveryService.ts`
+- `src/extension/git/GitDeliveryAdapter.ts`
+- `src/extension/git/VsCodeGitDeliveryAdapter.ts`
+- `src/ui/components/delivery/DeliveryWorkspace.tsx`
+- `tests/unit/delivery/GitDeliveryService.test.ts`
+- `tests/integration/GitDeliveryAdapter.test.ts`
+- `tests/ui/DeliveryWorkspace.test.tsx`
+
+Modified for Milestone 12:
+
+- `PLANS.md`
+- `src/shared/contracts/domain.ts`
+- `src/shared/contracts/messages.ts`
+- `src/extension/extension.ts`
+- `src/extension/webview/WebviewMessageRouter.ts`
+- `src/ui/App.tsx`
+- `src/ui/services/HostBridge.ts`
+- `src/ui/styles/global.css`
+
+No file was deleted and no dependency was added for Milestone 12.
+
+Explicit limitations: production direct PR creation, authentication state, reviewer/label mutation, and remote status tracking remain unavailable because VS Code 1.95 exposes no proven supported authenticated provider API in this environment. GitHub assisted creation depends on the installed provider registering `pr.create`; clipboard mode never claims remote creation. Unstage uses the controlled Git executable because a supported built-in Git API for index-only restore is not proven. Hunk staging, multi-root delivery (the first workspace root is selected), fetch/pull/merge/rebase, remote-branch enumeration, automatic non-fast-forward repair, submodule mutation, signing-policy management, provider comments/checks, and automatic rollback are unsupported. Binary, symlink, and submodule changes are explicitly classified and excluded by default; binary diff bodies are not rendered. Readiness uses deterministic structural schema/migration/test evidence; it does not prove semantic compatibility or production deploy safety.
+
+### Recommended next single milestone
+
+Milestone 13 — deterministic OKF projection from the canonical evidence-backed graph and completed query/delivery facts. Do not begin final Intelligence UI redesign, repository-wide taint analysis, autonomous multi-task execution, deployment, or multi-user workflow management.
+
+## Milestone 13 — Task Handoff and Team Workflow
+
+The product owner explicitly authorized this milestone after Milestone 12, superseding the earlier recommendation to begin OKF next. Repository branding and existing service names remain Keystone; portable artifacts use the requested `.buildwise-handoff.json` convention for interoperability.
+
+### Entry gate — 2026-07-16
+
+- [x] Re-read `AGENTS.md`, the current plan, the product, architecture, data, Intelligence/context, Copilot, implementation, validation, decision, and handoff requirements.
+- [x] Run `npm run verify`: typecheck, lint, 38 test files/313 tests, extension/semantic-worker production builds, and React production build passed.
+- [x] Reconfirm reviewed change sets/commit plans, explicit stage/commit/push/PR confirmation, sensitive/unrelated exclusion, atomic delivery persistence, honest provider capabilities, redaction, and non-fabricated results.
+- [x] Inspect existing scaffolding. No participant, assignment, ownership, handoff-package, reconciliation, portable exchange, progress, audit, or Team UI implementation exists to reuse; existing workflow/context/execution/validation/delivery stores remain authoritative inputs.
+
+### M13.1 — Team, assignment, ownership, audit, and persistence
+
+- [x] Add strict versioned bounded participants, capabilities, assignments, ownership, audit, progress, handoff package, import/export, reconciliation, attachment-reference, and persistence contracts.
+- [x] Add atomic restart-safe team persistence with corrupt-state quarantine, bounded histories, recovery markers, and no credentials, tokens, hidden authentication, or chat transcript storage.
+- [x] Implement participant configuration, capability guidance, assignment eligibility/lifecycle, explicit acceptance/rejection/clarification, single-primary-owner enforcement, reassignment, audit, and durable stage/count progress.
+
+### M13.2 — Handoff package, validation, privacy, and exchange
+
+- [x] Build deterministic bounded packages from immutable intent/workflow/spec/task snapshots plus referenced context, execution, validation, delivery, repository, Intelligence, blocker, question, and changed-file evidence.
+- [x] Fingerprint canonical package content and validate schema/version, identity, duplicates, traversal/URI/executable/secret/size rules, state transitions, and required references before export/import/acceptance. Attachment references fail closed because attachment-body exchange is not yet enabled.
+- [x] Add explicit JSON and deterministic single-entry ZIP export/import, reduced-fidelity clipboard summary, and opt-in `.buildwise/handoffs/` repository artifact without automatic commit, patch application, or repository mutation.
+
+### M13.3 — Reconciliation and continuity
+
+- [x] Classify exact, compatible, ahead, behind, diverged, wrong-branch, wrong-repository, missing-commits, and unknown repository compatibility without automatic Git synchronization.
+- [x] Reconcile specification revision, Intelligence generation, canonical entities, changed files, context fingerprints/pins, execution history, validation reuse/provider assumptions, delivery references, and unavailable local changes with explicit diagnostics.
+- [x] Require receiver review/acceptance, create/import the bounded local continuation task instead of reusing hidden Copilot state, preserve sender history, stale invalid evidence, and support read-only/rejected/QA/reviewer/developer transfers.
+
+### M13.4 — Typed host/UI integration and completion gate
+
+- [x] Add every requested typed bounded request/event, cancellation boundaries for import analysis, safe file-dialog adapters, and a focused Team workspace for participants, assignments, handoff preparation/privacy/preview/import/comparison/acceptance, progress, blockers, and audit.
+- [x] Add domain, lifecycle, tamper/security/size, exact/ahead/behind/diverged/wrong-repository, continuity, persistence/restart, exchange, Webview/UI, no-credential/no-Git-mutation/no-fabrication tests. Attachment bodies remain a documented fail-closed limitation rather than a fabricated test claim.
+- [x] Run full verification, VS Code extension tests, production builds, package inspection, diff/static security audit, record performance/limits/files/unsupported synchronization, and recommend but do not start the next milestone.
+
+### Milestone 13 completion record — 2026-07-16
+
+Keystone now provides a complete local assignment-to-continuation path. `TeamWorkflowService` composes participant, eligibility, assignment, ownership, package, validation, import/export, reconciliation, acceptance, reassignment, progress, and audit services. Participant identity is always `self-asserted-local`; capabilities are deterministic guidance, not authenticated authorization. A task has one active primary owner, assignment starts at `awaiting-acceptance`, and only the intended participant can accept, reject, or request clarification. Active reassignment requires a matching handoff package. Canonical workflow/repository/Intelligence drift makes active ownership stale and clears it rather than silently continuing.
+
+The handoff package is strict, bounded, versioned, and SHA-256 fingerprinted over stable-key canonical JSON. It contains full immutable intent/specification/task snapshots, the assignment and current repository reference, progress/blockers/questions, bounded context references, and available execution, validation, delivery, changed-file, and changed-entity summaries. It does not duplicate source trees, embed executable patches, transfer Copilot hidden state, or assume local uncommitted files exist elsewhere. Package construction and export both revalidate schema, fingerprint, size, safe paths, expiry, and secret-like patterns.
+
+JSON and deterministic uncompressed ZIP exchange are supported. ZIP import permits exactly one root `handoff.json`, verifies CRC and central-directory entry count, and rejects compression, encryption, traversal, truncation, and multiple entries. Import persists a `validating` recovery record, marks failure/cancellation explicitly, rejects duplicate live imports, imports the intended receiver as clearly sourced local metadata when needed, and never changes repository content. Clipboard export is explicitly reduced fidelity. Repository artifact export is disabled by default, enabled only by `keystone.team.repositoryArtifactsEnabled`, and confined to `.buildwise/handoffs/`; Keystone never stages or commits it.
+
+Reconciliation checks repository identity, branch, exact fingerprint, HEAD, relevant-file fingerprints, specification identity/revision, receiver task presence, Intelligence generation, canonical entity resolution, and provider versions. The controlled read-only Git comparison uses local commit objects to classify `ahead`, `behind`, `diverged`, or `missing-commits`; it performs no fetch, pull, checkout, merge, rebase, reset, or patch application. Results retain differences, stale/reusable contexts, reusable/invalid validation runs, unresolved entities, required actions, limitations, and measured duration. Active acceptance is limited to exact/compatible/non-conflicting-ahead states. Read-only and rejected decisions remain available for unsafe states.
+
+Receiver acceptance imports a missing bounded workflow/task snapshot, creates a new local accepted assignment, records `continuationSessionRequired: true`, and rebuilds current canonical context when possible. That context remains unreviewed, and no delegation or execution starts automatically. Sender package/history remains immutable. Progress derives local task/assignment counts, blockers, stale/unassigned/due items, handoffs, and freshness; audit records every lifecycle decision with its local identity assurance, reason, evidence references, and timestamp.
+
+Final commands and outcomes:
+
+- Entry `npm run verify`: passed typecheck, lint, 38 test files/313 tests, extension/semantic-worker production builds, and React production build.
+- Focused team/security/exchange/Git/UI/contract suites: passed 30 tests before the final stale-ownership addition; the final full suite includes all additions.
+- Final `npm run verify`: passed typecheck, lint, 40 test files/327 tests, the 1.4 MB extension bundle, 10.3 MB semantic worker, and React build (458.12 KB/122.15 KB gzip JavaScript; 29.69 KB/6.01 KB gzip CSS).
+- `npm run test:extension` initially terminated with `SIGABRT` when Electron was confined by the filesystem sandbox. The approved out-of-sandbox rerun and final post-hardening run both passed on VS Code 1.95.0 with exit code 0. The runner logged only the known unavailable remote chat-registry fetch and an Electron utility-process shutdown message after the successful exit.
+- `npx vsce ls` listed the expected bounded package entries. `git diff --check` passed. Static team-scope review found no shell execution, LLM/embedding path, backend/server, external database/vector/graph store, credential/token persistence, automatic Git mutation, or repository synchronization path.
+
+Package limits are 1,000,000 JSON bytes, 50 attachment references, and 5,000,000 declared attachment bytes; actual attachment bodies currently fail closed. Histories are bounded to 200 packages, 500 imports/exports/reconciliations/acceptances/reassignments/progress snapshots, 2,000 assignments, 500 participants, and 2,000 audit entries by default. Fixture package generation and reconciliation are instrumented with `performance.now()` and tested below 500 ms each; final local unit/UI integration completed in 4.90 seconds. These are development-fixture observations, not repository-wide performance guarantees.
+
+Created for Milestone 13:
+
+- `docs/09-team-workflow.md`
+- `src/shared/contracts/team.ts`
+- `src/core/persistence/TeamWorkflowPersistenceStore.ts`
+- `src/core/team/HandoffSecurity.ts`
+- `src/core/team/TeamWorkflowService.ts`
+- `src/extension/team/VsCodeTeamArtifactAdapter.ts`
+- `src/ui/components/team/TeamWorkflowWorkspace.tsx`
+- `tests/unit/team/TeamWorkflowService.test.ts`
+- `tests/ui/TeamWorkflowWorkspace.test.tsx`
+
+Modified for Milestone 13:
+
+- `PLANS.md`
+- `package.json`
+- `src/shared/contracts/domain.ts`
+- `src/shared/contracts/messages.ts`
+- `src/core/workflows/DevelopmentWorkflowService.ts`
+- `src/extension/extension.ts`
+- `src/extension/git/GitDeliveryAdapter.ts`
+- `src/extension/git/VsCodeGitDeliveryAdapter.ts`
+- `src/extension/webview/WebviewMessageRouter.ts`
+- `src/ui/App.tsx`
+- `src/ui/services/HostBridge.ts`
+- `tests/integration/GitDeliveryAdapter.test.ts`
+- `tests/unit/contracts.test.ts`
+
+No file was deleted and no dependency was added for Milestone 13.
+
+Unsupported synchronization remains explicit: enterprise authentication/authorization, organization administration, cloud sync, real-time presence, chat, automatic task assignment, remote Git discovery without local objects, fetch/pull/merge/rebase/reset/checkout, automatic Git or patch synchronization, automatic delegation/execution, deployment, and production monitoring. Optional attachment bodies and hashes are not exchanged yet; attachment metadata is rejected until independently verified bodies are supported. Exact remote freshness and human identity assurance are never fabricated.
+
+### Recommended next single milestone
+
+Milestone 14 — deterministic OKF projection from canonical Intelligence and completed query/workflow evidence. Do not begin final Intelligence UI redesign, autonomous multi-task execution, cloud collaboration, or deployment.
+
+## Superseded experiments removed by scope correction
+
+A local Business Unit Hub experiment and an incomplete local-model/LoRA experiment were removed on 2026-07-16. They are not active or completed milestones, and no runtime, worker, process adapter, contract, route, persistence store, setting, navigation item, UI, build artifact, test requirement, dependency, estimate, or release criterion remains for either capability.
+
+The pre-deletion inventory and removal evidence are retained in the scope-correction audit below. Only concise conceptual notes remain in the future roadmap; implementation details would require a separately approved milestone.
+## Scope-correction audit — 2026-07-16
+
+This audit was completed before deleting future-only runtime code. The product owner has removed the Business Unit Intelligence Hub and local-model/LoRA capabilities from the active implementation and release progression. Their concepts remain future-roadmap notes only.
+
+### Reference inventory and classification
+
+**A — Remove completely: Hub-only runtime and UI**
+
+- `docs/10-business-unit-hub.md`
+- `src/shared/contracts/hub.ts`
+- `src/core/hub/HubService.ts`
+- `src/core/hub/HubPublicationProjection.ts`
+- `src/core/hub/workerEntry.ts`
+- `src/core/persistence/HubPersistenceStore.ts`
+- `src/extension/hub/HubCoordinator.ts`
+- `src/extension/hub/HubWorkerHost.ts`
+- `src/ui/components/hub/HubWorkspace.tsx`
+- `tests/unit/hub/HubService.test.ts`
+- `tests/ui/HubWorkspace.test.tsx`
+
+Hub-only references must also be removed from `package.json`, `scripts/build-extension.mjs`, `src/extension/extension.ts`, `src/extension/webview/WebviewMessageRouter.ts`, `src/shared/contracts/domain.ts`, `src/shared/contracts/messages.ts`, `src/ui/App.tsx`, `src/ui/services/HostBridge.ts`, `src/ui/styles/global.css`, `tests/unit/contracts.test.ts`, and `tests/unit/webview/WebviewMessageRouter.test.ts`.
+
+**A — Remove completely: local-model/LoRA runtime and UI**
+
+- `src/shared/contracts/localModels.ts`
+- `src/core/localModels/LocalModelService.ts`
+- `src/core/persistence/LocalModelPersistenceStore.ts`
+- `src/extension/localModels/LocalModelProcessAdapter.ts`
+- `src/ui/components/models/LocalModelsWorkspace.tsx`
+- `tests/unit/localModels/LocalModelService.test.ts`
+
+Local-model-only references must also be removed from `src/extension/extension.ts`, `src/extension/webview/WebviewMessageRouter.ts`, `src/shared/contracts/domain.ts`, `src/shared/contracts/messages.ts`, `src/ui/App.tsx`, and `src/ui/services/HostBridge.ts`. No package dependency was added for Hub or model work; MLX-LM and Ollama were discovered host executables, not package dependencies.
+
+**B — Preserve and rename/simplify**
+
+- Current Copilot agent capability matching, provider registry, deterministic context selection, validation providers, and delivery provider registry are valid generic abstractions. They remain, but no fallback or field may reference a Hub, local model, adapter, dataset, checkpoint, or hybrid route.
+- Add a small current-scope execution-routing contract/service with only `deterministic`, `github-copilot`, `manual`, and `unsupported` outcomes. It must not depend on future provider abstractions.
+- Optional handoff attachment/reference metadata remains generic and local; it is not a Hub dependency.
+
+**C — Preserve unchanged**
+
+- Repository Intelligence, continuous ingestion, semantic graph, CPG, repository adapters, query/analysis, OKF projection, local generation storage, React Intelligence UI, intent/specification/task/context workflows, Copilot discovery/delegation, execution/validation/completion, Git/PR delivery, and Task Handoff.
+- Shared atomic writing, worker management, evidence/provenance, policy validation, capability detection, context compression, and team-workflow persistence are independently required by current features.
+
+**D — Move to future roadmap/documentation only**
+
+- Business Unit Intelligence Hub, cross-product reusable intelligence/publication/search, centralized pattern/integration discovery, local inference, LoRA datasets/training/evaluation/adapters, organization-specific adaptation, and hybrid local-model/Copilot routing.
+
+### Active dependencies, optional dependencies, and placeholders
+
+- Active Hub dependencies: activation/DI registration, Hub worker build, typed Webview routes/events/results, React navigation/page, `keystone.hub.enabled`, Hub persistence/cache, and Hub tests.
+- Active local-model dependencies: activation/DI registration, child-process runtime discovery, hardware profiling, model/dataset/training/evaluation/routing schemas and routes, React navigation/page, extension-global persistence, and local-model tests.
+- Optional dependency to remove: none in `package.json`; no Hub server/database/search package and no model/training package is installed.
+- Placeholder-only references: none should remain in active navigation, settings, contracts, or release criteria.
+- Documentation-only references after cleanup: the concise future-roadmap section and explicit migration/cleanup history only.
+
+### Removal risks and cleanup order
+
+1. Record this audit and capture baseline bundle/test state.
+2. Remove Hub/model activation, DI, worker build, configuration, message contracts, routes, HostBridge validation, navigation, UI, styles, and exclusive tests.
+3. Delete exclusive runtime/contracts/persistence/UI/test files; retain all shared current-scope services.
+4. Add deterministic current-scope routing and migration cleanup that archives obsolete global-storage directories without touching workflow/intelligence state.
+5. Correct the 16-milestone active progression, documentation diagrams/status/counts, README/product summary, and future roadmap.
+6. Run contract/routing/migration/current-feature tests, full verification, extension tests, package/bundle inspection, dependency audit, and forbidden-reference searches.
+
+Primary risks are stale discriminated-union members, router exhaustiveness failures, dead worker build output, obsolete navigation state (`hub`/`models`), and existing development-profile global-storage records. Navigation migration falls back safely to Intelligence; obsolete Hub/model directories are archived best-effort and never block activation; unrelated workspace workflow and Intelligence stores are not migrated or rewritten.
+
+## Corrected active implementation progression
+
+This table is the sole active milestone numbering and status authority. Earlier numbered sections are detailed execution/completion records for the corresponding capability; the two explicitly superseded experiment sections above are history only.
+
+| # | Active milestone | Status | Release dependency |
+|---:|---|---|---|
+| 1 | Repository Intelligence foundation | Complete | — |
+| 2 | Continuous ingestion | Complete | 1 |
+| 3 | Semantic graph | Complete | 2 |
+| 4 | Progressive CPG | Complete | 3 |
+| 5 | Repository adapters | Complete | 4 |
+| 6 | Query and analysis engine | Complete | 5 |
+| 7 | OKF projection | Partial; not complete | 6 |
+| 8 | Complete Intelligence UI and hardening | Partial; not complete | 7 |
+| 9 | Intent capture and specification workflow | Complete | 8 release gate remains open |
+| 10 | Copilot agent discovery, context construction, and controlled delegation | Complete | 9 |
+| 11 | Execution tracking, validation, retry, and completion | Complete | 10 |
+| 12 | Git and PR delivery | Complete | 11 |
+| 13 | Task Handoff and team workflow | Complete | 12 |
+| 14 | AI-driven SDLC orchestration | Complete for controlled, approval-gated coordination | 7–13 |
+| 15 | Product integration and end-to-end hardening | Not started | 14 |
+| 16 | Release readiness and pilot validation | Not started | 15 |
+
+Four active milestones remain incomplete: 7, 8, 15, and 16. Existing work in milestones 9–14 remains preserved and tested, but release readiness cannot close until the earlier OKF/UI gates and later integration/hardening gates are complete.
+
+```mermaid
+flowchart LR
+  M1["1 Repository Intelligence foundation"] --> M2["2 Continuous ingestion"] --> M3["3 Semantic graph"] --> M4["4 Progressive CPG"] --> M5["5 Repository adapters"] --> M6["6 Query and analysis engine"] --> M7["7 OKF projection"] --> M8["8 Complete Intelligence UI and hardening"] --> M9["9 Intent and specification"] --> M10["10 Copilot context and controlled delegation"] --> M11["11 Execution and validation"] --> M12["12 Git and PR delivery"] --> M13["13 Task Handoff"] --> M14["14 AI-driven SDLC orchestration"] --> M15["15 Product integration and hardening"] --> M16["16 Release readiness and pilot"]
+```
+
+Production Observability and Incident Intelligence is optional post-pilot work and is not on the critical path.
+
+### Next active milestone
+
+Milestone 15 — product integration and end-to-end hardening across the implemented Intelligence and workflow surfaces. Milestones 7–8 remain explicit open release gates and must be closed within that integration progression before pilot readiness.
+
+## Future Roadmap — Not Part of Current Implementation
+
+### Business Unit Intelligence Hub
+
+A future optional capability for publishing approved reusable intelligence across products and teams.
+
+### Local Model and LoRA Adaptation
+
+A future optional capability for approved local inference, organization-specific adapters, and hybrid routing.
+
+These capabilities are intentionally excluded from the current implementation, release scope, dependencies, acceptance criteria, estimates, runtime contracts, persistence, UI, settings, and release-readiness criteria.
+
+## Scope-correction completion record — 2026-07-16
+
+The active product now contains no Hub or local-model/LoRA execution path. Activation, dependency injection, workers and child processes, typed messages, routes, settings, navigation, UI, persistence, build entries, and exclusive tests were removed. Shared Intelligence, workflow, Copilot, validation, delivery, and Task Handoff capabilities were preserved.
+
+Current-scope operation routing is deterministic and centrally typed: canonical Intelligence operations use `deterministic`; approved implementation delegation can use `github-copilot` when available; Git delivery remains `manual`; everything else is `unsupported`. No local-model, dataset, checkpoint, training, evaluation, or hybrid fallback participates in routing.
+
+Persistence cleanup is bounded and non-destructive. Existing workspace state whose active section is `hub` or `models` migrates to `intelligence` while preserving workflow count and advancing its revision. Obsolete extension-global `hub` and `local-models` directories are renamed best-effort to timestamped `retired-roadmap-*` archives. Missing directories are a no-op, migration diagnostics do not block activation, and workflow/Intelligence generations are never rewritten.
+
+### Validation and audit outcomes
+
+- `npm run verify`: passed type checking, linting, 43 test files/341 tests, extension and semantic-worker production builds, and React production build.
+- `npm run test:extension`: the sandboxed Electron launch reproduced `SIGABRT`; the approved out-of-sandbox run passed on VS Code 1.95.0 with exit code 0.
+- `npm ls --all --depth=0`: passed; no Hub/model dependency existed, so none was removed and no lockfile regeneration is required.
+- `npm audit --omit=dev --offline`: could not execute because the repository intentionally has no lockfile (`ENOLOCK`). This is an explicit audit limitation, not a reported clean vulnerability scan.
+- `npx vsce ls`: passed; the package contains the extension bundle, semantic worker, Webview, manifest/docs, and icon only. There is no Hub/model worker or asset.
+- `git diff --check`: passed.
+- Final active-source and built-bundle searches found no Hub/model service, API, publication, artifact, runtime, training, evaluation, dataset, MLX, Ollama, llama.cpp, LoRA, or hybrid-routing implementation. The only literal obsolete navigation/storage names in runtime output belong to the bounded migration described above.
+
+### Bundle impact
+
+- Hub worker: 642.3 KB baseline to absent, a 642.3 KB reduction.
+- Webview JavaScript: 484.73 KB/127.65 KB gzip baseline to 458.77 KB/122.32 KB gzip, reductions of 25.96 KB raw and 5.33 KB gzip.
+- Webview CSS: 33.18 KB/6.50 KB gzip baseline to 29.69 KB/6.01 KB gzip, reductions of 3.49 KB raw and 0.49 KB gzip.
+- Extension bundle remains approximately 1.4 MB; semantic worker remains approximately 10.3 MB.
+
+### Scope-correction files
+
+Created:
+
+- `docs/10-future-roadmap.md`
+- `src/shared/contracts/routing.ts`
+- `src/core/workflows/ExecutionRoutingService.ts`
+- `src/core/persistence/ScopeCorrectionMigration.ts`
+- `tests/unit/workflows/ExecutionRoutingService.test.ts`
+- `tests/unit/persistence/ScopeCorrectionMigration.test.ts`
+- `tests/unit/scopeCorrection.test.ts`
+
+Modified:
+
+- `PLANS.md`
+- `README.md`
+- `docs/01-product-requirements.md`
+- `docs/02-architecture.md`
+- `docs/06-implementation-plan.md`
+- `docs/07-validation-and-traceability.md`
+- `docs/08-decision-log.md`
+- `docs/README.md`
+- `docs/intelligence/DELIVERY_PLAN.md`
+- `package.json`
+- `src/shared/contracts/domain.ts`
+- `src/shared/contracts/messages.ts`
+- `src/core/persistence/WorkspaceStateStore.ts`
+- `src/extension/extension.ts`
+- `src/extension/webview/WebviewMessageRouter.ts`
+- `src/ui/App.tsx`
+- `src/ui/services/HostBridge.ts`
+- `src/ui/styles/global.css`
+- `tests/unit/contracts.test.ts`
+- `tests/unit/persistence.test.ts`
+- `tests/unit/webview/WebviewMessageRouter.test.ts`
+
+Deleted:
+
+- `docs/10-business-unit-hub.md`
+- `src/shared/contracts/hub.ts`
+- `src/core/hub/HubService.ts`
+- `src/core/hub/HubPublicationProjection.ts`
+- `src/core/hub/workerEntry.ts`
+- `src/core/persistence/HubPersistenceStore.ts`
+- `src/extension/hub/HubCoordinator.ts`
+- `src/extension/hub/HubWorkerHost.ts`
+- `src/ui/components/hub/HubWorkspace.tsx`
+- `tests/unit/hub/HubService.test.ts`
+- `tests/ui/HubWorkspace.test.tsx`
+- `src/shared/contracts/localModels.ts`
+- `src/core/localModels/LocalModelService.ts`
+- `src/core/persistence/LocalModelPersistenceStore.ts`
+- `src/extension/localModels/LocalModelProcessAdapter.ts`
+- `src/ui/components/models/LocalModelsWorkspace.tsx`
+- `tests/unit/localModels/LocalModelService.test.ts`
+
+No dependency was added, removed, or changed for this correction. Remaining Hub/model references are limited to this audit/removal history, the bounded migration literals, and the concise future roadmap. The next active work remains Milestone 7; it has not been started by this correction.
+
+## Milestone 14 — AI-Driven SDLC Orchestration
+
+### Entry audit — 2026-07-16
+
+This milestone is explicitly authorized by the product owner after the scope correction. It does not complete or relabel the still-partial Milestones 7–8. The orchestration layer coordinates the already implemented Intelligence, intent/specification/task, context, Copilot delegation, execution/validation/completion, delivery, and Task Handoff boundaries; it must not duplicate their canonical behavior.
+
+- [x] Re-read `AGENTS.md`, the latest plan, and all current Keystone documentation.
+- [x] Run `npm run verify`: type checking, linting, 43 test files/341 tests, extension/semantic-worker builds, and the React production build passed.
+- [x] Confirm active source, settings, routes, scripts, and dependencies contain no Hub service/publication/artifact or local-model/LoRA/training/dataset/evaluation/hybrid-model runtime.
+- [x] Confirm obsolete navigation/storage migration, corrected 16-milestone progression, Task Handoff, deterministic canonical Intelligence, and capability-proven GitHub Copilot-only implementation delegation remain implemented and tested.
+- [x] Audit the old `WorkflowOrchestrator`: it is an in-memory scaffold with an invalid pause model, arbitrary completion, no durable orchestration instance, no stage/gate/readiness/scheduling/recovery/audit model, and no production wiring. It will not be extended as authoritative orchestration state.
+
+### M14.1 — Durable orchestration domain and policy
+
+- [x] Add versioned bounded workflow instances, definitions, policy profiles, stages, task state, approval gates, findings, review plans, scheduling decisions, progress, metrics, audit, and diagnostics.
+- [x] Add an explicit state machine with source/prerequisite validation, atomic persistence, audit, and typed events; arbitrary Webview status assignment is prohibited.
+- [x] Provide quick-fix, feature, bug-fix, refactoring, modernization, and security-remediation definitions plus manual, guided, and approval-gated policy profiles. No autonomous mode.
+
+### M14.2 — Planning, readiness, scheduling, reviews, and recovery
+
+- [x] Build executable plans from approved specifications/task graphs and expose stages, dependencies, routes, capabilities, validation, retry rules, gates, optional-stage reasons, and delivery boundary.
+- [x] Add structured readiness and conflict analysis, dependency/risk/priority scheduling, parallel read-only work, serialized writes, and fail-closed unknown conflicts.
+- [x] Coordinate context/delegation/execution/validation state through persisted references; add QA, conditional security/performance, documentation, retry/repair, pause/resume/cancel/recovery, delivery readiness, progress, audit, diagnostics, and bounded metrics.
+
+### M14.3 — Typed host and focused React workspace
+
+- [x] Add bounded validated orchestration requests/events without accepting shell text, credentials, arbitrary transitions, Git mutations, or hidden provider routes.
+- [x] Add a focused Orchestration workspace covering overview, plan/task graph, active work, QA/security/performance/validation, findings, approvals, delivery, history, diagnostics, and policy; include an accessible task list.
+
+### M14.4 — Completion gate
+
+- [x] Add state-machine, definition/policy, readiness/dependency/staleness, routing, conflict/scheduling, approval, review-trigger, retry-limit, pause/resume/cancel/recovery, persistence/migration, audit/metrics, bounded-contract, and UI tests.
+- [x] Run full verification, extension-host tests, package/bundle inspection, forbidden-reference searches, diff review, and document only implemented behavior and explicit limitations.
+
+### Milestone 14 completion record — 2026-07-16
+
+Status: **Complete for controlled, approval-gated orchestration in one VS Code workspace and working tree.** Milestones 7–8 remain incomplete release gates. No autonomous mode, hosted service, Hub, local model, training, deployment, or automatic Git delivery was introduced.
+
+`OrchestrationService` persists a bounded workflow projection and coordinates authoritative development workflow and routing facts. `WorkflowStateMachine` owns the explicit transition table; only service actions can transition state. Every persisted mutation is schema-validated, atomically written, audited, and reflected through typed host events. Six definitions and manual/guided/approval-gated profiles expose their stages, optional-stage reasons, gates, retry limits, concurrency rules, and delivery boundary before start.
+
+Planning requires an approved current specification and ready cycle-free task graph. The scheduler orders by dependencies, priority, and risk. Read-only work may overlap; code-writing work is serialized. Shared file/entity and unknown overlap fail closed. Readiness rechecks approval, dependency completion, staleness, repository/branch/Intelligence compatibility, criteria, validation steps, route, Copilot agent, and gates. Routes remain deterministic, GitHub Copilot, manual, or unsupported only.
+
+QA, security, performance, documentation, and validation plans are deterministic relevance projections. They never claim that Copilot output is evidence, that a passing test proves intended behavior, that security is complete, or that performance improved without measurement. Task completion requires validation references and no open blocking finding. Retries retain failure/validation references, enforce the policy limit, create no automatic delegation, and invalidate context when the agent changes. Dependency unlock only changes readiness; it never runs the next task.
+
+Pause preserves tasks, selections, fingerprints, baselines, validations, findings, gates, and audit. Restart changes interrupted running/cancelling/recovering instances to paused and explicitly does not infer completion. Resume/recovery compares repository, branch, HEAD, and Intelligence generation; drift becomes stale. Cancellation preserves evidence and user changes and leaves Git untouched. Delivery readiness is an evidence decision only; staging, commit, push, and PR creation remain independent existing delivery approvals and cannot be overridden by orchestration.
+
+The React workspace provides overview, plan/stages, an accessible task list, active controls, review categories, findings, approvals, delivery boundary, history/diagnostics, definitions, and policy visibility. Webview requests are bounded and validated; no arbitrary status, shell text, credential, provider, or Git mutation is accepted.
+
+Validation outcomes:
+
+- Entry `npm run verify`: passed typecheck, lint, 43 test files/341 tests, extension/semantic-worker builds, and React build.
+- Final `npm run verify`: passed typecheck, lint, 45 test files/354 tests, extension 1.4 MB, semantic worker 10.3 MB, Webview JavaScript 477.03 KB/125.61 KB gzip, and CSS 31.10 KB/6.24 KB gzip.
+- `npm run test:extension`: sandbox launch reproduced `SIGABRT`; the first approved run exposed a pre-existing timing-sensitive ingestion observation despite a healthy ready generation, and the immediate approved rerun passed VS Code 1.95.0 with exit code 0.
+- `npx vsce ls` passed with the bounded extension, semantic worker, Webview, manifest/docs, and icon only. `git diff --check` passed after whitespace repair.
+- Final active-source/bundle search found no Hub service/artifact/publication, local model, LoRA, training job, dataset manifest, model evaluation, or hybrid-model route. Orchestration contains no child process, shell executor, HTTP server, external database, credential access, automatic Git mutation, push, PR creation, merge, or deployment path.
+
+Performance observations are development-fixture measurements: the 354-test suite completed in 5.63 seconds; bounded orchestration tests complete in roughly one second; planning yields before bounded graph work; Webview JavaScript grew 18.26 KB raw/3.29 KB gzip and CSS grew 1.41 KB raw/0.23 KB gzip from the post-scope-correction baseline. These are not production-scale p50/p95 claims.
+
+Created:
+
+- `docs/11-sdlc-orchestration.md`
+- `src/shared/contracts/orchestration.ts`
+- `src/core/persistence/OrchestrationPersistenceStore.ts`
+- `src/core/orchestration/OrchestrationService.ts`
+- `src/ui/components/orchestration/OrchestrationWorkspace.tsx`
+- `tests/unit/orchestration/OrchestrationService.test.ts`
+- `tests/ui/OrchestrationWorkspace.test.tsx`
+
+Modified:
+
+- `PLANS.md`
+- `docs/README.md`
+- `docs/06-implementation-plan.md`
+- `src/shared/contracts/domain.ts`
+- `src/shared/contracts/messages.ts`
+- `src/extension/extension.ts`
+- `src/extension/webview/WebviewMessageRouter.ts`
+- `src/ui/App.tsx`
+- `src/ui/services/HostBridge.ts`
+- `src/ui/styles/global.css`
+
+No file was moved or deleted and no dependency was added. Unsupported behavior remains unrestricted autonomy, concurrent writes in one worktree, automatic delegation, automatic test healing, silent specification revision, automatic finding acceptance, infinite retry, automatic Git mutation/push/PR/merge, deployment, incident remediation, centralized services, Hub execution, local-model execution, and full repository-wide security or performance assurance.
+
+### Recommended next single milestone
+
+Milestone 15 — product integration and end-to-end hardening. Close the remaining Milestones 7–8 OKF/UI release gates while exercising the complete intent-to-delivery workflow across representative repositories. Do not begin pilot/release readiness until those gates and integrated recovery/performance/security validation are complete.
+
+## Milestone 15 — Product Integration and End-to-End Hardening
+
+### Integration audit — 2026-07-16
+
+The audit reviewed activation/DI, events, state ownership, every persistence store/schema, migrations, workers, Webview contracts, React routes/navigation, settings/contributions, Copilot/Git/validation/handoff adapters, orchestration, errors, cancellation, logging, metrics, tests, builds, and package contents. Findings below are reproduced from code, contracts, tests, or production bundles; planning text was not treated as implementation evidence.
+
+#### Completed and correctly integrated
+
+- Repository Intelligence owns canonical repository facts, immutable generations, semantic graph/CPG/adapters/querying, worker execution, source evidence, generation promotion, last-valid reads, incremental/Git reconciliation, cancellation, and bounded UI payloads.
+- Intent/specification/task, context/Copilot delegation, execution/validation/completion, delivery, Task Handoff, and controlled orchestration are production-registered behind typed host routes and atomic feature-owned stores.
+- Copilot discovery fails closed, Git mutations have separate approvals, validation commands use `spawn` with `shell: false`, Handoff import is bounded and non-executable, and the Webview has strict nonce CSP plus no command URIs or direct repository access.
+- Package contributions are intentionally small: one view container/view, Open Control Center and Show Logs commands, current settings, no backend/server/Hub/model worker, and no authentication-dependent normal tests.
+
+#### Verified blockers and integration defects
+
+- **P1 — OKF/UI release gates:** OKF has three dormant mapper/model files only. There is no canonical projection store/service, incremental planner, validator, export, browser, query result, host route, or test. `OKF_CONCEPT` explicitly returns unsupported. The current-product capability list therefore exceeds implementation; Milestones 7–8 remain real release blockers and must be completed as integration repair.
+- **P1 — conflicting workflow/task state:** `OrchestrationService` persists writable task status, agent, context, execution, validation, findings, and progress copies independently of the authoritative development/delegation/execution/validation/delivery/team stores. No event/projection reconciler keeps them aligned. This can show false readiness/completion after another feature mutates canonical state.
+- **P1 — incompatible repository/staleness models:** delegation, execution, delivery, handoff, and orchestration define different repository snapshots/fingerprints and generic stale states. There is no shared `RepositoryStateRef` or structured staleness reason, so branch/HEAD/generation drift can be classified inconsistently.
+- **P0 security boundary — Restricted Mode:** Intelligence correctly blocks deep indexing, but validation/Git mutation/Handoff repository-artifact routes do not have one central workspace-trust gate. A typed Webview request could reach executable or mutating service code in an untrusted workspace. Repair is mandatory before further workflow testing.
+- **P1 — activation readiness:** activation awaits workflow, execution, delivery, team, and orchestration persistence before registering the Webview provider. Corrupt or slow optional feature state can delay the entire UI. Startup has no typed progressive stage model and no degraded ready state.
+- **P1 — missing integrated workflow harness:** unit/UI/service tests are extensive and extension tests cover Intelligence, but no deterministic fixture drives intent → specification/task → orchestration → context/delegation → execution/validation → completion → delivery/handoff/restart as one state-linked workflow. Cross-store dangling references and false transitions are not currently caught.
+
+#### P2/P3 hardening findings
+
+- **P2 — duplicate obsolete service:** the old in-memory `WorkflowOrchestrator` and its separate domain workflow state machine remain dormant beside the production `OrchestrationService`; this is misleading duplicate ownership.
+- **P2 — persistence duplication:** stores share atomic writing but duplicate load/quarantine/update logic and expose no common schema-version registry or integrity report. Optional-record corruption quarantines an entire feature file in several stores.
+- **P2 — old product path:** repository Handoff export still requires `.buildwise/handoffs` in contracts, settings, adapter code, filenames, tests, and docs. It must migrate to `.keystone/handoffs` while accepting old persisted settings only for migration.
+- **P2 — fragmented navigation:** Intent, Specifications, Tasks, Context, Validation, Delivery, Team, and Orchestration are separate top-level items. Context is task detail, orchestration is Active Workflow, and Team is Task Handoff; current labels expose subsystem structure rather than one workflow.
+- **P2 — diagnostics/error experience:** diagnostics are feature-local; there is no consolidated health/recovery/migration/capability view or sanitized report. Error envelopes are structured, but most UI error banners discard correlation ID, preservation, retry safety, and recovery detail.
+- **P2 — event consistency:** host events are typed and bounded but do not share a common correlation/repository/workflow/task metadata envelope. Several feature states are refreshed ad hoc, and duplicate-event/idempotency coverage is route-specific.
+- **P2 — settings:** `workspaceSpecifications` is configured but has no repository-write implementation; validation/context/workflow settings are read yet not consistently passed into their service policies. Settings without runtime ownership should be removed or wired.
+- **P2 — accessibility/performance:** scoped graphs have list alternatives and reduced-motion support, but orchestration's tab strip is non-interactive text, focus restoration/status announcements are incomplete, large workflow/task/approval lists are bounded but not virtualized, and routes are eagerly bundled rather than lazy-loaded.
+- **P3 — preview inconsistency:** the development-only HostBridge preview still advertises phase 12 and OKF as next, contradicting production bootstrap phase 14/15.
+
+#### Ownership map
+
+| Concern | Canonical owner |
+|---|---|
+| Repository facts and generation | `IntelligenceStore` / `IntelligenceRuntime` |
+| Intent, specification, task graph | `DevelopmentWorkflowService` |
+| Task readiness and workflow projection | `OrchestrationService`, derived from authoritative stores |
+| Context package | `TaskContextService` / `DelegationPersistenceStore` |
+| Copilot capability and agents | `CopilotAdapter` / `CopilotAgentRegistry` |
+| Delegation session | `DelegationService` |
+| Execution session | `TaskExecutionService` / `ExecutionPersistenceStore` |
+| Validation result and findings | `ValidationOrchestrator` / `ExecutionPersistenceStore` |
+| Task completion | `CompletionDecisionService` and authoritative development task state |
+| Git repository and delivery state | `DeliveryCoordinator` / `DeliveryPersistenceStore` |
+| Handoff state | `TeamWorkflowService` / `TeamWorkflowPersistenceStore` |
+| Workflow status, stages, gates, scheduling | `OrchestrationService` as a projection over IDs/revisions |
+| UI state | Feature view models plus small `WorkspaceStateStore` navigation state |
+
+#### Release-blocker disposition
+
+- No reproduced data loss, secret leakage, repository corruption, false validation success, credential exposure, or destructive approved-workspace action bypass exists.
+- The Restricted Mode mutation gap is classified P0 by policy and will be repaired first.
+- OKF/UI completion, canonical staleness/repository state, orchestration projection reconciliation, activation readiness, and integrated workflow coverage are P1 and block Milestone 15 completion.
+- P2/P3 items will be resolved where bounded and measurable; any residual item will remain explicit for release-readiness review.
+
+### Integration hardening checkpoint — 2026-07-16
+
+Status: **In progress; not release-complete.** The P0 Restricted Mode defect and several P1/P2 integration defects are repaired and verified. Deterministic OKF projection/browser completion and the full mixed-technology intent-to-delivery harness remain P1 release blockers, so Milestone 15 is intentionally not marked complete.
+
+- [x] Centralize the workspace-trust boundary in `WebviewMessageRouter` for delegation/external-start, execution, validation commands, Git mutations, orchestration execution, PR actions, and repository-artifact Handoff export. Read-only browsing remains available in Restricted Mode and the blocked response is structured/recoverable.
+- [x] Add versioned shared `RepositoryStateRef`, structured staleness records/reasons, operation correlation context, startup stages/diagnostics, and a schema-version registry. Context, delegation, execution, and orchestration now carry the common repository reference.
+- [x] Prevent orchestration from independently projecting task completion. The authoritative development task overrides completed/stale/cancelled state; missing canonical tasks fail stale, and false completion exposes an explicit blocker.
+- [x] Delete the unused in-memory `WorkflowOrchestrator`; `OrchestrationService` is the sole workflow-stage/gate/scheduling owner.
+- [x] Migrate the opt-in repository artifact boundary and product-facing Handoff filenames/labels to `.keystone/handoffs` / `keystone-handoff`, while accepting `.buildwise/handoffs` only during one-way persisted-state migration.
+- [x] Add progressive typed startup state and record final activation readiness; optional state still initializes before provider registration, so true UI-first activation remains an open P1.
+- [x] Consolidate top-level navigation around Intelligence, Intent & Specs, Tasks, Active Workflow, Validation & QA, Delivery, Task Handoff, Diagnostics, and Settings. Intent/Specification and Task/Context retain focused sub-navigation. Add a bounded local health view and correct development/production milestone bootstrap metadata.
+- [x] Add regression tests for repository identity/staleness reasons, correlation, startup degradation, legacy Handoff migration, Restricted Mode execution blocking, and authoritative completion projection.
+- [ ] Complete and wire deterministic OKF projection, validation, incremental regeneration, export, browsing, query integration, and focused UI tests.
+- [ ] Replace remaining orchestration execution/validation/finding copies with a complete read projection over authoritative stores and common correlated events.
+- [ ] Register the Webview before optional feature-store restoration and expose progressive/degraded startup state to it.
+- [ ] Add realistic TypeScript, JVM, and multi-project fixture repositories plus the complete cross-feature restart/staleness/delivery/Handoff E2E scenario matrix.
+- [ ] Finish settings ownership, richer sanitized diagnostic export, focus/status accessibility, lazy route loading, and large-list rendering measurements.
+
+Validation at this checkpoint:
+
+- `npm run verify`: passed type checking, linting, 46 test files/360 tests, extension build, semantic worker build, and React production build.
+- Focused integration regression run: 3 files/27 tests passed after the Handoff and projection corrections.
+- `npm run test:extension`: sandbox Electron launch reproduced the known `SIGABRT`; the approved out-of-sandbox VS Code 1.95.0 run passed with Extension Host exit code 0.
+- `npx vsce ls`: passed and listed only manifest/docs/icon plus extension, semantic worker, and bounded Webview production assets.
+- `git diff --check`: passed. Active product code contains no legacy `WorkflowOrchestrator`; `.buildwise/handoffs` remains only in the explicit persisted-state migration and its regression test/documentation.
+- Bundle observations: extension 1.4 MB; semantic worker 10.3 MB; Webview JavaScript 481.41 KB / 126.54 KB gzip; CSS 31.10 KB / 6.24 KB gzip. The 360-test suite completed in 5.37 seconds. These are development measurements, not production p50/p95 claims.
+
+Files changed by this checkpoint (in addition to the pre-existing milestone work in the dirty tree):
+
+Created:
+
+- `src/shared/contracts/integration.ts`
+- `src/core/integration/ProductIntegrationService.ts`
+- `tests/unit/integration/ProductIntegrationService.test.ts`
+
+Modified:
+
+- `PLANS.md`
+- `package.json`
+- `docs/02-architecture.md`
+- `docs/09-team-workflow.md`
+- `src/shared/contracts/domain.ts`
+- `src/shared/contracts/delegation.ts`
+- `src/shared/contracts/execution.ts`
+- `src/shared/contracts/orchestration.ts`
+- `src/core/context/TaskContextService.ts`
+- `src/core/copilot/DelegationService.ts`
+- `src/core/execution/TaskExecutionService.ts`
+- `src/core/orchestration/OrchestrationService.ts`
+- `src/core/persistence/TeamWorkflowPersistenceStore.ts`
+- `src/core/team/TeamWorkflowService.ts`
+- `src/extension/extension.ts`
+- `src/extension/team/VsCodeTeamArtifactAdapter.ts`
+- `src/extension/webview/WebviewMessageRouter.ts`
+- `src/ui/App.tsx`
+- `src/ui/services/HostBridge.ts`
+- `tests/unit/orchestration/OrchestrationService.test.ts`
+- `tests/unit/webview/WebviewMessageRouter.test.ts`
+
+Deleted:
+
+- `src/core/workflows/WorkflowOrchestrator.ts`
+
+### Actual-user-experience hardening checkpoint — 2026-07-17
+
+Status: **Complete for the reported ingestion, repository-local persistence, editor-hosted UI, and interaction defects. Milestone 15 remains in progress.** This checkpoint supersedes the historical Milestone 1 storage decision: canonical Intelligence and extension workflow state now live under the opened repository's ignored `.keystone/` directory. `.keystone/` is excluded from ingestion, Git by the supplied `.gitignore`, and VSIX packaging by `.vscodeignore`.
+
+The extension was launched repeatedly as an actual Extension Development Host against the Keystone repository rather than validated only through component tests. The last clean observed host loaded the retained generation immediately, ran for approximately fourteen minutes while source changes triggered incremental generations, and remained responsive while serving Intelligence and workflow operations. It ended at `READY`, `Healthy`, `Idle`, with 0 queued jobs, 0 pending files, 0 failed jobs, and 0 active workers out of the bounded capacity of 3. The active canonical generation contained 213 files and contained no path under `node_modules`, `dist`, `out`, `build`, `.keystone`, or `.vscode-test`; no file had a pending status.
+
+Implemented and verified repairs:
+
+- The Control Center is an editor-hosted Webview panel opened by `Keystone: Open Control Center`; the obsolete Activity Bar view/container contribution is gone.
+- Canonical generations and Intelligence/workflow feature stores use repository-local `.keystone/`. Restart recovery restored the approved specification, task plan, and orchestration state without external storage.
+- Directory pruning excludes dependency folders, nested package managers, outputs, caches, virtual environments, `.keystone`, `.vscode-test`, and other required hard exclusions before file enumeration. Tests remain ingestible.
+- Runtime phase, health, queue, pending-file, progress, throughput, and worker values are derived from real scheduler state. Pause/cancel controls render only during active work; an idle ready generation offers only rescan/refresh.
+- Worker capacity is bounded at 3, enumeration concurrency at 1, and expensive overview recomputation is coalesced. File-watch updates no longer trigger a redundant full dirty-worktree Git reconciliation. Semantic cancellation ignores a late worker result without destroying reusable compiler state.
+- CPG persistence reuses structurally identical prior scopes through hard links and batches shard validation. Large global shards avoid a costly read/hash comparison when generation-owned records necessarily changed. A clean full repository generation completed in about 29 seconds in the development host; later incremental generations completed in seconds.
+- Technology detection now requires language-compatible static import or manifest evidence. The live repository reported seven supported, evidence-backed technologies instead of false framework detections. TypeScript coverage reports canonical semantic counts; adapter limitations remain explicit.
+- Route extraction is restricted to route-like receivers and valid path arguments. Standard/external/built-in collection calls are treated as non-repository boundaries rather than thousands of false unresolved repository calls. Live unresolved diagnostics fell from 13,290 to 1,207; remaining diagnostics are preserved as honest unresolved/compiler capability boundaries.
+- Query templates select and focus placeholders and cannot run while placeholders remain. Ambiguous entity resolution exposes ranked candidate buttons; selection replaces the textual seed with a stable entity ID. Stable-ID search returns only that entity, CamelCase tokens are split correctly, and no ambiguous development workflow entity is silently chosen.
+- Dependency-cycle paths now contain their exact relationship IDs/types, confidence, risk, and evidence rather than unlabeled hops. Cycle entities are deduplicated. Bounded query results, cache state, compiled structure, ranking reasons, limitations, and explanation remain visible.
+- All 107 admitted request types have a typed contract, HostBridge result validator, and router handler. A static React interaction audit found no rendered button without an event handler. Missing handoff/export routes now fail explicitly instead of timing out.
+- The query/workflow event storm was removed: lightweight runtime events are throttled and full overview refresh is trailing-debounced. This fixed the observed false workflow timeout where state had persisted but the response was delayed behind repeated full-graph overview work.
+- The old repository at `/Users/sudheer/workspace/refs/Keystone_old` was inspected. Its broader safe exclusion names informed the current pruning list. Its Intelligence counts, infrastructure/database facts, and many controls were hard-coded or handlerless, so none of those misleading behaviors were ported and the current SPA/service ownership was preserved.
+
+Actual Extension Development Host checks completed:
+
+- Opened the Control Center in the main editor, confirmed retained Intelligence was immediately browsable, and observed background reconciliation settle to an idle healthy generation with no pause/cancel controls.
+- Ran `find IntelligenceRuntime`, inspected the compiled structured query, selected an ambiguous candidate by stable ID, reran it, and observed deterministic ranking/cache metadata.
+- Searched the semantic browser, opened the `IntelligenceRuntime` class, loaded its bounded incoming/outgoing neighborhood and evidence, and opened `src/core/intelligence/runtime/IntelligenceRuntime.ts` at the source location.
+- Ran `show dependency cycles` as a bounded architecture query.
+- Ran persisted CPG backward and forward slices for `IntelligenceRuntime.getState`; the backward slice returned 3 nodes/2 edges and the forward slice 11 nodes/19 edges with an explicit truncation marker.
+- Restored the approved intent/specification and two-task plan after restart, created a local orchestration instance, generated its deterministic plan, and exercised approval/readiness. With all other extensions disabled, Copilot capability was honestly unavailable and both implementation tasks remained `unsupported`; no delegation, execution, Git mutation, or false completion occurred.
+- Checked Validation & QA (correctly requires an approved delegation/execution tracker), Delivery (Git refresh and two evidence-based blockers), Task Handoff (unassigned/stale/blocker facts and no fabricated participants), Diagnostics, and Settings. `Open VS Code settings` opened the VS Code editor filtered to `@ext:keystone-dev.keystone` with 22 settings.
+
+Final automated validation:
+
+- `npm run verify`: passed type checking, linting, 49 test files/377 tests, extension/semantic-worker production builds, and the React production build.
+- `npm run test:extension`: passed on VS Code 1.95.0 with Extension Host exit code 0.
+- Focused runtime/query/persistence/UI regressions passed throughout, including 60 complete-query-engine tests and the explicit ambiguous-candidate UI test.
+- `git diff --check`: passed after whitespace repair.
+- `npx vsce ls`: passed with 10 package entries; `.keystone/`, source maps, tests, source, local generations, and workflow state are excluded.
+- `npm ls --depth=0`: passed. Static source/dependency review found no external database, graph server, vector store, HTTP backend, cloud persistence, or Intelligence LLM invocation.
+
+Files changed by this hardening checkpoint:
+
+- Root/package: `.gitignore`, `.vscodeignore`, `package.json`, `PLANS.md`.
+- Intelligence/runtime: `src/core/intelligence/IgnorePolicy.ts`, `src/core/intelligence/IntelligenceQueryService.ts`, `src/core/intelligence/RepositoryIndexService.ts`, `src/core/intelligence/adapters/BaseAdapter.ts`, `src/core/intelligence/adapters/DataDeliveryAdapters.ts`, `src/core/intelligence/adapters/UniversalAdapterEngine.ts`, `src/core/intelligence/adapters/UniversalAdapters.ts`, `src/core/intelligence/cpg/CpgBuilder.ts`, `src/core/intelligence/cpg/TypeScriptCpgProvider.ts`, `src/core/intelligence/query/QueryEngine.ts`, `src/core/intelligence/runtime/IngestionScheduler.ts`, `src/core/intelligence/runtime/IntelligenceRuntime.ts`, `src/core/intelligence/runtime/WorkerPoolManager.ts`, `src/core/intelligence/semantic/SemanticDeltaBuilder.ts`, `src/core/intelligence/semantic/SemanticExtractionWorker.ts`, `src/core/intelligence/semantic/SemanticGraphBuilder.ts`, and `src/core/intelligence/semantic/TypeScriptJavaScriptParser.ts`.
+- Persistence/host/UI: `src/core/persistence/CpgShardStore.ts`, `src/core/persistence/IntelligenceStore.ts`, `src/core/persistence/WorkspaceStateStore.ts`, `src/core/workflows/DevelopmentWorkflowService.ts`, `src/extension/adapters/WorkspaceAdapter.ts`, `src/extension/extension.ts`, `src/extension/intelligence/VsCodeRepositoryMonitor.ts`, `src/extension/webview/KeystoneViewProvider.ts`, `src/extension/webview/WebviewMessageRouter.ts`, `src/shared/contracts/intelligence.ts`, `src/shared/contracts/messages.ts`, `src/ui/App.tsx`, `src/ui/components/intelligence/IntelligenceOverview.tsx`, `src/ui/components/intelligence/QueryWorkspace.tsx`, `src/ui/services/HostBridge.ts`, and `src/ui/styles/global.css`.
+- Tests: `tests/ui/HostBridge.test.ts`, `tests/ui/QueryWorkspace.test.tsx`, `tests/unit/contracts.test.ts`, `tests/unit/intelligence/IgnorePolicy.test.ts`, `tests/unit/intelligence/RepositoryIndexService.test.ts`, `tests/unit/intelligence/adapters/UniversalAdapterEngine.test.ts`, `tests/unit/intelligence/query/QueryEngine.test.ts`, `tests/unit/intelligence/runtime/IngestionScheduler.test.ts`, `tests/unit/intelligence/semantic/SemanticDeltaBuilder.test.ts`, `tests/unit/intelligence/semantic/SemanticGraphBuilder.test.ts`, `tests/unit/intelligence/semantic/TypeScriptJavaScriptParser.test.ts`, `tests/unit/persistence.test.ts`, `tests/unit/persistence/CpgShardStore.test.ts`, `tests/unit/uiInteractionContracts.test.ts`, `tests/unit/webview/WebviewMessageRouter.test.ts`, and `tests/unit/workflows/DevelopmentWorkflowService.test.ts`.
+
+No file was deleted specifically by this checkpoint. The pre-existing Milestone 15 deletion of `src/core/workflows/WorkflowOrchestrator.ts` remains recorded above.
+
+Known limitations retained honestly:
+
+- A partial generation can be healthy and queryable when structural adapters report unsupported files; this is distinct from pending or failed ingestion. The live React adapter reported 12 unsupported files because canonical TS/TSX semantic analysis already owns those files, not because files were pending.
+- The remaining 1,207 compiler diagnostics are bounded and inspectable; dynamic dispatch and external declaration boundaries are not fabricated into repository relationships.
+- GitHub Copilot delegation could not be executed in the isolated host because non-development extensions were intentionally disabled. The unavailable capability and resulting task blockers were verified instead.
+- Deterministic OKF projection and the complete final Intelligence UI remain the explicit Milestones 7–8/Milestone 15 release gates. This checkpoint did not claim or begin them.
+
+### Intelligence detail and remediation checkpoint — 2026-07-17
+
+Status: **Complete for the reported label-only Intelligence surfaces.** Counts, breakdown rows, query results, technology coverage, CPG summary metrics, and diagnostics now disclose their meaning and evidence boundary and expose bounded actions. This does not mark the final Intelligence UI redesign complete.
+
+Implemented and verified:
+
+- Intelligence count cards and every breakdown row are keyboard-accessible controls. The detail panel explains what the value means, how it is calculated, and the appropriate next action. Files, symbols, packages, tests, routes, dependencies, language buckets, symbol types, and CPG scopes can launch bounded semantic browsing; exclusion/configuration findings link to settings/rescan instead of implying missing ingestion.
+- A bounded cross-component browse command connects overview insights to the existing semantic browser without duplicating search services. The live Files detail opened exactly 214 current-generation file entities and retained pagination.
+- Query result cards, grouped result sections, and path steps are inspectable. Canonical results load source location, signature, incoming/outgoing counts, evidence statements, extractor versions/confidence, and source/follow-up actions. Calculated projections explicitly disclose when no canonical entity exists. Ambiguous results still require explicit stable-ID selection.
+- Technology coverage cards expand to capability semantics, exact adapter/version/freshness, parsed/failed/metadata-only counts, unresolved/unsupported counts, conflicts, and clickable detection evidence. Structural capability is not presented as semantic support.
+- Diagnostics expand to deterministic classification, meaning, recommended action, location/range, severity, producer, technology, and entity ID. Capability limitations are explicitly not repository defects. Repository findings can prepare a reviewed quick workflow; source is never edited and a diagnostic is never suppressed by this action. The live check prepared workflow `1c1bdeaf-6122-4539-9173-c5af67a19f36` for an unresolved-call investigation.
+- Added typed `intelligence/diagnostics` request/result contracts, router/bridge validation, cancellation, filters, a 100-item hard maximum, and cursor pagination. The live Diagnostics view loaded 50 of 1,228 generation-32 diagnostics and offered continuation rather than rendering an unbounded list.
+- The rebuilt real repository generation reached `READY`, `Healthy`, and `Idle` with 0 pending files, 0 queued jobs, 0 failed jobs, 3-worker capacity, 214 files, 0 parse failures, 0 CPG failures, and 1,228 honest unresolved/capability diagnostics. The prior false route diagnostics such as `GET enabled` and `GET onWorkspaceOpen` were absent after the route-receiver/path repair was promoted.
+
+Actual Extension Development Host checks:
+
+- Clicked Files, inspected its definition/calculation, launched bounded matching Intelligence, and observed 214 file records with source path and generation.
+- Ran `find IntelligenceQueryService`, observed explicit ambiguity and 20 ranked candidates, selected the exact class by stable ID, reran the query, and opened the new canonical inspector with 50+ incoming relationships, 18+ outgoing relationships, 50+ evidence records, source location, extractor/version, confidence, and follow-up actions.
+- Expanded a real `unresolved-call` diagnostic, verified its unproven-link explanation and exact `src/core/context/TaskContextService.ts:39:7` location, opened the prepared remediation text, and exercised the bounded all-diagnostics page.
+- Observed generation 32 technology coverage for seven evidence-backed technologies and expandable structural/semantic capability details. CPG showed 4,312 scopes, 446 built/3,866 reused, 83 explicitly approximate results, and 0 analysis failures.
+
+Validation:
+
+- `npm run verify`: passed type checking, linting, 49 test files/379 tests, extension and semantic-worker builds, and React Webview production build.
+- Focused diagnostics contract/service/router/bridge tests: 3 files/15 tests passed.
+- `npm run test:extension`: sandboxed Electron reproduced `SIGABRT`; the required approved out-of-sandbox VS Code 1.95.0 run passed with Extension Host exit code 0.
+- Production output: extension 1.5 MB, semantic worker 10.3 MB, Webview JavaScript 503.00 KB/131.80 KB gzip, CSS 35.80 KB/6.89 KB gzip. Vite retains its existing >500 KB uncompressed chunk warning.
+- `npm run build:all` does not exist; `npm run verify` and `npm run test:extension` both invoke the repository's authoritative extension and Webview production build scripts.
+
+Files created by this checkpoint:
+
+- `src/ui/components/intelligence/DiagnosticDetails.tsx`
+
+Files modified by this checkpoint:
+
+- `PLANS.md`
+- `src/core/intelligence/IntelligenceQueryService.ts`
+- `src/extension/webview/WebviewMessageRouter.ts`
+- `src/shared/contracts/intelligence.ts`
+- `src/shared/contracts/messages.ts`
+- `src/ui/components/intelligence/IntelligenceOverview.tsx`
+- `src/ui/components/intelligence/QueryWorkspace.tsx`
+- `src/ui/components/intelligence/SemanticBrowser.tsx`
+- `src/ui/components/intelligence/TechnologyCoverage.tsx`
+- `src/ui/services/HostBridge.ts`
+- `src/ui/styles/global.css`
+- `tests/ui/SemanticBrowser.test.tsx`
+- `tests/unit/intelligence/IntelligenceQueryService.test.ts`
+- `tests/unit/webview/WebviewMessageRouter.test.ts`
+
+No file was deleted by this checkpoint.
