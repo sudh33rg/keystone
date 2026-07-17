@@ -1,0 +1,63 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Launch Extension (Development Host)",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/dist/**/*.js"
+      ],
+      "preLaunchTask": "keystone: build"
+    },
+    {
+      "name": "Launch Extension (Extension)",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionPath=${workspaceFolder}"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/dist/**/*.js"
+      ],
+      "presentation": {
+        "hidden": true
+      },
+      "preLaunchTask": "keystone: build"
+    },
+    {
+      "name": "Launch Extension Tests",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}",
+        "--extensionTestsPath=${workspaceFolder}/dist/tests/extension/index"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/dist/**/*.js"
+      ],
+      "preLaunchTask": "keystone: build:extension-tests"
+    },
+    {
+      "name": "Keystone UI",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://localhost:5173",
+      "webRoot": "${workspaceFolder}/ui",
+      "preLaunchTask": "keystone: build:webview"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Extension + Webview",
+      "configurations": [
+        "Launch Extension (Development Host)",
+        "Keystone UI"
+      ],
+      "stopAllWhenOneStops": false
+    }
+  ]
+}

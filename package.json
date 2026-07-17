@@ -2,6 +2,7 @@
   "name": "keystone",
   "displayName": "Keystone",
   "description": "A visible engineering control layer for repository-aware, spec-driven Copilot work.",
+  "packageManager": "pnpm@9.15.4",
   "version": "0.1.0",
   "publisher": "keystone-dev",
   "license": "MIT",
@@ -29,14 +30,14 @@
     "build:extension": "node scripts/build-extension.mjs",
     "build:extension-tests": "node scripts/build-extension-tests.mjs",
     "build:webview": "vite build",
-    "build": "npm run clean && npm run build:extension && npm run build:webview",
+    "build": "pnpm run clean && pnpm run build:extension && pnpm run build:webview",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
-    "test:extension": "npm run build && npm run build:extension-tests && node scripts/run-extension-tests.mjs",
+    "test:extension": "pnpm run build && pnpm run build:extension-tests && node scripts/run-extension-tests.mjs",
     "test:watch": "vitest",
-    "verify": "npm run typecheck && npm run lint && npm run test && npm run build",
-    "package": "npm run verify && vsce package --allow-missing-repository"
+    "verify": "pnpm run typecheck && pnpm run lint && pnpm run test && pnpm run build",
+    "package": "pnpm run verify && vsce package --allow-missing-repository --no-dependencies --baseContentUrl . --baseImagesUrl ."
   },
   "contributes": {
     "commands": [
@@ -72,13 +73,13 @@
         "keystone.indexing.maxFileSizeKb": {
           "type": "number",
           "default": 1024,
-          "minimum": 16,
+          "minimum": 1,
           "description": "Maximum file size considered during indexing."
         },
         "keystone.indexing.maxFiles": {
           "type": "number",
-          "default": 25000,
-          "minimum": 100,
+          "default": 100000,
+          "minimum": 1,
           "description": "Maximum number of files considered in one repository index."
         },
         "keystone.indexing.workerCount": {

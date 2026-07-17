@@ -1,0 +1,24 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "keystone: build",
+      "type": "shell",
+      "command": "pnpm run build:extension",
+      "isBackground": true,
+      "problemMatcher": "$tsc"
+    },
+    {
+      "label": "keystone: build:extension-tests",
+      "type": "shell",
+      "command": "pnpm run build:extension-tests",
+      "isBackground": true,
+      "problemMatcher": "$tsc"
+    },
+    {
+      "label": "keystone: build:webview",
+      "type": "shell",
+      "command": "pnpm run build:webview"
+    }
+  ]
+}
