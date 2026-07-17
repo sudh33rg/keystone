@@ -3,7 +3,7 @@ import { CpgQueryResultSchema, CpgSliceResultSchema } from "./cpg";
 import { EvidenceRecordSchema, RelationshipRecordSchema } from "./intelligence";
 
 export const QueryOperationSchema = z.enum([
-  "SEARCH", "ENTITY", "NEIGHBORHOOD", "DEPENDENCIES", "DEPENDENTS", "PATH", "IMPACT", "FLOW",
+  "SEARCH", "ENTITY", "NEIGHBORHOOD", "USAGES", "DEPENDENCIES", "DEPENDENTS", "PATH", "IMPACT", "FLOW",
   "TESTS_FOR", "UNTESTED", "ARCHITECTURE", "CYCLES", "DATA_USAGE", "CONFIGURATION_USAGE", "CHANGES_TO",
   "DIFFERENCE_BETWEEN", "CPG_SCOPE", "CONTROL_FLOW", "DATA_FLOW", "BACKWARD_SLICE", "FORWARD_SLICE",
   "CONDITIONS_FOR", "OKF_CONCEPT"
@@ -78,11 +78,27 @@ export const QueryExplanationSchema = z.object({
   rankingRules: z.array(z.string()).max(30), truncationReasons: z.array(z.string()).max(20), capabilityBoundaries: z.array(z.string()).max(50), steps: z.array(z.string()).max(50)
 }).strict();
 export type QueryExplanation = z.infer<typeof QueryExplanationSchema>;
+export const QueryPlanSchema = z.object({
+  operation: QueryOperationSchema,
+  resolvedSeedIds: z.array(z.string()).max(10),
+  ambiguousCandidateIds: z.array(z.string()).max(200),
+  indexesSelected: z.array(z.string()).max(30),
+  relationshipFamilies: z.array(z.string()).max(50),
+  traversalDirection: QueryDirectionSchema,
+  maximumDepth: z.number().int().min(0).max(20),
+  confidenceThreshold: z.number().min(0).max(1),
+  capabilityThresholds: z.array(z.enum(["deep", "semantic", "structural", "metadata-only", "unsupported"])).max(5),
+  cpgRequired: z.boolean(),
+  resultLimits: QueryLimitsSchema,
+  evidenceRequired: z.boolean(),
+  timeBudgetMs: z.number().int().min(10).max(5000)
+}).strict();
+export type QueryPlan = z.infer<typeof QueryPlanSchema>;
 export const EvidenceSummarySchema = EvidenceRecordSchema.pick({ id: true, subjectId: true, relativePath: true, range: true, extractorId: true, extractorVersion: true, derivation: true, confidence: true, statement: true });
 
 export const IntelligenceQueryResultSchema = z.object({
   queryId: z.string().uuid(), operation: QueryOperationSchema, generation: z.number().int().nonnegative(), repositoryState: z.object({ repositoryId: z.string(), branch: z.string().optional(), headCommit: z.string().optional(), generation: z.number().int().nonnegative() }).strict(),
-  executionTimeMs: z.number().nonnegative(), resolvedSeeds: z.array(ResolvedEntitySchema).max(10), data: QueryDataSchema, evidence: z.array(EvidenceSummarySchema).max(100), diagnostics: z.array(QueryDiagnosticSchema).max(100), explanation: QueryExplanationSchema,
+  executionTimeMs: z.number().nonnegative(), resolvedSeeds: z.array(ResolvedEntitySchema).max(10), plan: QueryPlanSchema, data: QueryDataSchema, evidence: z.array(EvidenceSummarySchema).max(100), diagnostics: z.array(QueryDiagnosticSchema).max(100), explanation: QueryExplanationSchema,
   truncated: z.boolean(), continuationToken: z.string().optional(), cacheState: z.enum(["hit", "miss", "bypassed", "invalidated"])
 }).strict();
 export type IntelligenceQueryResult = z.infer<typeof IntelligenceQueryResultSchema>;

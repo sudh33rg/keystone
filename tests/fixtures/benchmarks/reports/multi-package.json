@@ -107,19 +107,13 @@
     "fabricatedExactCalls": [],
     "fabricatedUsages": [],
     "fabricatedRoutes": [],
-    "fabricatedTestRelationships": [
-      "fixture-multi-package/tests/unit/shared.test.ts->fixture-multi-package/packages/shared/src/UserService.ts:UserService:keystone.core.COVERS",
-      "fixture-multi-package/tests/unit/shared.test.ts->fixture-multi-package/packages/utils/src/validateEmail.ts:validateEmail:keystone.core.COVERS",
-      "fixture-multi-package/tests/unit/app.test.tsx->fixture-multi-package/packages/app/src/App.tsx:App:keystone.core.COVERS"
-    ],
+    "fabricatedTestRelationships": [],
     "fabricatedDataMappings": [],
-    "candidateMarkedExact": [
-      "fixture-multi-package/packages/utils/src/formatDate.ts:formatDate->fixture-multi-package/packages/shared/src/UserService.ts:now:keystone.core.IMPORTS"
-    ],
+    "candidateMarkedExact": [],
     "unresolvedMarkedExact": []
   },
   "ingestionDurationMs": 0,
   "entityCount": 8,
   "relationshipCount": 9,
-  "generatedAt": "2026-07-17T15:38:32.991Z"
+  "generatedAt": "2026-07-17T00:00:00Z"
 }

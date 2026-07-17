@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   computeMetrics,
   evaluateEntities,
@@ -13,6 +13,7 @@ import {
   type IntelligenceGroundTruth,
   type ExpectedEntity,
   type ExpectedRelationship,
+  type IntelligenceEvaluationReport,
 } from '../../fixtures/benchmarks/evaluate';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -275,10 +276,20 @@ describe('validateFalsePositives', () => {
     expect(report.fabricatedExactCalls).toHaveLength(0);
   });
 
-  it('detects candidate relationships marked as exact (any candidate flagged)', () => {
+  it('does not mistake an honestly classified candidate for an exact relationship', () => {
     const snapshot = makeSnapshot({
       relationships: [
         makeRelationship({ resolution: 'candidate' }),
+      ],
+    });
+    const report = validateFalsePositives(snapshot, makeGroundTruth());
+    expect(report.candidateMarkedExact).toHaveLength(0);
+  });
+
+  it('detects a candidate relationship carrying exact confidence', () => {
+    const snapshot = makeSnapshot({
+      relationships: [
+        makeRelationship({ resolution: 'candidate', confidence: 'exact' }),
       ],
     });
     const report = validateFalsePositives(snapshot, makeGroundTruth());
@@ -327,35 +338,27 @@ describe('validateFalsePositives', () => {
 
 describe('validateThresholds', () => {
   it('passes when all metrics meet thresholds', () => {
-    const report: any = {
-      entityMetrics: { precision: 1, recall: 1, f1: 1, truePositives: 1, falsePositives: 0, falseNegatives: 0, trueNegatives: 1, accuracy: 1 },
-      capabilityMetrics: { imports: { precision: 1 }, calls: { precision: 1 }, covers: { precision: 1 } },
-      confidenceAccuracy: 1,
-      falsePositives: { fabricatedExactCalls: [], unresolvedMarkedExact: [] },
-    };
+    const report = passingReport();
     expect(validateThresholds(report, DEFAULT_THRESHOLDS)).toBe(true);
   });
 
   it('fails when entity precision is below threshold', () => {
-    const report: any = {
-      entityMetrics: { precision: 0.80, recall: 1, f1: 0.89, truePositives: 4, falsePositives: 1, falseNegatives: 1, trueNegatives: 4, accuracy: 0.8 },
-      capabilityMetrics: { imports: { precision: 1 }, calls: { precision: 1 }, covers: { precision: 1 } },
-      confidenceAccuracy: 1,
-      falsePositives: { fabricatedExactCalls: [], unresolvedMarkedExact: [] },
-    };
+    const report = passingReport(); report.entityMetrics.precision = 0.8;
     expect(validateThresholds(report, DEFAULT_THRESHOLDS)).toBe(false);
   });
 
   it('fails when false positive exact calls exceed threshold', () => {
-    const report: any = {
-      entityMetrics: { precision: 1, recall: 1, f1: 1, truePositives: 1, falsePositives: 0, falseNegatives: 0, trueNegatives: 1, accuracy: 1 },
-      capabilityMetrics: { imports: { precision: 1 }, calls: { precision: 1 }, covers: { precision: 1 } },
-      confidenceAccuracy: 1,
-      falsePositives: { fabricatedExactCalls: ['bad-call'], unresolvedMarkedExact: [] },
-    };
+    const report = passingReport(); report.falsePositives.fabricatedExactCalls = ['bad-call'];
+    expect(validateThresholds(report, DEFAULT_THRESHOLDS)).toBe(false);
+  });
+
+  it('fails when a candidate is promoted to exact confidence', () => {
+    const report = passingReport(); report.falsePositives.candidateMarkedExact = ['bad-candidate'];
     expect(validateThresholds(report, DEFAULT_THRESHOLDS)).toBe(false);
   });
 });
+
+function passingReport(): IntelligenceEvaluationReport { const metrics = { truePositives: 1, falsePositives: 0, falseNegatives: 0, trueNegatives: 1, precision: 1, recall: 1, f1: 1, accuracy: 1 }; return { fixtureId: 'test', entityMetrics: { ...metrics }, relationshipMetrics: {}, capabilityMetrics: { imports: { ...metrics }, calls: { ...metrics }, covers: { ...metrics } }, confidenceAccuracy: 1, falsePositiveEntities: [], missingEntities: [], falsePositiveRelationships: [], missingRelationships: [], confidenceErrors: [], falsePositives: { fabricatedExactCalls: [], fabricatedUsages: [], fabricatedRoutes: [], fabricatedTestRelationships: [], fabricatedDataMappings: [], candidateMarkedExact: [], unresolvedMarkedExact: [] }, ingestionDurationMs: 0, entityCount: 1, relationshipCount: 1, generatedAt: '2026-07-17T00:00:00Z' }; }
 
 // ── resolveRelationshipType ──────────────────────────────────────────────────
 

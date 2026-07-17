@@ -30,15 +30,15 @@
     "build:extension": "node scripts/build-extension.mjs",
     "build:extension-tests": "node scripts/build-extension-tests.mjs",
     "build:webview": "vite build",
-    "build": "pnpm run clean && pnpm run build:extension && pnpm run build:webview",
+    "build": "npm run clean && npm run build:extension && npm run build:webview",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
-    "test:extension": "pnpm run build && pnpm run build:extension-tests && node scripts/run-extension-tests.mjs",
+    "test:extension": "npm run build && npm run build:extension-tests && node scripts/run-extension-tests.mjs",
     "test:watch": "vitest",
-    "test:intelligence-benchmark": "tsx tests/fixtures/benchmarks/run-benchmarks.ts",
-    "verify": "pnpm run typecheck && pnpm run lint && pnpm run test && pnpm run build",
-    "package": "pnpm run verify && vsce package --allow-missing-repository --no-dependencies --baseContentUrl . --baseImagesUrl ."
+    "test:intelligence-benchmark": "node --experimental-strip-types tests/fixtures/benchmarks/run-benchmarks.ts",
+    "verify": "npm run typecheck && npm run lint && npm run test && npm run build",
+    "package": "npm run verify && vsce package --allow-missing-repository --no-dependencies --baseContentUrl . --baseImagesUrl ."
   },
   "contributes": {
     "commands": [

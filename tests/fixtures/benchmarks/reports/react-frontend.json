@@ -97,10 +97,7 @@
     "fabricatedExactCalls": [],
     "fabricatedUsages": [],
     "fabricatedRoutes": [],
-    "fabricatedTestRelationships": [
-      "fixture-react-frontend/tests/unit/OrderConsumer.test.tsx->fixture-react-frontend/src/context/OrderConsumer.tsx:OrderConsumer:keystone.core.COVERS",
-      "fixture-react-frontend/tests/unit/useCreateOrder.test.ts->fixture-react-frontend/src/hooks/useCreateOrder.ts:useCreateOrder:keystone.core.COVERS"
-    ],
+    "fabricatedTestRelationships": [],
     "fabricatedDataMappings": [],
     "candidateMarkedExact": [],
     "unresolvedMarkedExact": []
@@ -108,5 +105,5 @@
   "ingestionDurationMs": 0,
   "entityCount": 7,
   "relationshipCount": 8,
-  "generatedAt": "2026-07-17T15:38:32.991Z"
+  "generatedAt": "2026-07-17T00:00:00Z"
 }

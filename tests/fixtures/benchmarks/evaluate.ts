@@ -514,7 +514,7 @@ function evaluateConfidenceClassification(
     if (!actual) continue;
 
     totalChecked++;
-    const resolution = (actual.resolution as string | undefined) ?? 'candidate';
+    const resolution = actual.resolution ?? 'candidate';
     const expectedConfidence = exp.confidence;
 
     // Map expected confidence to resolution categories
@@ -620,8 +620,8 @@ function validateFalsePositives(
       }
     }
 
-    // 6. Candidate marked as exact: relationships with candidate resolution
-    if (rel.resolution === 'candidate') {
+    // 6. Candidate marked as exact: candidate resolution must never carry exact confidence.
+    if (rel.resolution === 'candidate' && rel.confidence === 'exact') {
       candidateMarkedExact.push(`${rel.source}->${rel.target}:${rel.type}`);
     }
 
@@ -665,6 +665,7 @@ export function validateThresholds(
   // False positives
   if (report.falsePositives.fabricatedExactCalls.length > thresholds.falsePositiveExactCalls) return false;
   if (report.falsePositives.unresolvedMarkedExact.length > thresholds.falsePositiveUnresolvedAsExact) return false;
+  if (thresholds.candidateNotExact && (report.falsePositives.candidateMarkedExact?.length ?? 0) > 0) return false;
 
   return true;
 }
@@ -723,41 +724,8 @@ function evaluateFixture(
     ingestionDurationMs,
     entityCount: snapshot.symbols.length,
     relationshipCount: snapshot.relationships.length,
-    generatedAt: new Date().toISOString(),
+    generatedAt: snapshot.manifest.updatedAt,
   };
-}
-
-// ── CLI entry point ──────────────────────────────────────────────────────────
-
-async function main() {
-  const args = process.argv.slice(2);
-  const fixturePath = args[0];
-  const snapshotPath = args[1];
-
-  if (!fixturePath || !snapshotPath) {
-    console.error(`Usage: evaluate <fixture-path> <snapshot-path>`);
-    process.exit(1);
-  }
-
-  // Load ground truth
-  const { pathToFileURL } = await import('node:url');
-  const gtUrl = pathToFileURL(fixturePath + '/ground-truth.ts');
-  const gtModule = await import(gtUrl.href);
-  const groundTruth = gtModule.groundTruth as IntelligenceGroundTruth;
-
-  // Load snapshot
-  const snapshot = JSON.parse(
-    await import('node:fs').then((fs) => fs.readFileSync(snapshotPath, 'utf-8'))
-  ) as IntelligenceSnapshot;
-
-  const report = evaluateFixture(
-    groundTruth.repositoryId,
-    snapshot,
-    groundTruth,
-    0 // ingestion duration measured externally
-  );
-
-  console.log(JSON.stringify(report, null, 2));
 }
 
 export {
@@ -770,12 +738,3 @@ export {
   validateFalsePositives,
   resolveRelationshipType,
 };
-
-// ── CLI entry point (guarded) ──────────────────────────────────────────────
-
-if (import.meta.url === `file://${process.argv[1]}`) {
-  main().catch((err) => {
-    console.error(err);
-    process.exit(1);
-  });
-}

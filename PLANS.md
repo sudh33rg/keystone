@@ -2058,3 +2058,115 @@ An evaluation harness for Keystone's Intelligence extraction quality has been bu
 - The harness compares against ground truth manifests written by a human; it does not auto-generate ground truth.
 - No benchmark-driven regression gates are wired into CI yet.
 - `candidateNotExact` threshold is `true` but the current `validateFalsePositives` implementation flags any `resolution === "candidate"` relationship — the threshold governs pass/fail, not detection.
+
+## Intelligence Effectiveness, Query Quality, Visualization, and Context Optimization — 2026-07-17
+
+Status: **In progress. Product Integration must not begin from this checkpoint.** This milestone audits and improves the existing canonical Engineering Graph and deterministic query stack; it does not introduce a replacement architecture.
+
+### Verified Intelligence Effectiveness Audit
+
+The audit used the authoritative documents under `docs/intelligence`, the active contracts and implementation under `src/core/intelligence`, the query/UI tests, the four committed benchmark fixtures, and the committed benchmark reports. A capability is marked `exact` only where the implementation uses syntax/type-system or canonical persisted evidence; convention-derived facts are not promoted.
+
+| Capability | Classification | Verified basis and limitation |
+| --- | --- | --- |
+| File inventory and exclusions | reliable | Continuous runtime, explainable classification, bounded enumeration, deletion handling, and exclusion tests exist. Representative real-repository counts were previously validated; cross-platform and very-large-repository recall remain unbenchmarked. |
+| Symbol declarations | reliable | TypeScript/JavaScript compiler extraction and stable evidence-backed identities are implemented. Unsupported languages degrade to structural or metadata capability. |
+| Import/export resolution | reliable for supported TS/JS; partial globally | Compiler-backed relationships exist for supported source. Re-exports and cross-technology aliases do not yet have a capability-specific real-extractor benchmark gate. |
+| References and calls | partial | Compiler resolution, unresolved diagnostics, and evidence exist, but dynamic dispatch remains unresolved. Current benchmark reports use synthetic snapshots and therefore do not prove extractor precision/recall. |
+| Inheritance and implementation | partial | Typed relationships are extracted for supported TypeScript constructs; override quality and framework-driven implementation have no real-extractor benchmark result. |
+| React components and hooks | partial | TSX extraction exists, but the ground-truth harness does not currently run the extractor and does not measure `RENDERS` or `USES_HOOK` precision/recall. |
+| Routes and handlers | partial | Framework rules and false-route regression coverage exist. Framework breadth and middleware ordering are incomplete. |
+| Tests and test impact | partial | Test entities and evidence-tiered mappings exist. Coverage-confirmed selection is not generally available; naming candidates remain possible and must not enter default execution sets. |
+| API contracts and flows | partial | OpenAPI/GraphQL structural adapters and bounded flow queries exist. Flow traversal currently uses a broad relationship allow-list rather than ordered template-specific transition rules. |
+| Database and ORM | partial | Schema/ORM/query adapters emit canonical facts for supported forms. Column-level reads/writes and dynamic query builders are incomplete. |
+| Configuration and build | partial | Deterministic structural adapters exist. Value provenance and all framework-specific configuration effects are not resolved. |
+| CPG scope, CFG, and local data flow | partial | Persisted local scopes, slicing, and conditions queries exist. Interprocedural value flow and a measured precision-improvement/cost report are missing. |
+| Query indexes and bounded traversal | reliable | Generation-specific incoming/outgoing indexes, limits, cancellation, time budgets, and cache invalidation are implemented and tested. |
+| Entity resolution | reliable with explicit ambiguity | Deterministic ranking and stable-ID selection are implemented. Ambiguous expensive queries stop for user selection. Capability-specific precision/recall is not yet measured from actual extraction. |
+| Usage query | incorrect before this slice | `where is <entity> used` compiled to generic `DEPENDENTS` and excluded calls, imports, renders, tests, implementations, and inheritance. It also traversed transitively, so it could not represent logical direct usages or deduplicate them correctly. |
+| Generic paths | reliable within indexed evidence | Bounded shortest, typed, all-bounded, confidence, and risk modes return only stored edges. Direction handling and semantic path modes need broader corpus coverage. |
+| Semantic flows | partial | Partial flows expose terminal gaps, but ordered HTTP/UI/event/build transition templates and alternate-flow scoring explanations are incomplete. |
+| Impact | partial | Incoming bounded traversal, categories, risk reasons, and test sections exist. Relationship-family stopping rules and benchmark precision/recall are incomplete. |
+| Changes | partial | Retained-generation and retained-branch comparisons exist. Public-API/stale-test classifications are not complete. |
+| Query plan | partial before this slice | The planner exposed only operation, required seed count, and an `expensive` flag; it did not expose indexes, relationship families, traversal, thresholds, CPG requirement, limits, evidence, or time budget to the UI. |
+| Deterministic answer composition | partial | Structured result sections and deterministic UI rendering exist, but concise operation-specific answer summaries are incomplete. |
+| OKF | missing | Dormant model/mapper files exist; canonical projection storage, backlinks, lint, incremental regeneration, query integration, browser, and export remain absent. |
+| Visual intelligence | missing/partial | List and path projections are bounded and accessible, but purpose-specific repository, dependency, neighborhood, flow, impact, data, test, and local CPG visualizations are not implemented. |
+| Context compiler and quality metrics | partial outside this slice | Existing task context services predate this milestone. Required-context recall, irrelevant-context rate, structural compression attribution, and query-to-context actions have not been benchmarked end to end. |
+
+### P0/P1 findings and implementation order
+
+No verified fabricated canonical relationship was found in the inspected current tree. The following quality blockers remain:
+
+1. **P1 — incorrect usage semantics:** replace generic transitive dependents with a dedicated direct usage query, typed categories, logical deduplication, evidence preservation, bounded pagination, exact/candidate distinction, and production/test grouping.
+2. **P1 — synthetic benchmark self-validation:** the committed benchmark CLI reads hand-authored `snapshot.json` files instead of running Keystone ingestion. Keep these fixtures, but do not cite their perfect metrics as extractor quality. Add a real-extractor benchmark path before setting production thresholds.
+3. **P1 — flow semantics:** replace the broad flow allow-list with ordered flow templates and visible gap/alternate scoring.
+4. **P1 — absent OKF:** implement and validate the canonical projection before Product Integration.
+5. **P1 — absent context-quality proof:** measure required-item recall and irrelevant-context rate, not reduction alone.
+6. **P2 — query plan visibility:** expose the complete bounded plan in the typed result and advanced UI disclosure.
+7. **P2 — purpose-specific visualization:** implement accessible deterministic views; never send or render the full repository graph.
+
+### Current coherent vertical slice
+
+- [x] Audit the current usage grammar, planner, traversal, evidence assembly, pagination, and UI projection.
+- [x] Add a first-class `USAGES` operation while retaining `DEPENDENTS` for dependency analysis.
+- [x] Classify direct incoming relationships as imported-by, called-by, instantiated-by, referenced-by, rendered-by, implemented-by, extended-by, overridden-by, tested-by, mocked-by, routed-to, read-by, written-by, configured-by, built-by, or deployed-by where canonical evidence exists.
+- [x] Deduplicate repeated edges representing one source/category/target logical use, retaining the strongest classification and the union of bounded evidence IDs.
+- [x] Add cursor pagination, exact/candidate metrics, category sections, production/test sections, source/open metadata, and evidence coverage.
+- [x] Add a typed inspectable `QueryPlan` to every query result and render it in the advanced explanation UI.
+- [x] Validate parser behavior, exact usage, grouping, deduplication, pagination, evidence, ambiguity, bounds, and plan explanation.
+
+### Assumptions and unresolved decisions
+
+- A usage is a **direct** evidenced incoming relationship. Transitive reach remains a dependency, path, flow, or impact question.
+- Multiple canonical call sites inside one containing symbol are one logical usage for the initial usage list; their evidence IDs are merged. A future call-site mode may expose every physical occurrence without changing this default.
+- Context excerpts are not fabricated or read from mutable workspace files by the generation query. The result returns canonical source/open metadata and evidence ranges; snapshot-backed excerpts require a future source-fragment store.
+- The current slice does not claim completion of flows, OKF, visualizations, context compilation, or the full benchmark corpus.
+
+### Usage and QueryPlan vertical-slice completion record
+
+Implemented:
+
+- `where is <entity> used` now compiles to `USAGES`; it no longer aliases dependency traversal. Configuration-key syntax remains routed to the dedicated configuration query.
+- Usage evaluation reads only direct incoming canonical relationships, applies the query confidence/type filters, requires explicit stable-ID selection for ambiguity, groups production and tests, and never fills an unsupported use.
+- Logical usage deduplication keys source entity, usage category, and target seed. It chooses the strongest exact/resolved/candidate classification for display and preserves the bounded union of physical relationship and evidence IDs.
+- Results expose total logical usages, exact/resolved count, candidate/convention/unresolved count, physical relationship count, deterministic ordering, cursor continuation, source/open metadata, and category sections.
+- Every query result now includes a typed `QueryPlan` with resolved seeds, ambiguous candidates, actual scan/adjacency indexes, relationship families, direction, depth, confidence and capability filters, CPG requirement, limits, evidence requirement, and time budget. The advanced Query Workspace renders this plan.
+- Unavailable and unsupported query results also carry a bounded plan, so the typed host contract does not have a success-only hole.
+- The benchmark CLI now runs without the uninstalled `tsx` dependency, uses the complete threshold validator, produces deterministic report timestamps from snapshot identity, and no longer misclassifies an honestly labelled candidate as a candidate promoted to exact.
+- Benchmark fixture source trees are excluded from the product ESLint TypeScript project because they deliberately contain missing third-party frameworks and unsupported/dynamic cases; the benchmark harness and tests remain type-checked and linted.
+- Package scripts now invoke their sub-scripts through `npm`, making the documented `npm run verify` and build gates runnable without a package-manager shim download. The repository remains a single package and retains its declared package-manager metadata.
+
+Measured results:
+
+| Fixture | Entity precision | Entity recall | Entity F1 | Threshold result |
+| --- | ---: | ---: | ---: | --- |
+| Full stack | 0.688 | 0.733 | 0.710 | fail |
+| Multi-package | 0.875 | 0.636 | 0.737 | fail |
+| React frontend | 1.000 | 0.700 | 0.824 | fail |
+| TypeScript backend | 0.667 | 0.727 | 0.696 | fail |
+
+These are synthetic-snapshot evaluator results, not real-ingestion measurements. They are useful as a red quality gate and ground-truth consistency check, but they do not establish actual extractor precision/recall. The new usage fixture queries completed in approximately 1 ms each during the focused unit run; no p50/p95 claim is made because small/medium/large real-repository sampling has not been performed.
+
+Validation:
+
+- `npm run typecheck`: passed.
+- `npm run lint`: passed.
+- Focused query/UI/benchmark tests: 3 files, 99 tests passed.
+- `npm run verify`: passed type checking, linting, 50 test files/414 tests, extension/semantic-worker builds, and the React Webview production build.
+- `npm run test:intelligence-benchmark`: executed correctly and failed the quality gate for all four fixtures with the metrics above. This failure is retained as milestone evidence, not suppressed.
+- Extension integration: the sandboxed Electron process reproduced `SIGABRT`; the approved out-of-sandbox VS Code 1.95.0 run passed with Extension Host exit code 0.
+- Production output: extension 1.5 MB, semantic worker 10.3 MB, Webview JavaScript 504.80 KB/132.23 KB gzip, CSS 35.80 KB/6.89 KB gzip. The existing Vite >500 KB warning remains.
+- `git diff --check`: passed.
+
+Files modified by this slice:
+
+- Planning/configuration: `PLANS.md`, `package.json`, `eslint.config.mjs`.
+- Query contracts and implementation: `src/shared/contracts/query.ts`, `src/core/intelligence/query/QueryParser.ts`, `src/core/intelligence/query/QueryEngine.ts`, `src/core/intelligence/IntelligenceQueryService.ts`.
+- Intelligence UI: `src/ui/components/intelligence/QueryWorkspace.tsx`.
+- Benchmark harness/reports: `tests/fixtures/benchmarks/evaluate.ts`, `tests/fixtures/benchmarks/run-benchmarks.ts`, and the four JSON reports under `tests/fixtures/benchmarks/reports/`.
+- Tests: `tests/unit/intelligence/query/QueryEngine.test.ts`, `tests/unit/benchmarks/evaluate.test.ts`, `tests/ui/QueryWorkspace.test.tsx`.
+
+No file was created, moved, or deleted by this slice.
+
+Readiness decision: **Intelligence is not yet sufficiently effective for Product Integration or Pilot Validation.** The dedicated usage query and QueryPlan defect are closed, but the benchmark gate is red, real-extractor evaluation is absent, ordered semantic flow templates are incomplete, OKF is missing, purpose-specific visualizations are missing, and context-quality/token-reduction proof is absent. Do not begin Product Integration automatically.

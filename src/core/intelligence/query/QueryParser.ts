@@ -2,7 +2,7 @@ import { IntelligenceQuerySchema, QueryCompilationSchema, QueryLimitsSchema, typ
 
 export const QUERY_TEMPLATES: ReadonlyArray<{ id: string; label: string; template: string; operation: QueryOperation }> = [
   { id: "find", label: "Find entity", template: "find <entity>", operation: "SEARCH" },
-  { id: "used", label: "Find usages", template: "where is <entity> used", operation: "DEPENDENTS" },
+  { id: "used", label: "Find usages", template: "where is <entity> used", operation: "USAGES" },
   { id: "callers", label: "Show callers", template: "what calls <entity>", operation: "DEPENDENTS" },
   { id: "callees", label: "Show callees", template: "what does <entity> call", operation: "DEPENDENCIES" },
   { id: "dependencies", label: "Dependencies", template: "dependencies of <entity>", operation: "DEPENDENCIES" },
@@ -31,7 +31,7 @@ const callTypes = ["keystone.core.CALLS", "keystone.core.INSTANTIATES"];
 const dependencyTypes = ["keystone.core.IMPORTS", "keystone.core.REFERENCES", "keystone.core.CALLS", "keystone.core.DEPENDS_ON", "keystone.core.USES"];
 const rules: Rule[] = [
   { id: "find", expression: /^find\s+(.+)$/i, compile: (m) => base("SEARCH", [selector(m[1]!)]) },
-  { id: "where-used", expression: /^where\s+is\s+(.+?)\s+(?:used|configured)$/i, compile: (m) => { const value = m[1]!.trim(); return /^[A-Z][A-Z0-9_.-]+$/.test(value) ? base("CONFIGURATION_USAGE", [selector(value, "configuration")]) : ({ ...base("DEPENDENTS", [selector(value)]), filters: { relationshipTypes: ["keystone.core.REFERENCES", "keystone.core.READS_FROM", "keystone.core.WRITES_TO", "keystone.core.USES_CONFIGURATION"], confidenceAtLeast: 0 } }); } },
+  { id: "where-used", expression: /^where\s+is\s+(.+?)\s+(?:used|configured)$/i, compile: (m) => { const value = m[1]!.trim(); return /^[A-Z][A-Z0-9_.-]+$/.test(value) ? base("CONFIGURATION_USAGE", [selector(value, "configuration")]) : base("USAGES", [selector(value)]); } },
   { id: "what-calls", expression: /^what\s+calls\s+(.+)$/i, compile: (m) => ({ ...base("DEPENDENTS", [selector(m[1]!)]), filters: { relationshipTypes: callTypes, confidenceAtLeast: 0 } }) },
   { id: "what-does-call", expression: /^what\s+does\s+(.+?)\s+call$/i, compile: (m) => ({ ...base("DEPENDENCIES", [selector(m[1]!)]), filters: { relationshipTypes: callTypes, confidenceAtLeast: 0 } }) },
   { id: "dependencies", expression: /^dependencies\s+of\s+(.+)$/i, compile: (m) => ({ ...base("DEPENDENCIES", [selector(m[1]!)]), filters: { relationshipTypes: dependencyTypes, confidenceAtLeast: 0 } }) },

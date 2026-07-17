@@ -127,10 +127,7 @@
     "fabricatedExactCalls": [],
     "fabricatedUsages": [],
     "fabricatedRoutes": [],
-    "fabricatedTestRelationships": [
-      "fixture-typescript-backend/tests/unit/order.service.test.ts->fixture-typescript-backend/src/services/OrderService.ts:OrderService:keystone.core.COVERS",
-      "fixture-typescript-backend/tests/integration/orders.test.ts->fixture-typescript-backend/src/routes/orders.ts:keystone.core.COVERS"
-    ],
+    "fabricatedTestRelationships": [],
     "fabricatedDataMappings": [],
     "candidateMarkedExact": [],
     "unresolvedMarkedExact": []
@@ -138,5 +135,5 @@
   "ingestionDurationMs": 0,
   "entityCount": 12,
   "relationshipCount": 10,
-  "generatedAt": "2026-07-17T15:38:32.992Z"
+  "generatedAt": "2026-07-17T00:00:00Z"
 }

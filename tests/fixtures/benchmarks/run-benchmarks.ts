@@ -1,22 +1,28 @@
 #!/usr/bin/env node
 // CLI benchmark runner — runs all fixtures and produces a terminal summary.
-// Usage: npx tsx tests/fixtures/benchmarks/run-benchmarks.ts [--report-dir <dir>]
+// Usage: npm run test:intelligence-benchmark -- [--report-dir <dir>]
 
 import { readFileSync, readdirSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { evaluateFixture, DEFAULT_THRESHOLDS, type IntelligenceSnapshot } from './evaluate';
+import type { IntelligenceEvaluationReport, IntelligenceGroundTruth, IntelligenceSnapshot, ThresholdConfig } from './evaluate';
+
+interface EvaluatorModule {
+  evaluateFixture: (fixtureId: string, snapshot: IntelligenceSnapshot, groundTruth: IntelligenceGroundTruth, ingestionDurationMs: number) => IntelligenceEvaluationReport;
+  validateThresholds: (report: IntelligenceEvaluationReport, thresholds?: ThresholdConfig) => boolean;
+  DEFAULT_THRESHOLDS: ThresholdConfig;
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function formatMetrics(metrics: ReturnType<typeof evaluateFixture>['entityMetrics']): string {
+function formatMetrics(metrics: IntelligenceEvaluationReport['entityMetrics']): string {
   const p = metrics.precision.toFixed(3);
   const r = metrics.recall.toFixed(3);
   const f = metrics.f1.toFixed(3);
   return `${p} / ${r} / ${f}`;
 }
 
-function formatFP(fp: ReturnType<typeof evaluateFixture>['falsePositives']): string {
+function formatFP(fp: IntelligenceEvaluationReport['falsePositives']): string {
   const parts: string[] = [];
   if (fp.fabricatedExactCalls.length) parts.push(`calls:${fp.fabricatedExactCalls.length}`);
   if (fp.fabricatedUsages.length) parts.push(`usages:${fp.fabricatedUsages.length}`);
@@ -31,6 +37,9 @@ function formatFP(fp: ReturnType<typeof evaluateFixture>['falsePositives']): str
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function main() {
+  const evaluatorUrl = pathToFileURL(join(process.cwd(), 'tests/fixtures/benchmarks/evaluate.ts'));
+  const evaluator = await loadModule(evaluatorUrl.href) as EvaluatorModule;
+  const { evaluateFixture, validateThresholds, DEFAULT_THRESHOLDS } = evaluator;
   const args = process.argv.slice(2);
   let reportDir = join(process.cwd(), 'tests/fixtures/benchmarks/reports');
   for (let i = 0; i < args.length; i++) {
@@ -69,15 +78,14 @@ async function main() {
 
     // Load ground truth
     const gtUrl = pathToFileURL(join(fixturePath, 'ground-truth.ts'));
-    const gtModule = await import(gtUrl.href);
-    const groundTruth = gtModule.groundTruth;
+    const groundTruth = readGroundTruth(await loadModule(gtUrl.href));
 
     // Load synthetic snapshot (each fixture ships a snapshot.json)
     const snapshotPath = join(fixturePath, 'snapshot.json');
     let snapshot: IntelligenceSnapshot;
     try {
       const snapshotRaw = readFileSync(snapshotPath, 'utf-8');
-      snapshot = JSON.parse(snapshotRaw);
+      snapshot = readSnapshot(snapshotRaw);
     } catch {
       console.error(`  ⚠ ${fixture}: no snapshot.json — skipping`);
       continue;
@@ -90,8 +98,7 @@ async function main() {
       groundTruth,
       0
     );
-    const passed = report.entityMetrics.precision >= DEFAULT_THRESHOLDS.entityPrecisionMin
-      && report.entityMetrics.recall >= DEFAULT_THRESHOLDS.entityRecallMin;
+    const passed = validateThresholds(report, DEFAULT_THRESHOLDS);
 
     results.push({ fixture, report, passed });
     if (!passed) anyFailed = true;
@@ -101,12 +108,12 @@ async function main() {
 
   console.log('\n  Benchmark Report');
   console.log('  ' + '─'.repeat(72));
-  console.log('  %-24s  %10s  %10s  %10s  %s', 'Fixture', 'precision', 'recall', 'f1', 'false positives');
+  console.log(`  ${'Fixture'.padEnd(24)}  ${'precision'.padStart(10)}  ${'recall'.padStart(10)}  ${'f1'.padStart(10)}  false positives`);
   console.log('  ' + '─'.repeat(72));
 
   for (const { fixture, report, passed } of results) {
     const status = passed ? '✓' : '✗';
-    const [p, r, f] = formatMetrics(report.entityMetrics).split(' / ');
+    const [p = '0.000', r = '0.000', f = '0.000'] = formatMetrics(report.entityMetrics).split(' / ');
     console.log(`  ${status} ${fixture.padEnd(22)}  ${p.padStart(10)}  ${r.padStart(10)}  ${f.padStart(10)}  ${formatFP(report.falsePositives)}`);
   }
 
@@ -126,6 +133,10 @@ async function main() {
 
   if (anyFailed) process.exit(1);
 }
+
+async function loadModule(url: string): Promise<unknown> { return import(url) as Promise<unknown>; }
+function readGroundTruth(value: unknown): IntelligenceGroundTruth { if (!value || typeof value !== 'object' || !('groundTruth' in value)) throw new Error('The benchmark ground-truth module does not export groundTruth.'); const groundTruth: unknown = value.groundTruth; if (!groundTruth || typeof groundTruth !== 'object' || !('repositoryId' in groundTruth) || typeof groundTruth.repositoryId !== 'string' || !('entities' in groundTruth) || !Array.isArray(groundTruth.entities) || !('relationships' in groundTruth) || !Array.isArray(groundTruth.relationships)) throw new Error('The benchmark ground truth has an invalid shape.'); return groundTruth as IntelligenceGroundTruth; }
+function readSnapshot(text: string): IntelligenceSnapshot { const value: unknown = JSON.parse(text); if (!value || typeof value !== 'object' || !('manifest' in value) || !('symbols' in value) || !Array.isArray(value.symbols) || !('relationships' in value) || !Array.isArray(value.relationships)) throw new Error('The benchmark snapshot has an invalid shape.'); return value as IntelligenceSnapshot; }
 
 main().catch((err) => {
   console.error(err);

@@ -93,18 +93,13 @@
     "fabricatedExactCalls": [],
     "fabricatedUsages": [],
     "fabricatedRoutes": [],
-    "fabricatedTestRelationships": [
-      "fixture-fullstack/ui/tests/unit/CheckoutPage.test.tsx->fixture-fullstack/ui/src/pages/CheckoutPage.tsx:CheckoutPage:keystone.core.COVERS",
-      "fixture-fullstack/server/tests/integration/checkout.test.ts->fixture-fullstack/server/src/routes/checkout.ts:keystone.core.COVERS"
-    ],
+    "fabricatedTestRelationships": [],
     "fabricatedDataMappings": [],
-    "candidateMarkedExact": [
-      "fixture-fullstack/ui/src/api/checkoutApi.ts:createCheckout->fixture-fullstack/server/src/routes/checkout.ts:POST /checkout:keystone.core.CALLS"
-    ],
+    "candidateMarkedExact": [],
     "unresolvedMarkedExact": []
   },
   "ingestionDurationMs": 0,
   "entityCount": 16,
   "relationshipCount": 11,
-  "generatedAt": "2026-07-17T15:38:32.989Z"
+  "generatedAt": "2026-07-17T00:00:00Z"
 }
