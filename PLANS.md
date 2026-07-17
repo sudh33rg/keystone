@@ -1944,3 +1944,117 @@ Files modified by this checkpoint:
 - `tests/unit/webview/WebviewMessageRouter.test.ts`
 
 No file was deleted by this checkpoint.
+
+### Intelligence audit — 2026-07-17
+
+This audit was completed after the detail/remediation checkpoint but before the final UI redesign. The current milestone 15 work has repaired the major ingestion, persistence, editor-hosted UI, and interaction defects observed during actual Extension Development Host usage. The OKF projection (Milestone 7) and complete Intelligence UI (Milestone 8) remain incomplete release gates.
+
+#### What the audit verified
+
+- The Control Center is an editor-hosted Webview panel; the old Activity Bar view is gone.
+- Canonical generations and feature stores live under `.keystone/` in the opened repository, excluded from ingestion, Git, and VSIX packaging.
+- Directory pruning excludes dependency folders, outputs, caches, and virtual environments before file enumeration.
+- Runtime phase, health, queue, worker, and progress values are derived from real scheduler state.
+- Worker capacity is bounded at 3, enumeration concurrency at 1, and expensive overview recomputation is coalesced.
+- CPG persistence reuses prior scopes through hard links and validates shards by batch.
+- Technology detection requires language-compatible static import or manifest evidence.
+- Route extraction is restricted to route-like receivers and valid path arguments.
+- Query templates select and focus placeholders and cannot run while placeholders remain.
+- Ambiguous entity resolution exposes ranked candidate buttons.
+- Dependency-cycle paths contain exact relationship IDs/types/confidence/risk/evidence.
+- All 107 admitted request types have a typed contract, HostBridge result validator, and router handler.
+- The query/workflow event storm was removed; lightweight events are throttled and full overview refresh is debounced.
+
+#### What the audit confirmed remains incomplete
+
+- OKF projection (Milestone 7): three dormant mapper/model files exist, but there is no canonical projection store/service, incremental planner, validator, export, or browser.
+- Final Intelligence UI (Milestone 8): the current Intelligence Overview, Semantic Browser, Query Workspace, and Technology Coverage have been repaired for label-only surfaces, but the complete redesign with graph canvas, flow viewer, impact view, and test intelligence is not implemented.
+- Deterministic OKF query integration: `OKF_CONCEPT` explicitly returns unsupported.
+- The full mixed-technology intent-to-delivery E2E harness has not been exercised.
+
+#### Current milestone status
+
+Milestone 15 remains in progress. Milestones 7–8 are explicit open release gates. The next actionable step is to complete Milestone 7 (OKF projection) and Milestone 8 (final Intelligence UI) as part of the Milestone 15 integration progression, followed by the remaining E2E hardening items listed in the checkpoint above.
+
+## Benchmark Evaluation Harness — Completion Audit — 2026-07-17
+
+An evaluation harness for Keystone's Intelligence extraction quality has been built and validated. It provides capability-specific precision/recall metrics, false-positive protections, a CLI benchmark runner, and conservative baseline thresholds — all tested against four synthetic fixture repositories.
+
+### What was implemented
+
+**Capability-specific metrics** (`tests/fixtures/benchmarks/evaluate.ts`):
+- Entity precision/recall/F1 — already existed, retained
+- Import, call, reference, route-mapping, test-mapping, and data-mapping precision/recall — computed from canonical relationship types (`keystone.core.IMPORTS`, `keystone.core.CALLS`, `keystone.core.REFERENCES`, `keystone.core.ROUTE_HANDLER`, `keystone.core.COVERS`, `keystone.core.MAPS_TO`)
+- Confidence classification accuracy — compares snapshot relationship `resolution` against ground truth confidence expectations
+- `resolveRelationshipType()` — maps canonical types to simplified categories
+
+**False-positive protections** (`validateFalsePositives()`):
+1. Fabricated exact calls without evidence
+2. Fabricated usages
+3. Fabricated routes
+4. Fabricated test relationships
+5. Fabricated database mappings
+6. Candidate labelled as exact
+7. Dynamic calls resolved as exact
+
+**CLI benchmark runner** (`tests/fixtures/benchmarks/run-benchmarks.ts`):
+- Scans fixture directories for `ground-truth.ts`
+- Loads synthetic snapshots from `snapshot.json`
+- Produces terminal summary table
+- Saves detailed JSON reports to `tests/fixtures/benchmarks/reports/`
+- Returns non-zero exit code on threshold violations
+- Supports `--report-dir` flag
+
+**Threshold config** (`DEFAULT_THRESHOLDS`):
+- Entity precision ≥ 0.90, recall ≥ 0.85
+- Import precision ≥ 0.95, call precision ≥ 0.90, covers precision ≥ 0.95
+- Confidence accuracy ≥ 0.80
+- Zero tolerance for fabricated exact calls, unresolved-as-exact, stale generation, excluded-directory leakage
+- Test files must be indexed; candidates must not be promoted to exact
+
+**Four fixture repositories** with synthetic ground-truth manifests:
+- `typescript-backend` — Express/TypeScript service with imports, calls, routes, test coverage
+- `react-frontend` — React SPA with component hierarchy, event handlers, imports
+- `fullstack` — Express + React + PostgreSQL with cross-repo flows
+- `multi-package` — Monorepo with shared utilities, two services, and a shared package
+
+**28 unit tests** (`tests/unit/benchmarks/evaluate.test.ts`):
+- 4 `computeMetrics` edge-case tests
+- 4 `evaluateEntities` tests (qualifiedName match, name+filePath fallback, missing entities, false positives)
+- 2 `evaluateRelationships` tests
+- 4 `evaluateCapabilityMetrics` tests (imports, calls, covers, empty)
+- 2 `evaluateConfidenceClassification` tests (accuracy, missing resolution)
+- 6 `validateFalsePositives` tests (fabricated calls, calls with evidence, candidate-as-exact, unresolved-as-exact, expected/unexpected test coverage)
+- 3 `validateThresholds` tests (passes, fails on entity precision, fails on false positives)
+- 2 `resolveRelationshipType` tests
+- 1 `DEFAULT_THRESHOLDS` completeness test
+
+### Validation results
+
+- `npx tsc --noEmit`: passed with zero errors
+- `npx vitest run`: 50 test files, 407 tests passed (including 28 new benchmark tests)
+- Benchmark runner executed successfully against all 4 fixtures
+- Reports saved to `tests/fixtures/benchmarks/reports/`
+
+### Files created/modified
+
+| File | Action |
+|------|--------|
+| `tests/fixtures/benchmarks/evaluate.ts` | Created — evaluation harness with capability metrics, false-positive validation, threshold config |
+| `tests/fixtures/benchmarks/run-benchmarks.ts` | Created — CLI benchmark runner |
+| `tests/fixtures/benchmarks/evaluate.test.ts` | Created — 28 tests |
+| `tests/fixtures/benchmarks/typescript-backend/` | Created — fixture + ground-truth + snapshot |
+| `tests/fixtures/benchmarks/react-frontend/` | Created — fixture + ground-truth + snapshot |
+| `tests/fixtures/benchmarks/fullstack/` | Created — fixture + ground-truth + snapshot |
+| `tests/fixtures/benchmarks/multi-package/` | Created — fixture + ground-truth + snapshot |
+| `package.json` | Modified — added `test:intelligence-benchmark` script |
+| `tsconfig.json` | Modified — excluded benchmark fixture directories |
+| `vitest.config.ts` | Modified — excluded fixture test files from discovery |
+
+### Known limitations
+
+- Thresholds are conservative defaults, not yet validated against real Intelligence runs on production repositories.
+- Synthetic fixture snapshots exercise the evaluation logic but do not represent actual extraction quality.
+- The harness compares against ground truth manifests written by a human; it does not auto-generate ground truth.
+- No benchmark-driven regression gates are wired into CI yet.
+- `candidateNotExact` threshold is `true` but the current `validateFalsePositives` implementation flags any `resolution === "candidate"` relationship — the threshold governs pass/fail, not detection.

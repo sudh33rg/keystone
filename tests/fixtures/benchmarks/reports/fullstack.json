@@ -1,0 +1,110 @@
+{
+  "fixtureId": "fixture-fullstack",
+  "entityMetrics": {
+    "truePositives": 11,
+    "falsePositives": 5,
+    "falseNegatives": 4,
+    "trueNegatives": 11,
+    "precision": 0.6875,
+    "recall": 0.7333,
+    "f1": 0.7097,
+    "accuracy": 0.7097
+  },
+  "relationshipMetrics": {
+    "calls": {
+      "truePositives": 9,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "trueNegatives": 9,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "accuracy": 1
+    },
+    "covers": {
+      "truePositives": 2,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "trueNegatives": 2,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "accuracy": 1
+    }
+  },
+  "capabilityMetrics": {
+    "calls": {
+      "truePositives": 9,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "trueNegatives": 0,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "accuracy": 1
+    },
+    "covers": {
+      "truePositives": 2,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "trueNegatives": 0,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "accuracy": 1
+    }
+  },
+  "confidenceAccuracy": 0.9091,
+  "falsePositiveEntities": [
+    "fixture-fullstack/server/src/controllers/CheckoutController.ts:CheckoutController.process",
+    "fixture-fullstack/server/src/services/CheckoutService.ts:CheckoutService.process",
+    "fixture-fullstack/server/src/services/PaymentGateway.ts:PaymentGateway.charge",
+    "fixture-fullstack/server/src/repositories/OrderRepository.ts:OrderRepository.save",
+    "fixture-fullstack/server/src/events/NotificationConsumer.ts:NotificationConsumer.emit"
+  ],
+  "missingEntities": [
+    "fixture-fullstack/ui/src/index.tsx",
+    "fixture-fullstack/ui/tests/unit/CheckoutPage.test.tsx",
+    "fixture-fullstack/server/src/index.ts",
+    "fixture-fullstack/server/tests/integration/checkout.test.ts"
+  ],
+  "falsePositiveRelationships": [
+    "fixture-fullstack/ui/src/pages/CheckoutPage.tsx:CheckoutPage->fixture-fullstack/ui/src/api/checkoutApi.ts:createCheckout:keystone.core.CALLS",
+    "fixture-fullstack/ui/src/api/checkoutApi.ts:createCheckout->fixture-fullstack/server/src/routes/checkout.ts:POST /checkout:keystone.core.CALLS",
+    "fixture-fullstack/server/src/routes/checkout.ts:POST /checkout->fixture-fullstack/server/src/controllers/CheckoutController.ts:CheckoutController.process:keystone.core.CALLS",
+    "fixture-fullstack/server/src/controllers/CheckoutController.ts:CheckoutController.process->fixture-fullstack/server/src/services/CheckoutService.ts:CheckoutService.process:keystone.core.CALLS",
+    "fixture-fullstack/server/src/services/CheckoutService.ts:CheckoutService.process->fixture-fullstack/server/src/services/PaymentGateway.ts:PaymentGateway.charge:keystone.core.CALLS",
+    "fixture-fullstack/server/src/services/CheckoutService.ts:CheckoutService.process->fixture-fullstack/server/src/repositories/OrderRepository.ts:OrderRepository.save:keystone.core.CALLS",
+    "fixture-fullstack/server/src/services/CheckoutService.ts:CheckoutService.process->fixture-fullstack/server/src/events/NotificationConsumer.ts:NotificationConsumer.emit:keystone.core.CALLS",
+    "fixture-fullstack/server/src/events/EventBus.ts:EventBus->fixture-fullstack/server/src/events/NotificationConsumer.ts:NotificationConsumer:keystone.core.CALLS",
+    "fixture-fullstack/server/src/repositories/OrderRepository.ts:OrderRepository.save->fixture-fullstack/server/src/models/Order.entity.ts:Order:keystone.core.CALLS",
+    "fixture-fullstack/ui/tests/unit/CheckoutPage.test.tsx->fixture-fullstack/ui/src/pages/CheckoutPage.tsx:CheckoutPage:keystone.core.COVERS",
+    "fixture-fullstack/server/tests/integration/checkout.test.ts->fixture-fullstack/server/src/routes/checkout.ts:keystone.core.COVERS"
+  ],
+  "missingRelationships": [],
+  "confidenceErrors": [
+    {
+      "entityOrRelationship": "fixture-fullstack/ui/src/api/checkoutApi.ts:createCheckout->fixture-fullstack/server/src/routes/checkout.ts:POST /checkout:keystone.core.CALLS",
+      "expectedConfidence": "high",
+      "actualConfidence": "low"
+    }
+  ],
+  "falsePositives": {
+    "fabricatedExactCalls": [],
+    "fabricatedUsages": [],
+    "fabricatedRoutes": [],
+    "fabricatedTestRelationships": [
+      "fixture-fullstack/ui/tests/unit/CheckoutPage.test.tsx->fixture-fullstack/ui/src/pages/CheckoutPage.tsx:CheckoutPage:keystone.core.COVERS",
+      "fixture-fullstack/server/tests/integration/checkout.test.ts->fixture-fullstack/server/src/routes/checkout.ts:keystone.core.COVERS"
+    ],
+    "fabricatedDataMappings": [],
+    "candidateMarkedExact": [
+      "fixture-fullstack/ui/src/api/checkoutApi.ts:createCheckout->fixture-fullstack/server/src/routes/checkout.ts:POST /checkout:keystone.core.CALLS"
+    ],
+    "unresolvedMarkedExact": []
+  },
+  "ingestionDurationMs": 0,
+  "entityCount": 16,
+  "relationshipCount": 11,
+  "generatedAt": "2026-07-17T15:38:32.989Z"
+}

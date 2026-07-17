@@ -1,0 +1,40 @@
+{
+  "manifest": { "generation": 1, "schemaVersion": "1", "extractorVersion": "1", "status": "ok", "createdAt": "2026-07-17T00:00:00Z", "updatedAt": "2026-07-17T00:00:00Z" },
+  "repository": { "id": "fixture-multi-package", "name": "fixture-multi-package", "rootPath": ".", "branch": "main", "headCommit": "abc123", "identity": { "path": "fixture-multi-package", "hash": "abc123" } },
+  "files": [
+    { "id": "f-1", "path": "packages/app/src/App.tsx", "language": "tsx", "category": "production", "sha256": "a", "size": 100, "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "f-2", "path": "packages/app/src/routes.tsx", "language": "tsx", "category": "production", "sha256": "b", "size": 100, "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "f-3", "path": "packages/app/src/components/UserCard.tsx", "language": "tsx", "category": "production", "sha256": "c", "size": 100, "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "f-4", "path": "packages/shared/src/index.ts", "language": "ts", "category": "production", "sha256": "d", "size": 100, "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "f-5", "path": "packages/shared/src/User.ts", "language": "ts", "category": "production", "sha256": "e", "size": 100, "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "f-6", "path": "packages/shared/src/UserService.ts", "language": "ts", "category": "production", "sha256": "f", "size": 100, "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "f-7", "path": "packages/utils/src/formatDate.ts", "language": "ts", "category": "production", "sha256": "g", "size": 100, "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "f-8", "path": "packages/utils/src/validateEmail.ts", "language": "ts", "category": "production", "sha256": "h", "size": 100, "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "f-9", "path": "tests/unit/shared.test.ts", "language": "ts", "category": "test", "sha256": "i", "size": 100, "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "f-10", "path": "tests/unit/app.test.tsx", "language": "tsx", "category": "test", "sha256": "j", "size": 100, "indexedAt": "2026-07-17T00:00:00Z" }
+  ],
+  "symbols": [
+    { "id": "s-1", "name": "App", "qualifiedName": "fixture-multi-package/packages/app/src/App.tsx:App", "kind": "component", "filePath": "packages/app/src/App.tsx", "startLine": 1, "endLine": 15, "metadata": {}, "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "s-2", "name": "UserCard", "qualifiedName": "fixture-multi-package/packages/app/src/components/UserCard.tsx:UserCard", "kind": "component", "filePath": "packages/app/src/components/UserCard.tsx", "startLine": 1, "endLine": 10, "metadata": {}, "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "s-3", "name": "User", "qualifiedName": "fixture-multi-package/packages/shared/src/User.ts:User", "kind": "interface", "filePath": "packages/shared/src/User.ts", "startLine": 1, "endLine": 10, "metadata": {}, "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "s-4", "name": "createUser", "qualifiedName": "fixture-multi-package/packages/shared/src/User.ts:createUser", "kind": "function", "filePath": "packages/shared/src/User.ts", "startLine": 1, "endLine": 15, "metadata": {}, "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "s-5", "name": "UserService", "qualifiedName": "fixture-multi-package/packages/shared/src/UserService.ts:UserService", "kind": "class", "filePath": "packages/shared/src/UserService.ts", "startLine": 1, "endLine": 20, "metadata": {}, "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "s-6", "name": "UserService.register", "qualifiedName": "fixture-multi-package/packages/shared/src/UserService.ts:UserService.register", "kind": "method", "filePath": "packages/shared/src/UserService.ts", "startLine": 5, "endLine": 10, "metadata": {}, "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "s-7", "name": "formatDate", "qualifiedName": "fixture-multi-package/packages/utils/src/formatDate.ts:formatDate", "kind": "function", "filePath": "packages/utils/src/formatDate.ts", "startLine": 1, "endLine": 10, "metadata": {}, "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "s-8", "name": "validateEmail", "qualifiedName": "fixture-multi-package/packages/utils/src/validateEmail.ts:validateEmail", "kind": "function", "filePath": "packages/utils/src/validateEmail.ts", "startLine": 1, "endLine": 10, "metadata": {}, "indexedAt": "2026-07-17T00:00:00Z" }
+  ],
+  "relationships": [
+    { "id": "r-1", "source": "fixture-multi-package/packages/app/src/App.tsx:App", "target": "fixture-multi-package/packages/shared/src/UserService.ts:UserService", "fromNodeId": "n-1", "toNodeId": "n-2", "type": "keystone.core.IMPORTS", "confidence": "high", "resolution": "exact", "evidenceIds": ["e-1"], "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "r-2", "source": "fixture-multi-package/packages/app/src/components/UserCard.tsx:UserCard", "target": "fixture-multi-package/packages/shared/src/User.ts:User", "fromNodeId": "n-3", "toNodeId": "n-4", "type": "keystone.core.IMPORTS", "confidence": "high", "resolution": "exact", "evidenceIds": ["e-2"], "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "r-3", "source": "fixture-multi-package/packages/app/src/App.tsx:App", "target": "fixture-multi-package/packages/utils/src/formatDate.ts:formatDate", "fromNodeId": "n-1", "toNodeId": "n-5", "type": "keystone.core.IMPORTS", "confidence": "high", "resolution": "exact", "evidenceIds": ["e-3"], "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "r-4", "source": "fixture-multi-package/packages/shared/src/User.ts:createUser", "target": "fixture-multi-package/packages/utils/src/validateEmail.ts:validateEmail", "fromNodeId": "n-6", "toNodeId": "n-7", "type": "keystone.core.CALLS", "confidence": "high", "resolution": "exact", "evidenceIds": ["e-4"], "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "r-5", "source": "fixture-multi-package/packages/shared/src/UserService.ts:UserService.register", "target": "fixture-multi-package/packages/shared/src/User.ts:createUser", "fromNodeId": "n-8", "toNodeId": "n-6", "type": "keystone.core.CALLS", "confidence": "high", "resolution": "exact", "evidenceIds": ["e-5"], "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "r-6", "source": "fixture-multi-package/packages/utils/src/formatDate.ts:formatDate", "target": "fixture-multi-package/packages/shared/src/UserService.ts:now", "fromNodeId": "n-5", "toNodeId": "n-9", "type": "keystone.core.IMPORTS", "confidence": "high", "resolution": "candidate", "evidenceIds": ["e-6"], "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "r-7", "source": "fixture-multi-package/tests/unit/shared.test.ts", "target": "fixture-multi-package/packages/shared/src/UserService.ts:UserService", "fromNodeId": "n-10", "toNodeId": "n-2", "type": "keystone.core.COVERS", "confidence": "high", "resolution": "exact", "evidenceIds": ["e-7"], "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "r-8", "source": "fixture-multi-package/tests/unit/shared.test.ts", "target": "fixture-multi-package/packages/utils/src/validateEmail.ts:validateEmail", "fromNodeId": "n-10", "toNodeId": "n-7", "type": "keystone.core.COVERS", "confidence": "high", "resolution": "exact", "evidenceIds": ["e-8"], "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "r-9", "source": "fixture-multi-package/tests/unit/app.test.tsx", "target": "fixture-multi-package/packages/app/src/App.tsx:App", "fromNodeId": "n-11", "toNodeId": "n-1", "type": "keystone.core.COVERS", "confidence": "high", "resolution": "exact", "evidenceIds": ["e-9"], "indexedAt": "2026-07-17T00:00:00Z" }
+  ],
+  "evidence": [],
+  "indexes": { "byName": {}, "byQualifiedName": {}, "byPath": {}, "byType": {}, "incoming": {}, "outgoing": {}, "routeHandlers": {}, "testTargets": {}, "packageMembership": {}, "configurationUsage": {} },
+  "diagnostics": []
+}

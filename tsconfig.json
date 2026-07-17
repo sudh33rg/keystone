@@ -15,5 +15,11 @@
     "resolveJsonModule": true,
     "types": ["node", "vscode", "vitest/globals"]
   },
-  "include": ["src", "tests", "vite.config.ts", "vitest.config.ts"]
+  "include": ["src", "tests", "vite.config.ts", "vitest.config.ts"],
+  "exclude": [
+    "tests/fixtures/benchmarks/typescript-backend",
+    "tests/fixtures/benchmarks/react-frontend",
+    "tests/fixtures/benchmarks/fullstack",
+    "tests/fixtures/benchmarks/multi-package"
+  ]
 }

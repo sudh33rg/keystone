@@ -1,0 +1,142 @@
+{
+  "fixtureId": "fixture-typescript-backend",
+  "entityMetrics": {
+    "truePositives": 8,
+    "falsePositives": 4,
+    "falseNegatives": 3,
+    "trueNegatives": 8,
+    "precision": 0.6667,
+    "recall": 0.7273,
+    "f1": 0.6957,
+    "accuracy": 0.6957
+  },
+  "relationshipMetrics": {
+    "calls": {
+      "truePositives": 6,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "trueNegatives": 6,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "accuracy": 1
+    },
+    "implements": {
+      "truePositives": 0,
+      "falsePositives": 0,
+      "falseNegatives": 1,
+      "trueNegatives": 0,
+      "precision": 1,
+      "recall": 0,
+      "f1": 0,
+      "accuracy": 0
+    },
+    "imports": {
+      "truePositives": 1,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "trueNegatives": 1,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "accuracy": 1
+    },
+    "covers": {
+      "truePositives": 2,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "trueNegatives": 2,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "accuracy": 1
+    }
+  },
+  "capabilityMetrics": {
+    "calls": {
+      "truePositives": 6,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "trueNegatives": 0,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "accuracy": 1
+    },
+    "keystone.core.IMPLEMENTS": {
+      "truePositives": 1,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "trueNegatives": 0,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "accuracy": 1
+    },
+    "imports": {
+      "truePositives": 1,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "trueNegatives": 0,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "accuracy": 1
+    },
+    "covers": {
+      "truePositives": 2,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "trueNegatives": 0,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "accuracy": 1
+    }
+  },
+  "confidenceAccuracy": 1,
+  "falsePositiveEntities": [
+    "fixture-typescript-backend/src/config/database.ts:getDatabaseConfig",
+    "fixture-typescript-backend/src/repositories/OrderRepository.ts:OrderRepository.save",
+    "fixture-typescript-backend/src/repositories/OrderRepository.ts:OrderRepository.find",
+    "fixture-typescript-backend/src/services/OrderService.ts:OrderService.create",
+    "fixture-typescript-backend/src/controllers/OrderController.ts:OrderController.create"
+  ],
+  "missingEntities": [
+    "fixture-typescript-backend/src/index.ts",
+    "fixture-typescript-backend/tests/unit/order.service.test.ts",
+    "fixture-typescript-backend/tests/integration/orders.test.ts"
+  ],
+  "falsePositiveRelationships": [
+    "fixture-typescript-backend/src/routes/orders.ts:POST /orders->fixture-typescript-backend/src/middleware/authentication.ts:authentication:keystone.core.CALLS",
+    "fixture-typescript-backend/src/routes/orders.ts:POST /orders->fixture-typescript-backend/src/controllers/OrderController.ts:OrderController.create:keystone.core.CALLS",
+    "fixture-typescript-backend/src/controllers/OrderController.ts:OrderController.create->fixture-typescript-backend/src/services/OrderService.ts:OrderService.create:keystone.core.CALLS",
+    "fixture-typescript-backend/src/services/OrderService.ts:OrderService.create->fixture-typescript-backend/src/repositories/OrderRepository.ts:OrderRepository.save:keystone.core.CALLS",
+    "fixture-typescript-backend/src/repositories/OrderRepository.ts:OrderRepository.save->fixture-typescript-backend/src/models/order.entity.ts:Order:keystone.core.CALLS",
+    "fixture-typescript-backend/src/models/order.entity.ts:Order->fixture-typescript-backend/src/interfaces/order.interface.ts:Order:keystone.core.IMPLEMENTS",
+    "fixture-typescript-backend/src/index.ts->fixture-typescript-backend/src/routes/orders.ts:keystone.core.IMPORTS",
+    "fixture-typescript-backend/src/index.ts->fixture-typescript-backend/src/config/database.ts:getDatabaseConfig:keystone.core.CALLS",
+    "fixture-typescript-backend/tests/unit/order.service.test.ts->fixture-typescript-backend/src/services/OrderService.ts:OrderService:keystone.core.COVERS",
+    "fixture-typescript-backend/tests/integration/orders.test.ts->fixture-typescript-backend/src/routes/orders.ts:keystone.core.COVERS"
+  ],
+  "missingRelationships": [
+    "fixture-typescript-backend/src/models/order.entity.ts:Order->fixture-typescript-backend/src/interfaces/order.interface.ts:Order:implements"
+  ],
+  "confidenceErrors": [],
+  "falsePositives": {
+    "fabricatedExactCalls": [],
+    "fabricatedUsages": [],
+    "fabricatedRoutes": [],
+    "fabricatedTestRelationships": [
+      "fixture-typescript-backend/tests/unit/order.service.test.ts->fixture-typescript-backend/src/services/OrderService.ts:OrderService:keystone.core.COVERS",
+      "fixture-typescript-backend/tests/integration/orders.test.ts->fixture-typescript-backend/src/routes/orders.ts:keystone.core.COVERS"
+    ],
+    "fabricatedDataMappings": [],
+    "candidateMarkedExact": [],
+    "unresolvedMarkedExact": []
+  },
+  "ingestionDurationMs": 0,
+  "entityCount": 12,
+  "relationshipCount": 10,
+  "generatedAt": "2026-07-17T15:38:32.992Z"
+}

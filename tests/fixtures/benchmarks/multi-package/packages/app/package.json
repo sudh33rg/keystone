@@ -1,0 +1,12 @@
+{
+  "name": "@bench-app",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@bench-shared": "workspace:*",
+    "@bench-utils": "workspace:*"
+  }
+}

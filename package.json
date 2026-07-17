@@ -36,6 +36,7 @@
     "test": "vitest run",
     "test:extension": "pnpm run build && pnpm run build:extension-tests && node scripts/run-extension-tests.mjs",
     "test:watch": "vitest",
+    "test:intelligence-benchmark": "tsx tests/fixtures/benchmarks/run-benchmarks.ts",
     "verify": "pnpm run typecheck && pnpm run lint && pnpm run test && pnpm run build",
     "package": "pnpm run verify && vsce package --allow-missing-repository --no-dependencies --baseContentUrl . --baseImagesUrl ."
   },

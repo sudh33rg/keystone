@@ -1,0 +1,112 @@
+{
+  "fixtureId": "fixture-react-frontend",
+  "entityMetrics": {
+    "truePositives": 7,
+    "falsePositives": 0,
+    "falseNegatives": 3,
+    "trueNegatives": 7,
+    "precision": 1,
+    "recall": 0.7,
+    "f1": 0.8235,
+    "accuracy": 0.8235
+  },
+  "relationshipMetrics": {
+    "calls": {
+      "truePositives": 4,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "trueNegatives": 4,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "accuracy": 1
+    },
+    "imports": {
+      "truePositives": 2,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "trueNegatives": 2,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "accuracy": 1
+    },
+    "covers": {
+      "truePositives": 2,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "trueNegatives": 2,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "accuracy": 1
+    }
+  },
+  "capabilityMetrics": {
+    "calls": {
+      "truePositives": 4,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "trueNegatives": 0,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "accuracy": 1
+    },
+    "imports": {
+      "truePositives": 2,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "trueNegatives": 0,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "accuracy": 1
+    },
+    "covers": {
+      "truePositives": 2,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "trueNegatives": 0,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "accuracy": 1
+    }
+  },
+  "confidenceAccuracy": 1,
+  "falsePositiveEntities": [],
+  "missingEntities": [
+    "fixture-react-frontend/src/index.tsx",
+    "fixture-react-frontend/tests/unit/OrderConsumer.test.tsx",
+    "fixture-react-frontend/tests/unit/useCreateOrder.test.ts"
+  ],
+  "falsePositiveRelationships": [
+    "fixture-react-frontend/src/pages/OrdersPage.tsx:OrdersPage->fixture-react-frontend/src/components/CreateOrderButton.tsx:CreateOrderButton:keystone.core.CALLS",
+    "fixture-react-frontend/src/components/CreateOrderButton.tsx:CreateOrderButton->fixture-react-frontend/src/hooks/useCreateOrder.ts:useCreateOrder:keystone.core.CALLS",
+    "fixture-react-frontend/src/hooks/useCreateOrder.ts:useCreateOrder->fixture-react-frontend/src/api/orderApi.ts:create:keystone.core.CALLS",
+    "fixture-react-frontend/src/routes.tsx->fixture-react-frontend/src/pages/OrdersPage.tsx:OrdersPage:keystone.core.IMPORTS",
+    "fixture-react-frontend/src/index.tsx->fixture-react-frontend/src/context/OrderContext.tsx:OrderProvider:keystone.core.IMPORTS",
+    "fixture-react-frontend/src/context/OrderConsumer.tsx:OrderConsumer->fixture-react-frontend/src/context/OrderContext.tsx:OrderProvider:keystone.core.CALLS",
+    "fixture-react-frontend/tests/unit/OrderConsumer.test.tsx->fixture-react-frontend/src/context/OrderConsumer.tsx:OrderConsumer:keystone.core.COVERS",
+    "fixture-react-frontend/tests/unit/useCreateOrder.test.ts->fixture-react-frontend/src/hooks/useCreateOrder.ts:useCreateOrder:keystone.core.COVERS"
+  ],
+  "missingRelationships": [],
+  "confidenceErrors": [],
+  "falsePositives": {
+    "fabricatedExactCalls": [],
+    "fabricatedUsages": [],
+    "fabricatedRoutes": [],
+    "fabricatedTestRelationships": [
+      "fixture-react-frontend/tests/unit/OrderConsumer.test.tsx->fixture-react-frontend/src/context/OrderConsumer.tsx:OrderConsumer:keystone.core.COVERS",
+      "fixture-react-frontend/tests/unit/useCreateOrder.test.ts->fixture-react-frontend/src/hooks/useCreateOrder.ts:useCreateOrder:keystone.core.COVERS"
+    ],
+    "fabricatedDataMappings": [],
+    "candidateMarkedExact": [],
+    "unresolvedMarkedExact": []
+  },
+  "ingestionDurationMs": 0,
+  "entityCount": 7,
+  "relationshipCount": 8,
+  "generatedAt": "2026-07-17T15:38:32.991Z"
+}

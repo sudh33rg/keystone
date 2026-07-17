@@ -1,0 +1,125 @@
+{
+  "fixtureId": "fixture-multi-package",
+  "entityMetrics": {
+    "truePositives": 7,
+    "falsePositives": 1,
+    "falseNegatives": 4,
+    "trueNegatives": 7,
+    "precision": 0.875,
+    "recall": 0.6364,
+    "f1": 0.7368,
+    "accuracy": 0.7368
+  },
+  "relationshipMetrics": {
+    "imports": {
+      "truePositives": 4,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "trueNegatives": 4,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "accuracy": 1
+    },
+    "calls": {
+      "truePositives": 2,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "trueNegatives": 2,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "accuracy": 1
+    },
+    "covers": {
+      "truePositives": 3,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "trueNegatives": 3,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "accuracy": 1
+    }
+  },
+  "capabilityMetrics": {
+    "imports": {
+      "truePositives": 4,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "trueNegatives": 0,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "accuracy": 1
+    },
+    "calls": {
+      "truePositives": 2,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "trueNegatives": 0,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "accuracy": 1
+    },
+    "covers": {
+      "truePositives": 3,
+      "falsePositives": 0,
+      "falseNegatives": 0,
+      "trueNegatives": 0,
+      "precision": 1,
+      "recall": 1,
+      "f1": 1,
+      "accuracy": 1
+    }
+  },
+  "confidenceAccuracy": 0.8889,
+  "falsePositiveEntities": [
+    "fixture-multi-package/packages/shared/src/UserService.ts:UserService.register"
+  ],
+  "missingEntities": [
+    "fixture-multi-package/packages/app/src/routes.tsx",
+    "fixture-multi-package/packages/shared/src/index.ts",
+    "fixture-multi-package/tests/unit/shared.test.ts",
+    "fixture-multi-package/tests/unit/app.test.tsx"
+  ],
+  "falsePositiveRelationships": [
+    "fixture-multi-package/packages/app/src/App.tsx:App->fixture-multi-package/packages/shared/src/UserService.ts:UserService:keystone.core.IMPORTS",
+    "fixture-multi-package/packages/app/src/components/UserCard.tsx:UserCard->fixture-multi-package/packages/shared/src/User.ts:User:keystone.core.IMPORTS",
+    "fixture-multi-package/packages/app/src/App.tsx:App->fixture-multi-package/packages/utils/src/formatDate.ts:formatDate:keystone.core.IMPORTS",
+    "fixture-multi-package/packages/shared/src/User.ts:createUser->fixture-multi-package/packages/utils/src/validateEmail.ts:validateEmail:keystone.core.CALLS",
+    "fixture-multi-package/packages/shared/src/UserService.ts:UserService.register->fixture-multi-package/packages/shared/src/User.ts:createUser:keystone.core.CALLS",
+    "fixture-multi-package/packages/utils/src/formatDate.ts:formatDate->fixture-multi-package/packages/shared/src/UserService.ts:now:keystone.core.IMPORTS",
+    "fixture-multi-package/tests/unit/shared.test.ts->fixture-multi-package/packages/shared/src/UserService.ts:UserService:keystone.core.COVERS",
+    "fixture-multi-package/tests/unit/shared.test.ts->fixture-multi-package/packages/utils/src/validateEmail.ts:validateEmail:keystone.core.COVERS",
+    "fixture-multi-package/tests/unit/app.test.tsx->fixture-multi-package/packages/app/src/App.tsx:App:keystone.core.COVERS"
+  ],
+  "missingRelationships": [],
+  "confidenceErrors": [
+    {
+      "entityOrRelationship": "fixture-multi-package/packages/utils/src/formatDate.ts:formatDate->fixture-multi-package/packages/shared/src/UserService.ts:now:keystone.core.IMPORTS",
+      "expectedConfidence": "exact",
+      "actualConfidence": "low"
+    }
+  ],
+  "falsePositives": {
+    "fabricatedExactCalls": [],
+    "fabricatedUsages": [],
+    "fabricatedRoutes": [],
+    "fabricatedTestRelationships": [
+      "fixture-multi-package/tests/unit/shared.test.ts->fixture-multi-package/packages/shared/src/UserService.ts:UserService:keystone.core.COVERS",
+      "fixture-multi-package/tests/unit/shared.test.ts->fixture-multi-package/packages/utils/src/validateEmail.ts:validateEmail:keystone.core.COVERS",
+      "fixture-multi-package/tests/unit/app.test.tsx->fixture-multi-package/packages/app/src/App.tsx:App:keystone.core.COVERS"
+    ],
+    "fabricatedDataMappings": [],
+    "candidateMarkedExact": [
+      "fixture-multi-package/packages/utils/src/formatDate.ts:formatDate->fixture-multi-package/packages/shared/src/UserService.ts:now:keystone.core.IMPORTS"
+    ],
+    "unresolvedMarkedExact": []
+  },
+  "ingestionDurationMs": 0,
+  "entityCount": 8,
+  "relationshipCount": 9,
+  "generatedAt": "2026-07-17T15:38:32.991Z"
+}

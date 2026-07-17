@@ -1,0 +1,38 @@
+{
+  "manifest": { "generation": 1, "schemaVersion": "1", "extractorVersion": "1", "status": "ok", "createdAt": "2026-07-17T00:00:00Z", "updatedAt": "2026-07-17T00:00:00Z" },
+  "repository": { "id": "fixture-react-frontend", "name": "fixture-react-frontend", "rootPath": ".", "branch": "main", "headCommit": "abc123", "identity": { "path": "fixture-react-frontend", "hash": "abc123" } },
+  "files": [
+    { "id": "f-1", "path": "src/index.tsx", "language": "tsx", "category": "production", "sha256": "a", "size": 100, "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "f-2", "path": "src/routes.tsx", "language": "tsx", "category": "production", "sha256": "b", "size": 100, "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "f-3", "path": "src/pages/OrdersPage.tsx", "language": "tsx", "category": "production", "sha256": "c", "size": 100, "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "f-4", "path": "src/components/CreateOrderButton.tsx", "language": "tsx", "category": "production", "sha256": "d", "size": 100, "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "f-5", "path": "src/hooks/useCreateOrder.ts", "language": "ts", "category": "production", "sha256": "e", "size": 100, "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "f-6", "path": "src/api/orderApi.ts", "language": "ts", "category": "production", "sha256": "f", "size": 100, "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "f-7", "path": "src/context/OrderContext.tsx", "language": "tsx", "category": "production", "sha256": "g", "size": 100, "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "f-8", "path": "src/context/OrderConsumer.tsx", "language": "tsx", "category": "production", "sha256": "h", "size": 100, "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "f-9", "path": "tests/unit/OrderConsumer.test.tsx", "language": "tsx", "category": "test", "sha256": "i", "size": 100, "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "f-10", "path": "tests/unit/useCreateOrder.test.ts", "language": "ts", "category": "test", "sha256": "j", "size": 100, "indexedAt": "2026-07-17T00:00:00Z" }
+  ],
+  "symbols": [
+    { "id": "s-1", "name": "OrdersPage", "qualifiedName": "fixture-react-frontend/src/routes.tsx:OrdersPage", "kind": "route", "filePath": "src/routes.tsx", "startLine": 1, "endLine": 5, "metadata": {}, "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "s-2", "name": "OrdersPage", "qualifiedName": "fixture-react-frontend/src/pages/OrdersPage.tsx:OrdersPage", "kind": "component", "filePath": "src/pages/OrdersPage.tsx", "startLine": 1, "endLine": 10, "metadata": {}, "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "s-3", "name": "CreateOrderButton", "qualifiedName": "fixture-react-frontend/src/components/CreateOrderButton.tsx:CreateOrderButton", "kind": "component", "filePath": "src/components/CreateOrderButton.tsx", "startLine": 1, "endLine": 15, "metadata": {}, "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "s-4", "name": "useCreateOrder", "qualifiedName": "fixture-react-frontend/src/hooks/useCreateOrder.ts:useCreateOrder", "kind": "function", "filePath": "src/hooks/useCreateOrder.ts", "startLine": 1, "endLine": 15, "metadata": {}, "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "s-5", "name": "create", "qualifiedName": "fixture-react-frontend/src/api/orderApi.ts:create", "kind": "function", "filePath": "src/api/orderApi.ts", "startLine": 1, "endLine": 10, "metadata": {}, "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "s-6", "name": "OrderProvider", "qualifiedName": "fixture-react-frontend/src/context/OrderContext.tsx:OrderProvider", "kind": "component", "filePath": "src/context/OrderContext.tsx", "startLine": 1, "endLine": 20, "metadata": {}, "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "s-7", "name": "OrderConsumer", "qualifiedName": "fixture-react-frontend/src/context/OrderConsumer.tsx:OrderConsumer", "kind": "component", "filePath": "src/context/OrderConsumer.tsx", "startLine": 1, "endLine": 10, "metadata": {}, "indexedAt": "2026-07-17T00:00:00Z" }
+  ],
+  "relationships": [
+    { "id": "r-1", "source": "fixture-react-frontend/src/pages/OrdersPage.tsx:OrdersPage", "target": "fixture-react-frontend/src/components/CreateOrderButton.tsx:CreateOrderButton", "fromNodeId": "n-1", "toNodeId": "n-2", "type": "keystone.core.CALLS", "confidence": "high", "resolution": "exact", "evidenceIds": ["e-1"], "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "r-2", "source": "fixture-react-frontend/src/components/CreateOrderButton.tsx:CreateOrderButton", "target": "fixture-react-frontend/src/hooks/useCreateOrder.ts:useCreateOrder", "fromNodeId": "n-2", "toNodeId": "n-3", "type": "keystone.core.CALLS", "confidence": "high", "resolution": "exact", "evidenceIds": ["e-2"], "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "r-3", "source": "fixture-react-frontend/src/hooks/useCreateOrder.ts:useCreateOrder", "target": "fixture-react-frontend/src/api/orderApi.ts:create", "fromNodeId": "n-3", "toNodeId": "n-4", "type": "keystone.core.CALLS", "confidence": "high", "resolution": "exact", "evidenceIds": ["e-3"], "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "r-4", "source": "fixture-react-frontend/src/routes.tsx", "target": "fixture-react-frontend/src/pages/OrdersPage.tsx:OrdersPage", "fromNodeId": "n-5", "toNodeId": "n-6", "type": "keystone.core.IMPORTS", "confidence": "high", "resolution": "exact", "evidenceIds": ["e-4"], "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "r-5", "source": "fixture-react-frontend/src/index.tsx", "target": "fixture-react-frontend/src/context/OrderContext.tsx:OrderProvider", "fromNodeId": "n-7", "toNodeId": "n-8", "type": "keystone.core.IMPORTS", "confidence": "high", "resolution": "exact", "evidenceIds": ["e-5"], "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "r-6", "source": "fixture-react-frontend/src/context/OrderConsumer.tsx:OrderConsumer", "target": "fixture-react-frontend/src/context/OrderContext.tsx:OrderProvider", "fromNodeId": "n-9", "toNodeId": "n-8", "type": "keystone.core.CALLS", "confidence": "high", "resolution": "exact", "evidenceIds": ["e-6"], "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "r-7", "source": "fixture-react-frontend/tests/unit/OrderConsumer.test.tsx", "target": "fixture-react-frontend/src/context/OrderConsumer.tsx:OrderConsumer", "fromNodeId": "n-10", "toNodeId": "n-9", "type": "keystone.core.COVERS", "confidence": "high", "resolution": "exact", "evidenceIds": ["e-7"], "indexedAt": "2026-07-17T00:00:00Z" },
+    { "id": "r-8", "source": "fixture-react-frontend/tests/unit/useCreateOrder.test.ts", "target": "fixture-react-frontend/src/hooks/useCreateOrder.ts:useCreateOrder", "fromNodeId": "n-11", "toNodeId": "n-3", "type": "keystone.core.COVERS", "confidence": "high", "resolution": "exact", "evidenceIds": ["e-8"], "indexedAt": "2026-07-17T00:00:00Z" }
+  ],
+  "evidence": [],
+  "indexes": { "byName": {}, "byQualifiedName": {}, "byPath": {}, "byType": {}, "incoming": {}, "outgoing": {}, "routeHandlers": {}, "testTargets": {}, "packageMembership": {}, "configurationUsage": {} },
+  "diagnostics": []
+}
