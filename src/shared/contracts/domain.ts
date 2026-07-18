@@ -18,6 +18,8 @@ export const hostEnvelopeFields = {
 
 export const NavigationSectionSchema = z.enum([
   "home",
+  "workbench",
+  "history",
   "intent",
   "specifications",
   "tasks",
@@ -32,6 +34,14 @@ export const NavigationSectionSchema = z.enum([
 ]);
 
 export type NavigationSection = z.infer<typeof NavigationSectionSchema>;
+
+export const WorkbenchStageSchema = z.enum(["define", "plan", "build", "validate", "review", "complete"]);
+export type WorkbenchStage = z.infer<typeof WorkbenchStageSchema>;
+
+export const AppRouteSchema = z.string().min(1).max(1024).refine((value) =>
+  value === "/" || value === "/intelligence" || value === "/history" || value === "/workbench/new" || value === "/support/diagnostics" || value === "/settings" || /^\/workbench\/[0-9a-f-]+\/(define|plan|build|validate|review|complete)$/.test(value),
+"Unsupported Keystone route.");
+export type AppRoute = z.infer<typeof AppRouteSchema>;
 
 export const NAVIGATION_SECTIONS: readonly NavigationSection[] = NavigationSectionSchema.options;
 
@@ -59,6 +69,7 @@ export const PersistedFoundationStateSchema = z.object({
   schemaVersion: z.literal(SCHEMA_VERSION),
   revision: z.number().int().nonnegative(),
   activeSection: NavigationSectionSchema,
+  activeRoute: AppRouteSchema,
   workflowCount: z.number().int().nonnegative(),
   updatedAt: z.string().datetime()
 });

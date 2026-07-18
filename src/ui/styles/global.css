@@ -46,6 +46,8 @@ button:focus-visible { outline: 2px solid var(--vscode-focusBorder, #7aa2f7); ou
 .brand-copy { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .brand-copy strong { font-family: var(--vscode-editor-font-family, monospace); letter-spacing: .08em; font-size: 13px; text-transform: uppercase; }
 .brand-copy span { color: var(--ks-muted); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.header-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.header-actions .ghost-button { padding: 4px 7px; font-size: 10px; }
 .version-pill { margin-left: auto; padding: 2px 6px; border: 1px solid var(--ks-border); color: var(--ks-faint); border-radius: 999px; font: 9px var(--vscode-editor-font-family, monospace); }
 
 .navigation {
@@ -352,6 +354,22 @@ button:focus-visible { outline: 2px solid var(--vscode-focusBorder, #7aa2f7); ou
 .query-path li { padding: 0; background: var(--vscode-list-hoverBackground); }
 .query-path li button { padding: 6px 9px; color: inherit; background: transparent; border: 0; text-align: left; }
 .query-path li small { display: block; color: var(--ks-muted); }
+.flow-path { margin: 10px 0; overflow: hidden; }
+.flow-path.partial { border-left: 3px solid var(--vscode-editorWarning-foreground); }
+.flow-path.complete { border-left: 3px solid var(--vscode-testing-iconPassed, var(--ks-accent)); }
+.flow-path > header, .flow-terminal, .flow-stage-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.flow-path > header small, .flow-terminal small { display: block; color: var(--ks-muted); }
+.flow-status { padding: 3px 7px; border: 1px solid currentColor; text-transform: uppercase; font-size: 10px; }
+.flow-status.partial, .flow-missing { color: var(--vscode-editorWarning-foreground); }
+.flow-stage-summary { align-items: flex-start; margin-top: 8px; color: var(--ks-muted); }
+.flow-path ol { flex-wrap: nowrap; overflow-x: auto; align-items: stretch; padding: 8px 0 12px; }
+.flow-path li { display: flex; align-items: center; flex: 0 0 auto; background: transparent; }
+.flow-path li button { min-width: 145px; border: 1px solid var(--ks-border); background: var(--vscode-list-hoverBackground); }
+.flow-arrow { display: flex; flex-direction: column; align-items: center; min-width: 72px; color: var(--ks-accent); font-size: 18px; }
+.flow-arrow small { max-width: 90px; overflow-wrap: anywhere; text-align: center; font-size: 9px; }
+.flow-terminal { align-items: flex-start; padding: 8px; background: var(--vscode-list-hoverBackground); }
+.flow-terminal p { margin: 3px 0; }
+.flow-path details { margin-top: 8px; color: var(--ks-muted); }
 .query-diagnostic.error { color: var(--vscode-errorForeground); }
 .query-diagnostic.warning { color: var(--vscode-editorWarning-foreground); }
 .query-sections { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 6px; margin: 10px 0; }
@@ -367,6 +385,50 @@ button:focus-visible { outline: 2px solid var(--vscode-focusBorder, #7aa2f7); ou
 .query-seed-candidates button span, .query-seed-candidates button small { color: var(--ks-muted); margin-top: 2px; }
 
 .delivery-workspace { display: grid; gap: 18px; }
+.workbench-shell { min-width: 0; }
+.workbench-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.workbench-header h1 { margin: 4px 0; }
+.workbench-metadata { display: flex; flex-wrap: wrap; gap: 5px 12px; color: var(--vscode-descriptionForeground); font-size: 11px; }
+.workbench-overflow { position: relative; align-self: flex-start; }
+.workbench-overflow > div, .workbench-overflow[open] { padding: 6px; border: 1px solid var(--ks-border); background: var(--vscode-menu-background, var(--ks-surface)); }
+.workbench-overflow button { display: block; width: 100%; margin-top: 4px; }
+.workbench-stages { display: grid; grid-template-columns: repeat(6, minmax(90px, 1fr)); gap: 6px; margin: 18px 0; overflow-x: auto; }
+.workbench-stage-tab { min-width: 95px; }
+.workbench-stage-tab > button { display: grid; grid-template-columns: 24px 1fr; width: 100%; min-height: 62px; padding: 8px; color: var(--vscode-foreground); text-align: left; background: var(--vscode-tab-inactiveBackground, var(--ks-surface)); border: 1px solid var(--ks-border); }
+.workbench-stage-tab > button > span { grid-row: 1 / 3; display: grid; place-items: center; align-self: start; width: 20px; height: 20px; border: 1px solid currentColor; border-radius: 50%; }
+.workbench-stage-tab > button small { color: var(--vscode-descriptionForeground); text-transform: uppercase; }
+.workbench-stage-tab.active > button { outline: 2px solid var(--vscode-focusBorder); outline-offset: -2px; background: var(--vscode-tab-activeBackground, var(--ks-surface-raised)); }
+.stage-reason { display: block; margin-top: 4px; color: var(--vscode-descriptionForeground); font-size: 10px; line-height: 1.35; }
+.workbench-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(230px, 300px); gap: 16px; align-items: start; }
+.workbench-stage { min-width: 0; }
+.workbench-context { position: sticky; top: 10px; padding: 14px; border: 1px solid var(--ks-border); background: var(--vscode-sideBar-background, var(--ks-surface)); }
+.workbench-context h2, .workbench-context h3 { margin: 0 0 8px; }
+.workbench-context h3 { margin-top: 16px; }
+.workbench-context dl { display: grid; gap: 5px; }
+.workbench-context dl div { display: flex; justify-content: space-between; gap: 10px; padding-bottom: 5px; border-bottom: 1px solid var(--ks-border); }
+.workbench-context dd { margin: 0; text-align: right; }
+.workbench-new, .stage-content { display: grid; gap: 14px; }
+.create-context { display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 12px; border: 1px solid var(--ks-border); background: var(--vscode-sideBar-background, var(--ks-surface)); }
+.work-type-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; padding: 12px; border: 1px solid var(--ks-border); }
+.work-type-grid legend { padding: 0 6px; font-weight: 700; }
+.work-type-grid label { display: grid; grid-template-columns: 20px 1fr; gap: 3px 7px; padding: 10px; border: 1px solid var(--ks-border); background: var(--ks-surface); }
+.work-type-grid label.selected { outline: 2px solid var(--vscode-focusBorder); }
+.work-type-grid label span { grid-column: 2; color: var(--vscode-descriptionForeground); }
+.field-stack { display: grid; gap: 6px; }
+.field-stack textarea, .stage-content textarea { min-height: 90px; resize: vertical; }
+.field-stack textarea, .stage-content textarea, .stage-content input, .workbench-new textarea, .workbench-new input, .workbench-new select, .stage-content select { box-sizing: border-box; width: 100%; padding: 8px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, var(--ks-border)); }
+.card-title, .clarification-card header, .task-plan-card header, .evidence-row { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.card-title h2 { margin: 0; }
+.evidence-row, .clarification-card, .task-plan-card { padding: 10px 0; border-top: 1px solid var(--ks-border); }
+.evidence-row > div:first-child, .task-plan-card { min-width: 0; }
+.evidence-row span, .clarification-card span, .task-plan-card small { display: block; color: var(--vscode-descriptionForeground); }
+.task-plan-card { display: grid; gap: 7px; }
+.spec-sections { display: grid; gap: 6px; margin: 10px 0; }
+.spec-sections details { padding: 8px; background: var(--vscode-list-hoverBackground); }
+.text-button { justify-self: start; color: var(--vscode-textLink-foreground); background: transparent; border: 0; text-decoration: underline; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid var(--vscode-focusBorder); outline-offset: 2px; }
+@media (max-width: 900px) { .workbench-layout { grid-template-columns: 1fr; } .workbench-context { position: static; } }
+@media (max-width: 650px) { .workbench-header, .card-title, .evidence-row { align-items: stretch; flex-direction: column; } .workbench-stages { grid-template-columns: repeat(6, minmax(125px, 1fr)); } .workbench-metadata { flex-direction: column; } }
 .delivery-header, .delivery-panel-heading, .delivery-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .delivery-header h1, .delivery-panel h2 { margin: 4px 0 8px; }
 .delivery-header p { max-width: 760px; }

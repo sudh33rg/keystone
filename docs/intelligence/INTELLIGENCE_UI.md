@@ -136,6 +136,8 @@ UI → API Client → Route → Middleware → Controller → Service → Reposi
 
 Allow expansion of validation, branches, data transformations, tests, and source evidence.
 
+The current Query Workspace renders bounded flow results left-to-right with template name, complete/partial state, ordered relationship direction, matched and missing stages, alternate rank, confidence/risk factors, terminal reason, and an action to inspect the canonical entity at the boundary. This is the first purpose-specific flow surface; branch and transformation expansion remain future work.
+
 ## Impact view
 
 Show direct impact, transitive impact, affected APIs, data objects, tests, configuration, public surfaces, risk factors, evidence, and stale or unresolved areas.

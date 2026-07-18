@@ -34,6 +34,8 @@ Calculate direct and transitive impact of changing an entity or diff, including 
 
 Return execution or data flows using routes, calls, middleware, events, queues, reads, writes, serializers, and selected CPG paths.
 
+The implemented repository-level flow engine uses ordered, deterministic templates rather than an unconstrained relationship walk. HTTP/UI-to-persistence, event producer-to-consumer, configuration-to-behavior, command execution, and build/pipeline flows each admit only stage-valid persisted relationships. Configuration usage may traverse an evidenced relationship in reverse and records that direction on the hop. Results expose complete or partial status, matched and missing stages, ranked alternates, score factors, terminal reason, truncation, and capability boundaries. A missing stage remains a visible gap; the engine never synthesizes a hop to make a flow appear complete.
+
 ### Tests
 
 Return mapped tests, confidence, evidence, coverage, impacted tests, uncovered public symbols, and uncovered branches where CPG data exists.

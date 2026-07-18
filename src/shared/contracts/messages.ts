@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   ActivitySchema,
+  AppRouteSchema,
   BootstrapSnapshotSchema,
   NavigationSectionSchema,
   PersistedFoundationStateSchema,
@@ -86,6 +87,8 @@ import {
   type PreparedDelegation,
   type TaskContextPackage,
 } from "./delegation";
+import { WorkbenchClarificationAnswerPayloadSchema, WorkbenchClarificationPayloadSchema, WorkbenchConstraintsUpdatePayloadSchema, WorkbenchCreateWorkflowPayloadSchema, WorkbenchDependencyUpdatePayloadSchema, WorkbenchIntentUpdatePayloadSchema, WorkbenchLifecycleEventSchema, WorkbenchPlanApprovalPayloadSchema, WorkbenchScopeUpdatePayloadSchema, WorkbenchSpecificationApprovePayloadSchema, WorkbenchSpecificationUpdatePayloadSchema, WorkbenchStageNavigationPayloadSchema, WorkbenchStaleEventSchema, WorkbenchTaskAddPayloadSchema, WorkbenchTaskRemovePayloadSchema, WorkbenchTaskReorderPayloadSchema, WorkbenchTaskUpdatePayloadSchema, type WorkbenchCreateContext, type WorkbenchDefineState, type WorkbenchPlanState, type WorkbenchStageState, type WorkbenchSummary, type WorkbenchTaskPlanValidation, type WorkbenchWorkflowState } from "./workbench";
+import { BuildBlockTaskPayloadSchema, BuildCustomizationSelectionPayloadSchema, BuildLifecycleEventSchema, BuildSelectTaskPayloadSchema, BuildTaskPayloadSchema, type BuildTaskQueue, type BuildTaskState, type CopilotCustomizationItem } from "./build";
 import {
   AttributeChangePayloadSchema,
   CaptureResultPayloadSchema,
@@ -245,7 +248,7 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
   request("app/ping", z.object({}).strict()),
   request(
     "navigation/set",
-    z.object({ section: NavigationSectionSchema }).strict(),
+    z.union([z.object({ route: AppRouteSchema }).strict(), z.object({ section: NavigationSectionSchema }).strict()]),
   ),
   request(
     "settings/open",
@@ -297,6 +300,48 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
   request("workflow/spec/approve", WorkflowSpecApprovePayloadSchema),
   request("workflow/tasks/generate", WorkflowIdPayloadSchema),
   request("workflow/reconcile", WorkflowIdPayloadSchema),
+  request("workbench/getCreateContext", z.object({}).strict()),
+  request("workbench/createWorkflow", WorkbenchCreateWorkflowPayloadSchema),
+  request("workbench/getWorkflow", WorkflowIdPayloadSchema),
+  request("workbench/listWorkflows", z.object({}).strict()),
+  request("workbench/openWorkflow", WorkbenchStageNavigationPayloadSchema),
+  request("workbench/getDefineState", WorkflowIdPayloadSchema),
+  request("workbench/updateIntent", WorkbenchIntentUpdatePayloadSchema),
+  request("workbench/updateScope", WorkbenchScopeUpdatePayloadSchema),
+  request("workbench/updateConstraints", WorkbenchConstraintsUpdatePayloadSchema),
+  request("workbench/getClarifications", WorkflowIdPayloadSchema),
+  request("workbench/answerClarification", WorkbenchClarificationAnswerPayloadSchema),
+  request("workbench/deferClarification", WorkbenchClarificationPayloadSchema),
+  request("workbench/markClarificationNotApplicable", WorkbenchClarificationPayloadSchema),
+  request("workbench/reopenClarification", WorkbenchClarificationPayloadSchema),
+  request("workbench/generateSpecification", WorkflowIdPayloadSchema),
+  request("workbench/updateSpecification", WorkbenchSpecificationUpdatePayloadSchema),
+  request("workbench/generateAcceptanceCriteria", WorkflowIdPayloadSchema),
+  request("workbench/approveSpecification", WorkbenchSpecificationApprovePayloadSchema),
+  request("workbench/getPlanState", WorkflowIdPayloadSchema),
+  request("workbench/generateTaskPlan", WorkflowIdPayloadSchema),
+  request("workbench/updateTask", WorkbenchTaskUpdatePayloadSchema),
+  request("workbench/addTask", WorkbenchTaskAddPayloadSchema),
+  request("workbench/removeTask", WorkbenchTaskRemovePayloadSchema),
+  request("workbench/reorderTask", WorkbenchTaskReorderPayloadSchema),
+  request("workbench/updateDependency", WorkbenchDependencyUpdatePayloadSchema),
+  request("workbench/validateTaskPlan", WorkflowIdPayloadSchema),
+  request("workbench/approveTaskPlan", WorkbenchPlanApprovalPayloadSchema),
+  request("workbench/getStageStates", WorkflowIdPayloadSchema),
+  request("workbench/navigateStage", WorkbenchStageNavigationPayloadSchema),
+  request("workbench/getSummary", WorkflowIdPayloadSchema),
+  request("build/getTaskQueue", WorkflowIdPayloadSchema),
+  request("build/getTaskState", BuildTaskPayloadSchema),
+  request("build/selectTask", BuildSelectTaskPayloadSchema),
+  request("build/startTask", BuildTaskPayloadSchema),
+  request("build/pauseTask", BuildTaskPayloadSchema),
+  request("build/resumeTask", BuildTaskPayloadSchema),
+  request("build/blockTask", BuildBlockTaskPayloadSchema),
+  request("build/cancelTask", BuildTaskPayloadSchema),
+  request("build/getCopilotCapabilities", BuildTaskPayloadSchema),
+  request("build/getCustomizations", BuildTaskPayloadSchema),
+  request("build/updateCustomizationSelection", BuildCustomizationSelectionPayloadSchema),
+  request("build/getAgents", BuildTaskPayloadSchema),
   request("copilot/capabilities", z.object({}).strict()),
   request("copilot/refreshCapabilities", z.object({}).strict()),
   request("copilot/agents", z.object({}).strict()),
@@ -520,6 +565,30 @@ export const HostMessageSchema = z.discriminatedUnion("type", [
   event("intelligence/queryInvalidated", QueryLifecycleEventSchema),
   event("workflow/updated", WorkflowEventPayloadSchema),
   event("workflow/stale", WorkflowEventPayloadSchema),
+  event("workbench/workflowCreated", WorkbenchLifecycleEventSchema),
+  event("workbench/workflowChanged", WorkbenchLifecycleEventSchema),
+  event("workbench/stageStateChanged", WorkbenchLifecycleEventSchema),
+  event("workbench/intentChanged", WorkbenchLifecycleEventSchema),
+  event("workbench/clarificationChanged", WorkbenchLifecycleEventSchema),
+  event("workbench/specificationGenerated", WorkbenchLifecycleEventSchema),
+  event("workbench/specificationApproved", WorkbenchLifecycleEventSchema),
+  event("workbench/taskPlanGenerated", WorkbenchLifecycleEventSchema),
+  event("workbench/taskPlanChanged", WorkbenchLifecycleEventSchema),
+  event("build/taskSelected", BuildLifecycleEventSchema),
+  event("build/taskStarted", BuildLifecycleEventSchema),
+  event("build/taskPaused", BuildLifecycleEventSchema),
+  event("build/taskBlocked", BuildLifecycleEventSchema),
+  event("build/taskChanged", BuildLifecycleEventSchema),
+  event("build/contextCompleted", BuildLifecycleEventSchema),
+  event("build/agentChanged", BuildLifecycleEventSchema),
+  event("build/delegationChanged", BuildLifecycleEventSchema),
+  event("build/repositoryChangesChanged", BuildLifecycleEventSchema),
+  event("build/validationChanged", BuildLifecycleEventSchema),
+  event("build/retryStarted", BuildLifecycleEventSchema),
+  event("build/handoffPrepared", BuildLifecycleEventSchema),
+  event("build/completionReadinessChanged", BuildLifecycleEventSchema),
+  event("workbench/taskPlanApproved", WorkbenchLifecycleEventSchema),
+  event("workbench/staleStateDetected", WorkbenchStaleEventSchema),
   event("copilot/capabilitiesChanged", CapabilityEventPayloadSchema),
   event("copilot/agentsChanged", AgentsEventPayloadSchema),
   event("context/buildStarted", ContextLifecycleEventSchema),
@@ -841,6 +910,48 @@ export interface WebviewRequestResults {
   "workflow/spec/approve": DevelopmentWorkflowSnapshot;
   "workflow/tasks/generate": DevelopmentWorkflowSnapshot;
   "workflow/reconcile": DevelopmentWorkflowSnapshot;
+  "workbench/getCreateContext": WorkbenchCreateContext;
+  "workbench/createWorkflow": DevelopmentWorkflowSnapshot;
+  "workbench/getWorkflow": WorkbenchWorkflowState | undefined;
+  "workbench/listWorkflows": DevelopmentWorkflowSnapshot[];
+  "workbench/openWorkflow": WorkbenchWorkflowState;
+  "workbench/getDefineState": WorkbenchDefineState;
+  "workbench/updateIntent": DevelopmentWorkflowSnapshot;
+  "workbench/updateScope": DevelopmentWorkflowSnapshot;
+  "workbench/updateConstraints": DevelopmentWorkflowSnapshot;
+  "workbench/getClarifications": DevelopmentWorkflowSnapshot["clarifications"];
+  "workbench/answerClarification": DevelopmentWorkflowSnapshot;
+  "workbench/deferClarification": DevelopmentWorkflowSnapshot;
+  "workbench/markClarificationNotApplicable": DevelopmentWorkflowSnapshot;
+  "workbench/reopenClarification": DevelopmentWorkflowSnapshot;
+  "workbench/generateSpecification": DevelopmentWorkflowSnapshot;
+  "workbench/updateSpecification": DevelopmentWorkflowSnapshot;
+  "workbench/generateAcceptanceCriteria": DevelopmentWorkflowSnapshot;
+  "workbench/approveSpecification": DevelopmentWorkflowSnapshot;
+  "workbench/getPlanState": WorkbenchPlanState;
+  "workbench/generateTaskPlan": DevelopmentWorkflowSnapshot;
+  "workbench/updateTask": DevelopmentWorkflowSnapshot;
+  "workbench/addTask": DevelopmentWorkflowSnapshot;
+  "workbench/removeTask": DevelopmentWorkflowSnapshot;
+  "workbench/reorderTask": DevelopmentWorkflowSnapshot;
+  "workbench/updateDependency": DevelopmentWorkflowSnapshot;
+  "workbench/validateTaskPlan": WorkbenchTaskPlanValidation;
+  "workbench/approveTaskPlan": DevelopmentWorkflowSnapshot;
+  "workbench/getStageStates": WorkbenchStageState[];
+  "workbench/navigateStage": WorkbenchWorkflowState;
+  "workbench/getSummary": WorkbenchSummary;
+  "build/getTaskQueue": BuildTaskQueue;
+  "build/getTaskState": BuildTaskState;
+  "build/selectTask": BuildTaskState;
+  "build/startTask": BuildTaskState;
+  "build/pauseTask": BuildTaskState;
+  "build/resumeTask": BuildTaskState;
+  "build/blockTask": BuildTaskState;
+  "build/cancelTask": BuildTaskState;
+  "build/getCopilotCapabilities": CopilotCapabilities;
+  "build/getCustomizations": CopilotCustomizationItem[];
+  "build/updateCustomizationSelection": CopilotCustomizationItem[];
+  "build/getAgents": CopilotAgentDescriptor[];
   "copilot/capabilities": CopilotCapabilities;
   "copilot/refreshCapabilities": CopilotCapabilities;
   "copilot/agents": CopilotAgentDescriptor[];

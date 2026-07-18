@@ -1,9 +1,11 @@
 import {
   PersistedFoundationStateSchema,
   SCHEMA_VERSION,
+  type AppRoute,
   type NavigationSection,
   type PersistedFoundationState
 } from "../../shared/contracts/domain";
+import { compatibilityRoute, sectionForRoute } from "../../shared/navigation";
 import { KeystoneError } from "../../shared/errors/KeystoneError";
 import { readFile, rename } from "node:fs/promises";
 import { AtomicFileWriter } from "./AtomicFileWriter";
@@ -95,9 +97,14 @@ export class WorkspaceStateStore {
   }
 
   async setActiveSection(section: NavigationSection): Promise<PersistedFoundationState> {
+    return this.setActiveRoute(compatibilityRoute(section));
+  }
+
+  async setActiveRoute(route: AppRoute): Promise<PersistedFoundationState> {
     const next: PersistedFoundationState = {
       ...this.state,
-      activeSection: section,
+      activeSection: sectionForRoute(route),
+      activeRoute: route,
       revision: this.state.revision + 1,
       updatedAt: new Date().toISOString()
     };
@@ -131,6 +138,7 @@ export function createDefaultState(): PersistedFoundationState {
     schemaVersion: SCHEMA_VERSION,
     revision: 0,
     activeSection: "home",
+    activeRoute: "/",
     workflowCount: 0,
     updatedAt: new Date().toISOString()
   };
@@ -140,14 +148,22 @@ function migrateLegacyState(raw: unknown): PersistedFoundationState | undefined 
   if (!raw || typeof raw !== "object") return undefined;
   const candidate = raw as Record<string, unknown>;
   if (candidate.schemaVersion === SCHEMA_VERSION && (candidate.activeSection === "hub" || candidate.activeSection === "models")) {
-    const result = PersistedFoundationStateSchema.safeParse({ ...candidate, activeSection: "intelligence", revision: typeof candidate.revision === "number" ? candidate.revision + 1 : 1, updatedAt: new Date().toISOString() });
+    const result = PersistedFoundationStateSchema.safeParse({ ...candidate, activeSection: "intelligence", activeRoute: "/intelligence", revision: typeof candidate.revision === "number" ? candidate.revision + 1 : 1, updatedAt: new Date().toISOString() });
+    return result.success ? result.data : undefined;
+  }
+  if (candidate.schemaVersion === SCHEMA_VERSION && typeof candidate.activeSection === "string" && candidate.activeRoute === undefined) {
+    const section = candidate.activeSection as NavigationSection;
+    const activeRoute = compatibilityRoute(section);
+    const result = PersistedFoundationStateSchema.safeParse({ ...candidate, activeSection: sectionForRoute(activeRoute), activeRoute, revision: typeof candidate.revision === "number" ? candidate.revision + 1 : 1, updatedAt: new Date().toISOString() });
     return result.success ? result.data : undefined;
   }
   if (candidate.schemaVersion !== 0) return undefined;
   const activeSection = typeof candidate.activeSection === "string" ? candidate.activeSection : "home";
+  const route = compatibilityRoute(activeSection as NavigationSection);
   const result = PersistedFoundationStateSchema.safeParse({
     ...createDefaultState(),
-    activeSection,
+    activeSection: sectionForRoute(route),
+    activeRoute: route,
     workflowCount: typeof candidate.workflowCount === "number" ? candidate.workflowCount : 0
   });
   return result.success ? result.data : undefined;

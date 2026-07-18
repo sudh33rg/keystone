@@ -32,6 +32,9 @@ import type { DeliveryCoordinator } from "../../core/delivery/GitDeliveryService
 import type { TeamWorkflowService } from "../../core/team/TeamWorkflowService";
 import type { ExecutionRoutingService } from "../../core/workflows/ExecutionRoutingService";
 import type { OrchestrationService } from "../../core/orchestration/OrchestrationService";
+import type { BuildWorkspaceService } from "../../core/workflows/BuildWorkspaceService";
+import type { CopilotCustomizationService } from "../../core/copilot/CopilotCustomizationService";
+import type { BuildTaskState } from "../../shared/contracts/build";
 import type { WorkflowInstance } from "../../shared/contracts/orchestration";
 import type {
   ContextBudget,
@@ -55,6 +58,8 @@ export interface IntelligenceServiceRegistry {
     },
   ): Promise<void>;
   workflow: DevelopmentWorkflowService;
+  buildWorkspace: BuildWorkspaceService;
+  customizations: CopilotCustomizationService;
   copilot: CopilotAdapter;
   agents: CopilotAgentRegistry;
   context: TaskContextService;
@@ -238,9 +243,7 @@ export class WebviewMessageRouter {
         });
         return;
       case "navigation/set": {
-        const state = await this.store.setActiveSection(
-          request.payload.section,
-        );
+        const state = "route" in request.payload ? await this.store.setActiveRoute(request.payload.route) : await this.store.setActiveSection(request.payload.section);
         await this.postMessage(hostMessage("state/updated", state));
         await this.sendSuccess(request.requestId, state);
         return;
@@ -470,6 +473,7 @@ export class WebviewMessageRouter {
               request.payload.mode,
               request.payload.title,
               signal,
+              { workType: request.payload.workType, repositoryScope: request.payload.repositoryScope },
             ),
         );
         await this.postMessage(
@@ -567,6 +571,63 @@ export class WebviewMessageRouter {
         await this.sendSuccess(request.requestId, workflow);
         return;
       }
+      case "workbench/getCreateContext": {
+        const snapshot = this.services.workflow.getCurrentSnapshot(); const workspace = this.workspaceSummary(); const capabilities = this.services.copilot.getCapabilities();
+        await this.sendSuccess(request.requestId, { schemaVersion: 1, repository: { available: Boolean(snapshot), trusted: this.services.workspaceTrusted?.() !== false, ...(snapshot ? { id: snapshot.repository.id, name: workspace.name, branch: snapshot.repository.branch, head: snapshot.repository.headCommit } : {}) }, intelligence: { status: snapshot ? workspace.indexStatus === "partial" ? "partial" : "ready" : ["scanning", "reconciling", "indexing"].includes(workspace.indexStatus) ? "building" : "unavailable", generation: snapshot?.manifest.generation ?? 0, message: snapshot ? `Generation ${snapshot.manifest.generation} is available.` : "No complete Intelligence generation is available." }, activeEditor: this.services.currentEditor?.(), copilot: { available: capabilities?.extensionDetected ?? false, directInvocation: capabilities?.directInvocationAvailable ?? false, summary: capabilities?.extensionDetected ? capabilities.directInvocationAvailable ? "GitHub Copilot direct invocation is available." : "GitHub Copilot is available through an assisted path." : "GitHub Copilot is unavailable; workflow planning remains available." }, workflowDefinitions: workbenchDefinitions() }); return;
+      }
+      case "workbench/createWorkflow": {
+        const activeEditor = this.services.currentEditor?.();
+        const scope = request.payload.repositoryScope.kind === "current-file" ? { kind: "current-file" as const, paths: activeEditor ? [activeEditor] : [] } : request.payload.repositoryScope;
+        if (scope.kind === "current-file" && !scope.paths.length) throw new Error("No active repository file is available for current-file scope.");
+        const workflow = await this.cancellableQuery(request.requestId, (signal) => this.services.workflow.createWorkbenchDraft({ ...request.payload, repositoryScope: scope }, signal));
+        await this.store.setActiveRoute(`/workbench/${workflow.id}/define`);
+        await this.postMessage(hostMessage("workbench/workflowCreated", workbenchEvent(workflow, "define", "Workflow draft created from the developer intent.")));
+        await this.sendSuccess(request.requestId, workflow); return;
+      }
+      case "workbench/getWorkflow": { const workflow = this.services.workflow.get(request.payload.workflowId); await this.sendSuccess(request.requestId, workflow ? this.services.workflow.getWorkbenchState(workflow.id) : undefined); return; }
+      case "workbench/listWorkflows": await this.sendSuccess(request.requestId, this.services.workflow.list()); return;
+      case "workbench/openWorkflow":
+      case "workbench/navigateStage": {
+        const state = this.services.workflow.getWorkbenchState(request.payload.workflowId); const target = state.stageStates.find((item) => item.stage === request.payload.stage)!;
+        if (["blocked", "unavailable"].includes(target.status)) throw new Error(`${stageTitle(target.stage)} is unavailable. ${target.blockers.map((item) => `${item.message} ${item.recoveryAction}`).join(" ")}`);
+        await this.store.setActiveRoute(`/workbench/${state.workflow.id}/${request.payload.stage}`); await this.postMessage(hostMessage("workbench/stageStateChanged", workbenchEvent(state.workflow, request.payload.stage, `Workbench opened ${stageTitle(request.payload.stage)}.`))); await this.sendSuccess(request.requestId, this.services.workflow.getWorkbenchState(state.workflow.id)); return;
+      }
+      case "workbench/getDefineState": await this.sendSuccess(request.requestId, this.services.workflow.getDefineState(request.payload.workflowId)); return;
+      case "workbench/updateIntent": { const workflow = await this.services.workflow.updateIntent(request.payload.workflowId, request.payload.intent, request.payload.reason); await this.sendWorkbenchWorkflow(request.requestId, workflow, "workbench/intentChanged", "Intent revision saved; derived state was marked stale where required."); return; }
+      case "workbench/updateScope": { const workflow = await this.services.workflow.updateScope(request.payload.workflowId, request.payload.repositoryScope, request.payload.reason); await this.sendWorkbenchWorkflow(request.requestId, workflow, "workbench/intentChanged", "Repository scope revision saved."); return; }
+      case "workbench/updateConstraints": { const workflow = await this.services.workflow.updateConstraints(request.payload.workflowId, request.payload.constraints, request.payload.reason); await this.sendWorkbenchWorkflow(request.requestId, workflow, "workbench/intentChanged", "Workflow constraints revision saved."); return; }
+      case "workbench/getClarifications": await this.sendSuccess(request.requestId, this.services.workflow.get(request.payload.workflowId)?.clarifications ?? []); return;
+      case "workbench/answerClarification": { const workflow = await this.services.workflow.answerClarification(request.payload.workflowId, request.payload.clarificationId, request.payload.answer, request.payload.rationale); await this.sendWorkbenchWorkflow(request.requestId, workflow, "workbench/clarificationChanged", "Clarification answered and recorded as a durable workflow decision."); return; }
+      case "workbench/deferClarification": { const workflow = await this.services.workflow.setClarificationStatus(request.payload.workflowId, request.payload.clarificationId, "deferred"); await this.sendWorkbenchWorkflow(request.requestId, workflow, "workbench/clarificationChanged", "Clarification explicitly deferred."); return; }
+      case "workbench/markClarificationNotApplicable": { const workflow = await this.services.workflow.setClarificationStatus(request.payload.workflowId, request.payload.clarificationId, "not-applicable"); await this.sendWorkbenchWorkflow(request.requestId, workflow, "workbench/clarificationChanged", "Clarification explicitly marked not applicable."); return; }
+      case "workbench/reopenClarification": { const workflow = await this.services.workflow.setClarificationStatus(request.payload.workflowId, request.payload.clarificationId, "open"); await this.sendWorkbenchWorkflow(request.requestId, workflow, "workbench/clarificationChanged", "Clarification reopened."); return; }
+      case "workbench/generateSpecification": { const workflow = await this.services.workflow.generateSpecification(request.payload.workflowId); await this.sendWorkbenchWorkflow(request.requestId, workflow, "workbench/specificationGenerated", "Deterministic specification draft generated."); return; }
+      case "workbench/updateSpecification": { const workflow = await this.services.workflow.revise(request.payload.workflowId, request.payload.patch, request.payload.reason); await this.sendWorkbenchWorkflow(request.requestId, workflow, "workbench/workflowChanged", "Specification draft revision saved."); return; }
+      case "workbench/generateAcceptanceCriteria": { const workflow = await this.services.workflow.generateAcceptanceCriteria(request.payload.workflowId); await this.sendWorkbenchWorkflow(request.requestId, workflow, "workbench/workflowChanged", "Structured acceptance criteria regenerated."); return; }
+      case "workbench/approveSpecification": { const state = this.services.workflow.getWorkbenchState(request.payload.workflowId); if (state.summary.repositoryFreshness !== "current" || state.summary.intelligenceFreshness !== "current") throw new Error("Specification approval requires the workflow repository and Intelligence generation to be current. Review stale-state diagnostics and reconcile first."); const workflow = await this.services.workflow.approve(request.payload.workflowId, request.payload.expectedRevision, request.payload.rationale); await this.sendWorkbenchWorkflow(request.requestId, workflow, "workbench/specificationApproved", "Immutable specification revision approved; Plan is ready."); return; }
+      case "workbench/getPlanState": await this.sendSuccess(request.requestId, this.services.workflow.getPlanState(request.payload.workflowId)); return;
+      case "workbench/generateTaskPlan": { const workflow = await this.services.workflow.generateTaskPlan(request.payload.workflowId); await this.sendWorkbenchWorkflow(request.requestId, workflow, "workbench/taskPlanGenerated", "Deterministic task-plan draft generated."); return; }
+      case "workbench/updateTask": { const workflow = await this.services.workflow.updateTask(request.payload.workflowId, request.payload.taskId, request.payload.expectedPlanRevision, request.payload.patch); await this.sendWorkbenchWorkflow(request.requestId, workflow, "workbench/taskPlanChanged", "Task-plan revision updated."); return; }
+      case "workbench/addTask": { const workflow = await this.services.workflow.addTask(request.payload.workflowId, request.payload.expectedPlanRevision, request.payload.task); await this.sendWorkbenchWorkflow(request.requestId, workflow, "workbench/taskPlanChanged", "Task added to a new plan revision."); return; }
+      case "workbench/removeTask": { const workflow = await this.services.workflow.removeTask(request.payload.workflowId, request.payload.taskId, request.payload.expectedPlanRevision); await this.sendWorkbenchWorkflow(request.requestId, workflow, "workbench/taskPlanChanged", "Task removed from a new plan revision."); return; }
+      case "workbench/reorderTask": { const workflow = await this.services.workflow.reorderTask(request.payload.workflowId, request.payload.taskId, request.payload.direction, request.payload.expectedPlanRevision); await this.sendWorkbenchWorkflow(request.requestId, workflow, "workbench/taskPlanChanged", `Task moved ${request.payload.direction} in a new plan revision.`); return; }
+      case "workbench/updateDependency": { const workflow = await this.services.workflow.updateDependency(request.payload.workflowId, request.payload.taskId, request.payload.dependencyId, request.payload.action, request.payload.expectedPlanRevision); await this.sendWorkbenchWorkflow(request.requestId, workflow, "workbench/taskPlanChanged", "Task dependency updated and plan validation rerun."); return; }
+      case "workbench/validateTaskPlan": await this.sendSuccess(request.requestId, this.services.workflow.validateTaskPlan(request.payload.workflowId)); return;
+      case "workbench/approveTaskPlan": { const workflow = await this.services.workflow.approveTaskPlan(request.payload.workflowId, request.payload.expectedPlanRevision); await this.sendWorkbenchWorkflow(request.requestId, workflow, "workbench/taskPlanApproved", "Reviewed task-plan revision approved; Build is ready. No delegation was started."); return; }
+      case "workbench/getStageStates": await this.sendSuccess(request.requestId, this.services.workflow.getStageStates(request.payload.workflowId)); return;
+      case "workbench/getSummary": await this.sendSuccess(request.requestId, this.services.workflow.getWorkbenchState(request.payload.workflowId).summary); return;
+      case "build/getTaskQueue": await this.sendSuccess(request.requestId, this.services.buildWorkspace.queue(request.payload.workflowId)); return;
+      case "build/getTaskState": await this.sendSuccess(request.requestId, await this.services.buildWorkspace.state(request.payload.workflowId, request.payload.taskId)); return;
+      case "build/selectTask": { const workflow = this.services.workflow.get(request.payload.workflowId); if (!workflow?.specification || workflow.specification.revision !== request.payload.specificationRevision || workflow.intelligenceGeneration !== request.payload.intelligenceGeneration) throw new Error("Task selection is stale; refresh the Build workspace before selecting it."); const state = await this.services.buildWorkspace.select(request.payload.workflowId, request.payload.taskId); await this.postMessage(hostMessage("build/taskSelected", buildEvent(state, "Task selected after canonical readiness refresh."))); await this.sendSuccess(request.requestId, state); return; }
+      case "build/startTask": { const state = await this.services.buildWorkspace.start(request.payload.workflowId, request.payload.taskId); await this.postMessage(hostMessage("build/taskStarted", buildEvent(state, "Task started without automatic delegation."))); await this.sendSuccess(request.requestId, state); return; }
+      case "build/pauseTask": { const state = await this.services.buildWorkspace.pause(request.payload.workflowId, request.payload.taskId); await this.postMessage(hostMessage("build/taskPaused", buildEvent(state, "Task paused; state and baseline were preserved."))); await this.sendSuccess(request.requestId, state); return; }
+      case "build/resumeTask": { const state = await this.services.buildWorkspace.resume(request.payload.workflowId, request.payload.taskId); await this.postMessage(hostMessage("build/taskStarted", buildEvent(state, "Task resumed after readiness revalidation."))); await this.sendSuccess(request.requestId, state); return; }
+      case "build/blockTask": { const state = await this.services.buildWorkspace.block(request.payload.workflowId, request.payload.taskId, `${request.payload.category}: ${request.payload.reason}. Next: ${request.payload.suggestedAction}`); await this.postMessage(hostMessage("build/taskBlocked", buildEvent(state, "Task explicitly blocked."))); await this.sendSuccess(request.requestId, state); return; }
+      case "build/cancelTask": { const state = await this.services.buildWorkspace.cancel(request.payload.workflowId, request.payload.taskId); await this.postMessage(hostMessage("build/taskChanged", buildEvent(state, "Task cancelled; no repository action was performed."))); await this.sendSuccess(request.requestId, state); return; }
+      case "build/getCopilotCapabilities": { const value = this.services.copilot.getCapabilities() ?? await this.services.copilot.refreshCapabilities(); await this.sendSuccess(request.requestId, value); return; }
+      case "build/getCustomizations": { const workflow = this.services.workflow.get(request.payload.workflowId); const task = workflow?.tasks.find((item) => item.id === request.payload.taskId); if (!task) throw new Error("Task not found."); await this.sendSuccess(request.requestId, await this.cancellableQuery(request.requestId, (signal) => this.services.customizations.discover(task, signal))); return; }
+      case "build/updateCustomizationSelection": { await this.services.customizations.select(request.payload.taskId, request.payload.customizationId, request.payload.selected); const workflow = this.services.workflow.get(request.payload.workflowId); const task = workflow?.tasks.find((item) => item.id === request.payload.taskId); if (!workflow || !task) throw new Error("Task not found."); if (this.services.context.get(task.id)) await this.services.context.invalidate(task.id, "Copilot customization selection changed; regenerate context before delegation."); const value = await this.services.customizations.discover(task); await this.postMessage(hostMessage("build/contextCompleted", buildEvent(await this.services.buildWorkspace.state(workflow.id, task.id), "Customization changed; existing context is stale."))); await this.sendSuccess(request.requestId, value); return; }
+      case "build/getAgents": await this.sendSuccess(request.requestId, this.services.agents.getProfiles()); return;
       case "copilot/capabilities":
         await this.sendSuccess(
           request.requestId,
@@ -1598,6 +1659,7 @@ export class WebviewMessageRouter {
       "validation/approveCommand", "validation/run", "validation/rerunStep", "validation/override",
       "git/stage", "git/unstage", "git/createBranch", "git/commit", "git/push", "pullRequest/approve", "pullRequest/create", "pullRequest/confirmExternalCreation",
       "orchestration/start", "orchestration/startTask", "orchestration/retryTask",
+      "workbench/createWorkflow",
     ]);
     if (request.type === "handoff/export" && request.payload.mode === "repository-artifact") blocked.add(request.type);
     if (!blocked.has(request.type)) return;
@@ -1617,6 +1679,8 @@ export class WebviewMessageRouter {
     );
     await this.sendSuccess(requestId, workflow);
   }
+
+  private async sendWorkbenchWorkflow(requestId: string, workflow: DevelopmentWorkflowSnapshot, type: "workbench/workflowChanged" | "workbench/intentChanged" | "workbench/clarificationChanged" | "workbench/specificationGenerated" | "workbench/specificationApproved" | "workbench/taskPlanGenerated" | "workbench/taskPlanChanged" | "workbench/taskPlanApproved", message: string): Promise<void> { const state = this.services.workflow.getWorkbenchState(workflow.id); await this.postMessage(hostMessage(type, workbenchEvent(workflow, state.summary.currentStage, message))); await this.postMessage(hostMessage("workbench/stageStateChanged", workbenchEvent(workflow, state.summary.currentStage, "Workbench readiness recalculated from canonical workflow state."))); await this.sendSuccess(requestId, workflow); }
 
   private async reconcileDelegationState(generation: number): Promise<void> {
     for (const current of this.services.workflow.list()) {
@@ -1831,6 +1895,18 @@ function workflowEvent(workflow: DevelopmentWorkflowSnapshot, message: string) {
     message,
   };
 }
+
+function workbenchEvent(workflow: DevelopmentWorkflowSnapshot, stage: "define" | "plan" | "build" | "validate" | "review" | "complete", message: string) { return { workflowId: workflow.id, repositoryId: workflow.repositoryId, specificationRevision: workflow.specification?.revision, taskPlanRevision: workflow.taskGraph?.revision, stage, message, at: new Date().toISOString() }; }
+function buildEvent(state: BuildTaskState, message: string) { return { workflowId: state.workflow.id, taskId: state.task.id, specificationRevision: state.task.specificationRevision, intelligenceGeneration: state.workflow.intelligenceGeneration, message, at: new Date().toISOString() }; }
+function stageTitle(stage: string): string { return `${stage.slice(0, 1).toUpperCase()}${stage.slice(1)}`; }
+function workbenchDefinitions() { return [
+  { workType: "feature" as const, definitionId: "feature-development", label: "Feature", description: "Add user-visible behavior with specification, implementation, tests, and review." },
+  { workType: "bug" as const, definitionId: "bug-fix", label: "Bug fix", description: "Investigate and repair incorrect behavior with regression evidence." },
+  { workType: "refactor" as const, definitionId: "refactoring", label: "Refactoring", description: "Improve internal structure without changing approved behavior." },
+  { workType: "test" as const, definitionId: "feature-development", label: "Test work", description: "Add or improve deterministic verification and coverage." },
+  { workType: "modernization" as const, definitionId: "modernization", label: "Modernization", description: "Move toward an approved target while preserving compatibility." },
+  { workType: "investigation" as const, definitionId: "quick-fix", label: "Investigation", description: "Understand a bounded problem and produce evidence before implementation." }
+]; }
 
 function resolveTask(
   workflows: DevelopmentWorkflowService,

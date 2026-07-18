@@ -19,6 +19,14 @@
       "label": "keystone: build:webview",
       "type": "shell",
       "command": "pnpm run build:webview"
+    },
+    {
+      "type": "npm",
+      "script": "build:extension",
+      "group": "build",
+      "problemMatcher": [],
+      "label": "npm: build:extension",
+      "detail": "node scripts/build-extension.mjs"
     }
   ]
 }

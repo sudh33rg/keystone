@@ -20,6 +20,7 @@
     "tests/fixtures/benchmarks/typescript-backend",
     "tests/fixtures/benchmarks/react-frontend",
     "tests/fixtures/benchmarks/fullstack",
-    "tests/fixtures/benchmarks/multi-package"
+    "tests/fixtures/benchmarks/multi-package",
+    "tests/fixtures/intelligence"
   ]
 }

@@ -2170,3 +2170,192 @@ Files modified by this slice:
 No file was created, moved, or deleted by this slice.
 
 Readiness decision: **Intelligence is not yet sufficiently effective for Product Integration or Pilot Validation.** The dedicated usage query and QueryPlan defect are closed, but the benchmark gate is red, real-extractor evaluation is absent, ordered semantic flow templates are incomplete, OKF is missing, purpose-specific visualizations are missing, and context-quality/token-reduction proof is absent. Do not begin Product Integration automatically.
+
+### Ordered semantic-flow vertical slice — execution plan — 2026-07-18
+
+Status: **Complete.** This slice repairs the verified broad-allow-list flow defect. It remains inside the deterministic Query Engine and required Intelligence UI; it does not begin OKF or Product Integration.
+
+Assumptions and boundaries:
+
+- A flow hop must be a persisted relationship with evidence. Templates constrain which evidenced hop may follow the current stage; they never synthesize a missing transition.
+- HTTP/data-persistence, event, configuration-to-behavior, command/execution, and build/pipeline flows use distinct deterministic templates. Unsupported starts return diagnostics and visible gaps rather than falling back to an unconstrained graph walk.
+- Repeated application `CALLS` hops are allowed only after the appropriate template boundary (for example, route-to-handler in HTTP flow). This prevents unrelated calls from being presented as a complete cross-technology flow.
+- Reverse traversal is allowed only where the template semantics require it, initially configuration-key to evidenced readers/users. The relationship ID, direction, confidence, and evidence remain visible.
+- Complete and partial flows, missing stages, alternate ranking, confidence, and terminal reason are typed result metadata and must remain bounded by the existing depth/path/time budgets.
+
+Plan:
+
+- [x] Add typed flow-template metadata and per-hop traversal direction to query paths.
+- [x] Replace the broad flow traversal with ordered deterministic state machines and explicit gap reporting.
+- [x] Add deterministic complete/partial and alternate-flow scoring with visible contributing signals.
+- [x] Render purpose-specific left-to-right flow results in the Query Workspace without adding a full graph canvas.
+- [x] Add HTTP, event, configuration, execution, build/pipeline, missing-hop, alternate-ranking, filtering, bounds, and no-fabrication tests.
+- [x] Run typecheck, lint, focused/full tests, production builds, extension integration, and a real Extension Development Host flow check.
+- [x] Record measured results, files, and remaining limitations before closing the slice.
+
+Completion checkpoint — 2026-07-18:
+
+- `FlowQueryService` now selects one of five deterministic templates (`http-persistence`, `event`, `configuration`, `command-execution`, `build-pipeline`) from the resolved canonical seed and persisted adjacency. Each template advances through explicit semantic stages. Cycles, confidence/type filters, depth, nodes, edges, alternate count, cancellation, and time budget are bounded; no missing relationship is synthesized.
+- Flow paths now carry hop direction and typed metadata for complete/partial status, matched/missing stages, score and factors, terminal reason, alternate rank, and truncation. Ranking is deterministic: required-stage coverage, minimum evidenced confidence, completion bonus, relationship risk, and stable identity tie-breaking.
+- The Query Workspace now renders a horizontally scrollable left-to-right flow surface. It shows relationship direction/type, exact/inferred classification, confidence, gaps, capability boundaries, ranking reasons, and an `Inspect boundary` action that opens canonical source and evidence details.
+- Mixed-technology fixture repositories are excluded from the production TypeScript and ESLint project. Their deliberately incomplete imports remain ingestion inputs rather than production compilation dependencies.
+
+Validation commands and outcomes:
+
+- `npm run typecheck` — passed.
+- `npm run lint` — passed.
+- `npx vitest run tests/unit/intelligence/query/QueryEngine.test.ts tests/ui/QueryWorkspace.test.tsx` — passed, 2 files and 76 tests after the final build/pipeline case.
+- `npm run verify` — passed after the final build/pipeline assertion, 50 files and 421 tests; production extension and Webview bundles passed. The existing Webview chunk-size advisory remains non-blocking.
+- `npm run test:extension` — passed in VS Code 1.95.0 with exit code 0; extension discovery, activation, registered commands, build, and host integration succeeded.
+- A fresh actual Extension Development Host was launched against `/Users/sudheer/workspace/keystone`. Generation 33 loaded as `READY`, `Healthy`, `Idle`, with 0 queued jobs, 0 pending files, 0 failed jobs, and 0 active workers out of 3. The canonical generation contained 287 files; a direct shard audit found 0 paths under `node_modules`, `dist`, `out`, `build`, `.keystone`, or `.vscode-test`, and 0 pending file records.
+- In that live Webview, `show CompleteQueryEngine.query flow` deterministically compiled to `FLOW` and completed in 584.3 ms. Five bounded command/execution alternates rendered with ordered `CALLS`/`INSTANTIATES` hops, confidence and score. Expanding ranking reasons showed the exact factors, and `Inspect boundary` opened `QueryContext.check` with signature, source location, incoming/outgoing counts, and extractor evidence. No rendered query error was present.
+
+Files modified by this slice:
+
+- `PLANS.md`
+- `docs/intelligence/INTELLIGENCE_UI.md`
+- `docs/intelligence/QUERY_ENGINE.md`
+- `eslint.config.mjs`
+- `src/core/intelligence/query/QueryEngine.ts`
+- `src/shared/contracts/query.ts`
+- `src/ui/components/intelligence/QueryWorkspace.tsx`
+- `src/ui/styles/global.css`
+- `tests/ui/QueryWorkspace.test.tsx`
+- `tests/unit/intelligence/query/QueryEngine.test.ts`
+- `tsconfig.json`
+
+No file was created, moved, or deleted by this slice. Existing unrelated changes in `README.md`, `GAP-ANALYSIS.md`, and `tests/fixtures/intelligence/` were preserved.
+
+Remaining limitations: repository-level flows are template-bounded and do not yet expand branch conditions or data transformations inline; HTTP completeness depends on persisted `TARGETS` and `ROUTES_TO` evidence; event completeness depends on persisted `EMITS`/`PRODUCES` and `HANDLES`/`CONSUMES` evidence; CPG-assisted interprocedural joins are not added by this slice. The benchmark gate, real-extractor benchmark corpus, OKF projection, the remaining purpose-specific architecture/impact/CPG visualizations, and context-quality proof remain incomplete. Product Integration and Pilot Validation remain blocked.
+
+### UI Architecture Task 1 — Domain and Navigation Consolidation — 2026-07-18
+
+Status: **Complete.** The workflow-oriented product model, route migration, consolidated navigation, single draft-creation flow, Workbench lifecycle, real Home projection, secondary health/settings routes, and task-level Handoff action are implemented and validated. Existing workflow, orchestration, delivery, validation, assignment, and handoff services remain in place. Visual redesign and the full handoff modal were not started.
+
+Canonical model and assumptions:
+
+- `DevelopmentWorkflowSnapshot` remains the canonical durable SDLC aggregate for intent, specification history, task graph, and tasks. Execution, validation, review, delivery, and handoff records refer to its workflow or task identifiers rather than becoming user-facing workflows.
+- `WorkflowInstance` remains persisted compatibility state for the coordinating orchestration service. It is projected as internal coordination state inside Review, never listed or created as a second user-facing workflow.
+- Existing persisted workflow schemas remain readable. New work-type and repository-scope fields are optional migration-safe additions to the intent; old records require no destructive migration.
+- Existing section persistence remains readable. A typed route is added and legacy sections map deterministically into Workbench or secondary routes.
+- Delivery and handoff remain optional capabilities. This task relocates entry points and contracts without deleting services or forcing delivery.
+
+Plan:
+
+- [x] Add a typed product-route model, Workbench stages, compatibility redirects, and migration-safe persisted navigation.
+- [x] Consolidate primary navigation to Home, SDLC Workbench, Intelligence, and History; move health/settings to header actions.
+- [x] Add the unified Start new work draft flow with explicit work type and repository scope, then navigate to Define.
+- [x] Project existing Define, Plan, Build, Validate, Review, and Complete capabilities through one Workbench shell.
+- [x] Add Home projection from real workflow, orchestration, validation, intelligence, and Copilot state with start/resume/ask/import actions.
+- [x] Add task handoff eligibility/action contracts and preserve the import-handoff compatibility entry point without implementing the modal.
+- [x] Document the canonical domain model, route map, redirects, and persistence migration in `docs/PRODUCT_MODEL_AND_NAVIGATION.md`.
+- [x] Add navigation, routing, workflow attachment, migration, service-preservation, and production-build tests.
+- [x] Run typecheck, lint, full tests, extension tests, extension build, and Webview build; record exact outcomes and files.
+
+Validation performed on 2026-07-18:
+
+- `npm run typecheck` — passed.
+- `npm run lint` — passed.
+- `npm test` — passed: 53 files, 429 tests.
+- `npm run build:extension` — passed; extension and semantic-worker bundles produced.
+- `npm run build:webview` — passed; 123 modules transformed, app bundle 500.34 kB (132.38 kB gzip). Vite reported the non-blocking 500 kB chunk-size advisory.
+- `npm run test:extension` — passed in VS Code 1.95.0 on the first complete run. A later repeat reported runner code 1 even though the Extension Host logged code 0 and no assertion/extension failure; immediate direct rerun with `node scripts/run-extension-tests.mjs` passed with Extension Host and runner code 0. This is recorded as a transient harness discrepancy, not hidden as a product pass.
+
+Task-specific created files:
+
+- `docs/PRODUCT_MODEL_AND_NAVIGATION.md`
+- `src/shared/navigation.ts`
+- `src/ui/components/history/HistoryWorkspace.tsx`
+- `src/ui/components/home/HomeDashboard.tsx`
+- `src/ui/components/workbench/SDLCWorkbench.tsx`
+- `tests/ui/HomeDashboard.test.tsx`
+- `tests/ui/SDLCWorkbench.test.tsx`
+- `tests/unit/navigation.test.ts`
+
+Task-specific modified files:
+
+- `PLANS.md`
+- `src/core/persistence/WorkspaceStateStore.ts`
+- `src/core/workflows/DevelopmentWorkflowService.ts`
+- `src/extension/webview/WebviewMessageRouter.ts`
+- `src/shared/contracts/delegation.ts`
+- `src/shared/contracts/domain.ts`
+- `src/shared/contracts/messages.ts`
+- `src/ui/App.tsx`
+- `src/ui/components/delegation/DevelopmentWorkspace.tsx`
+- `src/ui/services/HostBridge.ts`
+- `src/ui/styles/global.css`
+- `tests/ui/App.test.tsx`
+- `tests/unit/contracts.test.ts`
+- `tests/unit/persistence.test.ts`
+- `tests/unit/workflows/DevelopmentWorkflowService.test.ts`
+
+No file was deleted. Pre-existing and prior-slice changes outside this list were preserved.
+
+Known limitations: current-editor repository scope is recorded explicitly but remains dependent on the host’s active-editor context during later intelligence resolution; PR review is an honest future capability placeholder; the full handoff preparation modal is intentionally deferred. The next recommended milestone is **UI Architecture Task 2 — Workbench Interaction and Detail Views**, focused on stage-specific view models, progressive disclosure, and responsive interaction without changing the canonical domain model. It has not been started.
+
+### UI Architecture Task 2 — Workbench Shell and Workflow Start — 2026-07-18
+
+Status: **Complete.** This task makes the Task 1 shell a recoverable, gated workflow from draft creation through an approved task plan. Full Copilot execution, validation, PR preparation, and Handoff UI remain outside scope.
+
+Verified starting gaps and decisions:
+
+- The compatibility `workflow/capture` path currently creates a specification immediately. Task 2 will preserve that API for older callers while adding an explicit Workbench draft-creation path that creates no specification or tasks.
+- The existing specification revision and history model is reusable. Workflow-level clarification/decision records and repository baseline references will be added as optional/defaulted fields so version-1 persisted workflows remain readable without destructive migration.
+- The existing task graph has a revision but no explicit reviewed approval. Task 2 will add migration-safe plan status/approval/history metadata and separate deterministic generation from explicit approval.
+- Workbench stage state is a deterministic projection of canonical workflow, repository, Intelligence, task, orchestration, execution, and validation state. It will not be persisted as a second lifecycle model.
+- Workspace trust, repository availability, active editor scope, Intelligence snapshot, Copilot capabilities, and repository source opening remain Extension Host facts exposed through typed bounded contracts.
+
+Plan:
+
+- [x] Add bounded Workbench contracts for create context, workflow lifecycle, Define/Plan state, clarifications, specification/task editing, stage projection, summary, and typed lifecycle events.
+- [x] Extend the existing workflow aggregate and persistence parser with migration-safe intent history, clarifications, durable decisions, repository baseline, specification metadata, and task-plan approval/history.
+- [x] Implement explicit workflow draft creation, intent/scope/constraint revision, deterministic clarification and repository-evidence projection, specification generation/edit/approval, task-plan generation/edit/validation/approval, and stage gating.
+- [x] Route all Workbench operations through the existing workflow/orchestration services and persist route changes only after readiness validation.
+- [x] Replace the initial Workbench projection with a persistent shell: workflow header, explained stage states, main content, context summary, accessible recovery states, and responsive behavior.
+- [x] Add lifecycle, staleness, gating, persistence, contract, UI accessibility, and no-auto-delegation tests.
+- [x] Run complete validation and exercise the durable draft → approved task plan → Build lifecycle plus reload/restart recovery through service, UI, and Extension Host tests.
+- [x] Document the shell, lifecycle, gates, approvals, recovery, exact files, results, and remaining Task 3 boundary.
+
+Completion checkpoint — 2026-07-18:
+
+- `/workbench/new` now uses actual host repository, branch, workspace-trust, active-editor, Intelligence-generation, and Copilot-capability state. It rejects repository/generation races and persists one draft plus its repository baseline before routing to Define. Specification, tasks, assignments, and execution are not created implicitly.
+- The durable aggregate now retains migration-safe intent, specification, and task-plan histories plus clarifications and decisions. Existing schema-version-1 records receive bounded defaults and existing ready task graphs remain readable as approved compatibility state.
+- Define distinguishes exact evidence from candidates, keeps unsupported behavior explicitly unknown, supports answer/defer/not-applicable/reopen decisions, and separates specification generation from approval. Approval rechecks repository/Intelligence freshness, clarification and specification questions, decisions, criteria, and validation methods.
+- Plan supports deterministic generation plus add/edit/remove/reorder, optional status, validation steps, execution routes, and dependencies. Every edit creates a revision and invalidates approval. Cycle, dependency, criterion coverage, validation, unsupported route, and triggered security/performance checks block approval with recovery actions. Approval enters Build with a dependency-ready task but no agent assignment or execution.
+- The persistent shell renders a non-ID workflow header, six explained text statuses, keyboard stage navigation, gated host routing, main stage content, and a reusable context summary. Invalid recovered routes return to the latest valid stage without changing workflow data.
+- Typed response validation was added in the Webview bridge for every Workbench request, in addition to request/response/event schemas and bounded host projections. The interaction-contract test confirms every UI host request has a contract, router case, and response validator and that visible buttons are not inert.
+
+Validation commands and outcomes:
+
+- `npm run typecheck` — passed.
+- `npm run lint` — passed.
+- `npm test -- --reporter=default` — passed: 53 files, 432 tests.
+- `npm run build:extension` — passed; extension bundle 1.6 MB and semantic worker 10.3 MB.
+- `npm run build:webview` — passed; 124 modules, JavaScript 537.31 kB/140.62 kB gzip and CSS 41.80 kB/7.84 kB gzip. The existing Vite >500 kB advisory remains non-blocking.
+- `npm run test:extension` — passed in VS Code 1.95.0; the Extension Host loaded the development extension and exited with code 0.
+- `git diff --check` — passed.
+
+Task-specific created files:
+
+- `docs/WORKBENCH_SHELL.md`
+- `src/shared/contracts/workbench.ts`
+- `src/ui/components/workbench/SDLCWorkbench.tsx` (created during Task 1 and completed as the functional shell in this task)
+- `tests/ui/SDLCWorkbench.test.tsx` (created during Task 1 and expanded for actual host create context in this task)
+
+Task-specific modified files:
+
+- `PLANS.md`
+- `src/core/workflows/DevelopmentWorkflowService.ts`
+- `src/extension/webview/WebviewMessageRouter.ts`
+- `src/shared/contracts/delegation.ts`
+- `src/shared/contracts/messages.ts`
+- `src/ui/services/HostBridge.ts`
+- `src/ui/styles/global.css`
+- `tests/ui/DevelopmentWorkspace.test.tsx`
+- `tests/unit/execution/ExecutionValidation.test.ts`
+- `tests/unit/workflows/DevelopmentWorkflowService.test.ts`
+
+No file was deleted by Task 2. Existing unrelated and prior-slice changes, including `README.md`, `GAP-ANALYSIS.md`, Intelligence query files, fixture repositories, and the pre-existing `pnpm-lock.yaml` deletion, were preserved.
+
+Known limitations and next boundary: current-file scope depends on the active editor at creation; repository evidence shown in Define is bounded and candidates require explicit scope choice; Build does not auto-start an agent; full execution controls, validation/review/PR detail, completion, and Handoff preparation remain intentionally deferred. The recommended next milestone is **UI Architecture Task 3 — Build and Execution Interaction**, using the approved task plan and existing execution services without changing the canonical workflow model. It has not been started.

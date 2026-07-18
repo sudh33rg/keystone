@@ -41,6 +41,74 @@ async function fixture() {
 }
 
 describe("spec-driven development workflow", () => {
+  it("runs the explicit Workbench draft-to-Build lifecycle without automatic specification, tasks, or delegation", async () => {
+    const { root, service, snapshot } = await fixture();
+    let workflow = await service.createWorkbenchDraft({
+      intent: "Add a bounded repository summary with authorization checks",
+      workType: "feature",
+      repositoryScope: { kind: "paths", paths: ["src/index.ts"] },
+      constraints: [{ kind: "compatibility", value: "Preserve existing public behavior" }],
+      expectedRepositoryId: snapshot.repository.id,
+      expectedIntelligenceGeneration: snapshot.manifest.generation,
+    });
+
+    expect(workflow.specification).toBeUndefined();
+    expect(workflow.tasks).toEqual([]);
+    expect(workflow.repositoryState?.intelligenceGeneration).toBe(7);
+    expect(service.getWorkbenchState(workflow.id).summary.currentStage).toBe("define");
+    workflow = await service.generateSpecification(workflow.id);
+    await expect(service.approve(workflow.id, workflow.specification!.revision)).rejects.toThrow("specification question");
+    for (const clarification of workflow.clarifications) {
+      workflow = await service.setClarificationStatus(workflow.id, clarification.id, "deferred");
+    }
+    workflow = await service.generateSpecification(workflow.id);
+    expect(workflow.specification?.sections?.currentBehavior).toContain("Unknown");
+    workflow = await service.approve(workflow.id, workflow.specification!.revision, "Reviewed explicit unknowns");
+    expect(service.getWorkbenchState(workflow.id).summary.currentStage).toBe("plan");
+
+    workflow = await service.generateTaskPlan(workflow.id);
+    expect(workflow.taskGraph).toMatchObject({ status: "draft", ready: false });
+    expect(workflow.tasks.every((task) => task.assignedAgentId === undefined)).toBe(true);
+    expect(service.validateTaskPlan(workflow.id).valid).toBe(true);
+    workflow = await service.approveTaskPlan(workflow.id, workflow.taskGraph!.revision);
+    expect(service.getWorkbenchState(workflow.id).summary.currentStage).toBe("build");
+    expect(workflow.tasks.some((task) => task.status === "ready")).toBe(true);
+
+    const persisted = JSON.parse(await readFile(join(root, "workflow", "delegation-state.json"), "utf8")) as { workflows: Array<{ id: string; taskGraph?: { status?: string } }> };
+    expect(persisted.workflows.find((item) => item.id === workflow.id)?.taskGraph?.status).toBe("approved");
+  });
+
+  it("invalidates approval after plan edits and blocks dependency cycles", async () => {
+    const { service, snapshot } = await fixture();
+    let workflow = await service.createWorkbenchDraft({ intent: "Add query performance validation", workType: "feature", repositoryScope: { kind: "repository", paths: [] }, constraints: [], expectedRepositoryId: snapshot.repository.id, expectedIntelligenceGeneration: 7 });
+    for (const clarification of workflow.clarifications) workflow = await service.setClarificationStatus(workflow.id, clarification.id, "not-applicable");
+    workflow = await service.generateSpecification(workflow.id);
+    workflow = await service.approve(workflow.id, workflow.specification!.revision);
+    workflow = await service.generateTaskPlan(workflow.id);
+    expect(workflow.tasks.length).toBeGreaterThan(1);
+    const first = workflow.tasks[0]!;
+    const second = workflow.tasks[1]!;
+    workflow = await service.updateDependency(workflow.id, second.id, first.id, "add", workflow.taskGraph!.revision);
+    workflow = await service.updateDependency(workflow.id, first.id, second.id, "add", workflow.taskGraph!.revision);
+    expect(service.validateTaskPlan(workflow.id).diagnostics.map((item) => item.code)).toContain("DEPENDENCY_CYCLE");
+    await expect(service.approveTaskPlan(workflow.id, workflow.taskGraph!.revision)).rejects.toThrow("dependency cycle");
+    expect(workflow.taskGraph).toMatchObject({ status: "draft", ready: false });
+    expect(workflow.taskGraphHistory.length).toBeGreaterThan(0);
+  });
+
+  it("creates one workflow draft with its intent, specification, and repository scope attached", async () => {
+    const { service } = await fixture();
+    const workflow = await service.capture("Repair the selected authentication paths", "guided", undefined, undefined, { workType: "bug", repositoryScope: { kind: "paths", paths: ["src/auth", "tests/auth.test.ts"] } });
+
+    expect(workflow.intent).toMatchObject({ workflowId: workflow.id, workType: "bug", category: "bug-fix", repositoryScope: { kind: "paths", paths: ["src/auth", "tests/auth.test.ts"] } });
+    expect(workflow.specification).toMatchObject({ workflowId: workflow.id, status: "draft" });
+    expect(workflow.specification?.scope.expectedFiles).toEqual(expect.arrayContaining(["src/auth", "tests/auth.test.ts"]));
+    const approved = await service.approve(workflow.id, workflow.specification!.revision);
+    const planned = await service.generateTasks(approved.id);
+    expect(planned.tasks.length).toBeGreaterThan(0);
+    expect(planned.tasks.every((task) => task.workflowId === workflow.id)).toBe(true);
+  });
+
   it("captures a repository-bound intent and complete reviewable specification", async () => {
     const { service } = await fixture();
     const workflow = await service.capture(

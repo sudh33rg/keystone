@@ -80,6 +80,29 @@ describe("QueryWorkspace", () => {
     expect(screen.getByLabelText<HTMLInputElement>("Global intelligence query").value).toBe("find entity:orders:create");
     expect(screen.queryByText("Explicit selection required")).toBeNull();
   });
+
+  it("renders ordered flow stages, gaps, score reasons, and a boundary action", async () => {
+    const flow = queryResult(); flow.operation = "FLOW"; flow.data.kind = "flow"; flow.data.items = []; flow.data.paths = [{
+      steps: [
+        { entityId: "entity:page", entityName: "OrderPage", entityType: "keystone.core.Component", confidence: 1, classification: "exact", evidenceIds: ["evidence:page"] },
+        { entityId: "entity:client", entityName: "createOrder", entityType: "keystone.core.Function", relationshipId: "relationship:call", relationshipType: "keystone.core.CALLS", traversalDirection: "outgoing", confidence: 1, classification: "exact", evidenceIds: ["evidence:call"] }
+      ], confidence: 1, risk: 0, unsupportedBoundaries: ["No evidence-backed API target transition follows api.createOrder."], truncated: false,
+      flow: { templateId: "http-persistence", label: "HTTP / UI-to-persistence flow", status: "partial", matchedStages: ["UI / client call"], missingStages: ["API target", "route handler", "data access"], score: .53, scoreReasons: ["required-stage coverage 0%", "minimum relationship confidence 100%", "partial template +0%", "risk penalty 0%"], terminalReason: "No evidence-backed API target transition follows api.createOrder.", alternateRank: 1 }
+    }];
+    const request = vi.fn((type: string) => {
+      if (type === "intelligence/query/templates") return Promise.resolve({ templates: [] });
+      if (type === "intelligence/query/compile") return Promise.resolve({ input: "show order flow", parsed: true, rule: "flow", query: { ...structuredQuery(), operation: "FLOW" }, diagnostics: [], suggestedTemplates: [] });
+      if (type === "intelligence/query") return Promise.resolve(flow);
+      return Promise.resolve(undefined);
+    });
+    render(<QueryWorkspace bridge={{ request } as unknown as HostBridge}/>);
+    fireEvent.change(screen.getByLabelText("Global intelligence query"), { target: { value: "show order flow" } }); fireEvent.click(screen.getByRole("button", { name: "Run query" }));
+    expect(await screen.findByLabelText("HTTP / UI-to-persistence flow partial")).toBeTruthy();
+    expect(screen.getByText("Missing: API target or route handler or data access")).toBeTruthy();
+    expect(screen.getByText(/No evidence-backed API target transition/)).toBeTruthy();
+    fireEvent.click(screen.getByText("Why this alternate ranked here")); expect(screen.getByText(/required-stage coverage 0%/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Inspect boundary" })); expect(request).toHaveBeenCalledWith("intelligence/entity", { id: "entity:client" });
+  });
 });
 
 function structuredQuery() { return { operation: "DEPENDENCIES", seeds: [{ value: "OrderService.create", kind: "name" }], filters: { confidenceAtLeast: 0 }, traversal: { direction: "both", maxDepth: 3, pathMode: "shortest" }, include: { source: false, evidence: true, relationships: true, diagnostics: true, explanation: true, cpg: false }, ranking: { strategy: "relevance", descending: true }, limits: { results: 25, nodes: 100, edges: 300, paths: 5, depth: 3, evidence: 30, timeBudgetMs: 1000 } }; }

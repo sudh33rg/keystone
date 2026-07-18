@@ -413,6 +413,13 @@ export class DelegationService {
     this.execution = new TaskExecutionStateService(workflows);
   }
 
+  async captureBuildBaseline(task: DevelopmentTask): Promise<RepositoryBaseline> {
+    const baseline = await this.tracking.capture(task.expectedFiles, task.baseEntityFingerprints);
+    await this.persistence.update((state) => ({ ...state, buildBaselines: { ...state.buildBaselines, [task.id]: baseline } }));
+    return baseline;
+  }
+  getBuildBaseline(taskId: string): RepositoryBaseline | undefined { return this.persistence.snapshot.buildBaselines[taskId]; }
+
   async prepare(
     workflowId: string,
     taskId: string,

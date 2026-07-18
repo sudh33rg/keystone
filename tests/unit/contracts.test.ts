@@ -11,6 +11,7 @@ describe("WebviewRequestSchema", () => {
   it("accepts a valid, versioned navigation request", () => {
     const result = WebviewRequestSchema.safeParse({ ...validBase, type: "navigation/set", payload: { section: "tasks" } });
     expect(result.success).toBe(true);
+    expect(WebviewRequestSchema.safeParse({ ...validBase, type: "navigation/set", payload: { route: `/workbench/${crypto.randomUUID()}/plan` } }).success).toBe(true);
   });
 
   it("rejects unknown message types", () => {

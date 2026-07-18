@@ -711,7 +711,7 @@ function workflowFixture(): DevelopmentWorkflowSnapshot {
     intelligenceGeneration: 7,
     intent,
     specification,
-    specificationHistory: [],
+    intentHistory: [], clarifications: [], decisions: [], specificationHistory: [], taskGraphHistory: [],
     tasks: [
       {
         ...base,

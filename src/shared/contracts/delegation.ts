@@ -12,9 +12,14 @@ export type AgentCapability = z.infer<typeof AgentCapabilitySchema>;
 
 export const DelegationTaskCategorySchema = z.enum([
   "feature", "bug-fix", "refactoring", "testing", "investigation", "modernization", "performance",
-  "security", "documentation", "review", "maintenance", "migration", "infrastructure"
+  "security", "documentation", "review", "maintenance", "migration", "infrastructure", "implementation", "validation", "manual"
 ]);
 export type DelegationTaskCategory = z.infer<typeof DelegationTaskCategorySchema>;
+
+export const DevelopmentWorkTypeSchema = z.enum(["feature", "bug", "refactor", "test", "modernization", "investigation"]);
+export type DevelopmentWorkType = z.infer<typeof DevelopmentWorkTypeSchema>;
+export const RepositoryScopeSelectionSchema = z.object({ kind: z.enum(["repository", "current-file", "paths"]), paths: z.array(z.string().min(1).max(1024)).max(100).default([]) }).strict();
+export type RepositoryScopeSelection = z.infer<typeof RepositoryScopeSelectionSchema>;
 
 export const CopilotCapabilityDiagnosticSchema = z.object({
   code: z.string().min(1).max(100),
@@ -90,14 +95,16 @@ export const DevelopmentIntentSchema = z.object({
   ambiguities: z.array(z.object({ question: z.string().max(2000), impact: z.string().max(2000), blocking: z.boolean() }).strict()).max(50),
   requiredDecisions: z.array(z.object({ id: z.string().uuid(), question: z.string().max(2000), blocking: z.boolean(), resolution: z.string().max(5000).optional() }).strict()).max(50),
   affectedEntities: z.array(TraceReferenceSchema).max(100), intelligenceGeneration: z.number().int().nonnegative(),
-  branch: z.string().max(500).optional(), createdAt: z.string().datetime()
-}).strict();
+  branch: z.string().max(500).optional(), createdAt: z.string().datetime(), updatedAt: z.string().datetime().optional()
+}).extend({ workType: DevelopmentWorkTypeSchema.optional(), repositoryScope: RepositoryScopeSelectionSchema.optional() }).strict();
 export type DevelopmentIntent = z.infer<typeof DevelopmentIntentSchema>;
 
 const CriterionSchema = z.object({
   id: z.string().min(1).max(200), description: z.string().min(1).max(5000), required: z.boolean(),
   requirementIds: z.array(z.string().max(200)).max(50), validationMethod: z.string().min(1).max(2000),
-  expectedEvidence: z.string().min(1).max(2000), coveringTaskIds: z.array(z.string().uuid()).max(100)
+  expectedEvidence: z.string().min(1).max(2000), coveringTaskIds: z.array(z.string().uuid()).max(100),
+  category: z.enum(["behavior", "error-handling", "compatibility", "test", "security", "performance", "documentation", "manual-verification"]).optional(),
+  blocking: z.boolean().optional(), relatedEntityIds: z.array(z.string().max(500)).max(100).optional()
 }).strict();
 
 export const DevelopmentSpecificationSchema = z.object({
@@ -111,6 +118,8 @@ export const DevelopmentSpecificationSchema = z.object({
   testStrategy: z.object({ existingTests: z.array(z.string().max(1024)).max(200), requiredTests: z.array(z.string().max(5000)).max(200), validationCommands: z.array(z.string().max(1000)).max(100), manualScenarios: z.array(z.string().max(5000)).max(100), risks: z.array(z.string().max(5000)).max(100) }).strict(),
   decisions: z.array(z.object({ id: z.string().uuid(), question: z.string().max(2000), resolution: z.string().max(5000).optional(), blocking: z.boolean() }).strict()).max(100),
   evidence: z.array(TraceReferenceSchema).max(200), approval: z.object({ approvedAt: z.string().datetime(), approvedBy: z.literal("user"), revision: z.number().int().positive(), rationale: z.string().max(2000).optional() }).strict().optional(),
+  sections: z.object({ currentBehavior: z.string().max(10_000), requiredBehavior: z.string().max(10_000), errorBehavior: z.string().max(10_000), compatibility: z.string().max(10_000), security: z.string().max(10_000), performance: z.string().max(10_000), assumptions: z.array(z.string().max(5000)).max(100), openQuestions: z.array(z.string().max(5000)).max(100) }).strict().optional(),
+  modifiedSections: z.array(z.string().max(100)).max(50).optional(), sectionSources: z.record(z.string(), z.enum(["generated", "user", "repository", "unknown"])).optional(),
   createdAt: z.string().datetime(), updatedAt: z.string().datetime()
 }).strict();
 export type DevelopmentSpecification = z.infer<typeof DevelopmentSpecificationSchema>;
@@ -123,22 +132,34 @@ export const DevelopmentTaskSchema = z.object({
   expectedFiles: z.array(z.string().max(1024)).max(200), expectedEntityIds: z.array(z.string().max(500)).max(200),
   validationSteps: z.array(z.object({ command: z.string().max(1000).optional(), manualCheck: z.string().max(5000).optional() }).strict()).min(1).max(100),
   assignedAgentId: z.string().max(200).optional(), requiredCapabilities: z.array(AgentCapabilitySchema).max(30),
+  executionRoute: z.enum(["deterministic", "github-copilot", "manual", "unsupported"]).optional(), risk: z.enum(["low", "medium", "high", "critical"]).optional(), optional: z.boolean().optional(),
   staleReasons: z.array(z.string().max(1000)).max(50), baseEntityFingerprints: z.record(z.string(), z.string()),
   createdAt: z.string().datetime(), updatedAt: z.string().datetime()
 }).strict();
 export type DevelopmentTask = z.infer<typeof DevelopmentTaskSchema>;
 
+export const TaskActionDescriptorSchema = z.object({ id: z.enum(["hand-off"]), label: z.literal("Hand off"), eligible: z.boolean(), reason: z.string().min(1).max(1000) }).strict();
+export type TaskActionDescriptor = z.infer<typeof TaskActionDescriptorSchema>;
+
 export const DevelopmentTaskGraphSchema = z.object({
   id: z.string().uuid(), workflowId: z.string().uuid(), specificationId: z.string().uuid(), specificationRevision: z.number().int().positive(),
   revision: z.number().int().positive(), taskIds: z.array(z.string().uuid()).max(500), topologicalOrder: z.array(z.string().uuid()).max(500),
-  ready: z.boolean(), diagnostics: z.array(z.string().max(1000)).max(100), createdAt: z.string().datetime()
+  ready: z.boolean(), status: z.enum(["draft", "approved", "stale"]).optional(), diagnostics: z.array(z.string().max(1000)).max(100),
+  approval: z.object({ approvedAt: z.string().datetime(), approvedBy: z.literal("user"), revision: z.number().int().positive() }).strict().optional(), createdAt: z.string().datetime()
 }).strict();
+
+export const WorkflowClarificationSchema = z.object({ id: z.string().uuid(), workflowId: z.string().uuid(), question: z.string().min(1).max(2000), whyItMatters: z.string().min(1).max(2000), evidenceReferences: z.array(z.string().max(500)).max(100), options: z.array(z.string().max(1000)).max(20), answer: z.string().max(5000).optional(), status: z.enum(["open", "answered", "deferred", "not-applicable"]), blocking: z.boolean(), createdAt: z.string().datetime(), updatedAt: z.string().datetime() }).strict();
+export type WorkflowClarification = z.infer<typeof WorkflowClarificationSchema>;
+export const WorkflowDecisionRecordSchema = z.object({ id: z.string().uuid(), workflowId: z.string().uuid(), sourceClarificationId: z.string().uuid().optional(), title: z.string().min(1).max(500), decision: z.string().min(1).max(5000), rationale: z.string().max(5000).optional(), evidenceReferences: z.array(z.string().max(500)).max(100), createdAt: z.string().datetime(), updatedAt: z.string().datetime() }).strict();
+export type WorkflowDecisionRecord = z.infer<typeof WorkflowDecisionRecordSchema>;
 
 export const DevelopmentWorkflowSnapshotSchema = z.object({
   schemaVersion: z.literal(DELEGATION_SCHEMA_VERSION), id: z.string().uuid(), revision: z.number().int().nonnegative(),
   repositoryId: z.string().min(1).max(1000), branch: z.string().max(500).optional(), headCommit: z.string().max(500).optional(),
   intelligenceGeneration: z.number().int().nonnegative(), intent: DevelopmentIntentSchema,
+  repositoryState: RepositoryStateRefSchema.optional(), intentHistory: z.array(DevelopmentIntentSchema).max(100).default([]), clarifications: z.array(WorkflowClarificationSchema).max(100).default([]), decisions: z.array(WorkflowDecisionRecordSchema).max(200).default([]),
   specification: DevelopmentSpecificationSchema.optional(), specificationHistory: z.array(DevelopmentSpecificationSchema).max(100),
+  taskGraphHistory: z.array(DevelopmentTaskGraphSchema).max(100).default([]),
   taskGraph: DevelopmentTaskGraphSchema.optional(), tasks: z.array(DevelopmentTaskSchema).max(500),
   status: z.enum(["capturing", "awaiting-spec-review", "planned", "stale", "cancelled"]), createdAt: z.string().datetime(), updatedAt: z.string().datetime()
 }).strict();
@@ -229,13 +250,13 @@ export type PreparedDelegation = z.infer<typeof PreparedDelegationSchema>;
 export const DelegationPersistentStateSchema = z.object({
   schemaVersion: z.literal(DELEGATION_SCHEMA_VERSION), revision: z.number().int().nonnegative(),
   workflows: z.array(DevelopmentWorkflowSnapshotSchema).max(100), capabilities: CopilotCapabilitiesSchema.optional(),
-  agents: z.array(CopilotAgentDescriptorSchema).max(200), selections: z.record(z.string(), z.string()),
+  agents: z.array(CopilotAgentDescriptorSchema).max(200), selections: z.record(z.string(), z.string()), customizationSelections: z.record(z.string(), z.array(z.string().max(500)).max(500)).default({}), selectedTaskByWorkflow: z.record(z.string(), z.string().uuid()).default({}), buildPanelByWorkflow: z.record(z.string(), z.enum(["task", "copilot-context", "changes-validation"])).default({}), buildBaselines: z.record(z.string(), RepositoryBaselineSchema).default({}),
   contexts: z.array(TaskContextPackageSchema).max(200), prepared: z.array(PreparedDelegationSchema).max(200), sessions: z.array(DelegationSessionSchema).max(200),
   updatedAt: z.string().datetime()
 }).strict();
 export type DelegationPersistentState = z.infer<typeof DelegationPersistentStateSchema>;
 
-export const WorkflowCapturePayloadSchema = z.object({ text: z.string().min(1).max(50_000), mode: z.enum(["quick", "guided", "spec-driven"]), title: z.string().max(500).optional() }).strict();
+export const WorkflowCapturePayloadSchema = z.object({ text: z.string().min(1).max(50_000), mode: z.enum(["quick", "guided", "spec-driven"]), title: z.string().max(500).optional(), workType: DevelopmentWorkTypeSchema.optional(), repositoryScope: RepositoryScopeSelectionSchema.optional() }).strict();
 export const WorkflowIdPayloadSchema = z.object({ workflowId: z.string().uuid() }).strict();
 export const WorkflowSpecRevisePayloadSchema = z.object({ workflowId: z.string().uuid(), reason: z.string().min(1).max(2000), patch: DevelopmentSpecificationSchema.pick({ title: true, scope: true, requirements: true, constraints: true, acceptanceCriteria: true, testStrategy: true, decisions: true }).partial() }).strict();
 export const WorkflowSpecApprovePayloadSchema = z.object({ workflowId: z.string().uuid(), expectedRevision: z.number().int().positive(), rationale: z.string().max(2000).optional() }).strict();

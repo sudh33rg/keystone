@@ -1,14 +1,14 @@
 import type { CpgQueryService } from "../cpg/CpgQueryService";
 import type { IntelligenceSnapshotReader } from "../../persistence/IntelligenceStore";
 import type { IntelligenceEvidenceRecord, IntelligenceFileRecord, IntelligenceRelationshipRecord, IntelligenceSnapshot, IntelligenceSymbolRecord } from "../../../shared/contracts/intelligence";
-import { IntelligenceQueryResultSchema, IntelligenceQuerySchema, QueryDataSchema, type CompiledIntelligenceQuery, type IntelligenceQuery, type IntelligenceQueryResult, type QueryData, type QueryDiagnostic, type QueryExplanation, type QueryOperation, type QueryPathStep, type QueryPlan, type QueryResultItem, type ResolvedEntity } from "../../../shared/contracts/query";
+import { IntelligenceQueryResultSchema, IntelligenceQuerySchema, QueryDataSchema, type CompiledIntelligenceQuery, type IntelligenceQuery, type IntelligenceQueryResult, type QueryData, type QueryDiagnostic, type QueryExplanation, type QueryFlowMetadata, type QueryOperation, type QueryPathStep, type QueryPlan, type QueryResultItem, type ResolvedEntity } from "../../../shared/contracts/query";
 import { QueryCache } from "./QueryCache";
 import { QueryCompiler } from "./QueryParser";
 
 type Entity = IntelligenceSymbolRecord | IntelligenceFileRecord;
 type Classification = QueryResultItem["classification"];
 const DEPENDENCY_TYPES = new Set(["keystone.core.IMPORTS", "keystone.core.REFERENCES", "keystone.core.CALLS", "keystone.core.INSTANTIATES", "keystone.core.DEPENDS_ON", "keystone.core.USES", "keystone.core.EXECUTES", "keystone.core.RUNS_BUILD_COMMAND", "keystone.core.RUNS_TEST_COMMAND"]);
-const FLOW_TYPES = new Set(["keystone.core.CALLS", "keystone.core.ROUTES_TO", "keystone.core.HANDLES", "keystone.core.TARGETS", "keystone.core.IMPLEMENTS_CONTRACT_OPERATION", "keystone.core.EMITS", "keystone.core.CONSUMES", "keystone.core.PRODUCES", "keystone.core.TRIGGERS", "keystone.core.FLOWS_TO", "keystone.core.READS_FROM", "keystone.core.WRITES_TO", "keystone.core.PERSISTS", "keystone.core.EXECUTES"]);
+const FLOW_TYPES = new Set(["keystone.core.CALLS", "keystone.core.INSTANTIATES", "keystone.core.ROUTES_TO", "keystone.core.USES_MIDDLEWARE", "keystone.core.HANDLES", "keystone.core.TARGETS", "keystone.core.IMPLEMENTS_CONTRACT_OPERATION", "keystone.core.EMITS", "keystone.core.CONSUMES", "keystone.core.PRODUCES", "keystone.core.TRIGGERS", "keystone.core.FLOWS_TO", "keystone.core.READS_FROM", "keystone.core.WRITES_TO", "keystone.core.PERSISTS", "keystone.core.EXECUTES", "keystone.core.VALIDATES_WITH", "keystone.core.SERIALIZES_WITH", "keystone.core.READS_CONFIGURATION", "keystone.core.USES_CONFIGURATION", "keystone.core.CONFIGURED_BY", "keystone.core.RUNS_BUILD_COMMAND", "keystone.core.DEPLOYS", "keystone.core.PRODUCES_ARTIFACT"]);
 const TEST_TYPES = new Set(["keystone.core.TESTS", "keystone.core.COVERS", "keystone.core.MOCKS", "keystone.core.USES_FIXTURE", "keystone.core.ASSERTS"]);
 const USAGE_CATEGORIES = new Map<string, string>([
   ["keystone.core.IMPORTS", "imported-by"], ["keystone.core.RE_EXPORTS", "imported-by"],
@@ -159,8 +159,186 @@ export class ImpactQueryService {
 }
 
 export class FlowQueryService {
-  async reconstruct(context: QueryContext, seeds: string[]): Promise<QueryData> { const paths: QueryData["paths"] = []; for (const seed of seeds) { const queue: Array<{ id: string; entities: string[]; relations: IntelligenceRelationshipRecord[]; confidence: number; risk: number }> = [{ id: seed, entities: [seed], relations: [], confidence: 1, risk: 0 }]; let terminals = 0; while (queue.length && paths.length < context.query.limits.paths) { const current = queue.shift()!; context.check(); const nextRelations = context.relationships(current.id, "outgoing").filter((relation) => FLOW_TYPES.has(relation.type) && relationshipAllowed(relation, context)); if (!nextRelations.length || current.entities.length > context.query.limits.depth) { if (current.relations.length) paths.push(pathResult(current, context, current.entities.length > context.query.limits.depth ? ["flow depth boundary"] : ["unresolved or terminal flow boundary"])); terminals += 1; continue; } for (const relation of nextRelations) if (!current.entities.includes(relation.targetId)) queue.push({ id: relation.targetId, entities: [...current.entities, relation.targetId], relations: [...current.relations, relation], confidence: Math.min(current.confidence, relation.confidence), risk: current.risk }); await context.yield(terminals + queue.length, 30); } } const ids = new Set(paths.flatMap((path) => path.steps.map((step) => step.entityId))); return QueryDataSchema.parse({ kind: "flow", paths, nodes: [...ids].flatMap((id) => { const entity = context.entityById.get(id); return entity ? [toItem(entity, 1, ["flow participant"], classificationForEntity(entity, context))] : []; }), relationships: paths.flatMap((path) => path.steps.flatMap((step) => step.relationshipId ? [context.relationshipById.get(step.relationshipId)!] : [])).filter(Boolean), items: [], sections: {}, metrics: { flows: paths.length } }); }
+  async reconstruct(context: QueryContext, seeds: string[]): Promise<QueryData> {
+    const candidates: FlowCandidate[] = [];
+    const visitedNodes = new Set<string>(); const traversedEdges = new Set<string>(); let searchTruncated = false;
+    for (const seed of seeds) {
+      const entity = context.entityById.get(seed); if (!entity) continue;
+      const template = selectFlowTemplate(entity, context);
+      if (!template) {
+        context.diagnostics.push({ code: "flow-template-unavailable", severity: "warning", message: `No deterministic flow template applies to ${entityQualifiedName(entity)}.`, limitation: true });
+        continue;
+      }
+      const initial = template.initial(entity);
+      visitedNodes.add(seed);
+      const queue: FlowCandidate[] = [{ id: seed, entities: [seed], relations: [], directions: [], confidence: 1, risk: 0, phase: initial.phase, matchedStages: [...initial.matchedStages], template }];
+      while (queue.length && candidates.length < context.query.limits.paths * 4) {
+        const current = queue.shift()!; context.check();
+        const depthReached = current.relations.length >= context.query.limits.depth;
+        const rawTransitions = depthReached ? [] : flowTransitions(current, context).filter((transition) => !current.entities.includes(transition.targetId));
+        const transitions: FlowTransition[] = []; let resourceLimitReached = false;
+        for (const transition of rawTransitions) {
+          if (!visitedNodes.has(transition.targetId) && visitedNodes.size >= context.query.limits.nodes || !traversedEdges.has(transition.relationship.id) && traversedEdges.size >= context.query.limits.edges) { resourceLimitReached = true; searchTruncated = true; continue; }
+          visitedNodes.add(transition.targetId); traversedEdges.add(transition.relationship.id); transitions.push(transition);
+        }
+        if (!transitions.length) {
+          const complete = current.template.complete(current);
+          const missing = complete ? [] : current.template.missing(current);
+          candidates.push({ ...current, terminalReason: depthReached ? "The configured flow depth limit was reached." : resourceLimitReached ? "The configured flow node or relationship limit was reached." : complete ? current.template.terminal(current) : `No evidence-backed ${missing.join(" or ")} transition follows ${entityQualifiedName(context.entityById.get(current.id)!)}.` , missingStages: missing, truncated: depthReached || resourceLimitReached });
+        } else {
+          for (const transition of transitions) {
+            queue.push({ id: transition.targetId, entities: [...current.entities, transition.targetId], relations: [...current.relations, transition.relationship], directions: [...current.directions, transition.direction], confidence: Math.min(current.confidence, transition.relationship.confidence), risk: current.risk + relationshipRisk(transition.relationship), phase: transition.phase, matchedStages: [...new Set([...current.matchedStages, transition.stage])], template });
+          }
+        }
+        await context.yield(candidates.length + queue.length, 25);
+      }
+      if (queue.length) searchTruncated = true;
+    }
+    const ranked = candidates.map((candidate) => flowPathResult(candidate, context)).sort(compareFlowPaths).slice(0, context.query.limits.paths).map((path, index) => ({ ...path, truncated: path.truncated || searchTruncated && index === 0, flow: { ...path.flow!, alternateRank: index + 1 } }));
+    const ids = new Set(ranked.flatMap((path) => path.steps.map((step) => step.entityId)));
+    const relationshipIds = new Set(ranked.flatMap((path) => path.steps.flatMap((step) => step.relationshipId ? [step.relationshipId] : [])));
+    const complete = ranked.filter((path) => path.flow?.status === "complete").length;
+    const partial = ranked.length - complete;
+    return QueryDataSchema.parse({ kind: "flow", paths: ranked, nodes: [...ids].flatMap((id) => { const participant = context.entityById.get(id); return participant ? [toItem(participant, 1, ["ordered flow participant"], classificationForEntity(participant, context))] : []; }), relationships: [...relationshipIds].flatMap((id) => { const relationship = context.relationshipById.get(id); return relationship ? [relationship] : []; }), items: [], sections: {}, metrics: { flows: ranked.length, complete, partial, templates: new Set(ranked.map((path) => path.flow?.templateId)).size, exploredNodes: visitedNodes.size, exploredRelationships: traversedEdges.size, truncatedSearch: searchTruncated ? 1 : 0 } });
+  }
 }
+
+type FlowPhase = "presentation" | "endpoint" | "handler" | "application" | "data" | "producer" | "event" | "consumer" | "configuration" | "pipeline" | "build-step" | "artifact" | "deployment";
+type FlowDirection = "incoming" | "outgoing";
+interface FlowAdvance { phase: FlowPhase; stage: string; }
+interface FlowTemplate {
+  id: QueryFlowMetadata["templateId"];
+  label: string;
+  requiredStages: string[];
+  initial(entity: Entity): { phase: FlowPhase; matchedStages: string[] };
+  directions(phase: FlowPhase): FlowDirection[];
+  advance(phase: FlowPhase, relationship: IntelligenceRelationshipRecord, direction: FlowDirection, target: Entity): FlowAdvance | undefined;
+  complete(candidate: FlowCandidate): boolean;
+  missing(candidate: FlowCandidate): string[];
+  terminal(candidate: FlowCandidate): string;
+}
+interface FlowCandidate {
+  id: string;
+  entities: string[];
+  relations: IntelligenceRelationshipRecord[];
+  directions: FlowDirection[];
+  confidence: number;
+  risk: number;
+  phase: FlowPhase;
+  matchedStages: string[];
+  template: FlowTemplate;
+  terminalReason?: string;
+  missingStages?: string[];
+  truncated?: boolean;
+}
+interface FlowTransition extends FlowAdvance { targetId: string; relationship: IntelligenceRelationshipRecord; direction: FlowDirection; }
+
+const HTTP_TEMPLATE = flowTemplate({
+  id: "http-persistence", label: "HTTP / UI-to-persistence flow", requiredStages: ["API target", "route handler", "data access"],
+  initial: (entity) => /Route|Endpoint|ApiContract/.test(entityType(entity)) ? { phase: "endpoint", matchedStages: ["API target"] } : /Middleware|Handler|Controller/.test(entityType(entity)) ? { phase: "handler", matchedStages: ["route handler"] } : { phase: "presentation", matchedStages: [] },
+  directions: () => ["outgoing"],
+  advance: (phase, relation) => {
+    if (phase === "presentation" && ["keystone.core.CALLS", "keystone.core.RENDERS", "keystone.core.FLOWS_TO"].includes(relation.type)) return { phase: "presentation", stage: "UI / client call" };
+    if (phase === "presentation" && ["keystone.core.TARGETS", "keystone.core.IMPLEMENTS_CONTRACT_OPERATION"].includes(relation.type)) return { phase: "endpoint", stage: "API target" };
+    if (phase === "endpoint" && ["keystone.core.ROUTES_TO", "keystone.core.USES_MIDDLEWARE"].includes(relation.type)) return { phase: "handler", stage: "route handler" };
+    if ((phase === "handler" || phase === "application") && ["keystone.core.CALLS", "keystone.core.INSTANTIATES", "keystone.core.VALIDATES_WITH", "keystone.core.SERIALIZES_WITH"].includes(relation.type)) return { phase: "application", stage: "application call" };
+    if ((phase === "handler" || phase === "application") && isDataFlowRelationship(relation.type)) return { phase: "data", stage: "data access" };
+    return undefined;
+  },
+  complete: (candidate) => candidate.phase === "data" && requiredStagesMatched(candidate),
+  terminal: () => "The flow reaches an evidence-backed persistence or data-access boundary."
+});
+
+const EVENT_TEMPLATE = flowTemplate({
+  id: "event", label: "Event producer-to-consumer flow", requiredStages: ["event emission", "event handler"],
+  initial: (entity) => /Consumer|EventHandler/.test(entityType(entity)) ? { phase: "consumer", matchedStages: ["event handler"] } : /Event|Message/.test(entityType(entity)) ? { phase: "event", matchedStages: [] } : { phase: "producer", matchedStages: [] },
+  directions: (phase) => phase === "event" ? ["outgoing", "incoming"] : ["outgoing"],
+  advance: (phase, relation, direction) => {
+    if (phase === "producer" && direction === "outgoing" && ["keystone.core.EMITS", "keystone.core.PRODUCES"].includes(relation.type)) return { phase: "event", stage: "event emission" };
+    if (phase === "event" && ["keystone.core.HANDLES", "keystone.core.CONSUMES"].includes(relation.type)) return { phase: "consumer", stage: "event handler" };
+    if ((phase === "consumer" || phase === "application") && direction === "outgoing" && ["keystone.core.CALLS", "keystone.core.TRIGGERS", "keystone.core.EXECUTES"].includes(relation.type)) return { phase: "application", stage: "consumer execution" };
+    if ((phase === "consumer" || phase === "application") && direction === "outgoing" && isDataFlowRelationship(relation.type)) return { phase: "data", stage: "data access" };
+    return undefined;
+  },
+  complete: (candidate) => requiredStagesMatched(candidate),
+  terminal: (candidate) => candidate.phase === "data" ? "The consumer reaches an evidence-backed data boundary." : "The event reaches an evidence-backed consumer."
+});
+
+const CONFIGURATION_TEMPLATE = flowTemplate({
+  id: "configuration", label: "Configuration-to-behavior flow", requiredStages: ["configuration use"],
+  initial: () => ({ phase: "configuration", matchedStages: [] }),
+  directions: (phase) => phase === "configuration" ? ["incoming"] : ["outgoing"],
+  advance: (phase, relation, direction) => {
+    if (phase === "configuration" && direction === "incoming" && ["keystone.core.READS_CONFIGURATION", "keystone.core.USES_CONFIGURATION", "keystone.core.CONFIGURED_BY"].includes(relation.type)) return { phase: "application", stage: "configuration use" };
+    if (phase === "application" && direction === "outgoing" && ["keystone.core.CALLS", "keystone.core.TRIGGERS", "keystone.core.EXECUTES"].includes(relation.type)) return { phase: "application", stage: "affected behavior" };
+    return undefined;
+  },
+  complete: (candidate) => requiredStagesMatched(candidate),
+  terminal: () => "The configuration key reaches an evidence-backed reader or affected behavior."
+});
+
+const COMMAND_TEMPLATE = flowTemplate({
+  id: "command-execution", label: "Command / execution flow", requiredStages: ["execution step"],
+  initial: () => ({ phase: "application", matchedStages: [] }),
+  directions: () => ["outgoing"],
+  advance: (phase, relation) => {
+    if (phase === "application" && ["keystone.core.CALLS", "keystone.core.INSTANTIATES", "keystone.core.TRIGGERS", "keystone.core.EXECUTES", "keystone.core.VALIDATES_WITH", "keystone.core.SERIALIZES_WITH"].includes(relation.type)) return { phase: "application", stage: "execution step" };
+    if (phase === "application" && isDataFlowRelationship(relation.type)) return { phase: "data", stage: "data access" };
+    return undefined;
+  },
+  complete: (candidate) => candidate.relations.length > 0 && requiredStagesMatched(candidate),
+  terminal: (candidate) => candidate.phase === "data" ? "Execution reaches an evidence-backed data boundary." : "The path ends at the last evidence-backed executable step."
+});
+
+const BUILD_TEMPLATE = flowTemplate({
+  id: "build-pipeline", label: "Build / pipeline flow", requiredStages: ["build execution", "build output"],
+  initial: () => ({ phase: "pipeline", matchedStages: [] }),
+  directions: () => ["outgoing"],
+  advance: (phase, relation) => {
+    if ((phase === "pipeline" || phase === "build-step") && ["keystone.core.RUNS_BUILD_COMMAND", "keystone.core.EXECUTES", "keystone.core.TRIGGERS", "keystone.core.CALLS"].includes(relation.type)) return { phase: "build-step", stage: "build execution" };
+    if ((phase === "pipeline" || phase === "build-step") && relation.type === "keystone.core.PRODUCES_ARTIFACT") return { phase: "artifact", stage: "build output" };
+    if ((phase === "pipeline" || phase === "build-step" || phase === "artifact") && relation.type === "keystone.core.DEPLOYS") return { phase: "deployment", stage: "build output" };
+    return undefined;
+  },
+  complete: (candidate) => (candidate.phase === "artifact" || candidate.phase === "deployment") && requiredStagesMatched(candidate),
+  terminal: (candidate) => candidate.phase === "deployment" ? "The pipeline reaches an evidence-backed deployment." : "The build reaches an evidence-backed generated artifact."
+});
+
+function flowTemplate(template: Omit<FlowTemplate, "missing">): FlowTemplate {
+  return { ...template, missing: (candidate) => template.requiredStages.filter((stage) => !candidate.matchedStages.includes(stage)) };
+}
+function requiredStagesMatched(candidate: FlowCandidate): boolean { return candidate.template.requiredStages.every((stage) => candidate.matchedStages.includes(stage)); }
+function isDataFlowRelationship(type: string): boolean { return ["keystone.core.READS_FROM", "keystone.core.WRITES_TO", "keystone.core.PERSISTS"].includes(type); }
+function selectFlowTemplate(entity: Entity, context: QueryContext): FlowTemplate | undefined {
+  const type = entityType(entity); const outgoing = context.relationships(entity.id, "outgoing"); const incoming = context.relationships(entity.id, "incoming");
+  if (/ConfigurationKey|EnvironmentVariable|FeatureFlag/.test(type)) return CONFIGURATION_TEMPLATE;
+  if (/Producer|Event|Message|Consumer|EventHandler/.test(type) || outgoing.some((item) => ["keystone.core.EMITS", "keystone.core.PRODUCES"].includes(item.type)) || incoming.some((item) => ["keystone.core.HANDLES", "keystone.core.CONSUMES"].includes(item.type))) return EVENT_TEMPLATE;
+  if (/Component|Route|Endpoint|ApiContract|Middleware|Controller/.test(type) || outgoing.some((item) => ["keystone.core.TARGETS", "keystone.core.ROUTES_TO", "keystone.core.IMPLEMENTS_CONTRACT_OPERATION"].includes(item.type))) return HTTP_TEMPLATE;
+  if (/Pipeline|BuildTarget|BuildCommand|Deployment|Artifact/.test(type) || outgoing.some((item) => ["keystone.core.RUNS_BUILD_COMMAND", "keystone.core.PRODUCES_ARTIFACT", "keystone.core.DEPLOYS"].includes(item.type))) return BUILD_TEMPLATE;
+  if (/Command|Job|Scheduler|Function|Method|Constructor|Handler|Service|Repository/.test(type) || outgoing.some((item) => ["keystone.core.CALLS", "keystone.core.EXECUTES", "keystone.core.TRIGGERS"].includes(item.type))) return COMMAND_TEMPLATE;
+  return undefined;
+}
+function flowTransitions(candidate: FlowCandidate, context: QueryContext): FlowTransition[] {
+  const values: FlowTransition[] = [];
+  for (const direction of candidate.template.directions(candidate.phase)) {
+    for (const relationship of context.relationships(candidate.id, direction)) {
+      if (!FLOW_TYPES.has(relationship.type) || !relationshipAllowed(relationship, context)) continue;
+      const targetId = direction === "outgoing" ? relationship.targetId : relationship.sourceId; const target = context.entityById.get(targetId); if (!target) continue;
+      const advance = candidate.template.advance(candidate.phase, relationship, direction, target); if (!advance) continue;
+      context.relationshipFamilies.add(relationship.type); values.push({ ...advance, targetId, relationship, direction });
+    }
+  }
+  return values.sort((left, right) => flowStagePriority(left.stage) - flowStagePriority(right.stage) || right.relationship.confidence - left.relationship.confidence || left.relationship.id.localeCompare(right.relationship.id));
+}
+function flowStagePriority(stage: string): number { return ({ "API target": 1, "route handler": 2, "event emission": 1, "event handler": 2, "configuration use": 1, "build execution": 1, "build output": 2, "data access": 5 } as Record<string, number>)[stage] ?? 3; }
+function flowPathResult(candidate: FlowCandidate, context: QueryContext): QueryData["paths"][number] {
+  const complete = candidate.template.complete(candidate); const missingStages = candidate.missingStages ?? candidate.template.missing(candidate); const coverage = candidate.template.requiredStages.length ? (candidate.template.requiredStages.length - missingStages.length) / candidate.template.requiredStages.length : 1; const riskPenalty = Math.min(.1, candidate.risk / 100); const score = Math.max(0, Math.min(1, coverage * .55 + candidate.confidence * .35 + (complete ? .1 : 0) - riskPenalty));
+  const boundaries = complete ? [] : [candidate.terminalReason ?? `Missing ${missingStages.join(" or ")}.`]; if (candidate.truncated) boundaries.push("flow depth boundary");
+  const path = pathResult(candidate, context, boundaries, candidate.directions);
+  const flow: QueryFlowMetadata = { templateId: candidate.template.id, label: candidate.template.label, status: complete ? "complete" : "partial", matchedStages: candidate.matchedStages, missingStages, score, scoreReasons: [`required-stage coverage ${Math.round(coverage * 100)}%`, `minimum relationship confidence ${Math.round(candidate.confidence * 100)}%`, complete ? "complete template +10%" : "partial template +0%", `risk penalty ${Math.round(riskPenalty * 100)}%`], terminalReason: candidate.terminalReason ?? candidate.template.terminal(candidate), alternateRank: 1 };
+  return { ...path, truncated: Boolean(candidate.truncated), flow };
+}
+function compareFlowPaths(left: QueryData["paths"][number], right: QueryData["paths"][number]): number { return Number(right.flow?.status === "complete") - Number(left.flow?.status === "complete") || (right.flow?.score ?? 0) - (left.flow?.score ?? 0) || right.confidence - left.confidence || left.steps.map((step) => step.entityId).join("|").localeCompare(right.steps.map((step) => step.entityId).join("|")); }
 
 export class TestQueryService {
   query(context: QueryContext, seeds: string[], untested = false): QueryData {
@@ -294,7 +472,31 @@ function usageClassificationRank(value: Classification): number { return ({ exac
 function toItem(entity: Entity, score: number, reasons: string[], classification: Classification = "exact"): QueryResultItem { return { id: entity.id, type: entityType(entity), name: entityName(entity), qualifiedName: entityQualifiedName(entity), relativePath: entityPath(entity), score, confidence: "confidence" in entity ? entity.confidence : 1, classification, rankingReasons: reasons.slice(0, 20) }; }
 function relationshipAllowed(relation: IntelligenceRelationshipRecord, context: QueryContext): boolean { return relation.confidence >= context.query.filters.confidenceAtLeast && (!context.query.filters.relationshipTypes?.length || context.query.filters.relationshipTypes.includes(relation.type)); }
 function relationshipRisk(relation: IntelligenceRelationshipRecord): number { const explicit = relation.properties?.riskWeight; return typeof explicit === "number" ? explicit : relation.type.includes("WRITES") || relation.type.includes("PERSISTS") ? 3 : relation.confidence < 0.8 ? 2 : 1; }
-function pathResult(current: { entities: string[]; relations: IntelligenceRelationshipRecord[]; confidence: number; risk: number }, context: QueryContext, boundaries: string[] = []): QueryData["paths"][number] { const steps: QueryPathStep[] = current.entities.flatMap((id, index) => { const entity = context.entityById.get(id); if (!entity) return []; const relation = index ? current.relations[index - 1] : undefined; if (relation) context.relationshipFamilies.add(relation.type); const capability = capabilityBoundary(entity, context); if (capability) { context.capabilityBoundaries.add(capability); boundaries.push(capability); } return [{ entityId: id, entityName: entityName(entity), entityType: entityType(entity), ...(relation ? { relationshipId: relation.id, relationshipType: relation.type } : {}), confidence: relation?.confidence ?? ("confidence" in entity ? entity.confidence : 1), classification: relation ? classificationForRelation(relation) : classificationForEntity(entity, context), evidenceIds: relation?.evidenceIds.slice(0, 20) ?? entity.evidenceIds.slice(0, 20), ...(capability ? { capabilityBoundary: capability } : {}) }]; }); return { steps, confidence: current.confidence, risk: current.risk, unsupportedBoundaries: [...new Set(boundaries)], truncated: boundaries.includes("flow depth boundary") }; }
+function pathResult(
+  current: { entities: string[]; relations: IntelligenceRelationshipRecord[]; confidence: number; risk: number },
+  context: QueryContext,
+  boundaries: string[] = [],
+  directions?: Array<"incoming" | "outgoing">
+): QueryData["paths"][number] {
+  const steps: QueryPathStep[] = current.entities.flatMap((id, index) => {
+    const entity = context.entityById.get(id); if (!entity) return [];
+    const relation = index ? current.relations[index - 1] : undefined;
+    if (relation) context.relationshipFamilies.add(relation.type);
+    const capability = capabilityBoundary(entity, context);
+    if (capability) { context.capabilityBoundaries.add(capability); boundaries.push(capability); }
+    return [{
+      entityId: id,
+      entityName: entityName(entity),
+      entityType: entityType(entity),
+      ...(relation ? { relationshipId: relation.id, relationshipType: relation.type, ...(directions?.[index - 1] ? { traversalDirection: directions[index - 1] } : {}) } : {}),
+      confidence: relation?.confidence ?? ("confidence" in entity ? entity.confidence : 1),
+      classification: relation ? classificationForRelation(relation) : classificationForEntity(entity, context),
+      evidenceIds: relation?.evidenceIds.slice(0, 20) ?? entity.evidenceIds.slice(0, 20),
+      ...(capability ? { capabilityBoundary: capability } : {})
+    }];
+  });
+  return { steps, confidence: current.confidence, risk: current.risk, unsupportedBoundaries: [...new Set(boundaries)], truncated: boundaries.includes("flow depth boundary") };
+}
 function cyclePath(cycle: string[], edges: IntelligenceRelationshipRecord[], context: QueryContext): QueryData["paths"][number] {
   const relations = cycle.slice(1).map((id, index) => edges.find((edge) => edge.sourceId === cycle[index] && edge.targetId === id));
   const steps = cycle.flatMap((id, index): QueryPathStep[] => {

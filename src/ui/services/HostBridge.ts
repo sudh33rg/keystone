@@ -11,13 +11,16 @@ import {
 } from "../../shared/contracts/messages";
 import { CpgQueryResultSchema, CpgSliceResultSchema } from "../../shared/contracts/cpg";
 import { IntelligenceQueryResultSchema, QueryCompilationSchema, QueryExplanationSchema, QuerySuggestionsResultSchema, QueryTemplatesResultSchema } from "../../shared/contracts/query";
-import { AgentRecommendationSchema, CopilotAgentDescriptorSchema, CopilotCapabilitiesSchema, DelegationSessionSchema, DevelopmentWorkflowSnapshotSchema, PreparedDelegationSchema, TaskContextPackageSchema } from "../../shared/contracts/delegation";
+import { AgentRecommendationSchema, CopilotAgentDescriptorSchema, CopilotCapabilitiesSchema, DelegationSessionSchema, DevelopmentWorkflowSnapshotSchema, PreparedDelegationSchema, TaskContextPackageSchema, WorkflowClarificationSchema } from "../../shared/contracts/delegation";
 import { CompletionDecisionSchema, RetryPlanSchema, TaskExecutionSessionSchema, ValidationPlanSchema, ValidationRunSchemaV2, WorkflowCompletionReportSchema } from "../../shared/contracts/execution";
 import { CommitPlanSchema, DeliveryChangeSetSchema, DeliveryReadinessSchema, GitActionResultSchema, GitCapabilitiesSchema, GitRepositoryStateSchema, PullRequestCreationResultSchema, PullRequestDraftSchema, PullRequestProviderCapabilitySchema } from "../../shared/contracts/delivery";
 import { HandoffAcceptanceSchema, HandoffPackageSchema, HandoffReconciliationSchema, HandoffValidationResultSchema, TaskAssignmentSchema, TeamAuditEntrySchema, TeamParticipantSchema, TeamProgressSnapshotSchema } from "../../shared/contracts/team";
 import { ExecutionRoutingDecisionSchema } from "../../shared/contracts/routing";
 import { OrchestrationReviewPlanSchema, WorkflowDefinitionSchema, WorkflowInstanceSchema, WorkflowPolicySchema } from "../../shared/contracts/orchestration";
 import { AdapterDiagnosticsResultSchema, TechnologyCoverageResultSchema } from "../../shared/contracts/adapters";
+import { compatibilityRoute, sectionForRoute } from "../../shared/navigation";
+import { WorkbenchCreateContextSchema, WorkbenchDefineStateSchema, WorkbenchPlanStateSchema, WorkbenchStageStateSchema, WorkbenchSummarySchema, WorkbenchTaskPlanValidationSchema, WorkbenchWorkflowStateSchema } from "../../shared/contracts/workbench";
+import { BuildTaskQueueSchema, BuildTaskStateSchema, CopilotCustomizationItemSchema } from "../../shared/contracts/build";
 
 interface VsCodeApi {
   postMessage(message: unknown): void;
@@ -219,6 +222,48 @@ function validateResult(type: WebviewRequestType, value: unknown): unknown {
     case "copilot/selectAgent": return DevelopmentWorkflowSnapshotSchema.parse(value);
     case "workflow/list": return DevelopmentWorkflowSnapshotSchema.array().max(100).parse(value);
     case "workflow/get": return value === undefined ? undefined : DevelopmentWorkflowSnapshotSchema.parse(value);
+    case "workbench/getCreateContext": return WorkbenchCreateContextSchema.parse(value);
+    case "workbench/createWorkflow":
+    case "workbench/updateIntent":
+    case "workbench/updateScope":
+    case "workbench/updateConstraints":
+    case "workbench/answerClarification":
+    case "workbench/deferClarification":
+    case "workbench/markClarificationNotApplicable":
+    case "workbench/reopenClarification":
+    case "workbench/generateSpecification":
+    case "workbench/updateSpecification":
+    case "workbench/generateAcceptanceCriteria":
+    case "workbench/approveSpecification":
+    case "workbench/generateTaskPlan":
+    case "workbench/updateTask":
+    case "workbench/addTask":
+    case "workbench/removeTask":
+    case "workbench/reorderTask":
+    case "workbench/updateDependency":
+    case "workbench/approveTaskPlan": return DevelopmentWorkflowSnapshotSchema.parse(value);
+    case "workbench/getWorkflow": return value === undefined ? undefined : WorkbenchWorkflowStateSchema.parse(value);
+    case "workbench/listWorkflows": return DevelopmentWorkflowSnapshotSchema.array().max(100).parse(value);
+    case "workbench/openWorkflow":
+    case "workbench/navigateStage": return WorkbenchWorkflowStateSchema.parse(value);
+    case "workbench/getDefineState": return WorkbenchDefineStateSchema.parse(value);
+    case "workbench/getClarifications": return WorkflowClarificationSchema.array().max(100).parse(value);
+    case "workbench/getPlanState": return WorkbenchPlanStateSchema.parse(value);
+    case "workbench/validateTaskPlan": return WorkbenchTaskPlanValidationSchema.parse(value);
+    case "workbench/getStageStates": return WorkbenchStageStateSchema.array().length(6).parse(value);
+    case "workbench/getSummary": return WorkbenchSummarySchema.parse(value);
+    case "build/getTaskQueue": return BuildTaskQueueSchema.parse(value);
+    case "build/getTaskState":
+    case "build/selectTask":
+    case "build/startTask":
+    case "build/pauseTask":
+    case "build/resumeTask":
+    case "build/blockTask":
+    case "build/cancelTask": return BuildTaskStateSchema.parse(value);
+    case "build/getCopilotCapabilities": return CopilotCapabilitiesSchema.parse(value);
+    case "build/getCustomizations":
+    case "build/updateCustomizationSelection": return CopilotCustomizationItemSchema.array().max(500).parse(value);
+    case "build/getAgents": return CopilotAgentDescriptorSchema.array().max(200).parse(value);
     case "copilot/capabilities":
     case "copilot/refreshCapabilities": return CopilotCapabilitiesSchema.parse(value);
     case "copilot/agents":
@@ -361,6 +406,7 @@ function createPreviewApi(): VsCodeApi {
     schemaVersion: SCHEMA_VERSION,
     revision: 0,
     activeSection: "home",
+    activeRoute: "/",
     workflowCount: 0,
     updatedAt: new Date().toISOString()
   };
@@ -384,7 +430,8 @@ function createPreviewApi(): VsCodeApi {
           dispatch(hostMessage("bootstrap/ready", snapshot));
           data = snapshot;
         } else if (request.type === "navigation/set") {
-          state = { ...state, activeSection: request.payload.section, revision: state.revision + 1, updatedAt: new Date().toISOString() };
+          const route = "route" in request.payload ? request.payload.route : compatibilityRoute(request.payload.section);
+          state = { ...state, activeRoute: route, activeSection: sectionForRoute(route), revision: state.revision + 1, updatedAt: new Date().toISOString() };
           dispatch(hostMessage("state/updated", state));
           data = state;
         } else if (request.type === "intelligence/overview") {

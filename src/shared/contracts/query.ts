@@ -62,9 +62,21 @@ export const QueryResultItemSchema = z.object({
   classification: z.enum(["exact", "resolved", "structurally-inferred", "convention-based", "cpg-assisted", "candidate", "unresolved"]), rankingReasons: z.array(z.string()).max(20), group: z.string().optional(), details: z.record(z.string(), PrimitiveSchema).optional()
 }).strict();
 export type QueryResultItem = z.infer<typeof QueryResultItemSchema>;
-export const QueryPathStepSchema = z.object({ entityId: z.string(), entityName: z.string(), entityType: z.string(), relationshipId: z.string().optional(), relationshipType: z.string().optional(), confidence: z.number().min(0).max(1), classification: QueryResultItemSchema.shape.classification, evidenceIds: z.array(z.string()).max(20), capabilityBoundary: z.string().optional() }).strict();
+export const QueryPathStepSchema = z.object({ entityId: z.string(), entityName: z.string(), entityType: z.string(), relationshipId: z.string().optional(), relationshipType: z.string().optional(), traversalDirection: QueryDirectionSchema.exclude(["both"]).optional(), confidence: z.number().min(0).max(1), classification: QueryResultItemSchema.shape.classification, evidenceIds: z.array(z.string()).max(20), capabilityBoundary: z.string().optional() }).strict();
 export type QueryPathStep = z.infer<typeof QueryPathStepSchema>;
-export const QueryPathSchema = z.object({ steps: z.array(QueryPathStepSchema).max(50), confidence: z.number().min(0).max(1), risk: z.number().nonnegative(), unsupportedBoundaries: z.array(z.string()).max(20), truncated: z.boolean() }).strict();
+export const QueryFlowMetadataSchema = z.object({
+  templateId: z.enum(["http-persistence", "event", "configuration", "command-execution", "build-pipeline"]),
+  label: z.string().min(1).max(100),
+  status: z.enum(["complete", "partial"]),
+  matchedStages: z.array(z.string().min(1)).max(20),
+  missingStages: z.array(z.string().min(1)).max(20),
+  score: z.number().min(0).max(1),
+  scoreReasons: z.array(z.string().min(1)).max(20),
+  terminalReason: z.string().min(1).max(300),
+  alternateRank: z.number().int().positive()
+}).strict();
+export type QueryFlowMetadata = z.infer<typeof QueryFlowMetadataSchema>;
+export const QueryPathSchema = z.object({ steps: z.array(QueryPathStepSchema).max(50), confidence: z.number().min(0).max(1), risk: z.number().nonnegative(), unsupportedBoundaries: z.array(z.string()).max(20), truncated: z.boolean(), flow: QueryFlowMetadataSchema.optional() }).strict();
 
 export const QueryDataSchema = z.object({
   kind: z.string().min(1), items: z.array(QueryResultItemSchema).max(100).default([]), nodes: z.array(QueryResultItemSchema).max(500).default([]), relationships: z.array(RelationshipRecordSchema).max(1500).default([]),

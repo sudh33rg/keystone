@@ -32,18 +32,27 @@ describe("App", () => {
       const snapshot: BootstrapSnapshot = {
         extensionVersion: "0.1.0",
         workspace: { name: "fixture-repository", rootCount: 1, trust: "trusted", indexStatus: "not-indexed" },
-        state: { schemaVersion: 1, revision: 0, activeSection: "home", workflowCount: 0, updatedAt: new Date().toISOString() },
+        state: { schemaVersion: 1, revision: 0, activeSection: "home", activeRoute: "/", workflowCount: 0, updatedAt: new Date().toISOString() },
         activity: { operation: "Foundation ready", detail: "Ready", status: "completed", progress: 100, cancellable: false, updatedAt: new Date().toISOString() },
         implementation: { phase: 1, phaseName: "Extension foundation", completedTasks: ["T-101", "T-102"], nextTask: "T-201 · Workspace adapters" }
       };
       fake.emit(hostMessage("bootstrap/ready", snapshot));
     });
 
-    expect(screen.getByText("fixture-repository")).toBeTruthy();
-    expect(screen.getByText(/Intent becomes/)).toBeTruthy();
+    expect(screen.getByText(/Active repository · fixture-repository/)).toBeTruthy();
+    expect(screen.getByText(/Engineering work/)).toBeTruthy();
+    expect(["Home", "SDLC Workbench", "Intelligence", "History"].every((name) => screen.getByRole("button", { name }))).toBe(true);
+    for (const removed of ["Intent & Specs", "Tasks", "Active Workflow", "Validation & QA", "Delivery", "Task Handoff", "Diagnostics"]) expect(screen.queryByRole("button", { name: removed })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Workspace health" }));
+    expect(screen.getByRole("heading", { name: "Diagnostics" })).toBeTruthy();
+    expect(fake.request).toHaveBeenCalledWith("navigation/set", { route: "/support/diagnostics" });
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    expect(screen.getByRole("heading", { name: "Settings" })).toBeTruthy();
+    expect(fake.request).toHaveBeenCalledWith("navigation/set", { route: "/settings" });
 
     fireEvent.click(screen.getByRole("button", { name: "Intelligence" }));
-    expect(fake.request).toHaveBeenCalledWith("navigation/set", { section: "intelligence" });
+    expect(fake.request).toHaveBeenCalledWith("navigation/set", { route: "/intelligence" });
     act(() => fake.emit(hostMessage("intelligence/updated", emptyIntelligenceOverview("not-indexed"))));
     expect(screen.getByText("No local intelligence snapshot exists yet.")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Scan repository" })).toBeTruthy();

@@ -47,6 +47,8 @@ import { VsCodeTeamArtifactAdapter } from "./team/VsCodeTeamArtifactAdapter";
 import { OrchestrationPersistenceStore } from "../core/persistence/OrchestrationPersistenceStore";
 import { OrchestrationService } from "../core/orchestration/OrchestrationService";
 import { StartupStateService } from "../core/integration/ProductIntegrationService";
+import { CopilotCustomizationService } from "../core/copilot/CopilotCustomizationService";
+import { BuildWorkspaceService } from "../core/workflows/BuildWorkspaceService";
 
 let logger: KeystoneLogger | undefined;
 
@@ -100,6 +102,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   await execution.initialize();
   const validation = new ValidationOrchestrator(executionStore, execution, workspace, intelligenceStore, workflow);
   const completion = new CompletionDecisionService(executionStore, execution, workflow, intelligenceStore);
+  const customizations = new CopilotCustomizationService(workspace, delegationStore);
+  const buildWorkspace = new BuildWorkspaceService(delegationStore, workflow, copilot, agents, customizations, taskContext, delegation, execution, validation, completion);
   const workflowCompletion = new WorkflowCompletionService(executionStore, workflow, intelligenceStore);
   const deliveryStore = new DeliveryPersistenceStore(storageRoot);
   const deliveryRepositoryRoot = repositoryRoot ?? process.cwd();
@@ -182,7 +186,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     workspaceState,
     configuration,
     logger,
-    { intelligenceRuntime, intelligenceQuery, cpgQuery, openSource, workflow, routing, orchestration, workspaceTrusted: () => vscode.workspace.isTrusted, copilot, agents, context: taskContext, delegation, execution, validation, completion, workflowCompletion, delivery, team, currentEditor: () => { const uri = vscode.window.activeTextEditor?.document.uri.toString(); return uri ? workspace.resolveFile(uri)?.relativePath : undefined; }, currentSelection: () => { const editor = vscode.window.activeTextEditor; if (!editor || editor.selection.isEmpty) return undefined; const resolved = workspace.resolveFile(editor.document.uri.toString()); return resolved ? { relativePath: resolved.relativePath, startLine: editor.selection.start.line, endLine: editor.selection.end.line } : undefined; } }
+    { intelligenceRuntime, intelligenceQuery, cpgQuery, openSource, workflow, buildWorkspace, customizations, routing, orchestration, workspaceTrusted: () => vscode.workspace.isTrusted, copilot, agents, context: taskContext, delegation, execution, validation, completion, workflowCompletion, delivery, team, currentEditor: () => { const uri = vscode.window.activeTextEditor?.document.uri.toString(); return uri ? workspace.resolveFile(uri)?.relativePath : undefined; }, currentSelection: () => { const editor = vscode.window.activeTextEditor; if (!editor || editor.selection.isEmpty) return undefined; const resolved = workspace.resolveFile(editor.document.uri.toString()); return resolved ? { relativePath: resolved.relativePath, startLine: editor.selection.start.line, endLine: editor.selection.end.line } : undefined; } }
   );
 
   context.subscriptions.push(

@@ -43,5 +43,5 @@ export class DelegationPersistenceStore {
 }
 
 function emptyState(): DelegationPersistentState {
-  return { schemaVersion: DELEGATION_SCHEMA_VERSION, revision: 0, workflows: [], agents: [], selections: {}, contexts: [], prepared: [], sessions: [], updatedAt: new Date().toISOString() };
+  return { schemaVersion: DELEGATION_SCHEMA_VERSION, revision: 0, workflows: [], agents: [], selections: {}, customizationSelections: {}, selectedTaskByWorkflow: {}, buildPanelByWorkflow: {}, buildBaselines: {}, contexts: [], prepared: [], sessions: [], updatedAt: new Date().toISOString() };
 }
