@@ -34,6 +34,10 @@ import type { ExecutionRoutingService } from "../../core/workflows/ExecutionRout
 import type { OrchestrationService } from "../../core/orchestration/OrchestrationService";
 import type { BuildWorkspaceService } from "../../core/workflows/BuildWorkspaceService";
 import type { CopilotCustomizationService } from "../../core/copilot/CopilotCustomizationService";
+import type { ReviewCompletionService } from "../../core/review/ReviewCompletionService";
+import type { CopilotCapabilityService, CopilotToolAuditService, CopilotToolExecutionService, CopilotToolRegistry } from "../../core/copilot/CopilotIntegrationService";
+import type { CopilotAssistedLaunchService } from "../../core/copilot/KeystoneChatAndLaunchService";
+import type { CopilotIntegrationPersistenceStore } from "../../core/persistence/CopilotIntegrationPersistenceStore";
 import type { BuildTaskState } from "../../shared/contracts/build";
 import type { WorkflowInstance } from "../../shared/contracts/orchestration";
 import type {
@@ -41,6 +45,10 @@ import type {
   DevelopmentTask,
   DevelopmentWorkflowSnapshot,
 } from "../../shared/contracts/delegation";
+import { createHash } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import type { KeystoneDashboardState, KeystonePanelState, OpenKeystoneRequest, ValidatedNavigation } from "../../shared/contracts/nativeShell";
 
 type PostMessage = (message: HostMessage) => Thenable<boolean>;
 
@@ -72,10 +80,27 @@ export interface IntelligenceServiceRegistry {
   completion: CompletionDecisionService;
   workflowCompletion: WorkflowCompletionService;
   delivery: DeliveryCoordinator;
+  review: ReviewCompletionService;
   team: TeamWorkflowService;
   routing: ExecutionRoutingService;
   orchestration: OrchestrationService;
   workspaceTrusted(): boolean;
+  integrationCapabilities: CopilotCapabilityService;
+  copilotIntegrationStore: CopilotIntegrationPersistenceStore;
+  toolRegistry: CopilotToolRegistry;
+  toolExecution: CopilotToolExecutionService;
+  toolAudit: CopilotToolAuditService;
+  assistedLaunch: CopilotAssistedLaunchService;
+  nativeShell?: {
+    dashboard(): KeystoneDashboardState;
+    refreshDashboard(): KeystoneDashboardState;
+    openDashboardItem(id: string): Promise<ValidatedNavigation>;
+    panel(): KeystonePanelState;
+    updatePanel(payload: Record<string, unknown>): Promise<KeystonePanelState>;
+    pending(): ValidatedNavigation | undefined;
+    validate(request: OpenKeystoneRequest): ValidatedNavigation;
+    open(request: OpenKeystoneRequest): Promise<ValidatedNavigation>;
+  };
 }
 
 export class WebviewMessageRouter {
@@ -125,7 +150,8 @@ export class WebviewMessageRouter {
     this.runtimeEventTimer = setTimeout(() => {
       this.runtimeEventTimer = undefined;
       const state = this.pendingRuntimeState;
-      if (state && !this.disposed) void this.postMessage(hostMessage("intelligence/runtime", state));
+      if (state && !this.disposed)
+        void this.postMessage(hostMessage("intelligence/runtime", state));
     }, 100);
   }
 
@@ -147,15 +173,37 @@ export class WebviewMessageRouter {
         return;
       }
       await this.postMessage(hostMessage("intelligence/updated", overview));
-      if (this.lastQueryGeneration && overview.generation && overview.generation !== this.lastQueryGeneration)
-        await this.postMessage(hostMessage("intelligence/queryInvalidated", { queryId: crypto.randomUUID(), generation: overview.generation, message: `Query cache invalidated by generation ${overview.generation}.` }));
+      if (
+        this.lastQueryGeneration &&
+        overview.generation &&
+        overview.generation !== this.lastQueryGeneration
+      )
+        await this.postMessage(
+          hostMessage("intelligence/queryInvalidated", {
+            queryId: crypto.randomUUID(),
+            generation: overview.generation,
+            message: `Query cache invalidated by generation ${overview.generation}.`,
+          }),
+        );
       if (overview.generation) {
-        const delegationGenerationChanged = Boolean((this.lastQueryGeneration && overview.generation !== this.lastQueryGeneration) || this.services.workflow.list().some((workflow) => workflow.intelligenceGeneration !== overview.generation));
+        const delegationGenerationChanged = Boolean(
+          (this.lastQueryGeneration &&
+            overview.generation !== this.lastQueryGeneration) ||
+          this.services.workflow
+            .list()
+            .some(
+              (workflow) =>
+                workflow.intelligenceGeneration !== overview.generation,
+            ),
+        );
         this.lastQueryGeneration = overview.generation;
-        if (delegationGenerationChanged) void this.reconcileDelegationState(overview.generation);
+        if (delegationGenerationChanged)
+          void this.reconcileDelegationState(overview.generation);
       }
     } catch (cause) {
-      this.logger.error(KeystoneError.fromUnknown(cause, "intelligence.overview.event"));
+      this.logger.error(
+        KeystoneError.fromUnknown(cause, "intelligence.overview.event"),
+      );
     }
   }
 
@@ -242,8 +290,36 @@ export class WebviewMessageRouter {
           serverTime: new Date().toISOString(),
         });
         return;
+      case "dashboard/getState":
+        await this.sendSuccess(request.requestId, this.requireNativeShell().dashboard());
+        return;
+      case "dashboard/refresh":
+        await this.sendSuccess(request.requestId, this.requireNativeShell().refreshDashboard());
+        return;
+      case "dashboard/openAction":
+        await this.sendSuccess(request.requestId, await this.requireNativeShell().openDashboardItem(request.payload.itemId));
+        return;
+      case "panel/getState":
+        await this.sendSuccess(request.requestId, this.requireNativeShell().panel());
+        return;
+      case "panel/updateState":
+        await this.sendSuccess(request.requestId, await this.requireNativeShell().updatePanel(request.payload));
+        return;
+      case "panel/getPendingNavigation":
+        await this.sendSuccess(request.requestId, this.requireNativeShell().pending());
+        return;
+      case "navigation/validateTarget":
+      case "navigation/resolveFallback":
+        await this.sendSuccess(request.requestId, this.requireNativeShell().validate(request.payload));
+        return;
+      case "navigation/open":
+        await this.sendSuccess(request.requestId, await this.requireNativeShell().open(request.payload));
+        return;
       case "navigation/set": {
-        const state = "route" in request.payload ? await this.store.setActiveRoute(request.payload.route) : await this.store.setActiveSection(request.payload.section);
+        const state =
+          "route" in request.payload
+            ? await this.store.setActiveRoute(request.payload.route)
+            : await this.store.setActiveSection(request.payload.section);
         await this.postMessage(hostMessage("state/updated", state));
         await this.sendSuccess(request.requestId, state);
         return;
@@ -263,7 +339,15 @@ export class WebviewMessageRouter {
         return;
       }
       case "intelligence/diagnostics":
-        await this.sendSuccess(request.requestId, await this.cancellableQuery(request.requestId, (signal) => this.services.intelligenceQuery.diagnostics(request.payload, signal)));
+        await this.sendSuccess(
+          request.requestId,
+          await this.cancellableQuery(request.requestId, (signal) =>
+            this.services.intelligenceQuery.diagnostics(
+              request.payload,
+              signal,
+            ),
+          ),
+        );
         return;
       case "intelligence/scan/start":
         await this.sendSuccess(
@@ -473,7 +557,10 @@ export class WebviewMessageRouter {
               request.payload.mode,
               request.payload.title,
               signal,
-              { workType: request.payload.workType, repositoryScope: request.payload.repositoryScope },
+              {
+                workType: request.payload.workType,
+                repositoryScope: request.payload.repositoryScope,
+              },
             ),
         );
         await this.postMessage(
@@ -572,62 +659,609 @@ export class WebviewMessageRouter {
         return;
       }
       case "workbench/getCreateContext": {
-        const snapshot = this.services.workflow.getCurrentSnapshot(); const workspace = this.workspaceSummary(); const capabilities = this.services.copilot.getCapabilities();
-        await this.sendSuccess(request.requestId, { schemaVersion: 1, repository: { available: Boolean(snapshot), trusted: this.services.workspaceTrusted?.() !== false, ...(snapshot ? { id: snapshot.repository.id, name: workspace.name, branch: snapshot.repository.branch, head: snapshot.repository.headCommit } : {}) }, intelligence: { status: snapshot ? workspace.indexStatus === "partial" ? "partial" : "ready" : ["scanning", "reconciling", "indexing"].includes(workspace.indexStatus) ? "building" : "unavailable", generation: snapshot?.manifest.generation ?? 0, message: snapshot ? `Generation ${snapshot.manifest.generation} is available.` : "No complete Intelligence generation is available." }, activeEditor: this.services.currentEditor?.(), copilot: { available: capabilities?.extensionDetected ?? false, directInvocation: capabilities?.directInvocationAvailable ?? false, summary: capabilities?.extensionDetected ? capabilities.directInvocationAvailable ? "GitHub Copilot direct invocation is available." : "GitHub Copilot is available through an assisted path." : "GitHub Copilot is unavailable; workflow planning remains available." }, workflowDefinitions: workbenchDefinitions() }); return;
+        const snapshot = this.services.workflow.getCurrentSnapshot();
+        const workspace = this.workspaceSummary();
+        const capabilities = this.services.copilot.getCapabilities();
+        await this.sendSuccess(request.requestId, {
+          schemaVersion: 1,
+          repository: {
+            available: Boolean(snapshot),
+            trusted: this.services.workspaceTrusted?.() !== false,
+            ...(snapshot
+              ? {
+                  id: snapshot.repository.id,
+                  name: workspace.name,
+                  branch: snapshot.repository.branch,
+                  head: snapshot.repository.headCommit,
+                }
+              : {}),
+          },
+          intelligence: {
+            status: snapshot
+              ? workspace.indexStatus === "partial"
+                ? "partial"
+                : "ready"
+              : ["scanning", "reconciling", "indexing"].includes(
+                    workspace.indexStatus,
+                  )
+                ? "building"
+                : "unavailable",
+            generation: snapshot?.manifest.generation ?? 0,
+            message: snapshot
+              ? `Generation ${snapshot.manifest.generation} is available.`
+              : "No complete Intelligence generation is available.",
+          },
+          activeEditor: this.services.currentEditor?.(),
+          copilot: {
+            available: capabilities?.extensionDetected ?? false,
+            directInvocation: capabilities?.directInvocationAvailable ?? false,
+            summary: capabilities?.extensionDetected
+              ? capabilities.directInvocationAvailable
+                ? "GitHub Copilot direct invocation is available."
+                : "GitHub Copilot is available through an assisted path."
+              : "GitHub Copilot is unavailable; workflow planning remains available.",
+          },
+          workflowDefinitions: workbenchDefinitions(),
+        });
+        return;
       }
       case "workbench/createWorkflow": {
         const activeEditor = this.services.currentEditor?.();
-        const scope = request.payload.repositoryScope.kind === "current-file" ? { kind: "current-file" as const, paths: activeEditor ? [activeEditor] : [] } : request.payload.repositoryScope;
-        if (scope.kind === "current-file" && !scope.paths.length) throw new Error("No active repository file is available for current-file scope.");
-        const workflow = await this.cancellableQuery(request.requestId, (signal) => this.services.workflow.createWorkbenchDraft({ ...request.payload, repositoryScope: scope }, signal));
+        const scope =
+          request.payload.repositoryScope.kind === "current-file"
+            ? {
+                kind: "current-file" as const,
+                paths: activeEditor ? [activeEditor] : [],
+              }
+            : request.payload.repositoryScope;
+        if (scope.kind === "current-file" && !scope.paths.length)
+          throw new Error(
+            "No active repository file is available for current-file scope.",
+          );
+        const workflow = await this.cancellableQuery(
+          request.requestId,
+          (signal) =>
+            this.services.workflow.createWorkbenchDraft(
+              { ...request.payload, repositoryScope: scope },
+              signal,
+            ),
+        );
         await this.store.setActiveRoute(`/workbench/${workflow.id}/define`);
-        await this.postMessage(hostMessage("workbench/workflowCreated", workbenchEvent(workflow, "define", "Workflow draft created from the developer intent.")));
-        await this.sendSuccess(request.requestId, workflow); return;
+        await this.postMessage(
+          hostMessage(
+            "workbench/workflowCreated",
+            workbenchEvent(
+              workflow,
+              "define",
+              "Workflow draft created from the developer intent.",
+            ),
+          ),
+        );
+        await this.sendSuccess(request.requestId, workflow);
+        return;
       }
-      case "workbench/getWorkflow": { const workflow = this.services.workflow.get(request.payload.workflowId); await this.sendSuccess(request.requestId, workflow ? this.services.workflow.getWorkbenchState(workflow.id) : undefined); return; }
-      case "workbench/listWorkflows": await this.sendSuccess(request.requestId, this.services.workflow.list()); return;
+      case "workbench/getWorkflow": {
+        const workflow = this.services.workflow.get(request.payload.workflowId);
+        await this.sendSuccess(
+          request.requestId,
+          workflow
+            ? this.services.workflow.getWorkbenchState(workflow.id)
+            : undefined,
+        );
+        return;
+      }
+      case "workbench/listWorkflows":
+        await this.sendSuccess(
+          request.requestId,
+          this.services.workflow.list(),
+        );
+        return;
       case "workbench/openWorkflow":
       case "workbench/navigateStage": {
-        const state = this.services.workflow.getWorkbenchState(request.payload.workflowId); const target = state.stageStates.find((item) => item.stage === request.payload.stage)!;
-        if (["blocked", "unavailable"].includes(target.status)) throw new Error(`${stageTitle(target.stage)} is unavailable. ${target.blockers.map((item) => `${item.message} ${item.recoveryAction}`).join(" ")}`);
-        await this.store.setActiveRoute(`/workbench/${state.workflow.id}/${request.payload.stage}`); await this.postMessage(hostMessage("workbench/stageStateChanged", workbenchEvent(state.workflow, request.payload.stage, `Workbench opened ${stageTitle(request.payload.stage)}.`))); await this.sendSuccess(request.requestId, this.services.workflow.getWorkbenchState(state.workflow.id)); return;
+        const state = this.services.workflow.getWorkbenchState(
+          request.payload.workflowId,
+        );
+        const target = state.stageStates.find(
+          (item) => item.stage === request.payload.stage,
+        )!;
+        if (["blocked", "unavailable"].includes(target.status))
+          throw new Error(
+            `${stageTitle(target.stage)} is unavailable. ${target.blockers.map((item) => `${item.message} ${item.recoveryAction}`).join(" ")}`,
+          );
+        await this.store.setActiveRoute(
+          `/workbench/${state.workflow.id}/${request.payload.stage}`,
+        );
+        await this.postMessage(
+          hostMessage(
+            "workbench/stageStateChanged",
+            workbenchEvent(
+              state.workflow,
+              request.payload.stage,
+              `Workbench opened ${stageTitle(request.payload.stage)}.`,
+            ),
+          ),
+        );
+        await this.sendSuccess(
+          request.requestId,
+          this.services.workflow.getWorkbenchState(state.workflow.id),
+        );
+        return;
       }
-      case "workbench/getDefineState": await this.sendSuccess(request.requestId, this.services.workflow.getDefineState(request.payload.workflowId)); return;
-      case "workbench/updateIntent": { const workflow = await this.services.workflow.updateIntent(request.payload.workflowId, request.payload.intent, request.payload.reason); await this.sendWorkbenchWorkflow(request.requestId, workflow, "workbench/intentChanged", "Intent revision saved; derived state was marked stale where required."); return; }
-      case "workbench/updateScope": { const workflow = await this.services.workflow.updateScope(request.payload.workflowId, request.payload.repositoryScope, request.payload.reason); await this.sendWorkbenchWorkflow(request.requestId, workflow, "workbench/intentChanged", "Repository scope revision saved."); return; }
-      case "workbench/updateConstraints": { const workflow = await this.services.workflow.updateConstraints(request.payload.workflowId, request.payload.constraints, request.payload.reason); await this.sendWorkbenchWorkflow(request.requestId, workflow, "workbench/intentChanged", "Workflow constraints revision saved."); return; }
-      case "workbench/getClarifications": await this.sendSuccess(request.requestId, this.services.workflow.get(request.payload.workflowId)?.clarifications ?? []); return;
-      case "workbench/answerClarification": { const workflow = await this.services.workflow.answerClarification(request.payload.workflowId, request.payload.clarificationId, request.payload.answer, request.payload.rationale); await this.sendWorkbenchWorkflow(request.requestId, workflow, "workbench/clarificationChanged", "Clarification answered and recorded as a durable workflow decision."); return; }
-      case "workbench/deferClarification": { const workflow = await this.services.workflow.setClarificationStatus(request.payload.workflowId, request.payload.clarificationId, "deferred"); await this.sendWorkbenchWorkflow(request.requestId, workflow, "workbench/clarificationChanged", "Clarification explicitly deferred."); return; }
-      case "workbench/markClarificationNotApplicable": { const workflow = await this.services.workflow.setClarificationStatus(request.payload.workflowId, request.payload.clarificationId, "not-applicable"); await this.sendWorkbenchWorkflow(request.requestId, workflow, "workbench/clarificationChanged", "Clarification explicitly marked not applicable."); return; }
-      case "workbench/reopenClarification": { const workflow = await this.services.workflow.setClarificationStatus(request.payload.workflowId, request.payload.clarificationId, "open"); await this.sendWorkbenchWorkflow(request.requestId, workflow, "workbench/clarificationChanged", "Clarification reopened."); return; }
-      case "workbench/generateSpecification": { const workflow = await this.services.workflow.generateSpecification(request.payload.workflowId); await this.sendWorkbenchWorkflow(request.requestId, workflow, "workbench/specificationGenerated", "Deterministic specification draft generated."); return; }
-      case "workbench/updateSpecification": { const workflow = await this.services.workflow.revise(request.payload.workflowId, request.payload.patch, request.payload.reason); await this.sendWorkbenchWorkflow(request.requestId, workflow, "workbench/workflowChanged", "Specification draft revision saved."); return; }
-      case "workbench/generateAcceptanceCriteria": { const workflow = await this.services.workflow.generateAcceptanceCriteria(request.payload.workflowId); await this.sendWorkbenchWorkflow(request.requestId, workflow, "workbench/workflowChanged", "Structured acceptance criteria regenerated."); return; }
-      case "workbench/approveSpecification": { const state = this.services.workflow.getWorkbenchState(request.payload.workflowId); if (state.summary.repositoryFreshness !== "current" || state.summary.intelligenceFreshness !== "current") throw new Error("Specification approval requires the workflow repository and Intelligence generation to be current. Review stale-state diagnostics and reconcile first."); const workflow = await this.services.workflow.approve(request.payload.workflowId, request.payload.expectedRevision, request.payload.rationale); await this.sendWorkbenchWorkflow(request.requestId, workflow, "workbench/specificationApproved", "Immutable specification revision approved; Plan is ready."); return; }
-      case "workbench/getPlanState": await this.sendSuccess(request.requestId, this.services.workflow.getPlanState(request.payload.workflowId)); return;
-      case "workbench/generateTaskPlan": { const workflow = await this.services.workflow.generateTaskPlan(request.payload.workflowId); await this.sendWorkbenchWorkflow(request.requestId, workflow, "workbench/taskPlanGenerated", "Deterministic task-plan draft generated."); return; }
-      case "workbench/updateTask": { const workflow = await this.services.workflow.updateTask(request.payload.workflowId, request.payload.taskId, request.payload.expectedPlanRevision, request.payload.patch); await this.sendWorkbenchWorkflow(request.requestId, workflow, "workbench/taskPlanChanged", "Task-plan revision updated."); return; }
-      case "workbench/addTask": { const workflow = await this.services.workflow.addTask(request.payload.workflowId, request.payload.expectedPlanRevision, request.payload.task); await this.sendWorkbenchWorkflow(request.requestId, workflow, "workbench/taskPlanChanged", "Task added to a new plan revision."); return; }
-      case "workbench/removeTask": { const workflow = await this.services.workflow.removeTask(request.payload.workflowId, request.payload.taskId, request.payload.expectedPlanRevision); await this.sendWorkbenchWorkflow(request.requestId, workflow, "workbench/taskPlanChanged", "Task removed from a new plan revision."); return; }
-      case "workbench/reorderTask": { const workflow = await this.services.workflow.reorderTask(request.payload.workflowId, request.payload.taskId, request.payload.direction, request.payload.expectedPlanRevision); await this.sendWorkbenchWorkflow(request.requestId, workflow, "workbench/taskPlanChanged", `Task moved ${request.payload.direction} in a new plan revision.`); return; }
-      case "workbench/updateDependency": { const workflow = await this.services.workflow.updateDependency(request.payload.workflowId, request.payload.taskId, request.payload.dependencyId, request.payload.action, request.payload.expectedPlanRevision); await this.sendWorkbenchWorkflow(request.requestId, workflow, "workbench/taskPlanChanged", "Task dependency updated and plan validation rerun."); return; }
-      case "workbench/validateTaskPlan": await this.sendSuccess(request.requestId, this.services.workflow.validateTaskPlan(request.payload.workflowId)); return;
-      case "workbench/approveTaskPlan": { const workflow = await this.services.workflow.approveTaskPlan(request.payload.workflowId, request.payload.expectedPlanRevision); await this.sendWorkbenchWorkflow(request.requestId, workflow, "workbench/taskPlanApproved", "Reviewed task-plan revision approved; Build is ready. No delegation was started."); return; }
-      case "workbench/getStageStates": await this.sendSuccess(request.requestId, this.services.workflow.getStageStates(request.payload.workflowId)); return;
-      case "workbench/getSummary": await this.sendSuccess(request.requestId, this.services.workflow.getWorkbenchState(request.payload.workflowId).summary); return;
-      case "build/getTaskQueue": await this.sendSuccess(request.requestId, this.services.buildWorkspace.queue(request.payload.workflowId)); return;
-      case "build/getTaskState": await this.sendSuccess(request.requestId, await this.services.buildWorkspace.state(request.payload.workflowId, request.payload.taskId)); return;
-      case "build/selectTask": { const workflow = this.services.workflow.get(request.payload.workflowId); if (!workflow?.specification || workflow.specification.revision !== request.payload.specificationRevision || workflow.intelligenceGeneration !== request.payload.intelligenceGeneration) throw new Error("Task selection is stale; refresh the Build workspace before selecting it."); const state = await this.services.buildWorkspace.select(request.payload.workflowId, request.payload.taskId); await this.postMessage(hostMessage("build/taskSelected", buildEvent(state, "Task selected after canonical readiness refresh."))); await this.sendSuccess(request.requestId, state); return; }
-      case "build/startTask": { const state = await this.services.buildWorkspace.start(request.payload.workflowId, request.payload.taskId); await this.postMessage(hostMessage("build/taskStarted", buildEvent(state, "Task started without automatic delegation."))); await this.sendSuccess(request.requestId, state); return; }
-      case "build/pauseTask": { const state = await this.services.buildWorkspace.pause(request.payload.workflowId, request.payload.taskId); await this.postMessage(hostMessage("build/taskPaused", buildEvent(state, "Task paused; state and baseline were preserved."))); await this.sendSuccess(request.requestId, state); return; }
-      case "build/resumeTask": { const state = await this.services.buildWorkspace.resume(request.payload.workflowId, request.payload.taskId); await this.postMessage(hostMessage("build/taskStarted", buildEvent(state, "Task resumed after readiness revalidation."))); await this.sendSuccess(request.requestId, state); return; }
-      case "build/blockTask": { const state = await this.services.buildWorkspace.block(request.payload.workflowId, request.payload.taskId, `${request.payload.category}: ${request.payload.reason}. Next: ${request.payload.suggestedAction}`); await this.postMessage(hostMessage("build/taskBlocked", buildEvent(state, "Task explicitly blocked."))); await this.sendSuccess(request.requestId, state); return; }
-      case "build/cancelTask": { const state = await this.services.buildWorkspace.cancel(request.payload.workflowId, request.payload.taskId); await this.postMessage(hostMessage("build/taskChanged", buildEvent(state, "Task cancelled; no repository action was performed."))); await this.sendSuccess(request.requestId, state); return; }
-      case "build/getCopilotCapabilities": { const value = this.services.copilot.getCapabilities() ?? await this.services.copilot.refreshCapabilities(); await this.sendSuccess(request.requestId, value); return; }
-      case "build/getCustomizations": { const workflow = this.services.workflow.get(request.payload.workflowId); const task = workflow?.tasks.find((item) => item.id === request.payload.taskId); if (!task) throw new Error("Task not found."); await this.sendSuccess(request.requestId, await this.cancellableQuery(request.requestId, (signal) => this.services.customizations.discover(task, signal))); return; }
-      case "build/updateCustomizationSelection": { await this.services.customizations.select(request.payload.taskId, request.payload.customizationId, request.payload.selected); const workflow = this.services.workflow.get(request.payload.workflowId); const task = workflow?.tasks.find((item) => item.id === request.payload.taskId); if (!workflow || !task) throw new Error("Task not found."); if (this.services.context.get(task.id)) await this.services.context.invalidate(task.id, "Copilot customization selection changed; regenerate context before delegation."); const value = await this.services.customizations.discover(task); await this.postMessage(hostMessage("build/contextCompleted", buildEvent(await this.services.buildWorkspace.state(workflow.id, task.id), "Customization changed; existing context is stale."))); await this.sendSuccess(request.requestId, value); return; }
-      case "build/getAgents": await this.sendSuccess(request.requestId, this.services.agents.getProfiles()); return;
+      case "workbench/getDefineState":
+        await this.sendSuccess(
+          request.requestId,
+          this.services.workflow.getDefineState(request.payload.workflowId),
+        );
+        return;
+      case "workbench/updateIntent": {
+        const workflow = await this.services.workflow.updateIntent(
+          request.payload.workflowId,
+          request.payload.intent,
+          request.payload.reason,
+        );
+        await this.sendWorkbenchWorkflow(
+          request.requestId,
+          workflow,
+          "workbench/intentChanged",
+          "Intent revision saved; derived state was marked stale where required.",
+        );
+        return;
+      }
+      case "workbench/updateScope": {
+        const workflow = await this.services.workflow.updateScope(
+          request.payload.workflowId,
+          request.payload.repositoryScope,
+          request.payload.reason,
+        );
+        await this.sendWorkbenchWorkflow(
+          request.requestId,
+          workflow,
+          "workbench/intentChanged",
+          "Repository scope revision saved.",
+        );
+        return;
+      }
+      case "workbench/updateConstraints": {
+        const workflow = await this.services.workflow.updateConstraints(
+          request.payload.workflowId,
+          request.payload.constraints,
+          request.payload.reason,
+        );
+        await this.sendWorkbenchWorkflow(
+          request.requestId,
+          workflow,
+          "workbench/intentChanged",
+          "Workflow constraints revision saved.",
+        );
+        return;
+      }
+      case "workbench/getClarifications":
+        await this.sendSuccess(
+          request.requestId,
+          this.services.workflow.get(request.payload.workflowId)
+            ?.clarifications ?? [],
+        );
+        return;
+      case "workbench/answerClarification": {
+        const workflow = await this.services.workflow.answerClarification(
+          request.payload.workflowId,
+          request.payload.clarificationId,
+          request.payload.answer,
+          request.payload.rationale,
+        );
+        await this.sendWorkbenchWorkflow(
+          request.requestId,
+          workflow,
+          "workbench/clarificationChanged",
+          "Clarification answered and recorded as a durable workflow decision.",
+        );
+        return;
+      }
+      case "workbench/deferClarification": {
+        const workflow = await this.services.workflow.setClarificationStatus(
+          request.payload.workflowId,
+          request.payload.clarificationId,
+          "deferred",
+        );
+        await this.sendWorkbenchWorkflow(
+          request.requestId,
+          workflow,
+          "workbench/clarificationChanged",
+          "Clarification explicitly deferred.",
+        );
+        return;
+      }
+      case "workbench/markClarificationNotApplicable": {
+        const workflow = await this.services.workflow.setClarificationStatus(
+          request.payload.workflowId,
+          request.payload.clarificationId,
+          "not-applicable",
+        );
+        await this.sendWorkbenchWorkflow(
+          request.requestId,
+          workflow,
+          "workbench/clarificationChanged",
+          "Clarification explicitly marked not applicable.",
+        );
+        return;
+      }
+      case "workbench/reopenClarification": {
+        const workflow = await this.services.workflow.setClarificationStatus(
+          request.payload.workflowId,
+          request.payload.clarificationId,
+          "open",
+        );
+        await this.sendWorkbenchWorkflow(
+          request.requestId,
+          workflow,
+          "workbench/clarificationChanged",
+          "Clarification reopened.",
+        );
+        return;
+      }
+      case "workbench/generateSpecification": {
+        const workflow = await this.services.workflow.generateSpecification(
+          request.payload.workflowId,
+        );
+        await this.sendWorkbenchWorkflow(
+          request.requestId,
+          workflow,
+          "workbench/specificationGenerated",
+          "Deterministic specification draft generated.",
+        );
+        return;
+      }
+      case "workbench/updateSpecification": {
+        const workflow = await this.services.workflow.revise(
+          request.payload.workflowId,
+          request.payload.patch,
+          request.payload.reason,
+        );
+        await this.sendWorkbenchWorkflow(
+          request.requestId,
+          workflow,
+          "workbench/workflowChanged",
+          "Specification draft revision saved.",
+        );
+        return;
+      }
+      case "workbench/generateAcceptanceCriteria": {
+        const workflow =
+          await this.services.workflow.generateAcceptanceCriteria(
+            request.payload.workflowId,
+          );
+        await this.sendWorkbenchWorkflow(
+          request.requestId,
+          workflow,
+          "workbench/workflowChanged",
+          "Structured acceptance criteria regenerated.",
+        );
+        return;
+      }
+      case "workbench/approveSpecification": {
+        const state = this.services.workflow.getWorkbenchState(
+          request.payload.workflowId,
+        );
+        if (
+          state.summary.repositoryFreshness !== "current" ||
+          state.summary.intelligenceFreshness !== "current"
+        )
+          throw new Error(
+            "Specification approval requires the workflow repository and Intelligence generation to be current. Review stale-state diagnostics and reconcile first.",
+          );
+        const workflow = await this.services.workflow.approve(
+          request.payload.workflowId,
+          request.payload.expectedRevision,
+          request.payload.rationale,
+        );
+        await this.sendWorkbenchWorkflow(
+          request.requestId,
+          workflow,
+          "workbench/specificationApproved",
+          "Immutable specification revision approved; Plan is ready.",
+        );
+        return;
+      }
+      case "workbench/getPlanState":
+        await this.sendSuccess(
+          request.requestId,
+          this.services.workflow.getPlanState(request.payload.workflowId),
+        );
+        return;
+      case "workbench/generateTaskPlan": {
+        const workflow = await this.services.workflow.generateTaskPlan(
+          request.payload.workflowId,
+        );
+        await this.sendWorkbenchWorkflow(
+          request.requestId,
+          workflow,
+          "workbench/taskPlanGenerated",
+          "Deterministic task-plan draft generated.",
+        );
+        return;
+      }
+      case "workbench/updateTask": {
+        const workflow = await this.services.workflow.updateTask(
+          request.payload.workflowId,
+          request.payload.taskId,
+          request.payload.expectedPlanRevision,
+          request.payload.patch,
+        );
+        await this.sendWorkbenchWorkflow(
+          request.requestId,
+          workflow,
+          "workbench/taskPlanChanged",
+          "Task-plan revision updated.",
+        );
+        return;
+      }
+      case "workbench/addTask": {
+        const workflow = await this.services.workflow.addTask(
+          request.payload.workflowId,
+          request.payload.expectedPlanRevision,
+          request.payload.task,
+        );
+        await this.sendWorkbenchWorkflow(
+          request.requestId,
+          workflow,
+          "workbench/taskPlanChanged",
+          "Task added to a new plan revision.",
+        );
+        return;
+      }
+      case "workbench/removeTask": {
+        const workflow = await this.services.workflow.removeTask(
+          request.payload.workflowId,
+          request.payload.taskId,
+          request.payload.expectedPlanRevision,
+        );
+        await this.sendWorkbenchWorkflow(
+          request.requestId,
+          workflow,
+          "workbench/taskPlanChanged",
+          "Task removed from a new plan revision.",
+        );
+        return;
+      }
+      case "workbench/reorderTask": {
+        const workflow = await this.services.workflow.reorderTask(
+          request.payload.workflowId,
+          request.payload.taskId,
+          request.payload.direction,
+          request.payload.expectedPlanRevision,
+        );
+        await this.sendWorkbenchWorkflow(
+          request.requestId,
+          workflow,
+          "workbench/taskPlanChanged",
+          `Task moved ${request.payload.direction} in a new plan revision.`,
+        );
+        return;
+      }
+      case "workbench/updateDependency": {
+        const workflow = await this.services.workflow.updateDependency(
+          request.payload.workflowId,
+          request.payload.taskId,
+          request.payload.dependencyId,
+          request.payload.action,
+          request.payload.expectedPlanRevision,
+        );
+        await this.sendWorkbenchWorkflow(
+          request.requestId,
+          workflow,
+          "workbench/taskPlanChanged",
+          "Task dependency updated and plan validation rerun.",
+        );
+        return;
+      }
+      case "workbench/validateTaskPlan":
+        await this.sendSuccess(
+          request.requestId,
+          this.services.workflow.validateTaskPlan(request.payload.workflowId),
+        );
+        return;
+      case "workbench/approveTaskPlan": {
+        const workflow = await this.services.workflow.approveTaskPlan(
+          request.payload.workflowId,
+          request.payload.expectedPlanRevision,
+        );
+        await this.sendWorkbenchWorkflow(
+          request.requestId,
+          workflow,
+          "workbench/taskPlanApproved",
+          "Reviewed task-plan revision approved; Build is ready. No delegation was started.",
+        );
+        return;
+      }
+      case "workbench/getStageStates":
+        await this.sendSuccess(
+          request.requestId,
+          this.services.workflow.getStageStates(request.payload.workflowId),
+        );
+        return;
+      case "workbench/getSummary":
+        await this.sendSuccess(
+          request.requestId,
+          this.services.workflow.getWorkbenchState(request.payload.workflowId)
+            .summary,
+        );
+        return;
+      case "build/getTaskQueue":
+        await this.sendSuccess(
+          request.requestId,
+          this.services.buildWorkspace.queue(request.payload.workflowId),
+        );
+        return;
+      case "build/getTaskState":
+        await this.sendSuccess(
+          request.requestId,
+          await this.services.buildWorkspace.state(
+            request.payload.workflowId,
+            request.payload.taskId,
+          ),
+        );
+        return;
+      case "build/selectTask": {
+        const workflow = this.services.workflow.get(request.payload.workflowId);
+        if (
+          !workflow?.specification ||
+          workflow.specification.revision !==
+            request.payload.specificationRevision ||
+          workflow.intelligenceGeneration !==
+            request.payload.intelligenceGeneration
+        )
+          throw new Error(
+            "Task selection is stale; refresh the Build workspace before selecting it.",
+          );
+        const state = await this.services.buildWorkspace.select(
+          request.payload.workflowId,
+          request.payload.taskId,
+        );
+        await this.postMessage(
+          hostMessage(
+            "build/taskSelected",
+            buildEvent(
+              state,
+              "Task selected after canonical readiness refresh.",
+            ),
+          ),
+        );
+        await this.sendSuccess(request.requestId, state);
+        return;
+      }
+      case "build/startTask": {
+        const state = await this.services.buildWorkspace.start(
+          request.payload.workflowId,
+          request.payload.taskId,
+        );
+        await this.postMessage(
+          hostMessage(
+            "build/taskStarted",
+            buildEvent(state, "Task started without automatic delegation."),
+          ),
+        );
+        await this.sendSuccess(request.requestId, state);
+        return;
+      }
+      case "build/pauseTask": {
+        const state = await this.services.buildWorkspace.pause(
+          request.payload.workflowId,
+          request.payload.taskId,
+        );
+        await this.postMessage(
+          hostMessage(
+            "build/taskPaused",
+            buildEvent(
+              state,
+              "Task paused; state and baseline were preserved.",
+            ),
+          ),
+        );
+        await this.sendSuccess(request.requestId, state);
+        return;
+      }
+      case "build/resumeTask": {
+        const state = await this.services.buildWorkspace.resume(
+          request.payload.workflowId,
+          request.payload.taskId,
+        );
+        await this.postMessage(
+          hostMessage(
+            "build/taskStarted",
+            buildEvent(state, "Task resumed after readiness revalidation."),
+          ),
+        );
+        await this.sendSuccess(request.requestId, state);
+        return;
+      }
+      case "build/blockTask": {
+        const state = await this.services.buildWorkspace.block(
+          request.payload.workflowId,
+          request.payload.taskId,
+          `${request.payload.category}: ${request.payload.reason}. Next: ${request.payload.suggestedAction}`,
+        );
+        await this.postMessage(
+          hostMessage(
+            "build/taskBlocked",
+            buildEvent(state, "Task explicitly blocked."),
+          ),
+        );
+        await this.sendSuccess(request.requestId, state);
+        return;
+      }
+      case "build/cancelTask": {
+        const state = await this.services.buildWorkspace.cancel(
+          request.payload.workflowId,
+          request.payload.taskId,
+        );
+        await this.postMessage(
+          hostMessage(
+            "build/taskChanged",
+            buildEvent(
+              state,
+              "Task cancelled; no repository action was performed.",
+            ),
+          ),
+        );
+        await this.sendSuccess(request.requestId, state);
+        return;
+      }
+      case "build/getCopilotCapabilities": {
+        const value =
+          this.services.copilot.getCapabilities() ??
+          (await this.services.copilot.refreshCapabilities());
+        await this.sendSuccess(request.requestId, value);
+        return;
+      }
+      case "build/getCustomizations": {
+        const workflow = this.services.workflow.get(request.payload.workflowId);
+        const task = workflow?.tasks.find(
+          (item) => item.id === request.payload.taskId,
+        );
+        if (!task) throw new Error("Task not found.");
+        await this.sendSuccess(
+          request.requestId,
+          await this.cancellableQuery(request.requestId, (signal) =>
+            this.services.customizations.discover(task, signal),
+          ),
+        );
+        return;
+      }
+      case "build/updateCustomizationSelection": {
+        await this.services.customizations.select(
+          request.payload.taskId,
+          request.payload.customizationId,
+          request.payload.selected,
+        );
+        const workflow = this.services.workflow.get(request.payload.workflowId);
+        const task = workflow?.tasks.find(
+          (item) => item.id === request.payload.taskId,
+        );
+        if (!workflow || !task) throw new Error("Task not found.");
+        if (this.services.context.get(task.id))
+          await this.services.context.invalidate(
+            task.id,
+            "Copilot customization selection changed; regenerate context before delegation.",
+          );
+        const value = await this.services.customizations.discover(task);
+        await this.postMessage(
+          hostMessage(
+            "build/contextCompleted",
+            buildEvent(
+              await this.services.buildWorkspace.state(workflow.id, task.id),
+              "Customization changed; existing context is stale.",
+            ),
+          ),
+        );
+        await this.sendSuccess(request.requestId, value);
+        return;
+      }
+      case "build/getAgents":
+        await this.sendSuccess(
+          request.requestId,
+          this.services.agents.getProfiles(),
+        );
+        return;
       case "copilot/capabilities":
         await this.sendSuccess(
           request.requestId,
@@ -713,8 +1347,64 @@ export class WebviewMessageRouter {
         );
         return;
       }
+      case "copilot/getCapabilities":
+      case "copilot/getIntegrationStatus":
+        await this.sendSuccess(request.requestId, await this.services.integrationCapabilities.refresh());
+        return;
+      case "copilot/listCustomizations":
+      case "copilot/refreshCustomizations":
+      case "copilot/getApplicableCustomizations": { const { task } = resolveTask(this.services.workflow, request.payload.workflowId!, request.payload.taskId!); await this.sendSuccess(request.requestId, await this.services.customizations.discoverRecords(task)); return; }
+      case "copilot/getCustomization": { const { task } = resolveTask(this.services.workflow, request.payload.workflowId!, request.payload.taskId!); const items = await this.services.customizations.discoverRecords(task); await this.sendSuccess(request.requestId, items.find((item) => item.id === request.payload.customizationId)); return; }
+      case "copilot/setCustomizationEnabled": { const { task } = resolveTask(this.services.workflow, request.payload.workflowId!, request.payload.taskId!); await this.services.customizations.select(task.id, request.payload.customizationId, request.payload.enabled); await this.sendSuccess(request.requestId, await this.services.customizations.discoverRecords(task)); return; }
+      case "copilot/listAgents": await this.sendSuccess(request.requestId, this.services.agents.getProfiles()); return;
+      case "copilot/getAgent": await this.sendSuccess(request.requestId, this.services.agents.getProfile(request.payload.agentId)); return;
+      case "copilot/recommendAgent": { const { task } = resolveTask(this.services.workflow, request.payload.workflowId!, request.payload.taskId!); await this.sendSuccess(request.requestId, this.services.agents.recommend(task)); return; }
+      case "copilot/listKeystoneTools": await this.sendSuccess(request.requestId, this.services.toolRegistry.list()); return;
+      case "copilot/getToolStatus": await this.sendSuccess(request.requestId, this.services.toolRegistry.list().find((item) => item.name === request.payload.toolName)); return;
+      case "copilot/getToolAudit": await this.sendSuccess(request.requestId, this.services.toolAudit.list().slice(-request.payload.limit)); return;
+      case "copilot/testTool": await this.sendSuccess(request.requestId, await this.cancellableQuery(request.requestId, (signal) => this.services.toolExecution.execute(request.payload.toolName, request.payload.input, signal))); return;
+      case "copilot/prepareAssistedLaunch": { const { task } = resolveTask(this.services.workflow, request.payload.workflowId!, request.payload.taskId!); const customizations = await this.services.customizations.discoverRecords(task); await this.sendSuccess(request.requestId, await this.services.assistedLaunch.prepare(request.payload.workflowId!, request.payload.taskId!, customizations, { ...(request.payload.selectedAgentId ? { selectedAgentId: request.payload.selectedAgentId } : {}), ...(request.payload.intendedAgentLabel ? { intendedAgentLabel: request.payload.intendedAgentLabel } : {}) })); return; }
+      case "copilot/getPreparedPrompt": await this.sendSuccess(request.requestId, this.services.assistedLaunch.get(request.payload.launchId)); return;
+      case "copilot/openChat": await this.sendSuccess(request.requestId, await this.services.assistedLaunch.open(request.payload.launchId)); return;
+      case "copilot/copyPrompt": await this.sendSuccess(request.requestId, await this.services.assistedLaunch.copy(request.payload.launchId)); return;
+      case "copilot/confirmSubmission": await this.sendSuccess(request.requestId, await this.services.assistedLaunch.confirm(request.payload.launchId)); return;
+      case "copilot/cancelAssistedLaunch": await this.sendSuccess(request.requestId, await this.services.assistedLaunch.cancel(request.payload.launchId)); return;
+      case "copilot/getParticipantStatus": { const capabilities = await this.services.integrationCapabilities.refresh(); await this.sendSuccess(request.requestId, { available: capabilities.chatParticipantAvailable, enabled: this.services.copilotIntegrationStore.snapshot.settings.participantEnabled, ...(!capabilities.chatParticipantAvailable ? { limitation: capabilities.limitations.find((item) => item.includes("participant")) ?? "Chat participant unavailable." } : {}) }); return; }
+      case "copilot/openParticipant": await this.services.copilot.openCopilot(); await this.sendSuccess(request.requestId, undefined); return;
+      case "copilot/disableParticipant": await this.services.copilotIntegrationStore.update((state) => ({ ...state, settings: { ...state.settings, participantEnabled: false } })); await this.sendSuccess(request.requestId, { enabled: false as const }); return;
+      case "build/selectAgent": {
+        const agent = request.payload.agentId
+          ? this.services.agents.getProfile(request.payload.agentId)
+          : await this.services.agents.addUnverifiedAlias(
+              request.payload.intendedAgentLabel!,
+            );
+        if (!agent)
+          throw new Error(
+            "The selected agent is not in the current evidence-backed registry.",
+          );
+        await this.services.agents.selections.select(
+          request.payload.taskId,
+          agent,
+          request.payload.confirmed,
+        );
+        const workflow = await this.services.workflow.assignAgent(
+          request.payload.workflowId,
+          request.payload.taskId,
+          agent.id,
+        );
+        await this.sendWorkflow(
+          request.requestId,
+          workflow,
+          agent.availability === "unknown"
+            ? `Unverified intended agent ${agent.displayName} selected for assisted or clipboard use.`
+            : `Agent ${agent.displayName} selected.`,
+        );
+        return;
+      }
       case "context/build":
-      case "context/regenerate": {
+      case "context/regenerate":
+      case "build/createContext":
+      case "build/regenerateContext": {
         await this.postMessage(
           hostMessage("context/buildStarted", {
             taskId: request.payload.taskId,
@@ -743,12 +1433,14 @@ export class WebviewMessageRouter {
         return;
       }
       case "context/get":
+      case "build/getContext":
         await this.sendSuccess(
           request.requestId,
           this.services.context.get(request.payload.taskId),
         );
         return;
       case "context/update":
+      case "build/updateContextItem":
         await this.sendSuccess(
           request.requestId,
           await this.services.context.restore(
@@ -758,6 +1450,7 @@ export class WebviewMessageRouter {
         );
         return;
       case "context/removeItem":
+      case "build/excludeContextItem":
         await this.sendSuccess(
           request.requestId,
           await this.services.context.remove(
@@ -768,6 +1461,7 @@ export class WebviewMessageRouter {
         );
         return;
       case "context/pinItem":
+      case "build/pinContextItem":
         await this.sendSuccess(
           request.requestId,
           await this.services.context.pin(
@@ -853,7 +1547,8 @@ export class WebviewMessageRouter {
           ),
         );
         return;
-      case "delegation/prepare": {
+      case "delegation/prepare":
+      case "build/prepareDelegation": {
         const context = this.services.context.get(request.payload.taskId);
         if (!context)
           throw new Error(
@@ -877,12 +1572,14 @@ export class WebviewMessageRouter {
         return;
       }
       case "delegation/getPrompt":
+      case "build/getPromptPreview":
         await this.sendSuccess(
           request.requestId,
           this.services.delegation.getPrepared(request.payload.taskId),
         );
         return;
       case "delegation/approve":
+      case "build/approveDelegation":
         await this.sendSuccess(
           request.requestId,
           await this.services.delegation.approve(
@@ -892,7 +1589,8 @@ export class WebviewMessageRouter {
           ),
         );
         return;
-      case "delegation/start": {
+      case "delegation/start":
+      case "build/startDelegation": {
         const context = this.services.context.get(request.payload.taskId);
         if (!context) throw new Error("Reviewed context is required.");
         try {
@@ -942,7 +1640,8 @@ export class WebviewMessageRouter {
         await this.sendSuccess(request.requestId);
         return;
       }
-      case "delegation/confirmStarted": {
+      case "delegation/confirmStarted":
+      case "build/confirmAssistedState": {
         const session = await this.services.delegation.confirmStarted(
           request.payload.workflowId,
           request.payload.sessionId,
@@ -974,7 +1673,8 @@ export class WebviewMessageRouter {
         await this.sendSuccess(request.requestId, session);
         return;
       }
-      case "delegation/cancel": {
+      case "delegation/cancel":
+      case "build/cancelDelegation": {
         const session = await this.services.delegation.cancel(
           request.payload.workflowId,
           request.payload.sessionId,
@@ -1028,6 +1728,7 @@ export class WebviewMessageRouter {
         );
         return;
       case "execution/get":
+      case "build/getExecutionState":
         await this.sendSuccess(
           request.requestId,
           this.services.execution.get(request.payload.sessionId),
@@ -1079,7 +1780,9 @@ export class WebviewMessageRouter {
         await this.sendSuccess(request.requestId, session);
         return;
       }
-      case "execution/observeChanges": {
+      case "execution/observeChanges":
+      case "build/getRepositoryChanges":
+      case "build/refreshChanges": {
         const session = await this.services.execution.observeChanges(
           request.payload.sessionId,
         );
@@ -1096,6 +1799,7 @@ export class WebviewMessageRouter {
         return;
       }
       case "execution/attributeChange":
+      case "build/updateChangeAttribution":
         await this.sendSuccess(
           request.requestId,
           await this.services.execution.attributeChange(
@@ -1145,6 +1849,7 @@ export class WebviewMessageRouter {
         return;
       }
       case "validation/getPlan":
+      case "build/getValidationPlan":
         await this.sendSuccess(
           request.requestId,
           this.services.validation.getPlan(request.payload.planId),
@@ -1168,7 +1873,8 @@ export class WebviewMessageRouter {
           ),
         );
         return;
-      case "validation/run": {
+      case "validation/run":
+      case "build/runValidation": {
         const plan = this.services.validation.getPlan(request.payload.planId);
         if (!plan) throw new Error("Validation plan not found.");
         const run = await this.services.validation.run(
@@ -1209,6 +1915,7 @@ export class WebviewMessageRouter {
         return;
       }
       case "validation/cancel":
+      case "build/cancelValidation":
         this.services.validation.cancel(request.payload.runId);
         await this.postMessage(
           hostMessage("validation/cancelled", {
@@ -1224,7 +1931,15 @@ export class WebviewMessageRouter {
           this.services.validation.getRun(request.payload.runId),
         );
         return;
+      case "build/getAcceptanceCriteriaState":
+        await this.sendSuccess(
+          request.requestId,
+          this.services.validation.getRun(request.payload.runId)
+            ?.acceptanceCriteriaResults ?? [],
+        );
+        return;
       case "validation/rerunStep":
+      case "build/rerunValidation":
         await this.sendSuccess(
           request.requestId,
           await this.services.validation.rerunStep(
@@ -1245,6 +1960,7 @@ export class WebviewMessageRouter {
         );
         return;
       case "validation/manualEvidence":
+      case "build/addManualEvidence":
         await this.sendSuccess(
           request.requestId,
           await this.services.validation.addManualEvidence(
@@ -1255,6 +1971,8 @@ export class WebviewMessageRouter {
         );
         return;
       case "retry/plan":
+      case "build/prepareRetry":
+      case "build/updateRetryAgent":
       case "retry/selectAgent":
       case "retry/manualRepair":
       case "retry/createRepairTask": {
@@ -1277,12 +1995,14 @@ export class WebviewMessageRouter {
       }
       case "retry/buildContext":
       case "retry/prepare":
+      case "build/approveRetry":
         await this.sendSuccess(
           request.requestId,
           this.services.execution.getRetry(request.payload.sessionId),
         );
         return;
-      case "retry/start": {
+      case "retry/start":
+      case "build/startRetry": {
         const session = await this.services.execution.startRetry(
           request.payload.sessionId,
         );
@@ -1300,7 +2020,9 @@ export class WebviewMessageRouter {
         await this.sendSuccess(request.requestId, session);
         return;
       }
-      case "completion/evaluate": {
+      case "completion/evaluate":
+      case "build/getCompletionReadiness":
+      case "build/requestCompletionReview": {
         const decision = this.services.completion.evaluate(
           request.payload.sessionId,
         );
@@ -1351,6 +2073,326 @@ export class WebviewMessageRouter {
         await this.sendSuccess(request.requestId, result);
         return;
       }
+      case "review/getState":
+        await this.sendSuccess(request.requestId, this.services.review.getState(request.payload.workflowId));
+        return;
+      case "review/getSummary":
+        await this.sendSuccess(request.requestId, this.services.review.getState(request.payload.workflowId).summary);
+        return;
+      case "review/getTraceability":
+        await this.sendSuccess(request.requestId, this.services.review.getState(request.payload.workflowId).traceability);
+        return;
+      case "review/getChanges":
+        await this.sendSuccess(request.requestId, this.services.review.getState(request.payload.workflowId).changes);
+        return;
+      case "review/getQa":
+        await this.sendSuccess(request.requestId, this.services.review.getState(request.payload.workflowId).findings.filter((item) => item.source === "qa"));
+        return;
+      case "review/getSecurity":
+        await this.sendSuccess(request.requestId, this.services.review.getState(request.payload.workflowId).findings.filter((item) => item.source === "security"));
+        return;
+      case "review/getPerformance":
+        await this.sendSuccess(request.requestId, this.services.review.getState(request.payload.workflowId).findings.filter((item) => item.source === "performance"));
+        return;
+      case "review/getDocumentation":
+        await this.sendSuccess(request.requestId, this.services.review.getState(request.payload.workflowId).findings.filter((item) => item.source === "documentation"));
+        return;
+      case "review/getDiff": {
+        const controller = new AbortController();
+        this.queryControllers.set(request.requestId, controller);
+        try {
+          await this.sendSuccess(request.requestId, await this.services.delivery.adapter.diff(this.services.delivery.root, request.payload.path, "working-head", request.payload.maxBytes, controller.signal));
+        } finally { this.queryControllers.delete(request.requestId); }
+        return;
+      }
+      case "review/attributeChange": {
+        const session = this.services.execution.sessions.list().filter((item) => item.workflowId === request.payload.workflowId && item.observedChanges.some((change) => change.relativePath === request.payload.path)).at(-1);
+        if (!session) throw new Error("No retained task-attributed execution change matches this path.");
+        const value = await this.services.execution.attributeChange(session.id, request.payload.path, request.payload.classification, request.payload.reason);
+        await this.publishReviewEvent("review/stateChanged", request.payload.workflowId, `Change ${request.payload.path} marked ${request.payload.classification} by the reviewer.`);
+        await this.sendSuccess(request.requestId, value);
+        return;
+      }
+      case "review/addNote": {
+        const note = await this.services.review.addNote(request.payload);
+        await this.publishReviewEvent("review/noteChanged", request.payload.workflowId, "Review note added.");
+        await this.sendSuccess(request.requestId, note);
+        return;
+      }
+      case "review/updateNote": {
+        const note = await this.services.review.updateNote(request.payload.workflowId, request.payload.noteId, request.payload.text, request.payload.blocking);
+        await this.publishReviewEvent("review/noteChanged", request.payload.workflowId, "Review note updated.");
+        await this.sendSuccess(request.requestId, note);
+        return;
+      }
+      case "review/resolveNote": {
+        const note = await this.services.review.resolveNote(request.payload.workflowId, request.payload.noteId, request.payload.resolution);
+        await this.publishReviewEvent("review/noteChanged", request.payload.workflowId, "Review note resolved.");
+        await this.sendSuccess(request.requestId, note);
+        return;
+      }
+      case "review/dispositionFinding": {
+        const value = await this.services.review.disposition(request.payload.workflowId, request.payload.findingId, request.payload.disposition, request.payload.reason, request.payload.scope);
+        await this.publishReviewEvent("review/stateChanged", request.payload.workflowId, "Finding disposition recorded with explicit user approval.");
+        await this.sendSuccess(request.requestId, value);
+        return;
+      }
+      case "review/requestChanges":
+      case "review/returnToBuild":
+      case "review/returnToDefine": {
+        const value = await this.services.review.requestChanges(request.payload);
+        await this.publishReviewEvent("review/changesRequested", request.payload.workflowId, request.type === "review/returnToDefine" ? "Review returned to Define with retained history." : "Review returned to Build with retained history.");
+        await this.sendSuccess(request.requestId, value);
+        return;
+      }
+      case "review/createFollowUpTask": {
+        const value = await this.services.review.createFollowUp(request.payload);
+        await this.publishReviewEvent("review/changesRequested", request.payload.workflowId, "Follow-up task created from Review.");
+        await this.sendSuccess(request.requestId, value);
+        return;
+      }
+      case "review/getReadiness": {
+        const value = this.services.review.getState(request.payload.workflowId);
+        await this.sendSuccess(request.requestId, { ready: value.readinessBlockers.length === 0, blockers: value.readinessBlockers, warnings: value.warnings });
+        return;
+      }
+      case "review/getPrChecklist":
+        await this.sendSuccess(request.requestId, this.services.review.getState(request.payload.workflowId).checklist);
+        return;
+      case "review/getPrDraft":
+        await this.sendSuccess(request.requestId, this.services.review.getState(request.payload.workflowId).prDraft);
+        return;
+      case "review/generatePrDraft":
+      case "complete/preparePr": {
+        const workflowId = request.payload.workflowId;
+        const state = await this.services.delivery.repositories.getState(this.services.delivery.root);
+        const detected = await this.services.delivery.pullRequests.detect(this.services.delivery.root, state);
+        const capability = detected.capability.detected && detected.capability.draftCreationAvailable ? detected.capability : undefined;
+        if (!capability) throw new Error("No capability-compatible PR draft provider is available.");
+        const changeSet = this.services.delivery.persistence.snapshot.changeSets.filter((item) => item.workflowId === workflowId).at(-1) ?? await this.services.delivery.createChangeSet(workflowId);
+        const plan = this.services.delivery.persistence.snapshot.commitPlans.filter((item) => item.changeSetId === changeSet.id).at(-1) ?? await this.services.delivery.createCommitPlan(changeSet.id);
+        const draft = await this.services.delivery.drafts.create(changeSet, plan, capability, state.defaultBranch ?? "main");
+        await this.publishReviewEvent("review/prDraftChanged", workflowId, "Deterministic PR review package generated; no pull request was created.");
+        await this.sendSuccess(request.requestId, draft);
+        return;
+      }
+      case "review/updatePrDraft": {
+        const value = await this.services.delivery.updateDraft(request.payload.draft);
+        await this.publishReviewEvent("review/prDraftChanged", value.workflowId, "User-edited PR draft saved.");
+        await this.sendSuccess(request.requestId, value);
+        return;
+      }
+      case "review/approve":
+      case "review/approveWithWarnings":
+      case "review/reject": {
+        const value = request.type === "review/reject" ? await this.services.review.reject(request.payload.workflowId, request.payload.reason) : await this.services.review.approve(request.payload.workflowId, request.payload.reason, request.type === "review/approveWithWarnings");
+        await this.publishReviewEvent(request.type === "review/reject" ? "review/changesRequested" : "review/approved", request.payload.workflowId, `Review decision recorded: ${value.status}.`);
+        await this.sendSuccess(request.requestId, value);
+        return;
+      }
+      case "complete/getState":
+        await this.sendSuccess(request.requestId, await this.services.review.getCompletionState(request.payload.workflowId));
+        return;
+      case "complete/getOptions":
+        await this.sendSuccess(request.requestId, (await this.services.review.getCompletionState(request.payload.workflowId)).options);
+        return;
+      case "complete/getReport":
+        await this.sendSuccess(request.requestId, this.services.review.persisted.completions.find((item) => item.workflowId === request.payload.workflowId));
+        return;
+      case "complete/completeLocally":
+      case "complete/closePartial":
+      case "complete/cancelWithChanges": {
+        const mode = request.type === "complete/completeLocally" ? "local" : request.type === "complete/closePartial" ? "closed-partial" : "cancelled-with-changes";
+        const value = await this.services.review.complete(request.payload.workflowId, mode, request.payload.reason);
+        await this.publishReviewEvent(request.type === "complete/closePartial" ? "complete/workflowClosedPartial" : "complete/workflowCompleted", request.payload.workflowId, `Workflow recorded as ${value.status}; repository files were not mutated.`);
+        await this.sendSuccess(request.requestId, value);
+        return;
+      }
+      case "complete/archive": {
+        const value = await this.services.review.archive(request.payload.workflowId);
+        await this.publishReviewEvent("complete/workflowCompleted", request.payload.workflowId, "Completed workflow archived.");
+        await this.sendSuccess(request.requestId, value);
+        return;
+      }
+      case "complete/getChangeSet": {
+        const current = this.services.delivery.persistence.snapshot.changeSets.filter((item) => item.workflowId === request.payload.workflowId).at(-1);
+        const value = current ?? await this.services.delivery.createChangeSet(request.payload.workflowId);
+        await this.publishReviewEvent("complete/changeSetChanged", request.payload.workflowId, current ? "Current completion change set refreshed in the UI." : "Completion change set created from current repository evidence.");
+        await this.sendSuccess(request.requestId, value);
+        return;
+      }
+      case "complete/updateChangeSet": {
+        const value = await this.services.delivery.decideFile(request.payload.changeSetId, request.payload.fileId, request.payload.included, request.payload.explanation);
+        await this.publishReviewEvent("complete/changeSetChanged", value.workflowId, "Completion change-set selection updated; prior dependent approvals are invalid.");
+        await this.sendSuccess(request.requestId, value);
+        return;
+      }
+      case "complete/generateCommitPlan": {
+        const value = await this.services.delivery.createCommitPlan(request.payload.changeSetId);
+        const changeSet = this.requireChangeSet(value.changeSetId);
+        await this.publishReviewEvent("complete/commitPlanChanged", changeSet.workflowId, "Commit plan generated for review.");
+        await this.sendSuccess(request.requestId, value);
+        return;
+      }
+      case "complete/updateCommitPlan": {
+        const value = await this.services.delivery.commits.save({ ...request.payload.commitPlan, status: "draft", updatedAt: new Date().toISOString() });
+        const changeSet = this.requireChangeSet(value.changeSetId);
+        await this.publishReviewEvent("complete/commitPlanChanged", changeSet.workflowId, "Commit plan edits saved.");
+        await this.sendSuccess(request.requestId, value);
+        return;
+      }
+      case "complete/getPushReadiness":
+        await this.sendSuccess(request.requestId, await this.services.delivery.evaluate(request.payload.workflowId));
+        return;
+      case "complete/getPrCapabilities": {
+        const state = await this.services.delivery.repositories.getState(this.services.delivery.root);
+        await this.sendSuccess(request.requestId, (await this.services.delivery.pullRequests.detect(this.services.delivery.root, state)).capability);
+        return;
+      }
+      case "complete/approveStaging": {
+        const review = this.requireCurrentApprovedReview(request.payload.workflowId, request.payload.fingerprint);
+        const changeSet = this.services.delivery.persistence.snapshot.changeSets.filter((item) => item.workflowId === review.workflow.id).at(-1) ?? await this.services.delivery.createChangeSet(review.workflow.id);
+        const repository = await this.services.delivery.repositories.getState(this.services.delivery.root);
+        const paths = changeSet.files.filter((item) => item.included && !item.sensitive).map((item) => item.path);
+        if (!paths.length) throw new Error("No reviewed, non-sensitive paths are selected for staging.");
+        await this.sendSuccess(request.requestId, await this.services.delivery.approvals.approve({ action: "stage", repositoryId: changeSet.repositoryId, branch: changeSet.branch, changeSetId: changeSet.id, changeSetFingerprint: changeSet.fingerprint, paths, message: repository.fingerprint, risks: changeSet.findings, safelyRetryable: true }));
+        return;
+      }
+      case "complete/stageChanges": {
+        const approval = this.services.delivery.approvals.require(request.payload.approvalId, "stage");
+        const changeSet = this.requireChangeSet(approval.changeSetId!);
+        const result = await this.services.delivery.mutations.stage(this.services.delivery.root, approval.id, changeSet);
+        await this.publishReviewEvent("complete/changeSetChanged", changeSet.workflowId, `Staging ${result.status}; only separately approved paths were attempted.`);
+        await this.sendSuccess(request.requestId, result);
+        return;
+      }
+      case "complete/approveCommit": {
+        const review = this.requireCurrentApprovedReview(request.payload.workflowId, request.payload.fingerprint);
+        const changeSet = this.services.delivery.persistence.snapshot.changeSets.filter((item) => item.workflowId === review.workflow.id).at(-1);
+        if (!changeSet) throw new Error("Create and review a completion change set first.");
+        const plan = this.services.delivery.persistence.snapshot.commitPlans.filter((item) => item.changeSetId === changeSet.id).at(-1);
+        if (!plan) throw new Error("Generate a commit plan first.");
+        const proposed = plan.commits.find((item) => !item.createdCommitHash);
+        if (!proposed) throw new Error("Every proposed commit already has a recorded commit reference.");
+        const message = `${proposed.breaking ? "BREAKING CHANGE: " : ""}${proposed.title}\n\n${proposed.description}`.slice(0, 20_000);
+        await this.sendSuccess(request.requestId, await this.services.delivery.approvals.approve({ action: "commit", repositoryId: changeSet.repositoryId, branch: changeSet.branch, changeSetId: changeSet.id, changeSetFingerprint: changeSet.fingerprint, commitPlanId: plan.id, proposedCommitId: proposed.id, paths: [], message, risks: proposed.risks, safelyRetryable: false }));
+        return;
+      }
+      case "complete/createCommit": {
+        const approval = this.services.delivery.approvals.require(request.payload.approvalId, "commit");
+        const changeSet = this.requireChangeSet(approval.changeSetId!);
+        const plan = this.requireCommitPlan(approval.commitPlanId!);
+        const result = await this.services.delivery.mutations.commit(this.services.delivery.root, approval.id, changeSet, plan);
+        if (result.status === "succeeded") await this.services.delivery.commits.save({ ...plan, commits: plan.commits.map((item) => item.id === approval.proposedCommitId ? { ...item, createdCommitHash: result.commitHash, actualFiles: result.affectedPaths } : item), status: plan.commits.every((item) => item.id === approval.proposedCommitId || item.createdCommitHash) ? "completed" : "partially-created", updatedAt: new Date().toISOString() });
+        await this.publishReviewEvent("complete/commitCreated", changeSet.workflowId, `Commit result: ${result.status}.`);
+        await this.sendSuccess(request.requestId, result);
+        return;
+      }
+      case "complete/approvePush": {
+        const review = this.requireCurrentApprovedReview(request.payload.workflowId, request.payload.fingerprint);
+        const repository = await this.services.delivery.repositories.getState(this.services.delivery.root);
+        if (repository.behind > 0 || repository.detachedHead || repository.conflictedFiles.length) throw new Error("Push approval is blocked by behind-upstream, detached HEAD, or conflicts.");
+        const remote = repository.defaultRemote ?? repository.remotes.find((item) => item.isDefault)?.name;
+        if (!remote || !repository.branch) throw new Error("A current branch and configured remote are required for push approval.");
+        await this.sendSuccess(request.requestId, await this.services.delivery.approvals.approve({ action: "push", repositoryId: repository.repositoryId, branch: repository.branch, paths: [], message: review.repositoryFingerprint, remote, remoteBranch: repository.branch, risks: ["Publishes local commits to the selected remote branch; force-push is not used."], safelyRetryable: true }));
+        return;
+      }
+      case "complete/push": {
+        const approval = this.services.delivery.approvals.require(request.payload.approvalId, "push");
+        const result = await this.services.delivery.mutations.push(this.services.delivery.root, approval.id);
+        const workflowId = this.services.review.persisted.decisions.find((item) => item.repositoryFingerprint === approval.message)?.workflowId;
+        if (workflowId) await this.publishReviewEvent("complete/pushCompleted", workflowId, `Push result: ${result.status}.`);
+        await this.sendSuccess(request.requestId, result);
+        return;
+      }
+      case "complete/approvePrCreation": {
+        const review = this.requireCurrentApprovedReview(request.payload.workflowId, request.payload.fingerprint);
+        const draft = this.services.delivery.persistence.snapshot.pullRequestDrafts.filter((item) => item.workflowId === review.workflow.id).at(-1);
+        if (!draft) throw new Error("Prepare and review a PR draft before approving creation.");
+        const repository = await this.services.delivery.repositories.getState(this.services.delivery.root);
+        await this.sendSuccess(request.requestId, await this.services.delivery.approvals.approve({ action: "create-pr", repositoryId: repository.repositoryId, branch: repository.branch, paths: [], message: draft.fingerprint, risks: draft.riskSummary, safelyRetryable: false }));
+        return;
+      }
+      case "complete/createPr": {
+        const approval = this.services.delivery.approvals.require(request.payload.approvalId, "create-pr");
+        const draft = this.services.delivery.persistence.snapshot.pullRequestDrafts.find((item) => item.fingerprint === approval.message);
+        if (!draft) throw new Error("The approved PR draft is unavailable or changed.");
+        const repository = await this.services.delivery.repositories.getState(this.services.delivery.root);
+        const detected = await this.services.delivery.providers.detect(this.services.delivery.root, repository);
+        if (!detected.provider) throw new Error("A supported pull-request provider is unavailable.");
+        const result = detected.capability.directCreationAvailable ? await this.services.delivery.creation.create(approval.id, draft, detected.provider, detected.capability) : await this.services.delivery.creation.assisted(approval.id, draft, detected.provider);
+        await this.publishReviewEvent("complete/prCreated", draft.workflowId, result.status === "created" ? "Pull request creation was confirmed by the provider." : "PR creation is awaiting explicit external confirmation.");
+        await this.sendSuccess(request.requestId, result);
+        return;
+      }
+      case "complete/confirmAssistedPr": {
+        const draft = this.services.delivery.persistence.snapshot.pullRequestDrafts.filter((item) => item.workflowId === request.payload.workflowId).at(-1);
+        if (!draft) throw new Error("No assisted PR draft is awaiting confirmation.");
+        const result = await this.services.delivery.creation.confirmExternal(draft, request.payload.url);
+        await this.publishReviewEvent("complete/prCreated", draft.workflowId, "User confirmed externally created pull request; URL retained as evidence.");
+        await this.sendSuccess(request.requestId, result);
+        return;
+      }
+      case "complete/preparePatch": {
+        const review = this.services.review.getState(request.payload.workflowId);
+        const changeSet = this.services.delivery.persistence.snapshot.changeSets.filter((item) => item.workflowId === request.payload.workflowId).at(-1) ?? await this.services.delivery.createChangeSet(request.payload.workflowId);
+        const selected = [...new Set(request.payload.includedPaths)];
+        const blockedPaths = selected.filter((path) => { const file = changeSet.files.find((item) => item.path === path); return !file || file.sensitive || file.binary || !file.included; });
+        let totalBytes = 0;
+        for (const path of selected.filter((item) => !blockedPaths.includes(item))) totalBytes += (await this.services.delivery.adapter.diff(this.services.delivery.root, path, "working-head", 100_000)).totalBytes;
+        if (review.repositoryFingerprint !== this.services.review.getState(request.payload.workflowId).repositoryFingerprint) throw new Error("Review became stale while preparing the patch preview.");
+        await this.sendSuccess(request.requestId, { paths: selected.slice(0, 5000), totalBytes, blockedPaths });
+        return;
+      }
+      case "complete/approvePatchExport": {
+        const review = this.requireCurrentApprovedReview(request.payload.workflowId, request.payload.fingerprint);
+        const changeSet = this.services.delivery.persistence.snapshot.changeSets.filter((item) => item.workflowId === review.workflow.id).at(-1);
+        if (!changeSet) throw new Error("Prepare and review a change set before patch export approval.");
+        const repository = await this.services.delivery.repositories.getState(this.services.delivery.root);
+        const paths = changeSet.files.filter((item) => item.included && !item.sensitive && !item.binary).map((item) => item.path);
+        if (!paths.length) throw new Error("No safe reviewed paths are available for patch export.");
+        await this.sendSuccess(request.requestId, await this.services.delivery.approvals.approve({ action: "export-patch", repositoryId: repository.repositoryId, branch: repository.branch, changeSetId: changeSet.id, changeSetFingerprint: changeSet.fingerprint, paths, message: repository.fingerprint, risks: ["Writes a local patch under .keystone/exports; it is never applied automatically."], safelyRetryable: true }));
+        return;
+      }
+      case "complete/exportPatch": {
+        const approval = this.services.delivery.approvals.require(request.payload.approvalId, "export-patch");
+        const review = this.services.review.getState(request.payload.workflowId);
+        const changeSet = this.requireChangeSet(approval.changeSetId!);
+        if (changeSet.workflowId !== request.payload.workflowId || changeSet.fingerprint !== approval.changeSetFingerprint) throw new Error("The reviewed change set changed after patch approval.");
+        const repository = await this.services.delivery.repositories.getState(this.services.delivery.root);
+        if (repository.fingerprint !== approval.message) throw new Error("Repository state changed after patch approval; prepare and approve again.");
+        const parts: string[] = [];
+        for (const path of approval.paths) { const value = await this.services.delivery.adapter.diff(this.services.delivery.root, path, "working-head", 100_000); if (value.binary || value.truncated) throw new Error(`Patch export is blocked for binary or truncated diff ${path}.`); parts.push(value.text); }
+        const text = parts.join("\n");
+        const hash = `sha256:${createHash("sha256").update(text).digest("hex")}`;
+        const directory = join(this.services.delivery.root, ".keystone", "exports");
+        await mkdir(directory, { recursive: true });
+        const name = `workflow-${review.workflow.id}-${Date.now()}.patch`;
+        await writeFile(join(directory, name), text, { encoding: "utf8", mode: 0o600 });
+        await this.services.delivery.approvals.consume(approval.id);
+        await this.publishReviewEvent("complete/patchExported", review.workflow.id, `Reviewed patch exported as .keystone/exports/${name}.`);
+        await this.sendSuccess(request.requestId, { path: `.keystone/exports/${name}`, hash });
+        return;
+      }
+      case "complete/prepareHandoff": {
+        const review = this.services.review.getState(request.payload.workflowId);
+        const incomplete = review.workflow.tasks.find((item) => item.status !== "completed");
+        if (!incomplete) throw new Error("Task Handoff requires explicit unfinished work.");
+        const assignment = this.services.team.store.snapshot.assignments.find((item) => item.workflowId === review.workflow.id && item.taskId === incomplete.id && ["accepted", "in-progress", "handoff-requested"].includes(item.status));
+        if (!assignment) throw new Error("Assign and accept the unfinished task before preparing a Handoff.");
+        const packageData = await this.services.team.packages.build({ assignmentId: assignment.id, senderParticipantId: assignment.assignedTo, completedWork: review.workflow.tasks.filter((item) => item.status === "completed").map((item) => item.title), remainingWork: review.workflow.tasks.filter((item) => item.status !== "completed").map((item) => item.title), blockers: review.readinessBlockers.map((description) => ({ id: crypto.randomUUID(), category: "review", description, blocking: true })), openQuestions: review.notes.filter((item) => !item.resolvedAt && item.type === "question").map((item) => ({ id: crypto.randomUUID(), question: item.text, blocking: item.blocking })), senderNotes: "Prepared from the current retained Review evidence." });
+        await this.publishReviewEvent("complete/handoffPrepared", review.workflow.id, "Task-centered Handoff package prepared for the unfinished task.");
+        await this.sendSuccess(request.requestId, packageData);
+        return;
+      }
+      case "complete/exportHandoff": {
+        const packageData = this.services.team.store.snapshot.packages.find((item) => item.id === request.payload.packageId);
+        if (!packageData) throw new Error("Handoff package not found.");
+        const destination = await this.services.team.artifacts.export(packageData, "json");
+        if (!destination) throw new Error("Handoff export was cancelled; the package remains available.");
+        await this.sendSuccess(request.requestId, { uri: destination, hash: packageData.fingerprint });
+        return;
+      }
       case "completion/getWorkflowReport":
         await this.sendSuccess(
           request.requestId,
@@ -1359,288 +2401,1273 @@ export class WebviewMessageRouter {
         return;
       case "git/capabilities":
       case "git/refresh":
-        await this.sendSuccess(request.requestId, await this.services.delivery.capabilities.refresh(this.services.delivery.root));
+        await this.sendSuccess(
+          request.requestId,
+          await this.services.delivery.capabilities.refresh(
+            this.services.delivery.root,
+          ),
+        );
         return;
       case "git/repositoryState":
-        await this.sendSuccess(request.requestId, await this.services.delivery.repositories.getState(this.services.delivery.root));
+        await this.sendSuccess(
+          request.requestId,
+          await this.services.delivery.repositories.getState(
+            this.services.delivery.root,
+          ),
+        );
         return;
       case "git/remotes":
-        await this.sendSuccess(request.requestId, (await this.services.delivery.repositories.getState(this.services.delivery.root)).remotes);
+        await this.sendSuccess(
+          request.requestId,
+          (
+            await this.services.delivery.repositories.getState(
+              this.services.delivery.root,
+            )
+          ).remotes,
+        );
         return;
       case "git/branches": {
-        const state = await this.services.delivery.repositories.getState(this.services.delivery.root);
-        await this.sendSuccess(request.requestId, { current: state.branch, upstream: state.upstreamBranch, defaultBranch: state.defaultBranch, detached: state.detachedHead });
+        const state = await this.services.delivery.repositories.getState(
+          this.services.delivery.root,
+        );
+        await this.sendSuccess(request.requestId, {
+          current: state.branch,
+          upstream: state.upstreamBranch,
+          defaultBranch: state.defaultBranch,
+          detached: state.detachedHead,
+        });
         return;
       }
-      case "git/diff": {
-        const controller = new AbortController(); this.queryControllers.set(request.requestId, controller);
-        try { await this.sendSuccess(request.requestId, await this.services.delivery.adapter.diff(this.services.delivery.root, request.payload.path, request.payload.mode, request.payload.maxBytes, controller.signal)); } finally { this.queryControllers.delete(request.requestId); }
+      case "git/diff":
+      case "build/getDiff": {
+        const controller = new AbortController();
+        this.queryControllers.set(request.requestId, controller);
+        try {
+          await this.sendSuccess(
+            request.requestId,
+            await this.services.delivery.adapter.diff(
+              this.services.delivery.root,
+              request.payload.path,
+              request.payload.mode,
+              request.payload.maxBytes,
+              controller.signal,
+            ),
+          );
+        } finally {
+          this.queryControllers.delete(request.requestId);
+        }
         return;
       }
       case "git/readiness":
-        await this.sendSuccess(request.requestId, await this.services.delivery.evaluate(request.payload.workflowId));
+        await this.sendSuccess(
+          request.requestId,
+          await this.services.delivery.evaluate(request.payload.workflowId),
+        );
         return;
       case "delivery/createChangeSet":
       case "delivery/rebuildChangeSet": {
-        const changeSet = await this.services.delivery.createChangeSet(request.payload.workflowId);
-        await this.postMessage(hostMessage("delivery/changeSetChanged", { changeSetId: changeSet.id, message: "Delivery change set rebuilt from current repository and workflow evidence." }));
+        const changeSet = await this.services.delivery.createChangeSet(
+          request.payload.workflowId,
+        );
+        await this.postMessage(
+          hostMessage("delivery/changeSetChanged", {
+            changeSetId: changeSet.id,
+            message:
+              "Delivery change set rebuilt from current repository and workflow evidence.",
+          }),
+        );
         await this.sendSuccess(request.requestId, changeSet);
         return;
       }
       case "delivery/getChangeSet":
-        await this.sendSuccess(request.requestId, this.services.delivery.getChangeSet(request.payload.changeSetId));
+        await this.sendSuccess(
+          request.requestId,
+          this.services.delivery.getChangeSet(request.payload.changeSetId),
+        );
         return;
       case "delivery/includeFile":
       case "delivery/excludeFile": {
-        const changeSet = await this.services.delivery.decideFile(request.payload.changeSetId, request.payload.fileId, request.type === "delivery/includeFile", request.payload.explanation);
-        await this.postMessage(hostMessage("delivery/changeSetChanged", { changeSetId: changeSet.id, message: "Reviewed file selection changed; dependent approvals must be renewed." }));
+        const changeSet = await this.services.delivery.decideFile(
+          request.payload.changeSetId,
+          request.payload.fileId,
+          request.type === "delivery/includeFile",
+          request.payload.explanation,
+        );
+        await this.postMessage(
+          hostMessage("delivery/changeSetChanged", {
+            changeSetId: changeSet.id,
+            message:
+              "Reviewed file selection changed; dependent approvals must be renewed.",
+          }),
+        );
         await this.sendSuccess(request.requestId, changeSet);
         return;
       }
       case "delivery/attributeFile": {
-        const changeSet = await this.services.delivery.attributeFile(request.payload.changeSetId, request.payload.fileId, request.payload.attribution, request.payload.explanation);
-        await this.postMessage(hostMessage("delivery/changeSetChanged", { changeSetId: changeSet.id, message: "File attribution was explicitly updated." }));
+        const changeSet = await this.services.delivery.attributeFile(
+          request.payload.changeSetId,
+          request.payload.fileId,
+          request.payload.attribution,
+          request.payload.explanation,
+        );
+        await this.postMessage(
+          hostMessage("delivery/changeSetChanged", {
+            changeSetId: changeSet.id,
+            message: "File attribution was explicitly updated.",
+          }),
+        );
         await this.sendSuccess(request.requestId, changeSet);
         return;
       }
       case "commitPlan/create": {
-        const plan = await this.services.delivery.createCommitPlan(request.payload.changeSetId, request.payload.convention);
-        await this.postMessage(hostMessage("commitPlan/changed", { commitPlanId: plan.id, message: "Deterministic commit plan created for review." }));
+        const plan = await this.services.delivery.createCommitPlan(
+          request.payload.changeSetId,
+          request.payload.convention,
+        );
+        await this.postMessage(
+          hostMessage("commitPlan/changed", {
+            commitPlanId: plan.id,
+            message: "Deterministic commit plan created for review.",
+          }),
+        );
         await this.sendSuccess(request.requestId, plan);
         return;
       }
       case "commitPlan/get":
-        await this.sendSuccess(request.requestId, this.services.delivery.getCommitPlan(request.payload.commitPlanId));
+        await this.sendSuccess(
+          request.requestId,
+          this.services.delivery.getCommitPlan(request.payload.commitPlanId),
+        );
         return;
       case "commitPlan/update": {
-        const plan = await this.services.delivery.commits.save({ ...request.payload.plan, status: "draft", updatedAt: new Date().toISOString() });
+        const plan = await this.services.delivery.commits.save({
+          ...request.payload.plan,
+          status: "draft",
+          updatedAt: new Date().toISOString(),
+        });
         await this.sendSuccess(request.requestId, plan);
         return;
       }
       case "commitPlan/merge": {
         const current = this.requireCommitPlan(request.payload.commitPlanId);
-        await this.sendSuccess(request.requestId, await this.services.delivery.commits.merge(current, request.payload.commitIds));
+        await this.sendSuccess(
+          request.requestId,
+          await this.services.delivery.commits.merge(
+            current,
+            request.payload.commitIds,
+          ),
+        );
         return;
       }
       case "commitPlan/split": {
         const current = this.requireCommitPlan(request.payload.commitPlanId);
-        await this.sendSuccess(request.requestId, await this.services.delivery.commits.split(current, request.payload.commitId, request.payload.fileIds, request.payload.title));
+        await this.sendSuccess(
+          request.requestId,
+          await this.services.delivery.commits.split(
+            current,
+            request.payload.commitId,
+            request.payload.fileIds,
+            request.payload.title,
+          ),
+        );
         return;
       }
       case "commitPlan/reorder": {
         const current = this.requireCommitPlan(request.payload.commitPlanId);
-        await this.sendSuccess(request.requestId, await this.services.delivery.commits.reorder(current, request.payload.commitIds));
+        await this.sendSuccess(
+          request.requestId,
+          await this.services.delivery.commits.reorder(
+            current,
+            request.payload.commitIds,
+          ),
+        );
         return;
       }
       case "commitPlan/moveFile": {
         const current = this.requireCommitPlan(request.payload.commitPlanId);
-        await this.sendSuccess(request.requestId, await this.services.delivery.commits.moveFile(current, request.payload.fileId, request.payload.targetCommitId));
+        await this.sendSuccess(
+          request.requestId,
+          await this.services.delivery.commits.moveFile(
+            current,
+            request.payload.fileId,
+            request.payload.targetCommitId,
+          ),
+        );
         return;
       }
       case "commitPlan/approve": {
         const current = this.requireCommitPlan(request.payload.commitPlanId);
-        const plan = await this.services.delivery.commits.save({ ...current, status: "approved", updatedAt: new Date().toISOString() });
+        const plan = await this.services.delivery.commits.save({
+          ...current,
+          status: "approved",
+          updatedAt: new Date().toISOString(),
+        });
         await this.sendSuccess(request.requestId, plan);
         return;
       }
       case "git/stage":
       case "git/unstage": {
-        const changeSet = this.requireChangeSet(request.payload.changeSetId); const repository = await this.services.delivery.repositories.getState(this.services.delivery.root);
-        const approval = await this.services.delivery.approvals.approve({ action: request.type === "git/stage" ? "stage" : "unstage", repositoryId: changeSet.repositoryId, branch: changeSet.branch, changeSetId: changeSet.id, changeSetFingerprint: changeSet.fingerprint, paths: request.payload.paths, message: repository.fingerprint, risks: changeSet.findings, safelyRetryable: true });
-        const result = request.type === "git/stage" ? await this.services.delivery.mutations.stage(this.services.delivery.root, approval.id, changeSet) : await this.services.delivery.mutations.unstage(this.services.delivery.root, approval.id, changeSet);
-        await this.postMessage(hostMessage(result.status === "succeeded" ? "git/actionCompleted" : "git/actionFailed", result.status === "succeeded" ? { action: approval.action, resultId: result.id, message: result.sanitizedOutput } : { action: approval.action, message: result.sanitizedOutput }));
+        const changeSet = this.requireChangeSet(request.payload.changeSetId);
+        const repository = await this.services.delivery.repositories.getState(
+          this.services.delivery.root,
+        );
+        const approval = await this.services.delivery.approvals.approve({
+          action: request.type === "git/stage" ? "stage" : "unstage",
+          repositoryId: changeSet.repositoryId,
+          branch: changeSet.branch,
+          changeSetId: changeSet.id,
+          changeSetFingerprint: changeSet.fingerprint,
+          paths: request.payload.paths,
+          message: repository.fingerprint,
+          risks: changeSet.findings,
+          safelyRetryable: true,
+        });
+        const result =
+          request.type === "git/stage"
+            ? await this.services.delivery.mutations.stage(
+                this.services.delivery.root,
+                approval.id,
+                changeSet,
+              )
+            : await this.services.delivery.mutations.unstage(
+                this.services.delivery.root,
+                approval.id,
+                changeSet,
+              );
+        await this.postMessage(
+          hostMessage(
+            result.status === "succeeded"
+              ? "git/actionCompleted"
+              : "git/actionFailed",
+            result.status === "succeeded"
+              ? {
+                  action: approval.action,
+                  resultId: result.id,
+                  message: result.sanitizedOutput,
+                }
+              : { action: approval.action, message: result.sanitizedOutput },
+          ),
+        );
         await this.sendSuccess(request.requestId, result);
         return;
       }
       case "git/createBranch": {
-        const state = await this.services.delivery.repositories.getState(this.services.delivery.root);
-        const approval = await this.services.delivery.approvals.approve({ action: "create-branch", repositoryId: state.repositoryId, branch: state.branch, paths: [], message: state.fingerprint, remoteBranch: request.payload.branch, risks: ["Creates and switches the current local branch."], safelyRetryable: false });
-        await this.sendSuccess(request.requestId, await this.services.delivery.mutations.createBranch(this.services.delivery.root, approval.id));
+        const state = await this.services.delivery.repositories.getState(
+          this.services.delivery.root,
+        );
+        const approval = await this.services.delivery.approvals.approve({
+          action: "create-branch",
+          repositoryId: state.repositoryId,
+          branch: state.branch,
+          paths: [],
+          message: state.fingerprint,
+          remoteBranch: request.payload.branch,
+          risks: ["Creates and switches the current local branch."],
+          safelyRetryable: false,
+        });
+        await this.sendSuccess(
+          request.requestId,
+          await this.services.delivery.mutations.createBranch(
+            this.services.delivery.root,
+            approval.id,
+          ),
+        );
         return;
       }
       case "git/commit": {
-        const changeSet = this.requireChangeSet(request.payload.changeSetId); const plan = this.requireCommitPlan(request.payload.commitPlanId);
-        if (plan.status !== "approved") throw new Error("The commit plan must be explicitly approved before commit creation.");
-        const approval = await this.services.delivery.approvals.approve({ action: "commit", repositoryId: changeSet.repositoryId, branch: changeSet.branch, changeSetId: changeSet.id, changeSetFingerprint: changeSet.fingerprint, commitPlanId: plan.id, proposedCommitId: request.payload.proposedCommitId, paths: [], message: request.payload.message, risks: changeSet.findings, safelyRetryable: false });
-        const result = await this.services.delivery.mutations.commit(this.services.delivery.root, approval.id, changeSet, plan);
-        if (result.status === "succeeded") { const commits = plan.commits.map((item) => item.id === request.payload.proposedCommitId ? { ...item, createdCommitHash: result.commitHash, actualFiles: result.affectedPaths } : item); const completed = commits.every((item) => item.createdCommitHash); await this.services.delivery.commits.save({ ...plan, commits, status: completed ? "completed" : "partially-created", updatedAt: new Date().toISOString() }); }
+        const changeSet = this.requireChangeSet(request.payload.changeSetId);
+        const plan = this.requireCommitPlan(request.payload.commitPlanId);
+        if (plan.status !== "approved")
+          throw new Error(
+            "The commit plan must be explicitly approved before commit creation.",
+          );
+        const approval = await this.services.delivery.approvals.approve({
+          action: "commit",
+          repositoryId: changeSet.repositoryId,
+          branch: changeSet.branch,
+          changeSetId: changeSet.id,
+          changeSetFingerprint: changeSet.fingerprint,
+          commitPlanId: plan.id,
+          proposedCommitId: request.payload.proposedCommitId,
+          paths: [],
+          message: request.payload.message,
+          risks: changeSet.findings,
+          safelyRetryable: false,
+        });
+        const result = await this.services.delivery.mutations.commit(
+          this.services.delivery.root,
+          approval.id,
+          changeSet,
+          plan,
+        );
+        if (result.status === "succeeded") {
+          const commits = plan.commits.map((item) =>
+            item.id === request.payload.proposedCommitId
+              ? {
+                  ...item,
+                  createdCommitHash: result.commitHash,
+                  actualFiles: result.affectedPaths,
+                }
+              : item,
+          );
+          const completed = commits.every((item) => item.createdCommitHash);
+          await this.services.delivery.commits.save({
+            ...plan,
+            commits,
+            status: completed ? "completed" : "partially-created",
+            updatedAt: new Date().toISOString(),
+          });
+        }
         await this.sendSuccess(request.requestId, result);
         return;
       }
       case "git/push": {
-        const state = await this.services.delivery.repositories.getState(this.services.delivery.root);
-        const approval = await this.services.delivery.approvals.approve({ action: "push", repositoryId: state.repositoryId, branch: state.branch, paths: [], remote: request.payload.remote, remoteBranch: request.payload.branch, risks: ["Publishes local commits to the selected remote branch."], safelyRetryable: true });
-        await this.sendSuccess(request.requestId, await this.services.delivery.mutations.push(this.services.delivery.root, approval.id));
+        const state = await this.services.delivery.repositories.getState(
+          this.services.delivery.root,
+        );
+        const approval = await this.services.delivery.approvals.approve({
+          action: "push",
+          repositoryId: state.repositoryId,
+          branch: state.branch,
+          paths: [],
+          remote: request.payload.remote,
+          remoteBranch: request.payload.branch,
+          risks: ["Publishes local commits to the selected remote branch."],
+          safelyRetryable: true,
+        });
+        await this.sendSuccess(
+          request.requestId,
+          await this.services.delivery.mutations.push(
+            this.services.delivery.root,
+            approval.id,
+          ),
+        );
         return;
       }
       case "pullRequest/capabilities": {
-        const state = await this.services.delivery.repositories.getState(this.services.delivery.root); const detected = await this.services.delivery.providers.detect(this.services.delivery.root, state);
+        const state = await this.services.delivery.repositories.getState(
+          this.services.delivery.root,
+        );
+        const detected = await this.services.delivery.providers.detect(
+          this.services.delivery.root,
+          state,
+        );
         await this.sendSuccess(request.requestId, detected.capability);
         return;
       }
       case "pullRequest/templates": {
-        const state = await this.services.delivery.repositories.getState(this.services.delivery.root); const detected = await this.services.delivery.providers.detect(this.services.delivery.root, state);
-        await this.sendSuccess(request.requestId, detected.provider ? await detected.provider.discoverTemplates(this.services.delivery.root) : []);
+        const state = await this.services.delivery.repositories.getState(
+          this.services.delivery.root,
+        );
+        const detected = await this.services.delivery.providers.detect(
+          this.services.delivery.root,
+          state,
+        );
+        await this.sendSuccess(
+          request.requestId,
+          detected.provider
+            ? await detected.provider.discoverTemplates(
+                this.services.delivery.root,
+              )
+            : [],
+        );
         return;
       }
       case "pullRequest/createDraft": {
-        const changeSet = this.requireChangeSet(request.payload.changeSetId); const plan = this.requireCommitPlan(request.payload.commitPlanId); const state = await this.services.delivery.repositories.getState(this.services.delivery.root); const detected = await this.services.delivery.providers.detect(this.services.delivery.root, state);
-        let draft = await this.services.delivery.drafts.create(changeSet, plan, detected.capability, request.payload.baseBranch);
-        const template = detected.provider ? (await detected.provider.discoverTemplates(this.services.delivery.root))[0] : undefined;
-        if (template?.body.trim()) draft = await this.services.delivery.updateDraft({ ...draft, body: `${template.body.trim()}\n\n${draft.body}`.slice(0, 20_000) });
+        const changeSet = this.requireChangeSet(request.payload.changeSetId);
+        const plan = this.requireCommitPlan(request.payload.commitPlanId);
+        const state = await this.services.delivery.repositories.getState(
+          this.services.delivery.root,
+        );
+        const detected = await this.services.delivery.providers.detect(
+          this.services.delivery.root,
+          state,
+        );
+        let draft = await this.services.delivery.drafts.create(
+          changeSet,
+          plan,
+          detected.capability,
+          request.payload.baseBranch,
+        );
+        const template = detected.provider
+          ? (
+              await detected.provider.discoverTemplates(
+                this.services.delivery.root,
+              )
+            )[0]
+          : undefined;
+        if (template?.body.trim())
+          draft = await this.services.delivery.updateDraft({
+            ...draft,
+            body: `${template.body.trim()}\n\n${draft.body}`.slice(0, 20_000),
+          });
         await this.sendSuccess(request.requestId, draft);
         return;
       }
       case "pullRequest/updateDraft":
-        await this.sendSuccess(request.requestId, await this.services.delivery.updateDraft(request.payload.draft));
+        await this.sendSuccess(
+          request.requestId,
+          await this.services.delivery.updateDraft(request.payload.draft),
+        );
         return;
       case "pullRequest/validate": {
-        const draft = this.requireDraft(request.payload.draftId); const state = await this.services.delivery.repositories.getState(this.services.delivery.root); const detected = await this.services.delivery.providers.detect(this.services.delivery.root, state);
-        await this.sendSuccess(request.requestId, this.services.delivery.draftValidation.validate(draft, detected.capability, state));
+        const draft = this.requireDraft(request.payload.draftId);
+        const state = await this.services.delivery.repositories.getState(
+          this.services.delivery.root,
+        );
+        const detected = await this.services.delivery.providers.detect(
+          this.services.delivery.root,
+          state,
+        );
+        await this.sendSuccess(
+          request.requestId,
+          this.services.delivery.draftValidation.validate(
+            draft,
+            detected.capability,
+            state,
+          ),
+        );
         return;
       }
       case "pullRequest/approve": {
-        const draft = this.requireDraft(request.payload.draftId); await this.services.delivery.approvals.approve({ action: "create-pr", repositoryId: draft.repository, branch: draft.headBranch, paths: [], message: draft.fingerprint, risks: draft.riskSummary, safelyRetryable: false }); const value = { ...draft, status: "approved" as const, updatedAt: new Date().toISOString() }; await this.services.delivery.persistence.update((state) => ({ ...state, pullRequestDrafts: state.pullRequestDrafts.map((item) => item.id === draft.id ? value : item) }));
+        const draft = this.requireDraft(request.payload.draftId);
+        await this.services.delivery.approvals.approve({
+          action: "create-pr",
+          repositoryId: draft.repository,
+          branch: draft.headBranch,
+          paths: [],
+          message: draft.fingerprint,
+          risks: draft.riskSummary,
+          safelyRetryable: false,
+        });
+        const value = {
+          ...draft,
+          status: "approved" as const,
+          updatedAt: new Date().toISOString(),
+        };
+        await this.services.delivery.persistence.update((state) => ({
+          ...state,
+          pullRequestDrafts: state.pullRequestDrafts.map((item) =>
+            item.id === draft.id ? value : item,
+          ),
+        }));
         await this.sendSuccess(request.requestId, value);
         return;
       }
       case "pullRequest/create": {
-        const draft = this.requireDraft(request.payload.draftId); const state = await this.services.delivery.repositories.getState(this.services.delivery.root); const detected = await this.services.delivery.providers.detect(this.services.delivery.root, state); const validation = this.services.delivery.draftValidation.validate(draft, detected.capability, state); if (!validation.ready || !detected.provider) throw new Error(validation.blockers.join(" ") || "Pull-request provider unavailable.");
-        const approval = this.services.delivery.persistence.snapshot.approvals.find((item) => item.action === "create-pr" && item.message === draft.fingerprint && !item.consumedAt); if (!approval) throw new Error("A current explicit pull-request approval is required.");
-        const result = detected.capability.directCreationAvailable ? await this.services.delivery.creation.create(approval.id, draft, detected.provider, detected.capability) : await this.services.delivery.creation.assisted(approval.id, draft, detected.provider);
+        const draft = this.requireDraft(request.payload.draftId);
+        const state = await this.services.delivery.repositories.getState(
+          this.services.delivery.root,
+        );
+        const detected = await this.services.delivery.providers.detect(
+          this.services.delivery.root,
+          state,
+        );
+        const validation = this.services.delivery.draftValidation.validate(
+          draft,
+          detected.capability,
+          state,
+        );
+        if (!validation.ready || !detected.provider)
+          throw new Error(
+            validation.blockers.join(" ") ||
+              "Pull-request provider unavailable.",
+          );
+        const approval =
+          this.services.delivery.persistence.snapshot.approvals.find(
+            (item) =>
+              item.action === "create-pr" &&
+              item.message === draft.fingerprint &&
+              !item.consumedAt,
+          );
+        if (!approval)
+          throw new Error(
+            "A current explicit pull-request approval is required.",
+          );
+        const result = detected.capability.directCreationAvailable
+          ? await this.services.delivery.creation.create(
+              approval.id,
+              draft,
+              detected.provider,
+              detected.capability,
+            )
+          : await this.services.delivery.creation.assisted(
+              approval.id,
+              draft,
+              detected.provider,
+            );
         await this.sendSuccess(request.requestId, result);
         return;
       }
       case "pullRequest/confirmExternalCreation": {
-        const draft = this.requireDraft(request.payload.draftId); await this.sendSuccess(request.requestId, await this.services.delivery.creation.confirmExternal(draft, request.payload.url)); return;
+        const draft = this.requireDraft(request.payload.draftId);
+        await this.sendSuccess(
+          request.requestId,
+          await this.services.delivery.creation.confirmExternal(
+            draft,
+            request.payload.url,
+          ),
+        );
+        return;
       }
       case "pullRequest/status":
       case "pullRequest/refresh":
-        await this.sendSuccess(request.requestId, this.services.delivery.persistence.snapshot.pullRequestResults.find((item) => item.draftId === request.payload.draftId));
+        await this.sendSuccess(
+          request.requestId,
+          this.services.delivery.persistence.snapshot.pullRequestResults.find(
+            (item) => item.draftId === request.payload.draftId,
+          ),
+        );
         return;
       case "team/participants":
-        await this.sendSuccess(request.requestId, this.services.team.participants.list()); return;
+        await this.sendSuccess(
+          request.requestId,
+          this.services.team.participants.list(),
+        );
+        return;
       case "team/addParticipant": {
-        const participant = await this.services.team.participants.create(request.payload); await this.postMessage(hostMessage("team/participantsChanged", { participantIds: this.services.team.participants.list().map((item) => item.id), message: "Participant added to local team metadata." })); await this.sendSuccess(request.requestId, participant); return;
+        const participant = await this.services.team.participants.create(
+          request.payload,
+        );
+        await this.postMessage(
+          hostMessage("team/participantsChanged", {
+            participantIds: this.services.team.participants
+              .list()
+              .map((item) => item.id),
+            message: "Participant added to local team metadata.",
+          }),
+        );
+        await this.sendSuccess(request.requestId, participant);
+        return;
       }
       case "team/updateParticipant": {
-        const participant = await this.services.team.participants.update(request.payload); await this.postMessage(hostMessage("team/participantsChanged", { participantIds: this.services.team.participants.list().map((item) => item.id), message: "Participant metadata updated." })); await this.sendSuccess(request.requestId, participant); return;
+        const participant = await this.services.team.participants.update(
+          request.payload,
+        );
+        await this.postMessage(
+          hostMessage("team/participantsChanged", {
+            participantIds: this.services.team.participants
+              .list()
+              .map((item) => item.id),
+            message: "Participant metadata updated.",
+          }),
+        );
+        await this.sendSuccess(request.requestId, participant);
+        return;
       }
       case "team/removeParticipant":
-        await this.services.team.participants.remove(request.payload.participantId); await this.postMessage(hostMessage("team/participantsChanged", { participantIds: this.services.team.participants.list().map((item) => item.id), message: "Participant removed from local team metadata." })); await this.sendSuccess(request.requestId); return;
+        await this.services.team.participants.remove(
+          request.payload.participantId,
+        );
+        await this.postMessage(
+          hostMessage("team/participantsChanged", {
+            participantIds: this.services.team.participants
+              .list()
+              .map((item) => item.id),
+            message: "Participant removed from local team metadata.",
+          }),
+        );
+        await this.sendSuccess(request.requestId);
+        return;
       case "team/capabilities":
-        await this.sendSuccess(request.requestId, { identityAssurance: "self-asserted-local", capabilities: ["participants", "explicit-assignment-acceptance", "reviewed-handoff", "json-zip-export", "repository-reconciliation", "read-only-import"], limitations: ["No authentication or authorization provider", "No cloud sync or real-time presence", "No automatic Git mutation or execution continuation"] }); return;
+        await this.sendSuccess(request.requestId, {
+          identityAssurance: "self-asserted-local",
+          capabilities: [
+            "participants",
+            "explicit-assignment-acceptance",
+            "reviewed-handoff",
+            "json-zip-export",
+            "repository-reconciliation",
+            "read-only-import",
+          ],
+          limitations: [
+            "No authentication or authorization provider",
+            "No cloud sync or real-time presence",
+            "No automatic Git mutation or execution continuation",
+          ],
+        });
+        return;
       case "assignment/create": {
-        const assignment = await this.services.team.assignments.create(request.payload); await this.postMessage(hostMessage("assignment/created", { assignmentId: assignment.id, message: "Assignment created and awaiting explicit acceptance." })); await this.sendSuccess(request.requestId, assignment); return;
+        const assignment = await this.services.team.assignments.create(
+          request.payload,
+        );
+        await this.postMessage(
+          hostMessage("assignment/created", {
+            assignmentId: assignment.id,
+            message: "Assignment created and awaiting explicit acceptance.",
+          }),
+        );
+        await this.sendSuccess(request.requestId, assignment);
+        return;
       }
       case "assignment/get":
-        await this.sendSuccess(request.requestId, this.services.team.assignments.get(request.payload.assignmentId)); return;
+        await this.sendSuccess(
+          request.requestId,
+          this.services.team.assignments.get(request.payload.assignmentId),
+        );
+        return;
       case "assignment/list":
       case "progress/assignments":
-        await this.sendSuccess(request.requestId, this.services.team.assignments.list(request.payload.workflowId)); return;
+        await this.sendSuccess(
+          request.requestId,
+          this.services.team.assignments.list(request.payload.workflowId),
+        );
+        return;
       case "assignment/update":
-        await this.sendSuccess(request.requestId, await this.services.team.assignments.update(request.payload.assignmentId, request.payload.patch)); return;
+        await this.sendSuccess(
+          request.requestId,
+          await this.services.team.assignments.update(
+            request.payload.assignmentId,
+            request.payload.patch,
+          ),
+        );
+        return;
       case "assignment/accept":
       case "assignment/reject":
       case "assignment/requestClarification": {
-        const decision = request.type === "assignment/accept" ? "accepted" : request.type === "assignment/reject" ? "rejected" : "clarification-requested"; const assignment = await this.services.team.assignments.decide(request.payload, decision); await this.postMessage(hostMessage("assignment/statusChanged", { assignmentId: assignment.id, message: `Assignment is ${assignment.status}.` })); await this.sendSuccess(request.requestId, assignment); return;
+        const decision =
+          request.type === "assignment/accept"
+            ? "accepted"
+            : request.type === "assignment/reject"
+              ? "rejected"
+              : "clarification-requested";
+        const assignment = await this.services.team.assignments.decide(
+          request.payload,
+          decision,
+        );
+        await this.postMessage(
+          hostMessage("assignment/statusChanged", {
+            assignmentId: assignment.id,
+            message: `Assignment is ${assignment.status}.`,
+          }),
+        );
+        await this.sendSuccess(request.requestId, assignment);
+        return;
       }
       case "assignment/reassign": {
-        const assignment = await this.services.team.reassignments.reassign(request.payload); await this.postMessage(hostMessage("assignment/reassigned", { assignmentId: assignment.id, message: "Assignment reassigned with an auditable continuity record." })); await this.sendSuccess(request.requestId, assignment); return;
+        const assignment = await this.services.team.reassignments.reassign(
+          request.payload,
+        );
+        await this.postMessage(
+          hostMessage("assignment/reassigned", {
+            assignmentId: assignment.id,
+            message:
+              "Assignment reassigned with an auditable continuity record.",
+          }),
+        );
+        await this.sendSuccess(request.requestId, assignment);
+        return;
       }
       case "assignment/cancel": {
-        const assignment = await this.services.team.assignments.cancel(request.payload); await this.postMessage(hostMessage("assignment/statusChanged", { assignmentId: assignment.id, message: "Assignment cancelled with an explicit reason." })); await this.sendSuccess(request.requestId, assignment); return;
+        const assignment = await this.services.team.assignments.cancel(
+          request.payload,
+        );
+        await this.postMessage(
+          hostMessage("assignment/statusChanged", {
+            assignmentId: assignment.id,
+            message: "Assignment cancelled with an explicit reason.",
+          }),
+        );
+        await this.sendSuccess(request.requestId, assignment);
+        return;
       }
-      case "handoff/prepare": {
-        await this.postMessage(hostMessage("handoff/preparationStarted", { message: "Preparing immutable, evidence-linked handoff package." })); const packageData = await this.services.team.packages.build(request.payload); await this.postMessage(hostMessage("handoff/prepared", { packageId: packageData.id, message: "Handoff package prepared for review and export." })); await this.sendSuccess(request.requestId, packageData); return;
+      case "handoff/prepare":
+      case "build/prepareHandoff": {
+        await this.postMessage(
+          hostMessage("handoff/preparationStarted", {
+            message: "Preparing immutable, evidence-linked handoff package.",
+          }),
+        );
+        const packageData = await this.services.team.packages.build(
+          request.payload,
+        );
+        await this.postMessage(
+          hostMessage("handoff/prepared", {
+            packageId: packageData.id,
+            message: "Handoff package prepared for review and export.",
+          }),
+        );
+        await this.sendSuccess(request.requestId, packageData);
+        return;
       }
       case "handoff/get":
-        await this.sendSuccess(request.requestId, this.services.team.store.snapshot.packages.find((item) => item.id === request.payload.packageId)); return;
+        await this.sendSuccess(
+          request.requestId,
+          this.services.team.store.snapshot.packages.find(
+            (item) => item.id === request.payload.packageId,
+          ),
+        );
+        return;
       case "handoff/validate":
-        await this.sendSuccess(request.requestId, this.services.team.validator.validate(request.payload.package, this.services.team.store.snapshot.settings)); return;
-      case "handoff/export": {
-        const packageData = this.services.team.store.snapshot.packages.find((item) => item.id === request.payload.packageId); if (!packageData) throw new Error("Handoff package not found."); const destination = await this.services.team.artifacts.export(packageData, request.payload.mode); if (destination) await this.postMessage(hostMessage("handoff/exported", { packageId: packageData.id, message: "Reviewed handoff artifact exported." })); await this.sendSuccess(request.requestId, { ...(destination ? { destination } : {}) }); return;
+      case "build/validateHandoff":
+        await this.sendSuccess(
+          request.requestId,
+          this.services.team.validator.validate(
+            request.payload.package,
+            this.services.team.store.snapshot.settings,
+          ),
+        );
+        return;
+      case "handoff/export":
+      case "build/exportHandoff": {
+        const packageData = this.services.team.store.snapshot.packages.find(
+          (item) => item.id === request.payload.packageId,
+        );
+        if (!packageData) throw new Error("Handoff package not found.");
+        const destination = await this.services.team.artifacts.export(
+          packageData,
+          request.payload.mode,
+        );
+        if (destination)
+          await this.postMessage(
+            hostMessage("handoff/exported", {
+              packageId: packageData.id,
+              message: "Reviewed handoff artifact exported.",
+            }),
+          );
+        await this.sendSuccess(request.requestId, {
+          ...(destination ? { destination } : {}),
+        });
+        return;
       }
       case "handoff/import": {
-        const artifact = await this.services.team.artifacts.selectImport(); if (!artifact) { await this.sendSuccess(request.requestId, undefined); return; } const imported = await this.cancellableQuery(request.requestId, (signal) => this.services.team.imports.importJson(artifact.bytes, artifact.source, artifact.label, signal)); await this.postMessage(hostMessage("handoff/imported", { packageId: imported.package.id, message: "Handoff imported for review; no repository or execution state was changed." })); await this.sendSuccess(request.requestId, { package: imported.package, validation: imported.validation, importId: imported.record.id }); return;
+        const artifact = await this.services.team.artifacts.selectImport();
+        if (!artifact) {
+          await this.sendSuccess(request.requestId, undefined);
+          return;
+        }
+        const imported = await this.cancellableQuery(
+          request.requestId,
+          (signal) =>
+            this.services.team.imports.importJson(
+              artifact.bytes,
+              artifact.source,
+              artifact.label,
+              signal,
+            ),
+        );
+        await this.postMessage(
+          hostMessage("handoff/imported", {
+            packageId: imported.package.id,
+            message:
+              "Handoff imported for review; no repository or execution state was changed.",
+          }),
+        );
+        await this.sendSuccess(request.requestId, {
+          package: imported.package,
+          validation: imported.validation,
+          importId: imported.record.id,
+        });
+        return;
       }
       case "handoff/reconcile": {
-        const packageData = this.services.team.store.snapshot.packages.find((item) => item.id === request.payload.packageId); if (!packageData) throw new Error("Handoff package not found."); const reconciliation = await this.services.team.reconciliation.reconcile(packageData); await this.postMessage(hostMessage("handoff/reconciliationCompleted", { packageId: packageData.id, message: `Repository reconciliation classified the receiver as ${reconciliation.compatibility}.` })); await this.sendSuccess(request.requestId, reconciliation); return;
+        const packageData = this.services.team.store.snapshot.packages.find(
+          (item) => item.id === request.payload.packageId,
+        );
+        if (!packageData) throw new Error("Handoff package not found.");
+        const reconciliation =
+          await this.services.team.reconciliation.reconcile(packageData);
+        await this.postMessage(
+          hostMessage("handoff/reconciliationCompleted", {
+            packageId: packageData.id,
+            message: `Repository reconciliation classified the receiver as ${reconciliation.compatibility}.`,
+          }),
+        );
+        await this.sendSuccess(request.requestId, reconciliation);
+        return;
       }
       case "handoff/accept":
       case "handoff/reject":
       case "handoff/importReadOnly": {
-        const decision = request.type === "handoff/accept" ? "accepted" : request.type === "handoff/reject" ? "rejected" : "read-only"; const acceptance = await this.services.team.acceptance.decide({ ...request.payload, decision }); let contextMessage = "";
+        const decision =
+          request.type === "handoff/accept"
+            ? "accepted"
+            : request.type === "handoff/reject"
+              ? "rejected"
+              : "read-only";
+        const acceptance = await this.services.team.acceptance.decide({
+          ...request.payload,
+          decision,
+        });
+        let contextMessage = "";
         if (decision === "accepted") {
-          const packageData = this.services.team.store.snapshot.packages.find((item) => item.id === acceptance.packageId); const workflow = packageData ? this.services.workflow.get(packageData.workflowId) : undefined; const task = workflow?.tasks.find((item) => item.id === packageData?.taskId);
+          const packageData = this.services.team.store.snapshot.packages.find(
+            (item) => item.id === acceptance.packageId,
+          );
+          const workflow = packageData
+            ? this.services.workflow.get(packageData.workflowId)
+            : undefined;
+          const task = workflow?.tasks.find(
+            (item) => item.id === packageData?.taskId,
+          );
           if (packageData && workflow?.specification && task) {
-            try { const rebuilt = await this.services.context.build({ task, specification: workflow.specification, pinnedEntityIds: packageData.context.flatMap((item) => item.canonicalEntityIds), pinnedFiles: packageData.context.flatMap((item) => item.sourcePaths), currentFile: this.services.currentEditor?.(), currentSelection: this.services.currentSelection?.() }); contextMessage = ` Fresh receiver context ${rebuilt.id} was rebuilt and remains unreviewed.`; }
-            catch (cause) { contextMessage = " Receiver context could not be rebuilt automatically and must be prepared before delegation."; this.logger.warning("handoff.context.rebuild", contextMessage, cause); }
+            try {
+              const rebuilt = await this.services.context.build({
+                task,
+                specification: workflow.specification,
+                pinnedEntityIds: packageData.context.flatMap(
+                  (item) => item.canonicalEntityIds,
+                ),
+                pinnedFiles: packageData.context.flatMap(
+                  (item) => item.sourcePaths,
+                ),
+                currentFile: this.services.currentEditor?.(),
+                currentSelection: this.services.currentSelection?.(),
+              });
+              contextMessage = ` Fresh receiver context ${rebuilt.id} was rebuilt and remains unreviewed.`;
+            } catch (cause) {
+              contextMessage =
+                " Receiver context could not be rebuilt automatically and must be prepared before delegation.";
+              this.logger.warning(
+                "handoff.context.rebuild",
+                contextMessage,
+                cause,
+              );
+            }
           }
         }
-        await this.postMessage(hostMessage(decision === "accepted" ? "handoff/accepted" : "handoff/rejected", { packageId: acceptance.packageId, message: decision === "accepted" ? `Handoff accepted; a fresh execution approval is still required.${contextMessage}` : `Handoff retained as ${decision}.` })); await this.sendSuccess(request.requestId, acceptance); return;
+        await this.postMessage(
+          hostMessage(
+            decision === "accepted" ? "handoff/accepted" : "handoff/rejected",
+            {
+              packageId: acceptance.packageId,
+              message:
+                decision === "accepted"
+                  ? `Handoff accepted; a fresh execution approval is still required.${contextMessage}`
+                  : `Handoff retained as ${decision}.`,
+            },
+          ),
+        );
+        await this.sendSuccess(request.requestId, acceptance);
+        return;
       }
       case "handoff/cancel":
-        await this.services.team.store.update((state) => ({ ...state, packages: state.packages.filter((item) => item.id !== request.payload.packageId) })); await this.sendSuccess(request.requestId); return;
+      case "build/cancelHandoff":
+        await this.services.team.store.update((state) => ({
+          ...state,
+          packages: state.packages.filter(
+            (item) => item.id !== request.payload.packageId,
+          ),
+        }));
+        await this.sendSuccess(request.requestId);
+        return;
       case "progress/workflows":
-        await this.sendSuccess(request.requestId, this.services.team.store.snapshot.progress.slice(-500)); return;
+        await this.sendSuccess(
+          request.requestId,
+          this.services.team.store.snapshot.progress.slice(-500),
+        );
+        return;
       case "progress/tasks":
       case "progress/refresh": {
-        const progress = this.services.team.progress.get(request.payload.workflowId); await this.services.team.store.update((state) => ({ ...state, progress: [...state.progress.filter((item) => item.workflowId !== progress.workflowId), progress].slice(-500) })); await this.postMessage(hostMessage("progress/changed", { workflowId: progress.workflowId, message: "Local workflow progress snapshot refreshed." })); await this.sendSuccess(request.requestId, progress); return;
+        const progress = this.services.team.progress.get(
+          request.payload.workflowId,
+        );
+        await this.services.team.store.update((state) => ({
+          ...state,
+          progress: [
+            ...state.progress.filter(
+              (item) => item.workflowId !== progress.workflowId,
+            ),
+            progress,
+          ].slice(-500),
+        }));
+        await this.postMessage(
+          hostMessage("progress/changed", {
+            workflowId: progress.workflowId,
+            message: "Local workflow progress snapshot refreshed.",
+          }),
+        );
+        await this.sendSuccess(request.requestId, progress);
+        return;
       }
       case "progress/audit":
-        await this.sendSuccess(request.requestId, this.services.team.audit.list(this.services.team.store.snapshot, request.payload)); return;
+        await this.sendSuccess(
+          request.requestId,
+          this.services.team.audit.list(
+            this.services.team.store.snapshot,
+            request.payload,
+          ),
+        );
+        return;
       case "orchestration/create": {
-        const value = await this.services.orchestration.create(request.payload.workflowId, request.payload.policyProfileId, request.payload.definitionId); await this.orchestrationEvent("orchestration/created", value, "Orchestration instance created from approved workflow state."); await this.sendSuccess(request.requestId, value); return;
+        const value = await this.services.orchestration.create(
+          request.payload.workflowId,
+          request.payload.policyProfileId,
+          request.payload.definitionId,
+        );
+        await this.orchestrationEvent(
+          "orchestration/created",
+          value,
+          "Orchestration instance created from approved workflow state.",
+        );
+        await this.sendSuccess(request.requestId, value);
+        return;
       }
       case "orchestration/get":
-      case "orchestration/status": await this.sendSuccess(request.requestId, this.services.orchestration.get(request.payload.orchestrationId)); return;
-      case "orchestration/list": await this.sendSuccess(request.requestId, this.services.orchestration.list()); return;
-      case "orchestration/definitions": await this.sendSuccess(request.requestId, this.services.orchestration.definitions.list()); return;
-      case "orchestration/policies": await this.sendSuccess(request.requestId, this.services.orchestration.policies.list()); return;
-      case "orchestration/plan": { const value = await this.services.orchestration.plan(request.payload.orchestrationId); await this.orchestrationEvent("orchestration/planned", value, "Executable plan generated; execution remains blocked pending approval."); await this.sendSuccess(request.requestId, value); return; }
-      case "orchestration/validatePlan": { const value = this.services.orchestration.get(request.payload.orchestrationId); await this.sendSuccess(request.requestId, { valid: Boolean(value?.plan && value.taskStates.length && !value.diagnostics.some((item) => item.severity === "error")), blockers: value?.diagnostics.filter((item) => item.severity === "error").map((item) => item.message) ?? ["Orchestration instance was not found."], warnings: value?.diagnostics.filter((item) => item.severity === "warning").map((item) => item.message) ?? [] }); return; }
-      case "orchestration/start": { const value = await this.services.orchestration.start(request.payload.orchestrationId); await this.orchestrationEvent("orchestration/started", value, "Approved orchestration workflow started."); await this.sendSuccess(request.requestId, value); return; }
-      case "orchestration/pause": { const value = await this.services.orchestration.pause(request.payload.orchestrationId); await this.orchestrationEvent("orchestration/paused", value, "Workflow paused with evidence preserved."); await this.sendSuccess(request.requestId, value); return; }
-      case "orchestration/resume": { const value = await this.services.orchestration.resume(request.payload.orchestrationId, request.payload); await this.orchestrationEvent("orchestration/resumed", value, "Workflow resume reconciliation completed."); await this.sendSuccess(request.requestId, value); return; }
-      case "orchestration/cancel": { const value = await this.services.orchestration.cancel(request.payload.orchestrationId); await this.orchestrationEvent("orchestration/cancelled", value, "Workflow cancelled without deleting user or Git changes."); await this.sendSuccess(request.requestId, value); return; }
-      case "orchestration/recover": { const value = await this.services.orchestration.recover(request.payload.orchestrationId, request.payload); await this.orchestrationEvent("orchestration/recovered", value, "Persisted state reconciled; interrupted work was not inferred complete."); await this.sendSuccess(request.requestId, value); return; }
-      case "orchestration/taskReadiness": await this.sendSuccess(request.requestId, this.services.orchestration.taskReadiness(request.payload.orchestrationId, request.payload.taskId)); return;
-      case "orchestration/startTask": { const value = await this.services.orchestration.startTask(request.payload.orchestrationId, request.payload.taskId); await this.orchestrationEvent("orchestration/taskStarted", value, "Task started after readiness validation.", request.payload.taskId); await this.sendSuccess(request.requestId, value); return; }
-      case "orchestration/pauseTask": { const value = await this.services.orchestration.pauseTask(request.payload.orchestrationId, request.payload.taskId, request.payload.reason); await this.orchestrationEvent("orchestration/taskBlocked", value, "Task paused with state preserved.", request.payload.taskId); await this.sendSuccess(request.requestId, value); return; }
-      case "orchestration/cancelTask": { const value = await this.services.orchestration.cancelTask(request.payload.orchestrationId, request.payload.taskId, request.payload.reason); await this.orchestrationEvent("orchestration/taskProgress", value, "Task cancelled without deleting repository changes.", request.payload.taskId); await this.sendSuccess(request.requestId, value); return; }
-      case "orchestration/retryTask": { const value = await this.services.orchestration.retryTask(request.payload.orchestrationId, request.payload.taskId, request.payload.reason, request.payload.agentId); await this.orchestrationEvent("orchestration/taskProgress", value, "Bounded retry planned; no delegation started automatically.", request.payload.taskId); await this.sendSuccess(request.requestId, value); return; }
-      case "orchestration/changeAgent": { if (!request.payload.agentId) throw new Error("An explicit agent ID is required."); const value = await this.services.orchestration.changeAgent(request.payload.orchestrationId, request.payload.taskId, request.payload.agentId, request.payload.reason); await this.orchestrationEvent("orchestration/taskProgress", value, "Agent changed; context review was invalidated.", request.payload.taskId); await this.sendSuccess(request.requestId, value); return; }
-      case "orchestration/skipOptionalTask": this.services.orchestration.skipOptionalTask(); return;
+      case "orchestration/status":
+        await this.sendSuccess(
+          request.requestId,
+          this.services.orchestration.get(request.payload.orchestrationId),
+        );
+        return;
+      case "orchestration/list":
+        await this.sendSuccess(
+          request.requestId,
+          this.services.orchestration.list(),
+        );
+        return;
+      case "orchestration/definitions":
+        await this.sendSuccess(
+          request.requestId,
+          this.services.orchestration.definitions.list(),
+        );
+        return;
+      case "orchestration/policies":
+        await this.sendSuccess(
+          request.requestId,
+          this.services.orchestration.policies.list(),
+        );
+        return;
+      case "orchestration/plan": {
+        const value = await this.services.orchestration.plan(
+          request.payload.orchestrationId,
+        );
+        await this.orchestrationEvent(
+          "orchestration/planned",
+          value,
+          "Executable plan generated; execution remains blocked pending approval.",
+        );
+        await this.sendSuccess(request.requestId, value);
+        return;
+      }
+      case "orchestration/validatePlan": {
+        const value = this.services.orchestration.get(
+          request.payload.orchestrationId,
+        );
+        await this.sendSuccess(request.requestId, {
+          valid: Boolean(
+            value?.plan &&
+            value.taskStates.length &&
+            !value.diagnostics.some((item) => item.severity === "error"),
+          ),
+          blockers: value?.diagnostics
+            .filter((item) => item.severity === "error")
+            .map((item) => item.message) ?? [
+            "Orchestration instance was not found.",
+          ],
+          warnings:
+            value?.diagnostics
+              .filter((item) => item.severity === "warning")
+              .map((item) => item.message) ?? [],
+        });
+        return;
+      }
+      case "orchestration/start": {
+        const value = await this.services.orchestration.start(
+          request.payload.orchestrationId,
+        );
+        await this.orchestrationEvent(
+          "orchestration/started",
+          value,
+          "Approved orchestration workflow started.",
+        );
+        await this.sendSuccess(request.requestId, value);
+        return;
+      }
+      case "orchestration/pause": {
+        const value = await this.services.orchestration.pause(
+          request.payload.orchestrationId,
+        );
+        await this.orchestrationEvent(
+          "orchestration/paused",
+          value,
+          "Workflow paused with evidence preserved.",
+        );
+        await this.sendSuccess(request.requestId, value);
+        return;
+      }
+      case "orchestration/resume": {
+        const value = await this.services.orchestration.resume(
+          request.payload.orchestrationId,
+          request.payload,
+        );
+        await this.orchestrationEvent(
+          "orchestration/resumed",
+          value,
+          "Workflow resume reconciliation completed.",
+        );
+        await this.sendSuccess(request.requestId, value);
+        return;
+      }
+      case "orchestration/cancel": {
+        const value = await this.services.orchestration.cancel(
+          request.payload.orchestrationId,
+        );
+        await this.orchestrationEvent(
+          "orchestration/cancelled",
+          value,
+          "Workflow cancelled without deleting user or Git changes.",
+        );
+        await this.sendSuccess(request.requestId, value);
+        return;
+      }
+      case "orchestration/recover": {
+        const value = await this.services.orchestration.recover(
+          request.payload.orchestrationId,
+          request.payload,
+        );
+        await this.orchestrationEvent(
+          "orchestration/recovered",
+          value,
+          "Persisted state reconciled; interrupted work was not inferred complete.",
+        );
+        await this.sendSuccess(request.requestId, value);
+        return;
+      }
+      case "orchestration/taskReadiness":
+        await this.sendSuccess(
+          request.requestId,
+          this.services.orchestration.taskReadiness(
+            request.payload.orchestrationId,
+            request.payload.taskId,
+          ),
+        );
+        return;
+      case "orchestration/startTask": {
+        const value = await this.services.orchestration.startTask(
+          request.payload.orchestrationId,
+          request.payload.taskId,
+        );
+        await this.orchestrationEvent(
+          "orchestration/taskStarted",
+          value,
+          "Task started after readiness validation.",
+          request.payload.taskId,
+        );
+        await this.sendSuccess(request.requestId, value);
+        return;
+      }
+      case "orchestration/pauseTask": {
+        const value = await this.services.orchestration.pauseTask(
+          request.payload.orchestrationId,
+          request.payload.taskId,
+          request.payload.reason,
+        );
+        await this.orchestrationEvent(
+          "orchestration/taskBlocked",
+          value,
+          "Task paused with state preserved.",
+          request.payload.taskId,
+        );
+        await this.sendSuccess(request.requestId, value);
+        return;
+      }
+      case "orchestration/cancelTask": {
+        const value = await this.services.orchestration.cancelTask(
+          request.payload.orchestrationId,
+          request.payload.taskId,
+          request.payload.reason,
+        );
+        await this.orchestrationEvent(
+          "orchestration/taskProgress",
+          value,
+          "Task cancelled without deleting repository changes.",
+          request.payload.taskId,
+        );
+        await this.sendSuccess(request.requestId, value);
+        return;
+      }
+      case "orchestration/retryTask": {
+        const value = await this.services.orchestration.retryTask(
+          request.payload.orchestrationId,
+          request.payload.taskId,
+          request.payload.reason,
+          request.payload.agentId,
+        );
+        await this.orchestrationEvent(
+          "orchestration/taskProgress",
+          value,
+          "Bounded retry planned; no delegation started automatically.",
+          request.payload.taskId,
+        );
+        await this.sendSuccess(request.requestId, value);
+        return;
+      }
+      case "orchestration/changeAgent": {
+        if (!request.payload.agentId)
+          throw new Error("An explicit agent ID is required.");
+        const value = await this.services.orchestration.changeAgent(
+          request.payload.orchestrationId,
+          request.payload.taskId,
+          request.payload.agentId,
+          request.payload.reason,
+        );
+        await this.orchestrationEvent(
+          "orchestration/taskProgress",
+          value,
+          "Agent changed; context review was invalidated.",
+          request.payload.taskId,
+        );
+        await this.sendSuccess(request.requestId, value);
+        return;
+      }
+      case "orchestration/skipOptionalTask":
+        this.services.orchestration.skipOptionalTask();
+        return;
       case "orchestration/schedule":
-      case "orchestration/conflicts": await this.sendSuccess(request.requestId, this.services.orchestration.schedule(request.payload.orchestrationId)); return;
-      case "orchestration/approvals": await this.sendSuccess(request.requestId, this.services.orchestration.get(request.payload.orchestrationId)?.approvalGates ?? []); return;
+      case "orchestration/conflicts":
+        await this.sendSuccess(
+          request.requestId,
+          this.services.orchestration.schedule(request.payload.orchestrationId),
+        );
+        return;
+      case "orchestration/approvals":
+        await this.sendSuccess(
+          request.requestId,
+          this.services.orchestration.get(request.payload.orchestrationId)
+            ?.approvalGates ?? [],
+        );
+        return;
       case "orchestration/approve":
       case "orchestration/reject":
       case "orchestration/requestChanges":
-      case "orchestration/override": { const decision = request.type === "orchestration/approve" ? "approved" : request.type === "orchestration/reject" ? "rejected" : request.type === "orchestration/requestChanges" ? "changes-requested" : "overridden"; const value = await this.services.orchestration.decide(request.payload.orchestrationId, request.payload.gateId, decision, request.payload.reason, request.payload.riskAcknowledged); await this.orchestrationEvent("orchestration/approvalResolved", value, `Approval gate ${decision}.`); await this.sendSuccess(request.requestId, value); return; }
-      case "orchestration/audit": await this.sendSuccess(request.requestId, this.services.orchestration.get(request.payload.orchestrationId)?.audit ?? []); return;
+      case "orchestration/override": {
+        const decision =
+          request.type === "orchestration/approve"
+            ? "approved"
+            : request.type === "orchestration/reject"
+              ? "rejected"
+              : request.type === "orchestration/requestChanges"
+                ? "changes-requested"
+                : "overridden";
+        const value = await this.services.orchestration.decide(
+          request.payload.orchestrationId,
+          request.payload.gateId,
+          decision,
+          request.payload.reason,
+          request.payload.riskAcknowledged,
+        );
+        await this.orchestrationEvent(
+          "orchestration/approvalResolved",
+          value,
+          `Approval gate ${decision}.`,
+        );
+        await this.sendSuccess(request.requestId, value);
+        return;
+      }
+      case "orchestration/audit":
+        await this.sendSuccess(
+          request.requestId,
+          this.services.orchestration.get(request.payload.orchestrationId)
+            ?.audit ?? [],
+        );
+        return;
       case "orchestration/qaPlan":
-      case "orchestration/qaRun": await this.sendSuccess(request.requestId, this.services.orchestration.reviewPlan(request.payload.orchestrationId, "qa")); return;
+      case "orchestration/qaRun":
+        await this.sendSuccess(
+          request.requestId,
+          this.services.orchestration.reviewPlan(
+            request.payload.orchestrationId,
+            "qa",
+          ),
+        );
+        return;
       case "orchestration/securityPlan":
-      case "orchestration/securityRun": await this.sendSuccess(request.requestId, this.services.orchestration.reviewPlan(request.payload.orchestrationId, "security")); return;
+      case "orchestration/securityRun":
+        await this.sendSuccess(
+          request.requestId,
+          this.services.orchestration.reviewPlan(
+            request.payload.orchestrationId,
+            "security",
+          ),
+        );
+        return;
       case "orchestration/performancePlan":
-      case "orchestration/performanceRun": await this.sendSuccess(request.requestId, this.services.orchestration.reviewPlan(request.payload.orchestrationId, "performance")); return;
+      case "orchestration/performanceRun":
+        await this.sendSuccess(
+          request.requestId,
+          this.services.orchestration.reviewPlan(
+            request.payload.orchestrationId,
+            "performance",
+          ),
+        );
+        return;
       case "orchestration/validationPlan":
       case "orchestration/runValidation":
-      case "orchestration/rerunValidation": await this.sendSuccess(request.requestId, this.services.orchestration.reviewPlan(request.payload.orchestrationId, "validation")); return;
-      case "orchestration/cancelValidation": await this.sendSuccess(request.requestId); return;
+      case "orchestration/rerunValidation":
+        await this.sendSuccess(
+          request.requestId,
+          this.services.orchestration.reviewPlan(
+            request.payload.orchestrationId,
+            "validation",
+          ),
+        );
+        return;
+      case "orchestration/cancelValidation":
+        await this.sendSuccess(request.requestId);
+        return;
       case "orchestration/qaAccept":
       case "orchestration/securityAccept":
-      case "orchestration/performanceAccept": { const value = await this.services.orchestration.resolveFinding(request.payload.orchestrationId, request.payload.findingId, "accepted", request.payload.reason); await this.sendSuccess(request.requestId, value); return; }
-      case "orchestration/qaReturn": { const value = await this.services.orchestration.resolveFinding(request.payload.orchestrationId, request.payload.findingId, "rejected", request.payload.reason); await this.sendSuccess(request.requestId, value); return; }
+      case "orchestration/performanceAccept": {
+        const value = await this.services.orchestration.resolveFinding(
+          request.payload.orchestrationId,
+          request.payload.findingId,
+          "accepted",
+          request.payload.reason,
+        );
+        await this.sendSuccess(request.requestId, value);
+        return;
+      }
+      case "orchestration/qaReturn": {
+        const value = await this.services.orchestration.resolveFinding(
+          request.payload.orchestrationId,
+          request.payload.findingId,
+          "rejected",
+          request.payload.reason,
+        );
+        await this.sendSuccess(request.requestId, value);
+        return;
+      }
       case "orchestration/qaFinding":
       case "orchestration/securityFinding":
-      case "orchestration/performanceFinding": { const value = this.services.orchestration.get(request.payload.orchestrationId); if (!value) throw new Error("Orchestration instance not found."); await this.sendSuccess(request.requestId, value); return; }
-      case "orchestration/metrics": await this.sendSuccess(request.requestId, this.services.orchestration.get(request.payload.orchestrationId)?.metrics ?? { workflowDurationMs: 0, waitingForUserMs: 0, delegationCount: 0, validationDurationMs: 0, retryCount: 0, staleCount: 0, cancellationCount: 0, approvalCount: 0 }); return;
-      case "orchestration/report": { const value = this.services.orchestration.get(request.payload.orchestrationId); if (!value) throw new Error("Orchestration instance not found."); await this.sendSuccess(request.requestId, value); return; }
+      case "orchestration/performanceFinding": {
+        const value = this.services.orchestration.get(
+          request.payload.orchestrationId,
+        );
+        if (!value) throw new Error("Orchestration instance not found.");
+        await this.sendSuccess(request.requestId, value);
+        return;
+      }
+      case "orchestration/metrics":
+        await this.sendSuccess(
+          request.requestId,
+          this.services.orchestration.get(request.payload.orchestrationId)
+            ?.metrics ?? {
+            workflowDurationMs: 0,
+            waitingForUserMs: 0,
+            delegationCount: 0,
+            validationDurationMs: 0,
+            retryCount: 0,
+            staleCount: 0,
+            cancellationCount: 0,
+            approvalCount: 0,
+          },
+        );
+        return;
+      case "orchestration/report": {
+        const value = this.services.orchestration.get(
+          request.payload.orchestrationId,
+        );
+        if (!value) throw new Error("Orchestration instance not found.");
+        await this.sendSuccess(request.requestId, value);
+        return;
+      }
       case "execution/route":
-        await this.sendSuccess(request.requestId, this.services.routing.decide(request.payload)); return;
+        await this.sendSuccess(
+          request.requestId,
+          this.services.routing.decide(request.payload),
+        );
+        return;
       case "request/cancel":
         this.queryControllers.get(request.payload.targetRequestId)?.abort();
         await this.sendSuccess(request.requestId);
@@ -1648,26 +3675,114 @@ export class WebviewMessageRouter {
     }
   }
 
-  private requireChangeSet(id: string) { const value = this.services.delivery.getChangeSet(id); if (!value) throw new Error("Delivery change set not found."); return value; }
+  private requireNativeShell(): NonNullable<IntelligenceServiceRegistry["nativeShell"]> {
+    if (!this.services.nativeShell) throw new Error("The Keystone native shell has not finished initializing.");
+    return this.services.nativeShell;
+  }
+
+  private requireChangeSet(id: string) {
+    const value = this.services.delivery.getChangeSet(id);
+    if (!value) throw new Error("Delivery change set not found.");
+    return value;
+  }
   private ensureWorkspaceTrust(request: WebviewRequest): void {
     // Production always supplies the trust provider. Treat an omitted provider in
     // isolated read-only harnesses as trusted for backwards-compatible tests.
     if (this.services.workspaceTrusted?.() !== false) return;
     const blocked = new Set<WebviewRequest["type"]>([
-      "delegation/approve", "delegation/start", "delegation/openCopilot", "delegation/copyPrompt", "delegation/confirmStarted",
-      "execution/start", "execution/confirmStarted", "execution/captureResult", "retry/start", "retry/manualRepair",
-      "validation/approveCommand", "validation/run", "validation/rerunStep", "validation/override",
-      "git/stage", "git/unstage", "git/createBranch", "git/commit", "git/push", "pullRequest/approve", "pullRequest/create", "pullRequest/confirmExternalCreation",
-      "orchestration/start", "orchestration/startTask", "orchestration/retryTask",
+      "delegation/approve",
+      "delegation/start",
+      "delegation/openCopilot",
+      "delegation/copyPrompt",
+      "delegation/confirmStarted",
+      "execution/start",
+      "execution/confirmStarted",
+      "execution/captureResult",
+      "retry/start",
+      "retry/manualRepair",
+      "validation/approveCommand",
+      "validation/run",
+      "validation/rerunStep",
+      "validation/override",
+      "git/stage",
+      "git/unstage",
+      "git/createBranch",
+      "git/commit",
+      "git/push",
+      "pullRequest/approve",
+      "pullRequest/create",
+      "pullRequest/confirmExternalCreation",
+      "orchestration/start",
+      "orchestration/startTask",
+      "orchestration/retryTask",
       "workbench/createWorkflow",
+      "build/startTask",
+      "build/resumeTask",
+      "build/approveDelegation",
+      "build/startDelegation",
+      "build/confirmAssistedState",
+      "build/runValidation",
+      "build/rerunValidation",
+      "build/startRetry",
     ]);
-    if (request.type === "handoff/export" && request.payload.mode === "repository-artifact") blocked.add(request.type);
+    if (
+      (request.type === "handoff/export" ||
+        request.type === "build/exportHandoff") &&
+      request.payload.mode === "repository-artifact"
+    )
+      blocked.add(request.type);
     if (!blocked.has(request.type)) return;
-    throw new KeystoneError({ code: "WORKSPACE_TRUST_REQUIRED", category: "WORKSPACE", message: "Keystone blocked an executable, external-delegation, or repository-mutating action in Restricted Mode.", operation: request.type, recoverable: true, recommendedAction: "Trust the workspace after reviewing its contents, then retry the explicitly approved action.", retryable: true, correlationId: request.requestId });
+    throw new KeystoneError({
+      code: "WORKSPACE_TRUST_REQUIRED",
+      category: "WORKSPACE",
+      message:
+        "Keystone blocked an executable, external-delegation, or repository-mutating action in Restricted Mode.",
+      operation: request.type,
+      recoverable: true,
+      recommendedAction:
+        "Trust the workspace after reviewing its contents, then retry the explicitly approved action.",
+      retryable: true,
+      correlationId: request.requestId,
+    });
   }
-  private async orchestrationEvent(type: "orchestration/created" | "orchestration/planned" | "orchestration/started" | "orchestration/paused" | "orchestration/resumed" | "orchestration/cancelled" | "orchestration/recovered" | "orchestration/approvalResolved" | "orchestration/taskStarted" | "orchestration/taskBlocked" | "orchestration/taskProgress", value: WorkflowInstance, message: string, taskId?: string): Promise<void> { await this.postMessage(hostMessage(type, { orchestrationId: value.id, status: value.status, ...(value.currentStage ? { stage: value.currentStage } : {}), ...(taskId ? { taskId } : {}), message, at: new Date().toISOString() })); }
-  private requireCommitPlan(id: string) { const value = this.services.delivery.getCommitPlan(id); if (!value) throw new Error("Commit plan not found."); return value; }
-  private requireDraft(id: string) { const value = this.services.delivery.getDraft(id); if (!value) throw new Error("Pull-request draft not found."); return value; }
+  private async orchestrationEvent(
+    type:
+      | "orchestration/created"
+      | "orchestration/planned"
+      | "orchestration/started"
+      | "orchestration/paused"
+      | "orchestration/resumed"
+      | "orchestration/cancelled"
+      | "orchestration/recovered"
+      | "orchestration/approvalResolved"
+      | "orchestration/taskStarted"
+      | "orchestration/taskBlocked"
+      | "orchestration/taskProgress",
+    value: WorkflowInstance,
+    message: string,
+    taskId?: string,
+  ): Promise<void> {
+    await this.postMessage(
+      hostMessage(type, {
+        orchestrationId: value.id,
+        status: value.status,
+        ...(value.currentStage ? { stage: value.currentStage } : {}),
+        ...(taskId ? { taskId } : {}),
+        message,
+        at: new Date().toISOString(),
+      }),
+    );
+  }
+  private requireCommitPlan(id: string) {
+    const value = this.services.delivery.getCommitPlan(id);
+    if (!value) throw new Error("Commit plan not found.");
+    return value;
+  }
+  private requireDraft(id: string) {
+    const value = this.services.delivery.getDraft(id);
+    if (!value) throw new Error("Pull-request draft not found.");
+    return value;
+  }
 
   private async sendWorkflow(
     requestId: string,
@@ -1680,7 +3795,39 @@ export class WebviewMessageRouter {
     await this.sendSuccess(requestId, workflow);
   }
 
-  private async sendWorkbenchWorkflow(requestId: string, workflow: DevelopmentWorkflowSnapshot, type: "workbench/workflowChanged" | "workbench/intentChanged" | "workbench/clarificationChanged" | "workbench/specificationGenerated" | "workbench/specificationApproved" | "workbench/taskPlanGenerated" | "workbench/taskPlanChanged" | "workbench/taskPlanApproved", message: string): Promise<void> { const state = this.services.workflow.getWorkbenchState(workflow.id); await this.postMessage(hostMessage(type, workbenchEvent(workflow, state.summary.currentStage, message))); await this.postMessage(hostMessage("workbench/stageStateChanged", workbenchEvent(workflow, state.summary.currentStage, "Workbench readiness recalculated from canonical workflow state."))); await this.sendSuccess(requestId, workflow); }
+  private async sendWorkbenchWorkflow(
+    requestId: string,
+    workflow: DevelopmentWorkflowSnapshot,
+    type:
+      | "workbench/workflowChanged"
+      | "workbench/intentChanged"
+      | "workbench/clarificationChanged"
+      | "workbench/specificationGenerated"
+      | "workbench/specificationApproved"
+      | "workbench/taskPlanGenerated"
+      | "workbench/taskPlanChanged"
+      | "workbench/taskPlanApproved",
+    message: string,
+  ): Promise<void> {
+    const state = this.services.workflow.getWorkbenchState(workflow.id);
+    await this.postMessage(
+      hostMessage(
+        type,
+        workbenchEvent(workflow, state.summary.currentStage, message),
+      ),
+    );
+    await this.postMessage(
+      hostMessage(
+        "workbench/stageStateChanged",
+        workbenchEvent(
+          workflow,
+          state.summary.currentStage,
+          "Workbench readiness recalculated from canonical workflow state.",
+        ),
+      ),
+    );
+    await this.sendSuccess(requestId, workflow);
+  }
 
   private async reconcileDelegationState(generation: number): Promise<void> {
     for (const current of this.services.workflow.list()) {
@@ -1688,8 +3835,17 @@ export class WebviewMessageRouter {
         const workflow = await this.services.workflow.reconcileStaleness(
           current.id,
         );
-        const staleAssignments = await this.services.team.reconcileStaleness(current.id);
-        for (const assignment of staleAssignments) await this.postMessage(hostMessage("assignment/stale", { assignmentId: assignment.id, message: "Assignment became stale after canonical workflow or repository state changed." }));
+        const staleAssignments = await this.services.team.reconcileStaleness(
+          current.id,
+        );
+        for (const assignment of staleAssignments)
+          await this.postMessage(
+            hostMessage("assignment/stale", {
+              assignmentId: assignment.id,
+              message:
+                "Assignment became stale after canonical workflow or repository state changed.",
+            }),
+          );
         const staleTasks = workflow.tasks.filter(
           (task) => task.status === "stale",
         );
@@ -1784,6 +3940,44 @@ export class WebviewMessageRouter {
     });
     this.remember(requestId, response);
     await this.postMessage(response);
+  }
+
+  private async publishReviewEvent(
+    type:
+      | "review/stateChanged"
+      | "review/noteChanged"
+      | "review/changesRequested"
+      | "review/approved"
+      | "review/stale"
+      | "review/prDraftChanged"
+      | "complete/optionsChanged"
+      | "complete/changeSetChanged"
+      | "complete/commitPlanChanged"
+      | "complete/commitCreated"
+      | "complete/pushCompleted"
+      | "complete/prCreated"
+      | "complete/patchExported"
+      | "complete/handoffPrepared"
+      | "complete/workflowCompleted"
+      | "complete/workflowClosedPartial",
+    workflowId: string,
+    message: string,
+  ): Promise<void> {
+    const state = this.services.review.getState(workflowId);
+    await this.postMessage(hostMessage(type, {
+      workflowId,
+      specificationRevision: state.summary.specificationRevision,
+      repositoryFingerprint: state.repositoryFingerprint,
+      message,
+      at: new Date().toISOString(),
+    }));
+  }
+
+  private requireCurrentApprovedReview(workflowId: string, fingerprint: string) {
+    const review = this.services.review.getState(workflowId);
+    if (!review.summary.completionReady || !review.decision || !["approved", "approved-with-warnings"].includes(review.decision.status)) throw new Error("A current approved Review with no blocking findings is required.");
+    if (review.repositoryFingerprint !== fingerprint) throw new Error("Repository evidence changed after Review. Refresh, revalidate affected work, and approve Review again.");
+    return review;
   }
 
   private async cancellableQuery<T>(
@@ -1896,17 +4090,79 @@ function workflowEvent(workflow: DevelopmentWorkflowSnapshot, message: string) {
   };
 }
 
-function workbenchEvent(workflow: DevelopmentWorkflowSnapshot, stage: "define" | "plan" | "build" | "validate" | "review" | "complete", message: string) { return { workflowId: workflow.id, repositoryId: workflow.repositoryId, specificationRevision: workflow.specification?.revision, taskPlanRevision: workflow.taskGraph?.revision, stage, message, at: new Date().toISOString() }; }
-function buildEvent(state: BuildTaskState, message: string) { return { workflowId: state.workflow.id, taskId: state.task.id, specificationRevision: state.task.specificationRevision, intelligenceGeneration: state.workflow.intelligenceGeneration, message, at: new Date().toISOString() }; }
-function stageTitle(stage: string): string { return `${stage.slice(0, 1).toUpperCase()}${stage.slice(1)}`; }
-function workbenchDefinitions() { return [
-  { workType: "feature" as const, definitionId: "feature-development", label: "Feature", description: "Add user-visible behavior with specification, implementation, tests, and review." },
-  { workType: "bug" as const, definitionId: "bug-fix", label: "Bug fix", description: "Investigate and repair incorrect behavior with regression evidence." },
-  { workType: "refactor" as const, definitionId: "refactoring", label: "Refactoring", description: "Improve internal structure without changing approved behavior." },
-  { workType: "test" as const, definitionId: "feature-development", label: "Test work", description: "Add or improve deterministic verification and coverage." },
-  { workType: "modernization" as const, definitionId: "modernization", label: "Modernization", description: "Move toward an approved target while preserving compatibility." },
-  { workType: "investigation" as const, definitionId: "quick-fix", label: "Investigation", description: "Understand a bounded problem and produce evidence before implementation." }
-]; }
+function workbenchEvent(
+  workflow: DevelopmentWorkflowSnapshot,
+  stage: "define" | "plan" | "build" | "validate" | "review" | "complete",
+  message: string,
+) {
+  return {
+    workflowId: workflow.id,
+    repositoryId: workflow.repositoryId,
+    specificationRevision: workflow.specification?.revision,
+    taskPlanRevision: workflow.taskGraph?.revision,
+    stage,
+    message,
+    at: new Date().toISOString(),
+  };
+}
+function buildEvent(state: BuildTaskState, message: string) {
+  return {
+    workflowId: state.workflow.id,
+    taskId: state.task.id,
+    specificationRevision: state.task.specificationRevision,
+    intelligenceGeneration: state.workflow.intelligenceGeneration,
+    message,
+    at: new Date().toISOString(),
+  };
+}
+function stageTitle(stage: string): string {
+  return `${stage.slice(0, 1).toUpperCase()}${stage.slice(1)}`;
+}
+function workbenchDefinitions() {
+  return [
+    {
+      workType: "feature" as const,
+      definitionId: "feature-development",
+      label: "Feature",
+      description:
+        "Add user-visible behavior with specification, implementation, tests, and review.",
+    },
+    {
+      workType: "bug" as const,
+      definitionId: "bug-fix",
+      label: "Bug fix",
+      description:
+        "Investigate and repair incorrect behavior with regression evidence.",
+    },
+    {
+      workType: "refactor" as const,
+      definitionId: "refactoring",
+      label: "Refactoring",
+      description:
+        "Improve internal structure without changing approved behavior.",
+    },
+    {
+      workType: "test" as const,
+      definitionId: "feature-development",
+      label: "Test work",
+      description: "Add or improve deterministic verification and coverage.",
+    },
+    {
+      workType: "modernization" as const,
+      definitionId: "modernization",
+      label: "Modernization",
+      description:
+        "Move toward an approved target while preserving compatibility.",
+    },
+    {
+      workType: "investigation" as const,
+      definitionId: "quick-fix",
+      label: "Investigation",
+      description:
+        "Understand a bounded problem and produce evidence before implementation.",
+    },
+  ];
+}
 
 function resolveTask(
   workflows: DevelopmentWorkflowService,

@@ -11,8 +11,12 @@ import type {
 
 export function ExecutionValidationWorkspace({
   bridge,
+  workflowId,
+  onReturnToBuild,
 }: {
   bridge: HostBridge;
+  workflowId?: string;
+  onReturnToBuild?: () => void;
 }): React.JSX.Element {
   const [sessions, setSessions] = useState<TaskExecutionSession[]>([]);
   const [selectedId, setSelectedId] = useState<string>();
@@ -36,11 +40,14 @@ export function ExecutionValidationWorkspace({
     void bridge
       .request("execution/list", {})
       .then((items) => {
-        setSessions(items);
-        setSelectedId(items.at(-1)?.id);
+        const scoped = workflowId
+          ? items.filter((item) => item.workflowId === workflowId)
+          : items;
+        setSessions(scoped);
+        setSelectedId(scoped.at(-1)?.id);
       })
       .catch(display(setError));
-  }, [bridge]);
+  }, [bridge, workflowId]);
   useEffect(() => {
     if (typeof bridge.subscribe !== "function") return;
     return bridge.subscribe((message) => {
@@ -77,7 +84,7 @@ export function ExecutionValidationWorkspace({
   return (
     <section className="page delegation-page">
       <div className="eyebrow">Evidence before completion</div>
-      <h1>Execution and validation</h1>
+      <h1>{workflowId ? "Workflow validation" : "Execution and validation"}</h1>
       <p>
         Repository changes and agent claims remain observations. Only mapped
         acceptance criteria, safe validation evidence, resolved findings, and
@@ -89,11 +96,16 @@ export function ExecutionValidationWorkspace({
         </div>
       )}
       {!session ? (
-        <div className="honesty-note">
-          Start execution tracking from an approved delegation session first.
+        <div className="ui-state ui-empty">
+          <div>
+            <strong>No validation session for this workflow</strong>
+            <p>Start execution tracking from an approved task in Build. Validation configuration remains attached to that task.</p>
+          </div>
+          {onReturnToBuild && <button className="primary-button" onClick={onReturnToBuild}>Return to Build</button>}
         </div>
       ) : (
         <>
+          {onReturnToBuild && <button className="ghost-button" onClick={onReturnToBuild}>Return to Build</button>}
           <label className="workflow-picker">
             Execution session
             <select

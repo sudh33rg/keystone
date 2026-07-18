@@ -1,81 +1,776 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { IntelligenceEntityDetails } from "../../../shared/contracts/intelligence";
-import type { IntelligenceQueryResult, QueryCompilation, QuerySuggestionsResult, QueryTemplatesResult } from "../../../shared/contracts/query";
+import type {
+  IntelligenceQueryResult,
+  QueryCompilation,
+  QuerySuggestionsResult,
+  QueryTemplatesResult,
+} from "../../../shared/contracts/query";
 import type { HostBridge } from "../../services/HostBridge";
 
 const HISTORY_KEY = "keystone.intelligence.queryHistory.v1";
 
-export function QueryWorkspace({ bridge }: { bridge: HostBridge }): React.JSX.Element {
-  const [input, setInput] = useState(""); const [compilation, setCompilation] = useState<QueryCompilation>(); const [suggestions, setSuggestions] = useState<QuerySuggestionsResult["items"]>([]); const [templates, setTemplates] = useState<QueryTemplatesResult["templates"]>([]); const [result, setResult] = useState<IntelligenceQueryResult>(); const [selectedEntity, setSelectedEntity] = useState<IntelligenceEntityDetails>(); const [selectedProjection, setSelectedProjection] = useState<IntelligenceQueryResult["data"]["items"][number]>(); const [loading, setLoading] = useState(false); const [error, setError] = useState<string>(); const [history, setHistory] = useState<string[]>(readHistory); const controller = useRef<AbortController | undefined>(undefined);
+export function QueryWorkspace({
+  bridge,
+  initialInput = "",
+}: {
+  bridge: HostBridge;
+  initialInput?: string;
+}): React.JSX.Element {
+  const [input, setInput] = useState(initialInput);
+  const [compilation, setCompilation] = useState<QueryCompilation>();
+  const [suggestions, setSuggestions] = useState<
+    QuerySuggestionsResult["items"]
+  >([]);
+  const [templates, setTemplates] = useState<QueryTemplatesResult["templates"]>(
+    [],
+  );
+  const [result, setResult] = useState<IntelligenceQueryResult>();
+  const [selectedEntity, setSelectedEntity] =
+    useState<IntelligenceEntityDetails>();
+  const [selectedProjection, setSelectedProjection] =
+    useState<IntelligenceQueryResult["data"]["items"][number]>();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string>();
+  const [history, setHistory] = useState<string[]>(readHistory);
+  const controller = useRef<AbortController | undefined>(undefined);
   const inputRef = useRef<HTMLInputElement>(null);
-  useEffect(() => { void bridge.request("intelligence/query/templates", {}).then((value) => setTemplates(value.templates)).catch(report(setError)); }, [bridge]);
-  useEffect(() => { if (!input.trim()) return undefined; const timer = window.setTimeout(() => { void bridge.request("intelligence/query/suggestions", { input, limit: 8 }).then((value) => setSuggestions(value.items)).catch(() => undefined); }, 120); return () => window.clearTimeout(timer); }, [bridge, input]);
-  const grouped = useMemo(() => result ? Object.entries(result.data.sections).filter(([, items]) => items.length) : [], [result]);
-  const compile = async (): Promise<QueryCompilation | undefined> => { if (!input.trim()) return undefined; setError(undefined); try { const value = await bridge.request("intelligence/query/compile", { text: input }); setCompilation(value); return value; } catch (cause) { report(setError)(cause); return undefined; } };
-  const run = async (): Promise<void> => { const compiled = await compile(); if (!compiled?.parsed) return; controller.current?.abort(); const next = new AbortController(); controller.current = next; setLoading(true); try { const value = await bridge.request("intelligence/query", { text: input }, { signal: next.signal }); setResult(value); const values = [input, ...history.filter((item) => item !== input)].slice(0, 12); setHistory(values); localStorage.setItem(HISTORY_KEY, JSON.stringify(values)); } catch (cause) { if (!(cause instanceof DOMException && cause.name === "AbortError")) report(setError)(cause); } finally { setLoading(false); } };
-  const cancel = (): void => { controller.current?.abort(); setLoading(false); };
+  useEffect(() => {
+    void bridge
+      .request("intelligence/query/templates", {})
+      .then((value) => setTemplates(value.templates))
+      .catch(report(setError));
+  }, [bridge]);
+  useEffect(() => {
+    if (!input.trim()) return undefined;
+    const timer = window.setTimeout(() => {
+      void bridge
+        .request("intelligence/query/suggestions", { input, limit: 8 })
+        .then((value) => setSuggestions(value.items))
+        .catch(() => undefined);
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [bridge, input]);
+  const grouped = useMemo(
+    () =>
+      result
+        ? Object.entries(result.data.sections).filter(
+            ([, items]) => items.length,
+          )
+        : [],
+    [result],
+  );
+  const compile = async (): Promise<QueryCompilation | undefined> => {
+    if (!input.trim()) return undefined;
+    setError(undefined);
+    try {
+      const value = await bridge.request("intelligence/query/compile", {
+        text: input,
+      });
+      setCompilation(value);
+      return value;
+    } catch (cause) {
+      report(setError)(cause);
+      return undefined;
+    }
+  };
+  const run = async (): Promise<void> => {
+    const compiled = await compile();
+    if (!compiled?.parsed) return;
+    controller.current?.abort();
+    const next = new AbortController();
+    controller.current = next;
+    setLoading(true);
+    try {
+      const value = await bridge.request(
+        "intelligence/query",
+        { text: input },
+        { signal: next.signal },
+      );
+      setResult(value);
+      const values = [input, ...history.filter((item) => item !== input)].slice(
+        0,
+        12,
+      );
+      setHistory(values);
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(values));
+    } catch (cause) {
+      if (!(cause instanceof DOMException && cause.name === "AbortError"))
+        report(setError)(cause);
+    } finally {
+      setLoading(false);
+    }
+  };
+  const cancel = (): void => {
+    controller.current?.abort();
+    setLoading(false);
+  };
   const applyInput = (value: string, selectPlaceholder = false): void => {
-    setInput(value); setSuggestions([]); setCompilation(undefined); setResult(undefined); setError(undefined);
+    setInput(value);
+    setSuggestions([]);
+    setCompilation(undefined);
+    setResult(undefined);
+    setError(undefined);
     window.requestAnimationFrame(() => {
-      const node = inputRef.current; if (!node) return; node.focus();
-      if (selectPlaceholder) { const start = value.indexOf("<"); const end = value.indexOf(">", start) + 1; if (start >= 0 && end > start) node.setSelectionRange(start, end); }
+      const node = inputRef.current;
+      if (!node) return;
+      node.focus();
+      if (selectPlaceholder) {
+        const start = value.indexOf("<");
+        const end = value.indexOf(">", start) + 1;
+        if (start >= 0 && end > start) node.setSelectionRange(start, end);
+      }
     });
   };
   const selectCandidate = (selector: string, entityId: string): void => {
     const start = input.indexOf(selector);
-    applyInput(start < 0 ? `find ${entityId}` : `${input.slice(0, start)}${entityId}${input.slice(start + selector.length)}`);
+    applyInput(
+      start < 0
+        ? `find ${entityId}`
+        : `${input.slice(0, start)}${entityId}${input.slice(start + selector.length)}`,
+    );
   };
-  const inspect = (id: string, projection?: IntelligenceQueryResult["data"]["items"][number]): void => {
-    setSelectedProjection(projection); setSelectedEntity(undefined); setError(undefined);
-    void bridge.request("intelligence/entity", { id }).then((value) => setSelectedEntity(value)).catch(report(setError));
+  const inspect = (
+    id: string,
+    projection?: IntelligenceQueryResult["data"]["items"][number],
+  ): void => {
+    setSelectedProjection(projection);
+    setSelectedEntity(undefined);
+    setError(undefined);
+    void bridge
+      .request("intelligence/entity", { id })
+      .then((value) => setSelectedEntity(value))
+      .catch(report(setError));
   };
-  const followUp = (operation: "dependencies" | "dependents" | "impact" | "tests", id: string): void => applyInput(operation === "impact" ? `what is impacted by ${id}` : operation === "tests" ? `tests for ${id}` : `${operation} of ${id}`);
+  const followUp = (
+    operation: "dependencies" | "dependents" | "impact" | "tests",
+    id: string,
+  ): void =>
+    applyInput(
+      operation === "impact"
+        ? `what is impacted by ${id}`
+        : operation === "tests"
+          ? `tests for ${id}`
+          : `${operation} of ${id}`,
+    );
   const hasPlaceholder = /<[^>]+>/.test(input);
 
-  return <section className="query-workspace" aria-label="Intelligence query workspace">
-    <header><div><small>Deterministic Query Workspace</small><h2>Ask Keystone intelligence</h2></div></header>
-    <div className="query-input-row"><input ref={inputRef} aria-label="Global intelligence query" value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !hasPlaceholder) void run(); }} placeholder="Path from POST /orders to orders.status"/><button className="ghost-button" disabled={!input.trim()} onClick={() => void compile()}>Compile</button>{loading ? <button className="danger-button" onClick={cancel}>Cancel</button> : <button className="primary-button" disabled={!input.trim() || hasPlaceholder} onClick={() => void run()}>Run query</button>}</div>
-    {hasPlaceholder && <p className="query-guidance">Replace the highlighted placeholder with a repository entity, module, branch, table, or configuration key.</p>}
-    {suggestions.length > 0 && <div className="query-suggestions" role="listbox" aria-label="Deterministic autocomplete">{suggestions.map((item) => <button key={`${item.kind}:${item.entityId ?? item.value}`} onClick={() => applyInput(item.value)}><strong>{item.label}</strong><small>{item.kind} · {item.detail}</small></button>)}</div>}
-    <div className="query-helpers"><details><summary>Supported templates</summary>{templates.map((item) => <button key={item.id} onClick={() => applyInput(item.template, true)}><strong>{item.label}</strong><small>{item.template}</small></button>)}</details>{history.length > 0 && <details><summary>Recent queries</summary>{history.map((item) => <button key={item} onClick={() => applyInput(item)}>{item}</button>)}</details>}</div>
-    {error && <p className="semantic-error" role="alert">{error}</p>}
-    {compilation && <section className="compiled-query"><div><strong>Parsed intent</strong><span>{compilation.parsed ? `${compilation.query?.operation} · ${compilation.rule}` : "Unsupported"}</span></div>{compilation.query && <pre>{JSON.stringify(compilation.query, null, 2)}</pre>}{compilation.diagnostics.map((item) => <p key={item.code}>{item.message}</p>)}</section>}
-    {result && <section className="query-result" aria-label="Query result"><header><div><small>{result.operation}</small><h3>{result.data.kind}</h3></div><span>{result.executionTimeMs.toFixed(1)} ms · generation {result.generation} · cache {result.cacheState}</span></header>
-      {result.data.kind === "usages" && <p className="query-direct-answer"><strong>{result.data.metrics.total ?? result.data.items.length} logical usages</strong> · {result.data.metrics.exact ?? 0} exact/resolved · {result.data.metrics.candidates ?? 0} candidate/convention · {result.data.metrics.physicalRelationships ?? result.data.relationships.length} physical relationships</p>}
-      {result.resolvedSeeds.map((seed, index) => <div className="resolved-seed-group" key={index}>
-        <div className="resolved-seed"><strong>{seed.selected?.qualifiedName ?? "Explicit selection required"}</strong><span>{seed.ambiguous ? `${seed.candidates.length} ranked candidates` : seed.reasons.join(" · ")}</span></div>
-        {seed.requiresSelection && <div className="query-seed-candidates" aria-label={`Candidates for ${seed.selector.value ?? seed.selector.id ?? "entity"}`}>
-          {seed.candidates.map((candidate) => <button key={candidate.id} onClick={() => selectCandidate(seed.selector.value ?? seed.selector.id ?? candidate.id, candidate.id)}>
-            <strong>{candidate.qualifiedName}</strong><span>{candidate.type.replace("keystone.core.", "")} · {candidate.relativePath}</span><small>{candidate.reasons.slice(0, 3).join(" · ")}</small>
-          </button>)}
-        </div>}
-      </div>)}
-      {result.diagnostics.map((item) => <p className={`query-diagnostic ${item.severity}`} key={`${item.code}:${item.message}`}>{item.code}: {item.message}</p>)}
-      {result.data.items.length > 0 && <div className="query-items">{result.data.items.map((item) => <article key={`${item.group ?? "item"}:${item.id}`}><button className="query-item-main" onClick={() => inspect(item.id, item)}><div><strong>{item.name}</strong><span>{item.group ?? item.classification} · {Math.round(item.confidence * 100)}%</span></div><small>{item.qualifiedName}<br/>{item.relativePath}<br/>{item.rankingReasons.slice(0, 3).join(" · ")}</small>{item.details?.riskFactors && <p>{(item.details.riskFactors as string[]).join(" · ")}</p>}</button><div className="query-item-actions"><button onClick={() => followUp("dependencies", item.id)}>Dependencies</button><button onClick={() => followUp("impact", item.id)}>Impact</button><button onClick={() => followUp("tests", item.id)}>Tests</button></div></article>)}</div>}
-      {result.data.paths.map((path, index) => path.flow
-        ? <FlowPath key={index} path={path} inspect={inspect}/>
-        : <div className="query-path" key={index}><strong>Path {index + 1} · confidence {Math.round(path.confidence * 100)}% · risk {path.risk}</strong><ol>{path.steps.map((step, stepIndex) => <li key={`${step.entityId}:${stepIndex}`}><button onClick={() => inspect(step.entityId)}><span>{step.entityName}</span>{step.relationshipType && <small>{step.relationshipType.replace("keystone.core.", "")} · {step.classification}</small>}</button></li>)}</ol>{path.unsupportedBoundaries.length > 0 && <p>{path.unsupportedBoundaries.join(" · ")}</p>}</div>)}
-      {grouped.length > 0 && <div className="query-sections">{grouped.map(([name, items]) => <details key={name}><summary><strong>{name}</strong><span>{items.length}</span></summary>{items.map((item) => <button key={item.id} onClick={() => inspect(item.id, item)}><strong>{item.name}</strong><small>{item.qualifiedName ?? item.relativePath ?? item.id} · {Math.round(item.confidence * 100)}%</small></button>)}</details>)}</div>}
-      {(selectedEntity || selectedProjection) && <section className="query-inspector" aria-label="Selected query result details"><header><div><small>{selectedEntity?.entity.type.replace("keystone.core.", "") ?? selectedProjection?.type.replace("keystone.core.", "")}</small><h3>{selectedEntity?.entity.qualifiedName ?? selectedProjection?.qualifiedName ?? selectedProjection?.name}</h3></div><button className="ghost-button" onClick={() => { setSelectedEntity(undefined); setSelectedProjection(undefined); }}>Close</button></header>{selectedEntity ? <><p>{selectedEntity.entity.relativePath}{selectedEntity.entity.sourceRange ? `:${selectedEntity.entity.sourceRange.startLine + 1}` : ""} · generation {selectedEntity.generation}</p>{selectedEntity.entity.signature && <pre>{selectedEntity.entity.signature}</pre>}<div className="diagnostic-actions"><button className="primary-button" onClick={() => void bridge.request("intelligence/source/open", { relativePath: selectedEntity.entity.relativePath, ...(selectedEntity.entity.sourceRange ? { range: selectedEntity.entity.sourceRange } : {}) }).catch(report(setError))}>Open source</button><button className="ghost-button" onClick={() => followUp("dependents", selectedEntity.entity.id)}>Dependents</button><button className="ghost-button" onClick={() => followUp("impact", selectedEntity.entity.id)}>Impact</button></div><dl><div><dt>Incoming relationships</dt><dd>{selectedEntity.incoming.length}{selectedEntity.truncated ? "+" : ""}</dd></div><div><dt>Outgoing relationships</dt><dd>{selectedEntity.outgoing.length}{selectedEntity.truncated ? "+" : ""}</dd></div><div><dt>Evidence records</dt><dd>{selectedEntity.evidence.length}{selectedEntity.truncated ? "+" : ""}</dd></div></dl><div className="query-inspector-evidence">{selectedEntity.evidence.slice(0, 12).map((item) => <div key={item.id}><strong>{item.statement}</strong><span>{item.derivation} · {item.extractorId}@{item.extractorVersion} · {Math.round(item.confidence * 100)}%</span><small>{item.relativePath}{item.range ? `:${item.range.startLine + 1}` : ""}</small></div>)}</div></> : <><p>This result is a calculated query projection rather than a canonical entity. Its displayed classification and ranking reasons are the available evidence boundary.</p><dl><div><dt>Classification</dt><dd>{selectedProjection?.classification}</dd></div><div><dt>Confidence</dt><dd>{Math.round((selectedProjection?.confidence ?? 0) * 100)}%</dd></div><div><dt>Ranking reasons</dt><dd>{selectedProjection?.rankingReasons.join(" · ")}</dd></div></dl>{selectedProjection?.details && <pre>{JSON.stringify(selectedProjection.details, null, 2)}</pre>}</>}</section>}
-      {result.data.cpg && <p className="query-cpg">CPG result: {result.data.cpg.nodes.length} nodes · {result.data.cpg.edges.length} edges{result.data.cpg.truncated ? " · truncated" : ""}</p>}
-      <details className="query-explanation"><summary>Explain this query and plan</summary><p>{result.explanation.steps.join(" ")}</p><dl><dt>Operation</dt><dd>{result.plan.operation}</dd><dt>Resolved seeds</dt><dd>{result.plan.resolvedSeedIds.join(", ") || "none"}</dd><dt>Ambiguous candidates</dt><dd>{result.plan.ambiguousCandidateIds.length}</dd><dt>Indexes</dt><dd>{result.plan.indexesSelected.join(", ") || "entity indexes"}</dd><dt>Relationships</dt><dd>{result.plan.relationshipFamilies.join(", ") || "none"}</dd><dt>Traversal</dt><dd>{result.plan.traversalDirection} · depth {result.plan.maximumDepth}</dd><dt>Confidence</dt><dd>{result.plan.confidenceThreshold}</dd><dt>Capability</dt><dd>{result.plan.capabilityThresholds.join(", ")}</dd><dt>CPG required</dt><dd>{result.plan.cpgRequired ? "yes" : "no"}</dd><dt>Limits</dt><dd>{result.plan.resultLimits.results} results · {result.plan.resultLimits.nodes} nodes · {result.plan.resultLimits.edges} edges · {result.plan.timeBudgetMs} ms</dd><dt>Evidence required</dt><dd>{result.plan.evidenceRequired ? "yes" : "no"}</dd><dt>Ranking</dt><dd>{result.explanation.rankingRules.join(" · ")}</dd><dt>Boundaries</dt><dd>{result.explanation.capabilityBoundaries.join(" · ") || "none"}</dd></dl>{result.evidence.map((item) => <div key={item.id}><strong>{item.extractorId}@{item.extractorVersion}</strong><span>{item.statement}</span><small>{item.relativePath} · {Math.round(item.confidence * 100)}%</small></div>)}</details>
-    </section>}
-  </section>;
+  return (
+    <section
+      className="query-workspace"
+      aria-label="Intelligence query workspace"
+    >
+      <header>
+        <div>
+          <small>Deterministic Query Workspace</small>
+          <h2>Ask Keystone intelligence</h2>
+        </div>
+      </header>
+      <div className="query-input-row">
+        <input
+          ref={inputRef}
+          aria-label="Global intelligence query"
+          value={input}
+          onChange={(event) => setInput(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !hasPlaceholder) void run();
+          }}
+          placeholder="Path from POST /orders to orders.status"
+        />
+        <button
+          className="ghost-button"
+          disabled={!input.trim()}
+          onClick={() => void compile()}
+        >
+          Compile
+        </button>
+        {loading ? (
+          <button className="danger-button" onClick={cancel}>
+            Cancel
+          </button>
+        ) : (
+          <button
+            className="primary-button"
+            disabled={!input.trim() || hasPlaceholder}
+            onClick={() => void run()}
+          >
+            Run query
+          </button>
+        )}
+      </div>
+      {hasPlaceholder && (
+        <p className="query-guidance">
+          Replace the highlighted placeholder with a repository entity, module,
+          branch, table, or configuration key.
+        </p>
+      )}
+      {suggestions.length > 0 && (
+        <div
+          className="query-suggestions"
+          role="listbox"
+          aria-label="Deterministic autocomplete"
+        >
+          {suggestions.map((item) => (
+            <button
+              key={`${item.kind}:${item.entityId ?? item.value}`}
+              onClick={() => applyInput(item.value)}
+            >
+              <strong>{item.label}</strong>
+              <small>
+                {item.kind} · {item.detail}
+              </small>
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="query-helpers">
+        <details>
+          <summary>Supported templates</summary>
+          {templates.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => applyInput(item.template, true)}
+            >
+              <strong>{item.label}</strong>
+              <small>{item.template}</small>
+            </button>
+          ))}
+        </details>
+        {history.length > 0 && (
+          <details>
+            <summary>Recent queries</summary>
+            {history.map((item) => (
+              <button key={item} onClick={() => applyInput(item)}>
+                {item}
+              </button>
+            ))}
+          </details>
+        )}
+      </div>
+      {error && (
+        <p className="semantic-error" role="alert">
+          {error}
+        </p>
+      )}
+      {compilation && (
+        <section className="compiled-query">
+          <div>
+            <strong>Parsed intent</strong>
+            <span>
+              {compilation.parsed
+                ? `${compilation.query?.operation} · ${compilation.rule}`
+                : "Unsupported"}
+            </span>
+          </div>
+          {compilation.query && (
+            <pre>{JSON.stringify(compilation.query, null, 2)}</pre>
+          )}
+          {compilation.diagnostics.map((item) => (
+            <p key={item.code}>{item.message}</p>
+          ))}
+        </section>
+      )}
+      {result && (
+        <section className="query-result" aria-label="Query result">
+          <header>
+            <div>
+              <small>{result.operation}</small>
+              <h3>{result.data.kind}</h3>
+            </div>
+            <span>
+              {result.executionTimeMs.toFixed(1)} ms · generation{" "}
+              {result.generation} · cache {result.cacheState}
+            </span>
+          </header>
+          {result.data.kind === "usages" && (
+            <p className="query-direct-answer">
+              <strong>
+                {result.data.metrics.total ?? result.data.items.length} logical
+                usages
+              </strong>{" "}
+              · {result.data.metrics.exact ?? 0} exact/resolved ·{" "}
+              {result.data.metrics.candidates ?? 0} candidate/convention ·{" "}
+              {result.data.metrics.physicalRelationships ??
+                result.data.relationships.length}{" "}
+              physical relationships
+            </p>
+          )}
+          {result.resolvedSeeds.map((seed, index) => (
+            <div className="resolved-seed-group" key={index}>
+              <div className="resolved-seed">
+                <strong>
+                  {seed.selected?.qualifiedName ??
+                    "Explicit selection required"}
+                </strong>
+                <span>
+                  {seed.ambiguous
+                    ? `${seed.candidates.length} ranked candidates`
+                    : seed.reasons.join(" · ")}
+                </span>
+              </div>
+              {seed.requiresSelection && (
+                <div
+                  className="query-seed-candidates"
+                  aria-label={`Candidates for ${seed.selector.value ?? seed.selector.id ?? "entity"}`}
+                >
+                  {seed.candidates.map((candidate) => (
+                    <button
+                      key={candidate.id}
+                      onClick={() =>
+                        selectCandidate(
+                          seed.selector.value ??
+                            seed.selector.id ??
+                            candidate.id,
+                          candidate.id,
+                        )
+                      }
+                    >
+                      <strong>{candidate.qualifiedName}</strong>
+                      <span>
+                        {candidate.type.replace("keystone.core.", "")} ·{" "}
+                        {candidate.relativePath}
+                      </span>
+                      <small>{candidate.reasons.slice(0, 3).join(" · ")}</small>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+          {result.diagnostics.map((item) => (
+            <p
+              className={`query-diagnostic ${item.severity}`}
+              key={`${item.code}:${item.message}`}
+            >
+              {item.code}: {item.message}
+            </p>
+          ))}
+          {result.data.items.length > 0 && (
+            <div className="query-items">
+              {result.data.items.map((item) => (
+                <article key={`${item.group ?? "item"}:${item.id}`}>
+                  <button
+                    className="query-item-main"
+                    onClick={() => inspect(item.id, item)}
+                  >
+                    <div>
+                      <strong>{item.name}</strong>
+                      <span>
+                        {item.group ?? item.classification} ·{" "}
+                        {Math.round(item.confidence * 100)}%
+                      </span>
+                    </div>
+                    <small>
+                      {item.qualifiedName}
+                      <br />
+                      {item.relativePath}
+                      <br />
+                      {item.rankingReasons.slice(0, 3).join(" · ")}
+                    </small>
+                    {item.details?.riskFactors && (
+                      <p>
+                        {(item.details.riskFactors as string[]).join(" · ")}
+                      </p>
+                    )}
+                  </button>
+                  <div className="query-item-actions">
+                    <button onClick={() => followUp("dependencies", item.id)}>
+                      Dependencies
+                    </button>
+                    <button onClick={() => followUp("impact", item.id)}>
+                      Impact
+                    </button>
+                    <button onClick={() => followUp("tests", item.id)}>
+                      Tests
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+          {result.data.paths.map((path, index) =>
+            path.flow ? (
+              <FlowPath key={index} path={path} inspect={inspect} />
+            ) : (
+              <div className="query-path" key={index}>
+                <strong>
+                  Path {index + 1} · confidence{" "}
+                  {Math.round(path.confidence * 100)}% · risk {path.risk}
+                </strong>
+                <ol>
+                  {path.steps.map((step, stepIndex) => (
+                    <li key={`${step.entityId}:${stepIndex}`}>
+                      <button onClick={() => inspect(step.entityId)}>
+                        <span>{step.entityName}</span>
+                        {step.relationshipType && (
+                          <small>
+                            {step.relationshipType.replace(
+                              "keystone.core.",
+                              "",
+                            )}{" "}
+                            · {step.classification}
+                          </small>
+                        )}
+                      </button>
+                    </li>
+                  ))}
+                </ol>
+                {path.unsupportedBoundaries.length > 0 && (
+                  <p>{path.unsupportedBoundaries.join(" · ")}</p>
+                )}
+              </div>
+            ),
+          )}
+          {grouped.length > 0 && (
+            <div className="query-sections">
+              {grouped.map(([name, items]) => (
+                <details key={name}>
+                  <summary>
+                    <strong>{name}</strong>
+                    <span>{items.length}</span>
+                  </summary>
+                  {items.map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => inspect(item.id, item)}
+                    >
+                      <strong>{item.name}</strong>
+                      <small>
+                        {item.qualifiedName ?? item.relativePath ?? item.id} ·{" "}
+                        {Math.round(item.confidence * 100)}%
+                      </small>
+                    </button>
+                  ))}
+                </details>
+              ))}
+            </div>
+          )}
+          {(selectedEntity || selectedProjection) && (
+            <section
+              className="query-inspector"
+              aria-label="Selected query result details"
+            >
+              <header>
+                <div>
+                  <small>
+                    {selectedEntity?.entity.type.replace(
+                      "keystone.core.",
+                      "",
+                    ) ?? selectedProjection?.type.replace("keystone.core.", "")}
+                  </small>
+                  <h3>
+                    {selectedEntity?.entity.qualifiedName ??
+                      selectedProjection?.qualifiedName ??
+                      selectedProjection?.name}
+                  </h3>
+                </div>
+                <button
+                  className="ghost-button"
+                  onClick={() => {
+                    setSelectedEntity(undefined);
+                    setSelectedProjection(undefined);
+                  }}
+                >
+                  Close
+                </button>
+              </header>
+              {selectedEntity ? (
+                <>
+                  <p>
+                    {selectedEntity.entity.relativePath}
+                    {selectedEntity.entity.sourceRange
+                      ? `:${selectedEntity.entity.sourceRange.startLine + 1}`
+                      : ""}{" "}
+                    · generation {selectedEntity.generation}
+                  </p>
+                  {selectedEntity.entity.signature && (
+                    <pre>{selectedEntity.entity.signature}</pre>
+                  )}
+                  <div className="diagnostic-actions">
+                    <button
+                      className="primary-button"
+                      onClick={() =>
+                        void bridge
+                          .request("intelligence/source/open", {
+                            relativePath: selectedEntity.entity.relativePath,
+                            ...(selectedEntity.entity.sourceRange
+                              ? { range: selectedEntity.entity.sourceRange }
+                              : {}),
+                          })
+                          .catch(report(setError))
+                      }
+                    >
+                      Open source
+                    </button>
+                    <button
+                      className="ghost-button"
+                      onClick={() =>
+                        followUp("dependents", selectedEntity.entity.id)
+                      }
+                    >
+                      Dependents
+                    </button>
+                    <button
+                      className="ghost-button"
+                      onClick={() =>
+                        followUp("impact", selectedEntity.entity.id)
+                      }
+                    >
+                      Impact
+                    </button>
+                  </div>
+                  <dl>
+                    <div>
+                      <dt>Incoming relationships</dt>
+                      <dd>
+                        {selectedEntity.incoming.length}
+                        {selectedEntity.truncated ? "+" : ""}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Outgoing relationships</dt>
+                      <dd>
+                        {selectedEntity.outgoing.length}
+                        {selectedEntity.truncated ? "+" : ""}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Evidence records</dt>
+                      <dd>
+                        {selectedEntity.evidence.length}
+                        {selectedEntity.truncated ? "+" : ""}
+                      </dd>
+                    </div>
+                  </dl>
+                  <div className="query-inspector-evidence">
+                    {selectedEntity.evidence.slice(0, 12).map((item) => (
+                      <div key={item.id}>
+                        <strong>{item.statement}</strong>
+                        <span>
+                          {item.derivation} · {item.extractorId}@
+                          {item.extractorVersion} ·{" "}
+                          {Math.round(item.confidence * 100)}%
+                        </span>
+                        <small>
+                          {item.relativePath}
+                          {item.range ? `:${item.range.startLine + 1}` : ""}
+                        </small>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p>
+                    This result is a calculated query projection rather than a
+                    canonical entity. Its displayed classification and ranking
+                    reasons are the available evidence boundary.
+                  </p>
+                  <dl>
+                    <div>
+                      <dt>Classification</dt>
+                      <dd>{selectedProjection?.classification}</dd>
+                    </div>
+                    <div>
+                      <dt>Confidence</dt>
+                      <dd>
+                        {Math.round(
+                          (selectedProjection?.confidence ?? 0) * 100,
+                        )}
+                        %
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Ranking reasons</dt>
+                      <dd>{selectedProjection?.rankingReasons.join(" · ")}</dd>
+                    </div>
+                  </dl>
+                  {selectedProjection?.details && (
+                    <pre>
+                      {JSON.stringify(selectedProjection.details, null, 2)}
+                    </pre>
+                  )}
+                </>
+              )}
+            </section>
+          )}
+          {result.data.cpg && (
+            <p className="query-cpg">
+              CPG result: {result.data.cpg.nodes.length} nodes ·{" "}
+              {result.data.cpg.edges.length} edges
+              {result.data.cpg.truncated ? " · truncated" : ""}
+            </p>
+          )}
+          <details className="query-explanation">
+            <summary>Explain this query and plan</summary>
+            <p>{result.explanation.steps.join(" ")}</p>
+            <dl>
+              <dt>Operation</dt>
+              <dd>{result.plan.operation}</dd>
+              <dt>Resolved seeds</dt>
+              <dd>{result.plan.resolvedSeedIds.join(", ") || "none"}</dd>
+              <dt>Ambiguous candidates</dt>
+              <dd>{result.plan.ambiguousCandidateIds.length}</dd>
+              <dt>Indexes</dt>
+              <dd>
+                {result.plan.indexesSelected.join(", ") || "entity indexes"}
+              </dd>
+              <dt>Relationships</dt>
+              <dd>{result.plan.relationshipFamilies.join(", ") || "none"}</dd>
+              <dt>Traversal</dt>
+              <dd>
+                {result.plan.traversalDirection} · depth{" "}
+                {result.plan.maximumDepth}
+              </dd>
+              <dt>Confidence</dt>
+              <dd>{result.plan.confidenceThreshold}</dd>
+              <dt>Capability</dt>
+              <dd>{result.plan.capabilityThresholds.join(", ")}</dd>
+              <dt>CPG required</dt>
+              <dd>{result.plan.cpgRequired ? "yes" : "no"}</dd>
+              <dt>Limits</dt>
+              <dd>
+                {result.plan.resultLimits.results} results ·{" "}
+                {result.plan.resultLimits.nodes} nodes ·{" "}
+                {result.plan.resultLimits.edges} edges ·{" "}
+                {result.plan.timeBudgetMs} ms
+              </dd>
+              <dt>Evidence required</dt>
+              <dd>{result.plan.evidenceRequired ? "yes" : "no"}</dd>
+              <dt>Ranking</dt>
+              <dd>{result.explanation.rankingRules.join(" · ")}</dd>
+              <dt>Boundaries</dt>
+              <dd>
+                {result.explanation.capabilityBoundaries.join(" · ") || "none"}
+              </dd>
+            </dl>
+            {result.evidence.map((item) => (
+              <div key={item.id}>
+                <strong>
+                  {item.extractorId}@{item.extractorVersion}
+                </strong>
+                <span>{item.statement}</span>
+                <small>
+                  {item.relativePath} · {Math.round(item.confidence * 100)}%
+                </small>
+              </div>
+            ))}
+          </details>
+        </section>
+      )}
+    </section>
+  );
 }
 
-function FlowPath({ path, inspect }: { path: IntelligenceQueryResult["data"]["paths"][number]; inspect: (id: string) => void }): React.JSX.Element {
-  const flow = path.flow!; const terminal = path.steps.at(-1);
-  return <article className={`query-path flow-path ${flow.status}`} aria-label={`${flow.label} ${flow.status}`}>
-    <header><div><small>Alternate {flow.alternateRank}</small><strong>{flow.label}</strong></div><span className={`flow-status ${flow.status}`}>{flow.status} · {Math.round(flow.score * 100)}%</span></header>
-    <div className="flow-stage-summary"><span>Matched: {flow.matchedStages.join(" → ") || "start only"}</span>{flow.missingStages.length > 0 && <span className="flow-missing">Missing: {flow.missingStages.join(" or ")}</span>}</div>
-    <ol>{path.steps.map((step, stepIndex) => <li key={`${step.entityId}:${stepIndex}`}>
-      {stepIndex > 0 && <span className="flow-arrow" aria-label={`${step.traversalDirection ?? "outgoing"} relationship`}>{step.traversalDirection === "incoming" ? "←" : "→"}<small>{step.relationshipType?.replace("keystone.core.", "")}</small></span>}
-      <button onClick={() => inspect(step.entityId)}><strong>{step.entityName}</strong><small>{step.entityType.replace("keystone.core.", "")} · {step.classification} · {Math.round(step.confidence * 100)}%</small></button>
-    </li>)}</ol>
-    <div className="flow-terminal"><div><strong>{flow.status === "complete" ? "Evidence-backed boundary" : "Flow gap"}</strong><p>{flow.terminalReason}</p>{path.unsupportedBoundaries.filter((item) => item !== flow.terminalReason && item !== "flow depth boundary").map((item) => <small key={item}>{item}</small>)}</div>{terminal && <button className="ghost-button" onClick={() => inspect(terminal.entityId)}>Inspect boundary</button>}</div>
-    <details><summary>Why this alternate ranked here</summary><p>{flow.scoreReasons.join(" · ")}</p><small>Minimum confidence {Math.round(path.confidence * 100)}% · risk {path.risk}{path.truncated ? " · truncated" : ""}</small></details>
-  </article>;
+function FlowPath({
+  path,
+  inspect,
+}: {
+  path: IntelligenceQueryResult["data"]["paths"][number];
+  inspect: (id: string) => void;
+}): React.JSX.Element {
+  const flow = path.flow!;
+  const terminal = path.steps.at(-1);
+  return (
+    <article
+      className={`query-path flow-path ${flow.status}`}
+      aria-label={`${flow.label} ${flow.status}`}
+    >
+      <header>
+        <div>
+          <small>Alternate {flow.alternateRank}</small>
+          <strong>{flow.label}</strong>
+        </div>
+        <span className={`flow-status ${flow.status}`}>
+          {flow.status} · {Math.round(flow.score * 100)}%
+        </span>
+      </header>
+      <div className="flow-stage-summary">
+        <span>Matched: {flow.matchedStages.join(" → ") || "start only"}</span>
+        {flow.missingStages.length > 0 && (
+          <span className="flow-missing">
+            Missing: {flow.missingStages.join(" or ")}
+          </span>
+        )}
+      </div>
+      <ol>
+        {path.steps.map((step, stepIndex) => (
+          <li key={`${step.entityId}:${stepIndex}`}>
+            {stepIndex > 0 && (
+              <span
+                className="flow-arrow"
+                aria-label={`${step.traversalDirection ?? "outgoing"} relationship`}
+              >
+                {step.traversalDirection === "incoming" ? "←" : "→"}
+                <small>
+                  {step.relationshipType?.replace("keystone.core.", "")}
+                </small>
+              </span>
+            )}
+            <button onClick={() => inspect(step.entityId)}>
+              <strong>{step.entityName}</strong>
+              <small>
+                {step.entityType.replace("keystone.core.", "")} ·{" "}
+                {step.classification} · {Math.round(step.confidence * 100)}%
+              </small>
+            </button>
+          </li>
+        ))}
+      </ol>
+      <div className="flow-terminal">
+        <div>
+          <strong>
+            {flow.status === "complete"
+              ? "Evidence-backed boundary"
+              : "Flow gap"}
+          </strong>
+          <p>{flow.terminalReason}</p>
+          {path.unsupportedBoundaries
+            .filter(
+              (item) =>
+                item !== flow.terminalReason && item !== "flow depth boundary",
+            )
+            .map((item) => (
+              <small key={item}>{item}</small>
+            ))}
+        </div>
+        {terminal && (
+          <button
+            className="ghost-button"
+            onClick={() => inspect(terminal.entityId)}
+          >
+            Inspect boundary
+          </button>
+        )}
+      </div>
+      <details>
+        <summary>Why this alternate ranked here</summary>
+        <p>{flow.scoreReasons.join(" · ")}</p>
+        <small>
+          Minimum confidence {Math.round(path.confidence * 100)}% · risk{" "}
+          {path.risk}
+          {path.truncated ? " · truncated" : ""}
+        </small>
+      </details>
+    </article>
+  );
 }
 
-function readHistory(): string[] { try { const value = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? "[]") as unknown; return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string").slice(0, 12) : []; } catch { return []; } }
-function report(setError: (value: string) => void): (cause: unknown) => void { return (cause) => setError(cause instanceof Error ? cause.message : String(cause)); }
+function readHistory(): string[] {
+  try {
+    const value = JSON.parse(
+      localStorage.getItem(HISTORY_KEY) ?? "[]",
+    ) as unknown;
+    return Array.isArray(value)
+      ? value
+          .filter((item): item is string => typeof item === "string")
+          .slice(0, 12)
+      : [];
+  } catch {
+    return [];
+  }
+}
+function report(setError: (value: string) => void): (cause: unknown) => void {
+  return (cause) =>
+    setError(cause instanceof Error ? cause.message : String(cause));
+}

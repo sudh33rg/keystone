@@ -41,21 +41,112 @@
     "package": "npm run verify && vsce package --allow-missing-repository --no-dependencies --baseContentUrl . --baseImagesUrl ."
   },
   "contributes": {
-    "commands": [
-      {
-        "command": "keystone.open",
-        "title": "Keystone: Open Control Center",
-        "icon": "$(inspect)"
-      },
-      {
-        "command": "keystone.showLogs",
-        "title": "Keystone: Show Logs",
-        "icon": "$(output)"
-      }
+    "chatParticipants": [
+      { "id": "keystone.chat", "name": "keystone", "fullName": "Keystone", "description": "Deterministic repository and workflow questions from local Keystone Intelligence", "isSticky": true }
     ],
+    "languageModelTools": [
+      { "name": "keystone_search_repository", "toolReferenceName": "keystone_search_repository", "displayName": "Keystone Search Repository", "modelDescription": "Search promoted local Repository Intelligence. Read-only and bounded.", "canBeReferencedInPrompt": true, "inputSchema": { "type": "object", "properties": { "repositoryId": { "type": "string" }, "workflowId": { "type": "string" }, "taskId": { "type": "string" }, "intelligenceGeneration": { "type": "number" }, "query": { "type": "string" }, "entityId": { "type": "string" }, "targetQuery": { "type": "string" }, "targetEntityId": { "type": "string" }, "includeCandidates": { "type": "boolean" }, "relationshipTypes": { "type": "array", "items": { "type": "string" }, "maxItems": 30 }, "limit": { "type": "number", "minimum": 1, "maximum": 100 }, "timeoutMs": { "type": "number", "minimum": 100, "maximum": 15000 } }, "required": ["repositoryId"], "additionalProperties": false } },
+      { "name": "keystone_get_entity", "toolReferenceName": "keystone_get_entity", "displayName": "Keystone Get Entity", "modelDescription": "Get one canonical repository entity with evidence.", "canBeReferencedInPrompt": true, "inputSchema": { "type": "object", "properties": { "repositoryId": { "type": "string" }, "workflowId": { "type": "string" }, "taskId": { "type": "string" }, "intelligenceGeneration": { "type": "number" }, "query": { "type": "string" }, "entityId": { "type": "string" }, "targetQuery": { "type": "string" }, "targetEntityId": { "type": "string" }, "includeCandidates": { "type": "boolean" }, "relationshipTypes": { "type": "array", "items": { "type": "string" }, "maxItems": 30 }, "limit": { "type": "number", "minimum": 1, "maximum": 100 }, "timeoutMs": { "type": "number", "minimum": 100, "maximum": 15000 } }, "required": ["repositoryId"], "additionalProperties": false } },
+      { "name": "keystone_find_usages", "toolReferenceName": "keystone_find_usages", "displayName": "Keystone Find Usages", "modelDescription": "Find bounded evidence-backed usages.", "canBeReferencedInPrompt": true, "inputSchema": { "type": "object", "properties": { "repositoryId": { "type": "string" }, "workflowId": { "type": "string" }, "taskId": { "type": "string" }, "intelligenceGeneration": { "type": "number" }, "query": { "type": "string" }, "entityId": { "type": "string" }, "targetQuery": { "type": "string" }, "targetEntityId": { "type": "string" }, "includeCandidates": { "type": "boolean" }, "relationshipTypes": { "type": "array", "items": { "type": "string" }, "maxItems": 30 }, "limit": { "type": "number", "minimum": 1, "maximum": 100 }, "timeoutMs": { "type": "number", "minimum": 100, "maximum": 15000 } }, "required": ["repositoryId"], "additionalProperties": false } },
+      { "name": "keystone_find_callers", "toolReferenceName": "keystone_find_callers", "displayName": "Keystone Find Callers", "modelDescription": "Find evidence-backed callers.", "canBeReferencedInPrompt": true, "inputSchema": { "type": "object", "properties": { "repositoryId": { "type": "string" }, "workflowId": { "type": "string" }, "taskId": { "type": "string" }, "intelligenceGeneration": { "type": "number" }, "query": { "type": "string" }, "entityId": { "type": "string" }, "targetQuery": { "type": "string" }, "targetEntityId": { "type": "string" }, "includeCandidates": { "type": "boolean" }, "relationshipTypes": { "type": "array", "items": { "type": "string" }, "maxItems": 30 }, "limit": { "type": "number", "minimum": 1, "maximum": 100 }, "timeoutMs": { "type": "number", "minimum": 100, "maximum": 15000 } }, "required": ["repositoryId"], "additionalProperties": false } },
+      { "name": "keystone_find_callees", "toolReferenceName": "keystone_find_callees", "displayName": "Keystone Find Callees", "modelDescription": "Find evidence-backed callees.", "canBeReferencedInPrompt": true, "inputSchema": { "type": "object", "properties": { "repositoryId": { "type": "string" }, "workflowId": { "type": "string" }, "taskId": { "type": "string" }, "intelligenceGeneration": { "type": "number" }, "query": { "type": "string" }, "entityId": { "type": "string" }, "targetQuery": { "type": "string" }, "targetEntityId": { "type": "string" }, "includeCandidates": { "type": "boolean" }, "relationshipTypes": { "type": "array", "items": { "type": "string" }, "maxItems": 30 }, "limit": { "type": "number", "minimum": 1, "maximum": 100 }, "timeoutMs": { "type": "number", "minimum": 100, "maximum": 15000 } }, "required": ["repositoryId"], "additionalProperties": false } },
+      { "name": "keystone_find_implementations", "toolReferenceName": "keystone_find_implementations", "displayName": "Keystone Find Implementations", "modelDescription": "Find implementation relationships.", "canBeReferencedInPrompt": true, "inputSchema": { "type": "object", "properties": { "repositoryId": { "type": "string" }, "workflowId": { "type": "string" }, "taskId": { "type": "string" }, "intelligenceGeneration": { "type": "number" }, "query": { "type": "string" }, "entityId": { "type": "string" }, "targetQuery": { "type": "string" }, "targetEntityId": { "type": "string" }, "includeCandidates": { "type": "boolean" }, "relationshipTypes": { "type": "array", "items": { "type": "string" }, "maxItems": 30 }, "limit": { "type": "number", "minimum": 1, "maximum": 100 }, "timeoutMs": { "type": "number", "minimum": 100, "maximum": 15000 } }, "required": ["repositoryId"], "additionalProperties": false } },
+      { "name": "keystone_find_tests", "toolReferenceName": "keystone_find_tests", "displayName": "Keystone Find Tests", "modelDescription": "Find tests mapped to an entity.", "canBeReferencedInPrompt": true, "inputSchema": { "type": "object", "properties": { "repositoryId": { "type": "string" }, "workflowId": { "type": "string" }, "taskId": { "type": "string" }, "intelligenceGeneration": { "type": "number" }, "query": { "type": "string" }, "entityId": { "type": "string" }, "targetQuery": { "type": "string" }, "targetEntityId": { "type": "string" }, "includeCandidates": { "type": "boolean" }, "relationshipTypes": { "type": "array", "items": { "type": "string" }, "maxItems": 30 }, "limit": { "type": "number", "minimum": 1, "maximum": 100 }, "timeoutMs": { "type": "number", "minimum": 100, "maximum": 15000 } }, "required": ["repositoryId"], "additionalProperties": false } },
+      { "name": "keystone_find_impacted_tests", "toolReferenceName": "keystone_find_impacted_tests", "displayName": "Keystone Find Impacted Tests", "modelDescription": "Rank tests impacted by an entity change.", "canBeReferencedInPrompt": true, "inputSchema": { "type": "object", "properties": { "repositoryId": { "type": "string" }, "workflowId": { "type": "string" }, "taskId": { "type": "string" }, "intelligenceGeneration": { "type": "number" }, "query": { "type": "string" }, "entityId": { "type": "string" }, "targetQuery": { "type": "string" }, "targetEntityId": { "type": "string" }, "includeCandidates": { "type": "boolean" }, "relationshipTypes": { "type": "array", "items": { "type": "string" }, "maxItems": 30 }, "limit": { "type": "number", "minimum": 1, "maximum": 100 }, "timeoutMs": { "type": "number", "minimum": 100, "maximum": 15000 } }, "required": ["repositoryId"], "additionalProperties": false } },
+      { "name": "keystone_show_path", "toolReferenceName": "keystone_show_path", "displayName": "Keystone Show Path", "modelDescription": "Find a bounded evidence-backed path.", "canBeReferencedInPrompt": true, "inputSchema": { "type": "object", "properties": { "repositoryId": { "type": "string" }, "workflowId": { "type": "string" }, "taskId": { "type": "string" }, "intelligenceGeneration": { "type": "number" }, "query": { "type": "string" }, "entityId": { "type": "string" }, "targetQuery": { "type": "string" }, "targetEntityId": { "type": "string" }, "includeCandidates": { "type": "boolean" }, "relationshipTypes": { "type": "array", "items": { "type": "string" }, "maxItems": 30 }, "limit": { "type": "number", "minimum": 1, "maximum": 100 }, "timeoutMs": { "type": "number", "minimum": 100, "maximum": 15000 } }, "required": ["repositoryId"], "additionalProperties": false } },
+      { "name": "keystone_show_flow", "toolReferenceName": "keystone_show_flow", "displayName": "Keystone Show Flow", "modelDescription": "Reconstruct a deterministic repository flow.", "canBeReferencedInPrompt": true, "inputSchema": { "type": "object", "properties": { "repositoryId": { "type": "string" }, "workflowId": { "type": "string" }, "taskId": { "type": "string" }, "intelligenceGeneration": { "type": "number" }, "query": { "type": "string" }, "entityId": { "type": "string" }, "targetQuery": { "type": "string" }, "targetEntityId": { "type": "string" }, "includeCandidates": { "type": "boolean" }, "relationshipTypes": { "type": "array", "items": { "type": "string" }, "maxItems": 30 }, "limit": { "type": "number", "minimum": 1, "maximum": 100 }, "timeoutMs": { "type": "number", "minimum": 100, "maximum": 15000 } }, "required": ["repositoryId"], "additionalProperties": false } },
+      { "name": "keystone_analyze_impact", "toolReferenceName": "keystone_analyze_impact", "displayName": "Keystone Analyze Impact", "modelDescription": "Analyze bounded evidence-backed impact.", "canBeReferencedInPrompt": true, "inputSchema": { "type": "object", "properties": { "repositoryId": { "type": "string" }, "workflowId": { "type": "string" }, "taskId": { "type": "string" }, "intelligenceGeneration": { "type": "number" }, "query": { "type": "string" }, "entityId": { "type": "string" }, "targetQuery": { "type": "string" }, "targetEntityId": { "type": "string" }, "includeCandidates": { "type": "boolean" }, "relationshipTypes": { "type": "array", "items": { "type": "string" }, "maxItems": 30 }, "limit": { "type": "number", "minimum": 1, "maximum": 100 }, "timeoutMs": { "type": "number", "minimum": 100, "maximum": 15000 } }, "required": ["repositoryId"], "additionalProperties": false } },
+      { "name": "keystone_get_task", "toolReferenceName": "keystone_get_task", "displayName": "Keystone Get Task", "modelDescription": "Get the scoped workflow task.", "canBeReferencedInPrompt": true, "inputSchema": { "type": "object", "properties": { "repositoryId": { "type": "string" }, "workflowId": { "type": "string" }, "taskId": { "type": "string" }, "intelligenceGeneration": { "type": "number" }, "query": { "type": "string" }, "entityId": { "type": "string" }, "targetQuery": { "type": "string" }, "targetEntityId": { "type": "string" }, "includeCandidates": { "type": "boolean" }, "relationshipTypes": { "type": "array", "items": { "type": "string" }, "maxItems": 30 }, "limit": { "type": "number", "minimum": 1, "maximum": 100 }, "timeoutMs": { "type": "number", "minimum": 100, "maximum": 15000 } }, "required": ["repositoryId"], "additionalProperties": false } },
+      { "name": "keystone_get_specification", "toolReferenceName": "keystone_get_specification", "displayName": "Keystone Get Specification", "modelDescription": "Get the current approved workflow specification.", "canBeReferencedInPrompt": true, "inputSchema": { "type": "object", "properties": { "repositoryId": { "type": "string" }, "workflowId": { "type": "string" }, "taskId": { "type": "string" }, "intelligenceGeneration": { "type": "number" }, "query": { "type": "string" }, "entityId": { "type": "string" }, "targetQuery": { "type": "string" }, "targetEntityId": { "type": "string" }, "includeCandidates": { "type": "boolean" }, "relationshipTypes": { "type": "array", "items": { "type": "string" }, "maxItems": 30 }, "limit": { "type": "number", "minimum": 1, "maximum": 100 }, "timeoutMs": { "type": "number", "minimum": 100, "maximum": 15000 } }, "required": ["repositoryId"], "additionalProperties": false } },
+      { "name": "keystone_get_acceptance_criteria", "toolReferenceName": "keystone_get_acceptance_criteria", "displayName": "Keystone Get Acceptance Criteria", "modelDescription": "Get task-scoped acceptance criteria.", "canBeReferencedInPrompt": true, "inputSchema": { "type": "object", "properties": { "repositoryId": { "type": "string" }, "workflowId": { "type": "string" }, "taskId": { "type": "string" }, "intelligenceGeneration": { "type": "number" }, "query": { "type": "string" }, "entityId": { "type": "string" }, "targetQuery": { "type": "string" }, "targetEntityId": { "type": "string" }, "includeCandidates": { "type": "boolean" }, "relationshipTypes": { "type": "array", "items": { "type": "string" }, "maxItems": 30 }, "limit": { "type": "number", "minimum": 1, "maximum": 100 }, "timeoutMs": { "type": "number", "minimum": 100, "maximum": 15000 } }, "required": ["repositoryId"], "additionalProperties": false } },
+      { "name": "keystone_get_task_context", "toolReferenceName": "keystone_get_task_context", "displayName": "Keystone Get Task Context", "modelDescription": "Get bounded reviewed task-context metadata.", "canBeReferencedInPrompt": true, "inputSchema": { "type": "object", "properties": { "repositoryId": { "type": "string" }, "workflowId": { "type": "string" }, "taskId": { "type": "string" }, "intelligenceGeneration": { "type": "number" }, "query": { "type": "string" }, "entityId": { "type": "string" }, "targetQuery": { "type": "string" }, "targetEntityId": { "type": "string" }, "includeCandidates": { "type": "boolean" }, "relationshipTypes": { "type": "array", "items": { "type": "string" }, "maxItems": 30 }, "limit": { "type": "number", "minimum": 1, "maximum": 100 }, "timeoutMs": { "type": "number", "minimum": 100, "maximum": 15000 } }, "required": ["repositoryId"], "additionalProperties": false } },
+      { "name": "keystone_get_validation_state", "toolReferenceName": "keystone_get_validation_state", "displayName": "Keystone Get Validation State", "modelDescription": "Get validation state and evidence references.", "canBeReferencedInPrompt": true, "inputSchema": { "type": "object", "properties": { "repositoryId": { "type": "string" }, "workflowId": { "type": "string" }, "taskId": { "type": "string" }, "intelligenceGeneration": { "type": "number" }, "query": { "type": "string" }, "entityId": { "type": "string" }, "targetQuery": { "type": "string" }, "targetEntityId": { "type": "string" }, "includeCandidates": { "type": "boolean" }, "relationshipTypes": { "type": "array", "items": { "type": "string" }, "maxItems": 30 }, "limit": { "type": "number", "minimum": 1, "maximum": 100 }, "timeoutMs": { "type": "number", "minimum": 100, "maximum": 15000 } }, "required": ["repositoryId"], "additionalProperties": false } },
+      { "name": "keystone_get_workflow_state", "toolReferenceName": "keystone_get_workflow_state", "displayName": "Keystone Get Workflow State", "modelDescription": "Get current workflow readiness and blockers.", "canBeReferencedInPrompt": true, "inputSchema": { "type": "object", "properties": { "repositoryId": { "type": "string" }, "workflowId": { "type": "string" }, "taskId": { "type": "string" }, "intelligenceGeneration": { "type": "number" }, "query": { "type": "string" }, "entityId": { "type": "string" }, "targetQuery": { "type": "string" }, "targetEntityId": { "type": "string" }, "includeCandidates": { "type": "boolean" }, "relationshipTypes": { "type": "array", "items": { "type": "string" }, "maxItems": 30 }, "limit": { "type": "number", "minimum": 1, "maximum": 100 }, "timeoutMs": { "type": "number", "minimum": 100, "maximum": 15000 } }, "required": ["repositoryId"], "additionalProperties": false } }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        { "id": "keystone", "title": "Keystone", "icon": "resources/keystone.svg" }
+      ]
+    },
+    "views": {
+      "keystone": [
+        { "id": "keystone.dashboard", "name": "Dashboard" }
+      ]
+    },
+    "viewsWelcome": [
+      { "view": "keystone.dashboard", "contents": "Open a folder to use repository-aware Keystone features.\n[Open Folder](command:keystone.openFolder)\n\n[Open Keystone](command:keystone.open)", "when": "!keystone.workspaceAvailable" }
+    ],
+    "commands": [
+      { "command": "keystone.open", "title": "Keystone: Open", "icon": "$(inspect)" },
+      { "command": "keystone.startWorkflow", "title": "Keystone: Start New Work", "icon": "$(add)" },
+      { "command": "keystone.resumeWorkflow", "title": "Keystone: Resume Current Workflow", "icon": "$(debug-continue)" },
+      { "command": "keystone.openCurrentTask", "title": "Keystone: Open Current Task", "icon": "$(tools)" },
+      { "command": "keystone.askRepository", "title": "Keystone: Ask Repository", "icon": "$(search)" },
+      { "command": "keystone.openEntity", "title": "Keystone: Open Entity", "icon": "$(symbol-class)" },
+      { "command": "keystone.showUsages", "title": "Keystone: Show Usages", "icon": "$(references)" },
+      { "command": "keystone.showFlow", "title": "Keystone: Show Flow", "icon": "$(type-hierarchy)" },
+      { "command": "keystone.analyzeImpact", "title": "Keystone: Analyze Impact", "icon": "$(pulse)" },
+      { "command": "keystone.importHandoff", "title": "Keystone: Import Task Handoff", "icon": "$(cloud-download)" },
+      { "command": "keystone.openDiagnostics", "title": "Keystone: Open Diagnostics", "icon": "$(pulse)" },
+      { "command": "keystone.openSettings", "title": "Keystone: Open Settings", "icon": "$(gear)" },
+      { "command": "keystone.showLogs", "title": "Keystone: Show Logs", "icon": "$(output)" },
+      { "command": "keystone.dashboard.refresh", "title": "Refresh", "icon": "$(refresh)" },
+      { "command": "keystone.dashboard.openAction", "title": "Open Dashboard Item" },
+      { "command": "keystone.openFolder", "title": "Open Folder", "icon": "$(folder-opened)" }
+    ],
+    "menus": {
+      "view/title": [
+        { "command": "keystone.dashboard.refresh", "when": "view == keystone.dashboard", "group": "navigation" },
+        { "command": "keystone.open", "when": "view == keystone.dashboard", "group": "navigation" }
+      ],
+      "editor/context": [
+        { "command": "keystone.openEntity", "when": "keystone.intelligenceReady && keystone.workspaceTrusted && config.keystone.shell.showEditorContextActions", "group": "navigation@51" },
+        { "command": "keystone.showUsages", "when": "keystone.intelligenceReady && keystone.workspaceTrusted && config.keystone.shell.showEditorContextActions", "group": "navigation@52" },
+        { "command": "keystone.showFlow", "when": "keystone.intelligenceReady && keystone.workspaceTrusted && config.keystone.shell.showEditorContextActions", "group": "navigation@53" },
+        { "command": "keystone.analyzeImpact", "when": "keystone.intelligenceReady && keystone.workspaceTrusted && config.keystone.shell.showEditorContextActions", "group": "navigation@54" }
+      ],
+      "commandPalette": [
+        { "command": "keystone.dashboard.openAction", "when": "false" },
+        { "command": "keystone.dashboard.refresh", "when": "false" },
+        { "command": "keystone.openFolder", "when": "false" }
+      ]
+    },
     "configuration": {
       "title": "Keystone",
       "properties": {
+        "keystone.panel.reopenOnStartup": {
+          "type": "boolean",
+          "default": true,
+          "description": "Restore the Keystone panel when it was open in the previous VS Code session."
+        },
+        "keystone.panel.defaultColumn": {
+          "type": "string",
+          "enum": ["one", "active", "beside"],
+          "default": "one",
+          "description": "Default editor column used when Keystone creates its singleton panel."
+        },
+        "keystone.shell.showStatusBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show one compact Keystone status item for current repository and workflow state."
+        },
+        "keystone.shell.showEditorContextActions": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show entity, usage, flow, and impact actions for supported source files."
+        },
+        "keystone.shell.enableCodeLens": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show bounded Keystone Intelligence CodeLens actions above supported symbols."
+        },
+        "keystone.shell.dashboardRefreshDebounceMs": {
+          "type": "number",
+          "default": 150,
+          "minimum": 50,
+          "maximum": 2000,
+          "description": "Debounce interval for event-driven native dashboard refreshes."
+        },
         "keystone.indexing.enabled": {
           "type": "boolean",
           "default": true,
@@ -160,6 +251,14 @@
           "description": "Deterministic task-category/capability to agent mappings used only for rule-based or fixed-workflow selection.",
           "items": { "type": "object" }
         },
+        "keystone.copilot.enableTools": { "type": "boolean", "default": true, "description": "Register bounded read-only Keystone Intelligence tools when the VS Code Language Model Tool API is available." },
+        "keystone.copilot.enableChatParticipant": { "type": "boolean", "default": true, "description": "Register the deterministic @keystone chat participant when supported." },
+        "keystone.copilot.includeCandidateRelationships": { "type": "boolean", "default": false, "description": "Allow candidate relationships in Keystone tool results when explicitly requested." },
+        "keystone.copilot.maximumToolResults": { "type": "number", "default": 25, "minimum": 1, "maximum": 100, "description": "Maximum result items returned by one Keystone tool invocation." },
+        "keystone.copilot.maximumSourceExcerptLines": { "type": "number", "default": 20, "minimum": 0, "maximum": 100, "description": "Maximum source excerpt lines returned by one Keystone tool result." },
+        "keystone.copilot.defaultAssistedMode": { "type": "string", "enum": ["open-chat", "clipboard"], "default": "open-chat", "description": "Default safe fallback for assisted Copilot launch." },
+        "keystone.copilot.customizationDiscoveryPaths": { "type": "array", "default": [], "items": { "type": "string" }, "description": "Additional repository-relative allowlisted customization paths. Arbitrary user directories are never scanned." },
+        "keystone.copilot.toolAuditRetention": { "type": "number", "default": 200, "minimum": 10, "maximum": 1000, "description": "Maximum bounded, source-free Keystone tool audit entries retained locally." },
         "keystone.validation.runBuild": {
           "type": "boolean",
           "default": true,

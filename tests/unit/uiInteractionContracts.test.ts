@@ -18,9 +18,9 @@ describe("Webview interaction contracts", () => {
       });
     }
     const contracts = readFileSync(join(process.cwd(), "src", "shared", "contracts", "messages.ts"), "utf8");
-    const router = readFileSync(join(process.cwd(), "src", "extension", "webview", "WebviewMessageRouter.ts"), "utf8");
+    const router = readFileSync(join(process.cwd(), "src", "extension", "webview", "WebviewMessageRouter.ts"), "utf8") + readFileSync(join(process.cwd(), "src", "extension", "webview", "KeystonePanelService.ts"), "utf8");
     const bridge = readFileSync(join(UI_ROOT, "services", "HostBridge.ts"), "utf8");
-    const missing = [...requests].sort().filter((type) => !contracts.includes(`"${type}"`) || !router.includes(`case "${type}"`) || !bridge.includes(`case "${type}"`));
+    const missing = [...requests].sort().filter((type) => !contracts.includes(`"${type}"`) || !router.includes(`"${type}"`) || !bridge.includes(`case "${type}"`));
     expect(missing, "Each clickable/queryable host action needs a typed request, host route, and response validator").toEqual([]);
     expect(requests.size).toBeGreaterThan(100);
   });
@@ -56,5 +56,6 @@ function walk(node: ts.Node, visit: (node: ts.Node) => void): void {
 
 function collectStrings(node: ts.Node, output: Set<string>): void {
   if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) output.add(node.text);
+  if (ts.isConditionalExpression(node)) { collectStrings(node.whenTrue, output); collectStrings(node.whenFalse, output); return; }
   node.forEachChild((child) => collectStrings(child, output));
 }

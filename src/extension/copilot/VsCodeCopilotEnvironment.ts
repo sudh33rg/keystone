@@ -6,7 +6,12 @@ export class VsCodeCopilotEnvironment implements CopilotEnvironment {
   listCommands(): Promise<string[]> { return Promise.resolve(vscode.commands.getCommands(true)); }
   async integrationMethods(): Promise<string[]> {
     const commands = await this.listCommands();
-    return commands.includes("workbench.action.chat.open") ? ["open-chat-v1"] : [];
+    return [
+      ...(commands.includes("workbench.action.chat.open") ? ["open-chat-v1"] : []),
+      ...(typeof vscode.lm?.registerTool === "function" ? ["language-model-tools-v1"] : []),
+      ...(typeof vscode.chat?.createChatParticipant === "function" ? ["chat-participant-v1"] : []),
+      "clipboard-v1",
+    ];
   }
   async executeAllowedCommand(command: SupportedCopilotCommand): Promise<void> {
     if (!(COPILOT_COMMAND_ALLOWLIST as readonly string[]).includes(command)) throw new Error(`Rejected non-allowlisted Copilot command: ${command}`);

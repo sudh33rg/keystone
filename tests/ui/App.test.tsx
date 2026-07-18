@@ -23,7 +23,7 @@ function createBridge() {
 }
 
 describe("App", () => {
-  it("bootstraps, renders honest phase status, and persists navigation", () => {
+  it("bootstraps, renders honest phase status, and persists navigation", async () => {
     const fake = createBridge();
     render(<App bridge={fake.bridge}/>);
     expect(fake.request).toHaveBeenCalledWith("app/bootstrap", {});
@@ -54,7 +54,7 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Intelligence" }));
     expect(fake.request).toHaveBeenCalledWith("navigation/set", { route: "/intelligence" });
     act(() => fake.emit(hostMessage("intelligence/updated", emptyIntelligenceOverview("not-indexed"))));
-    expect(screen.getByText("No local intelligence snapshot exists yet.")).toBeTruthy();
+    expect(await screen.findByText("No local intelligence snapshot exists yet.")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Scan repository" })).toBeTruthy();
 
     const scanning = emptyIntelligenceOverview("scanning", true);

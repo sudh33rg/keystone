@@ -74,7 +74,7 @@ export const CommitPlanSchema = z.object({
 export type CommitPlan = z.infer<typeof CommitPlanSchema>;
 
 export const GitMutationApprovalSchema = z.object({
-  id: Id, action: z.enum(["stage", "unstage", "create-branch", "commit", "push", "create-pr", "update-pr"]), repositoryId: z.string().max(500), branch: z.string().max(500).optional(),
+  id: Id, action: z.enum(["stage", "unstage", "create-branch", "commit", "push", "create-pr", "update-pr", "export-patch"]), repositoryId: z.string().max(500), branch: z.string().max(500).optional(),
   changeSetId: Id.optional(), changeSetFingerprint: z.string().max(500).optional(), commitPlanId: Id.optional(), proposedCommitId: Id.optional(), paths: z.array(Path).max(5000), message: Text.optional(), remote: z.string().max(200).optional(), remoteBranch: z.string().max(500).optional(),
   risks: z.array(z.string().max(2000)).max(100), safelyRetryable: z.boolean(), approvedBy: z.literal("user"), approvedAt: Timestamp, consumedAt: Timestamp.optional(),
 }).strict();

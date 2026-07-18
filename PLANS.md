@@ -2359,3 +2359,221 @@ Task-specific modified files:
 No file was deleted by Task 2. Existing unrelated and prior-slice changes, including `README.md`, `GAP-ANALYSIS.md`, Intelligence query files, fixture repositories, and the pre-existing `pnpm-lock.yaml` deletion, were preserved.
 
 Known limitations and next boundary: current-file scope depends on the active editor at creation; repository evidence shown in Define is bounded and candidates require explicit scope choice; Build does not auto-start an agent; full execution controls, validation/review/PR detail, completion, and Handoff preparation remain intentionally deferred. The recommended next milestone is **UI Architecture Task 3 — Build and Execution Interaction**, using the approved task plan and existing execution services without changing the canonical workflow model. It has not been started.
+
+### UI Architecture Task 3 — Task-Centered Build and Execution UI — 2026-07-18
+
+Status: **Complete.** The Build stage is a task-centered projection over the canonical workflow, context, delegation, execution, validation, retry, completion, assignment, and Handoff services. It never creates a React-owned execution model and never treats Copilot claims as completion evidence.
+
+Implemented vertical slice:
+
+- [x] Add versioned, bounded Build queue/state, readiness, customization, and lifecycle contracts.
+- [x] Add deterministic supported-format customization discovery with path applicability, trust state, and persisted selection.
+- [x] Add a canonical Build projection over existing workflow, context, delegation, execution, validation, and completion services.
+- [x] Persist selected task, Build baseline, customization selection, and panel compatibility fields in migration-safe delegation state.
+- [x] Add guarded task selection/start/pause/resume/block/cancel host routes and typed response validation.
+- [x] Replace the ready-task placeholder with task queue, readiness, task scope, agent/customization/context review, prompt preview, observed changes, and validation/completion summaries.
+- [x] Add customization discovery/applicability/trust tests and retain the global UI interaction-contract gate.
+- [x] Document canonical composition, customization, context, delegation limitations, attribution, validation, handoff boundary, and recovery.
+
+- [x] Add direct/assisted/clipboard capability-driven controls, explicit external-start/stop confirmation, execution tracking, bounded result capture, and cancellation without fabricated progress.
+- [x] Add queue filters, keyboard task navigation, structured blocker capture, unverified intended-agent fallback, context budget/review/pin/exclude/restore controls, exact prompt preview, and visible customization references.
+- [x] Add per-file attribution, bounded diff inspection, focused validation planning/run/cancel/rerun/manual evidence, same- or different-agent retry preparation/start, and task-level Handoff preview/validate/export/cancel.
+- [x] Add every requested versioned Build request and lifecycle event name, response validation, workspace-trust enforcement, and persisted recovery through existing `.keystone` stores.
+- [x] Retain the existing execution, validation, retry, Handoff, persistence, restart-reconciliation, context-budget, and accessibility tests; add customization and Build trust/interaction-contract coverage.
+
+Task-3 files created so far: `docs/BUILD_WORKSPACE.md`, `src/core/copilot/CopilotCustomizationService.ts`, `src/core/workflows/BuildWorkspaceService.ts`, `src/shared/contracts/build.ts`, and `tests/unit/copilot/CopilotCustomizationService.test.ts`.
+
+Task-3 files modified: `PLANS.md`, `src/core/copilot/AgentRegistry.ts`, `src/core/copilot/DelegationService.ts`, `src/core/persistence/DelegationPersistenceStore.ts`, `src/extension/extension.ts`, `src/extension/webview/WebviewMessageRouter.ts`, `src/shared/contracts/delegation.ts`, `src/shared/contracts/messages.ts`, `src/ui/components/workbench/SDLCWorkbench.tsx`, `src/ui/services/HostBridge.ts`, `src/ui/styles/global.css`, `tests/unit/uiInteractionContracts.test.ts`, `tests/unit/webview/WebviewMessageRouter.test.ts`, and `vitest.config.ts`. Created: `docs/BUILD_WORKSPACE.md`, `src/core/copilot/CopilotCustomizationService.ts`, `src/core/workflows/BuildWorkspaceService.ts`, `src/shared/contracts/build.ts`, and `tests/unit/copilot/CopilotCustomizationService.test.ts`. No file was moved or deleted by Task 3.
+
+Final validation:
+
+- `npm run typecheck` — passed.
+- `npm run lint` — passed.
+- `npm test` — passed: 54 files and 434 tests.
+- Focused Build contracts/router/customization/Workbench tests — passed: 4 files and 14 tests; focused Copilot/Build regression set — passed: 4 files and 22 tests.
+- `npm run build:extension` — passed; extension and semantic-worker production bundles completed.
+- `npm run build:webview` — passed; 124 modules, JavaScript 556.92 kB/144.81 kB gzip and CSS 43.18 kB/8.07 kB gzip. The existing Vite >500 kB advisory remains non-blocking.
+- `npm run test:extension` — passed in a real VS Code 1.95.0 Extension Host; the development extension loaded and exited with code 0.
+- The in-app browser had no VS Code Webview tab to claim, so visual interaction was verified through the React interaction suite and real Extension Host run rather than reported as a browser-driven manual lifecycle.
+
+Task 3 did not add standalone Task Handoff navigation, Delivery navigation, Hub, local-model, LoRA, backend, automatic Git staging/commit/push/PR behavior, or Review/Complete-stage implementation. The next milestone is **UI Architecture Task 4 — Review and Completion**, and it has not been started.
+
+### UI Architecture Task 4 — Review and Optional Completion — 2026-07-18
+
+Status: **Complete.** Review and Complete are canonical Workbench stages. Delivery was not reintroduced as primary navigation, and local completion does not require Git or a pull request.
+
+- [x] Add typed, bounded `review/*` and `complete/*` request/event contracts and Webview response validation.
+- [x] Persist review notes, finding dispositions, decisions, completion records, and archive state atomically under `.keystone/workflow/review-state.json`.
+- [x] Derive Review summary, requirement/criterion traceability, attributed changes, QA/security/performance/documentation findings, checklist, blockers, warnings, and staleness from canonical evidence.
+- [x] Add bounded lazy diff loading; diff bodies are never persisted.
+- [x] Add durable review notes, explicit finding dispositions/risk acceptance, task reopening/follow-up creation, approval, approval-with-warnings, rejection, and retained review history.
+- [x] Generate and edit deterministic PR review packages without claiming a PR exists.
+- [x] Make local completion first-class and record deterministic reports, partial closure, retained-change cancellation, archive state, warnings, and optional delivery references.
+- [x] Preserve separate staging, commit, push, PR-creation, patch-export, and final-completion approvals; bind mutation approvals to reviewed fingerprints and current repository state.
+- [x] Add capability-driven change-set/commit-plan, PR, patch export, and task-centered Handoff actions inside Complete.
+- [x] Integrate completion status, mode, references, warnings, and reports into History.
+- [x] Document Review, traceability, findings, PR review, optional completion, approval boundaries, partial/Handoff behavior, persistence, and recovery in `docs/REVIEW_AND_COMPLETION.md`.
+- [x] Finish full validation and record final command outcomes below.
+
+Architecture decision: `ReviewCompletionService` is an evidence projection and decision coordinator, not another execution engine. Workflow/execution/validation facts remain canonical in their existing stores; Git/PR facts remain canonical in delivery persistence; Handoff facts remain canonical in team persistence. The Review store retains only user review decisions and workflow completion records. Repository fingerprint drift makes an approved decision stale and blocks Complete mutations.
+
+Known limitations: source-symbol opening from a Review change row is available only where the underlying changed-entity record retains a resolvable source; Review currently presents bounded text diffs rather than a full editor diff control; direct PR creation remains unavailable unless a provider proves direct capability; Handoff preparation requires an accepted assignment; patch export rejects truncated/binary diffs rather than producing partial output. These are honest capability boundaries, not inferred success.
+
+Validation outcomes:
+
+- `npm run verify` plus the final focused/full test rerun: passed type checking, linting, 55 test files / 437 tests, extension production build, and React Webview production build.
+- `npm run test:extension`: passed against VS Code 1.95.0 with extension-host exit code 0.
+- Focused Review/Webview/delivery suite: 4 files / 28 tests passed, including readiness blocking, local completion without Git mutation, persistence, bounded contracts, interaction registration, and existing Git/PR safety gates.
+- `git diff --check`: passed.
+- Interactive Webview browser check: Home and Workbench rendered with no schema-error banner after repairing preview host responses; repository/trust/Intelligence context rendered; the intent textbox was keyboard-fillable and `Start workflow` changed from disabled to enabled from visible state. The browser check caused the preview-response repair in `HostBridge`; it did not replace the extension-host suite.
+- Production Webview emits one existing Vite advisory that the main minified chunk is above 500 KB; the build succeeds. Code splitting remains an appropriate Task 5 performance hardening item.
+
+The next recommended milestone was superseded by the product-owner-approved **UI Architecture Task 5 — Copilot Customizations and Keystone Intelligence Tools** below.
+
+### UI Architecture Task 5 — Copilot Customizations and Keystone Intelligence Tools — 2026-07-18
+
+Status: **Complete.** This task integrates with supported VS Code/Copilot extension surfaces; it does not create another agent runtime, hosted model, backend, Hub, or local model.
+
+- [x] Consolidate independently detected Copilot chat, customization, Language Model Tool, chat-participant, direct-invocation, assisted, and clipboard capabilities. Unknown runtime support remains unavailable.
+- [x] Discover only allowlisted repository/workspace instruction, path-instruction, agent-definition, prompt, and skill files; fingerprint bounded metadata, apply workspace trust, and never execute customization content.
+- [x] Classify task applicability deterministically from expected files, languages, category, capabilities, validation, and explicit user selection; expose reasons, staleness, and duplicate-guidance decisions.
+- [x] Preserve evidence-backed runtime agents and clearly distinguish unverified agent-definition files; retain explicit per-task selection and invalidate unavailable selections.
+- [x] Register the approved read-only, bounded Keystone Intelligence/workflow tool set where the VS Code Language Model Tool API is actually present. Expose no shell, file mutation, Git, delivery, completion, or Handoff tool.
+- [x] Enforce schema validation, repository/workflow/task scope, trust, promoted-generation freshness, cancellation, timeouts, result/excerpt caps, secret redaction, structured evidence, and bounded audit for every tool call.
+- [x] Register the optional deterministic `@keystone` chat participant only where the API is present and enabled; compose supported repository/workflow answers from structured Keystone results without invoking an LLM.
+- [x] Harden assisted launch around prompt preview, guidance deduplication, approval, open/copy fallback, explicit submission confirmation, and restart-safe uncertain state.
+- [x] Add typed, versioned, bounded Copilot integration Webview contracts and integrate compact status plus task-level controls into the existing Home/Build surfaces without redesigning the Workbench.
+- [x] Document discovery, applicability/trust, agents, tools, participant, assisted fallback, deduplication, audit/safety, persistence, recovery, limitations, and validation evidence.
+- [x] Run type checking, linting, focused/full tests, extension tests, both production builds, and real Webview/extension interaction checks.
+
+Implementation assumptions: VS Code 1.95 provides stable `lm.registerTool` and `chat.createChatParticipant` APIs, but registration is additionally controlled by Keystone settings and runtime property checks. Installed extension IDs are evidence only that Copilot may be present; they do not prove agent inventory, direct invocation, tool availability, prompt insertion, or completion events. Repository customization content remains untrusted inert text even in a trusted workspace. Tool responses use canonical Intelligence identifiers and bounded structured JSON rather than source or graph dumps.
+
+Architecture outcome: customization scanning/applicability, integration capability detection, tool policy/execution/audit, chat composition, and assisted launch are feature-owned services over existing Intelligence, workflow, context, execution, and Copilot adapters. The new atomic store is `.keystone/workflow/copilot-integration.json`; it contains fingerprints, choices, capability/settings snapshots, bounded audit, and assisted-launch confirmation state—not credentials, full customization contents, source bodies, or agent sessions. The 17 registered tools are exclusively read-only. The Extension Host test now asserts that all 17 contributions are registered and that none has a Git, shell, write, commit, push, or Handoff name.
+
+Validation outcomes:
+
+- `npm run verify` — passed: type checking, linting, 56 test files / 443 tests, extension production bundle, semantic-worker production bundle, and React Webview production bundle.
+- Focused Copilot/customization/router/UI suites — passed: 4 files / 18 tests; the dedicated integration suite covers independent capabilities, the exact non-mutating registry, trust/repository policy, bounded execution/audit, unsupported deterministic chat, and reload uncertainty.
+- `npm run test:extension` — passed in VS Code 1.95.0 with exit code 0. The first run exposed rejected tool contributions because prompt-reference metadata lacked `toolReferenceName`; all 17 declarations were repaired. The final host run registered all 17 and the extension test asserted the complete non-mutating set.
+- `npx --no-install vsce ls --no-dependencies` — passed; the package manifest and production artifacts were accepted.
+- `git diff --check` — passed.
+- Interactive Webview browser check — Home rendered the compact Copilot fallback indicator without a schema-error banner; Workbench start rendered repository/trust/Intelligence facts; keyboard input enabled `Start workflow`. The Build integration panel is additionally covered by typed HostBridge and React interaction tests because local preview contains no fabricated approved workflow.
+- The existing Vite advisory remains: the main minified Webview chunk is 587.94 kB (150.62 kB gzip), above the 500 kB advisory threshold. It does not fail the production build.
+
+Task-5 files created: `docs/COPILOT_INTEGRATION.md`, `src/core/copilot/CopilotIntegrationService.ts`, `src/core/copilot/KeystoneChatAndLaunchService.ts`, `src/core/persistence/CopilotIntegrationPersistenceStore.ts`, `src/extension/copilot/VsCodeCopilotIntegration.ts`, `src/shared/contracts/copilotIntegration.ts`, and `tests/unit/copilot/CopilotIntegrationService.test.ts`.
+
+Task-5 files modified: `PLANS.md`, `package.json`, `src/core/copilot/CopilotCustomizationService.ts`, `src/extension/copilot/VsCodeCopilotEnvironment.ts`, `src/extension/extension.ts`, `src/extension/webview/WebviewMessageRouter.ts`, `src/shared/contracts/messages.ts`, `src/ui/components/home/HomeDashboard.tsx`, `src/ui/components/workbench/SDLCWorkbench.tsx`, `src/ui/services/HostBridge.ts`, `src/ui/styles/global.css`, and `tests/extension/index.ts`. No file was moved or deleted by Task 5. Other dirty files in the shared worktree belong to the already completed Tasks 3–4 and were preserved.
+
+Known limitations: VS Code/Copilot decides whether a registered tool is offered to a particular model request; Keystone cannot prove runtime custom-agent inventory or direct invocation without a supported adapter method; the deterministic participant intentionally supports a controlled query grammar; customization discovery does not scan arbitrary user directories; candidate relations are excluded by default; registration-setting changes require extension reload; the Webview bundle advisory remains. These limitations are surfaced rather than converted into success.
+
+The recommended next milestone is **UI Architecture Task 6 — Accessibility, responsive layout, performance, and end-to-end UX hardening**. It should code-split the Webview, exercise real narrow VS Code panels and high-contrast/keyboard/screen-reader flows, and expand real-repository extension-host journeys without changing the canonical workflow or Copilot integration model. It has not been started.
+
+### UI Architecture Task 6 — Native Extension Dashboard and Reliable Webview Launch — 2026-07-18
+
+Status: **Complete.** The product-owner-approved Task 6 coordinates a lightweight native Activity Bar dashboard with the existing React Webview and adds no new product capability.
+
+- [x] Add one native dashboard view to the existing/single Keystone Activity Bar container, using bounded projections from canonical repository, Intelligence, workflow, validation, review, Copilot, Handoff, and recovery state.
+- [x] Replace direct panel creation with one window-scoped `KeystonePanelService` that reveals an existing panel, owns one receiver/router subscription, persists safe panel state, and never cancels workflow/ingestion/validation on disposal.
+- [x] Add typed, versioned open-target, handshake, initialization, navigation acknowledgement, dashboard, panel-state, validation, fallback, and recovery contracts.
+- [x] Validate every stable-ID deep link against the active repository and canonical workflow/Intelligence state; preserve meaning through explicit missing-target and repository-mismatch recovery rather than silent redirects.
+- [x] Restore only the last safe valid route, selected task/entity/query/drawer, and panel column; fall back to the nearest valid parent with an announced recovery reason and never restore destructive confirmations.
+- [x] Register the bounded command set, one status-bar item, safe editor-context actions, opt-in bounded CodeLens, context keys, and meaningful notification actions; commands construct launch requests instead of performing workflow mutations.
+- [x] Debounce event-driven dashboard/status/context refresh, measure native/panel/navigation latency, and log stable launch, handshake, validation, recovery, duplicate-panel, and message events.
+- [x] Integrate the Webview-ready/initialize/pending-navigation/acknowledgement sequence, external navigation, focus management, recovery UI, route state, and local back/forward behavior without creating route loops.
+- [x] Document the two-surface architecture, lifecycle, handshake, deep links, recovery, commands/status/notifications/context keys, multi-root behavior, security, accessibility, and measured performance.
+- [x] Run full tests/builds, extension-host integration, VSIX dry run, packaging inspection, and real native/Webview interaction checks.
+
+Implementation assumptions: the current repository has a singleton-capable `KeystoneViewProvider` but no contributed Activity Bar container or native tree. Task 6 therefore adds the one permitted Keystone container rather than duplicating an existing contribution. Existing `.keystone/state/workspace.json` route persistence remains canonical for the React route; panel-specific safe metadata uses a bounded feature-owned store. Native tree items carry only stable IDs and bounded labels, never domain objects, source, prompts, secrets, or credentials.
+
+Implementation outcome: `KeystoneDashboardViewModelService` projects four bounded native sections; `KeystonePanelService` owns the single `keystone.controlCenter` panel; `KeystoneNavigationService` and `KeystoneLaunchValidationService` compile every command/dashboard destination into a validated route; `.keystone/state/native-shell.json` retains only safe route and stable-ID metadata. The Webview now sends a versioned ready message, receives bounded initialization and pending navigation, acknowledges sequence numbers, restores focus to `<main>`, renders explicit recovery, and maintains local back/forward history. Intelligence query, entity, flow, and impact destinations restore their query/entity context; Handoff import invokes the existing reviewed file-import request after the Webview is ready.
+
+Validation and measurements:
+
+- `npm run verify` — passed: type checking, lint, 57 Vitest files / 449 tests, extension production build, and React Webview production build. The Webview bundle is 596.41 kB (152.49 kB gzip); Vite reports the existing >500 kB code-splitting warning, retained for the next hardening task.
+- `npm run test:extension` — passed in the real VS Code 1.95 Extension Development Host. Activation remained below the existing 500 ms budget, a real fixture generation completed, semantic/CPG/query checks passed, all 17 bounded tools registered, all Task 6 commands registered, and two consecutive `keystone.open` calls reported one open panel with duplicate prevention. Two reruns exposed stale VS Code Git API metadata after an external empty commit; `VsCodeGitAdapter` now corroborates branch/HEAD/dirty metadata with the local Git executable, and the same-branch reconciliation journey passes.
+- `npx vsce package --allow-missing-repository --no-dependencies --baseContentUrl . --baseImagesUrl . --out /tmp/keystone-task6.vsix` plus `unzip -l` — passed; 13 packaged files, 2.25 MB, one extension bundle, one semantic worker, one Webview bundle, and one Keystone icon. The existing missing-LICENSE warning remains.
+- In-app browser render check against the local production-equivalent React entry — passed: handshake returned valid initialization, Home rendered without console errors, Ask Repository opened Intelligence, `<main>` received focus, browser back/forward restored Home/Intelligence, Settings opened, and no route loop appeared.
+- Dashboard unit projection stayed below 20 ms in the test fixture; event bursts coalesced into one refresh. The panel logs creation time, ready-handshake time, deep-link validation duration, and duplicate-prevention count for real-session diagnostics.
+
+Task 6 files created: `docs/NATIVE_EXTENSION_DASHBOARD.md`, `src/core/integration/NativeShellServices.ts`, `src/core/persistence/NativeShellPersistenceStore.ts`, `src/extension/dashboard/KeystoneDashboard.ts`, `src/extension/webview/KeystonePanelService.ts`, `src/shared/contracts/nativeShell.ts`, and `tests/unit/NativeShellServices.test.ts`.
+
+Task 6 files modified: `package.json`, `PLANS.md`, `src/extension/adapters/GitAdapter.ts`, `src/extension/extension.ts`, `src/extension/webview/KeystoneViewProvider.ts`, `src/extension/webview/WebviewMessageRouter.ts`, `src/shared/contracts/messages.ts`, `src/ui/App.tsx`, `src/ui/components/intelligence/IntelligenceOverview.tsx`, `src/ui/components/intelligence/QueryWorkspace.tsx`, `src/ui/components/intelligence/SemanticBrowser.tsx`, `src/ui/services/HostBridge.ts`, `tests/extension/index.ts`, and `tests/unit/uiInteractionContracts.test.ts`. No files were moved or deleted.
+
+Known limits: the native dashboard binds to the promoted repository represented by current canonical Intelligence in a multi-root workspace; cross-repository targets are rejected with a recovery warning rather than switched automatically. Approval deep links restore the workflow stage because the current UI has no stable approval-detail route. Webview route modules are not yet code-split. These are stated limits, not placeholder behavior.
+
+Recommended next task: **Accessibility, responsive layout, performance, and end-to-end UX hardening**. It should code-split the Webview, exercise narrow/high-contrast/reduced-motion/screen-reader scenarios, and expand multi-root and restart UI automation without altering canonical workflow behavior. It has not been started.
+
+### UI End-to-End Audit — 2026-07-18
+
+Status: **Complete.** This final UI architecture task hardens the existing native dashboard and React Webview as one product and adds no product capability or primary navigation. Every verified P1 issue below is repaired and covered by tests.
+
+Verified information architecture:
+
+- Primary navigation is exactly Home, SDLC Workbench, Intelligence, and History. Diagnostics and Settings are header destinations. Intent and Specification live in Define; tasks live in Plan and Build; Validation and QA live in Validate and Review; security, performance, and PR review live in Review; optional Git/PR/patch actions live in Complete; Task Handoff is a task action.
+- `package.json` contributes one Keystone Activity Bar container, one native dashboard view, the bounded Task-6 commands, editor-context actions, settings, and status integration. It contributes no standalone Intent, Tasks, Delivery, Handoff, Diagnostics, Settings, Hub, model-training, or future-roadmap view.
+- The singleton panel, typed ready/initialize/navigation acknowledgement sequence, bounded native projections, safe-route persistence, target validation, and nearest-valid-route recovery are implemented and covered by Task-6 tests. Legacy section persistence is migrated through `compatibilityRoute`; compatibility route constants are retained for old callers.
+
+Verified defects and planned corrections:
+
+| Screen or flow | Expected behavior | Actual behavior | Severity | Reproduction | Root cause | Planned correction |
+| --- | --- | --- | --- | --- | --- | --- |
+| Workbench → Validate | Aggregate validation for the active workflow only and offer a path back to its tasks | The stage requests every execution session and selects the repository-wide latest session | P1 | Create executions for two workflows, then open Validate on the older workflow | `ExecutionValidationWorkspace` has no workflow identity/filter | Pass the canonical workflow/task scope, filter sessions before selection, show a workflow-scoped empty state, and add Return to Build |
+| Home status | Show repository, branch, current Intelligence, validation failures, and useful destinations | Repository name comes from bootstrap, branch is absent, Intelligence can remain at bootstrap status, and Validation shows a stage label rather than failed-task count | P1 | Open Home after an Intelligence runtime update or with a workflow containing failed tasks | Home receives no live overview and projects the wrong validation field | Pass the live overview, show branch/status/failure count, and make status cards explicit links or meaningful explanations |
+| Primary user-facing failures | Use one bounded error shape with preserved-state and recovery information | App, Home, History, and stage components primarily render raw strings in unrelated banners | P1 | Reject bootstrap, workflow list, or a stage request | No shared Webview error model/component | Add `KeystoneUiError`, deterministic normalization, retry/dismiss actions, and shared accessible rendering; preserve technical codes without showing stacks as the main message |
+| History empty state | Explain the valid next step | Shows only `No saved workflows.` | P2 | Open History in a new workspace | Unstructured placeholder paragraph | Use the shared empty-state component with Start new work and Home actions |
+| Webview startup | Load the active route without eagerly evaluating every large route | Home, Workbench, Intelligence, and History are statically imported; the production bundle is 596.41 kB | P2 | Run `npm run build:webview` | No route-level code splitting | Lazy-load route modules with an announced bounded fallback and verify production chunks |
+| Obsolete standalone components | The routed product should have one lifecycle implementation | Unrouted Delivery and orchestration workspaces and their isolated tests remain as compatibility-era code | P2 | Search imports from `App.tsx` and production UI | Old components were retained after Task 1 routing consolidation | Remove only after contract/service-preservation tests prove no production dependency; retain underlying services |
+
+No P0 defect has been verified. Other requested areas are not marked defective without reproduction evidence: native action compilation, singleton reuse, deep-link validation/recovery, stage gating, Build approval boundaries, task Handoff packaging, optional completion approvals, lazy Review diff loading, repository-local `.keystone` persistence, high-contrast variables, reduced motion, and responsive Build/Review layouts already have implementation and tests from Tasks 1–6. They remain in the final validation matrix.
+
+Correction and validation plan:
+
+- [x] Repair the P1 workflow-scoping, Home projection, and shared-error defects.
+- [x] Add useful empty/loading states and contextual Intelligence access without changing navigation.
+- [x] Add route-level lazy loading; retain proven-unrouted compatibility components as a documented P2 because isolated tests still consume them.
+- [x] Extend UI, navigation, native-shell, contract, accessibility, responsive/theme, recovery, and lifecycle scenario tests.
+- [x] Run typecheck, lint, full unit/Webview/integration suites, both production builds, Extension Host tests, VSIX packaging/smoke inspection, and real browser/Extension Host checks.
+- [x] Record performance measurements, P2/P3 disposition, exact files, commands, outcomes, and final product assertions. No further UI architecture task is recommended.
+
+Completion checkpoint:
+
+- Validate now filters canonical execution sessions by the route workflow ID, never falls back to another workflow, explains the no-session state, and returns to Build. Every stage exposes contextual Repository Intelligence through workflow actions.
+- Home requests current creation context, workflow/orchestration state, Intelligence overview, and Copilot capabilities. It shows repository/branch, live Intelligence generation, matched workflow/task, approvals, findings, real failed-task count, and honest Copilot state. Actionable cards deep-link to Intelligence or the relevant stage; non-actionable states explain the next step.
+- `UiState.tsx` supplies the shared bounded error and empty-state architecture. App, Home, Handoff import, and History use preserved-state, retry/dismiss, accessible recovery. History has an explicit Start new work empty state.
+- Workbench, Intelligence, and History are lazy route chunks with announced loading states. Initial JavaScript fell from 596.41 kB to 444.93 kB; separate chunks are 100.97 kB, 54.53 kB, and 2.44 kB respectively. The previous Vite size advisory is gone.
+- The real browser journey passed at 360, 720, and 1440 px without page overflow. At 360 px, Home → Start New Work → intent entry → Start Workflow → Define passed, `<main>` received focus, and Define → Repository Intelligence opened correctly. The development-only preview now returns typed workflow/Define projections instead of a schema error.
+- Theme tokens use VS Code variables, forced colors restore borders/focus/loader contrast, reduced motion is retained, and narrow header controls keep accessible names while collapsing to icons.
+
+Validation commands and outcomes:
+
+- `npm run verify` — passed: typecheck, lint, 59 Vitest files / 458 tests, extension production build, semantic-worker build, and React Webview production build.
+- Focused final UI suite — passed: 7 files / 20 tests. Measured cases included native dashboard projection 3 ms, Home 73 ms, Start/Define 90 ms, workflow-scoped Validate 48 ms, and App route/Intelligence interaction 413 ms.
+- `npm run test:extension` — passed in the real VS Code 1.95.0 Extension Host with exit code 0.
+- `npx --no-install vsce package ... --out /tmp/keystone-final-ui.vsix` and `unzip -l` — passed: 16 packaged files, 2.25 MB. The existing missing-LICENSE warning remains.
+- Isolated packaged-extension smoke: VS Code installed the VSIX successfully and listed `keystone-dev.keystone@0.1.0`.
+- `git diff --check` — passed after the final documentation update.
+
+Files created by this final task:
+
+- `docs/UI_END_TO_END_HARDENING.md`
+- `src/ui/components/UiState.tsx`
+- `tests/ui/UiState.test.tsx`
+- `tests/unit/uiEndToEndAudit.test.ts`
+
+Files modified by this final task:
+
+- `PLANS.md`
+- `src/ui/App.tsx`
+- `src/ui/components/execution/ExecutionValidationWorkspace.tsx`
+- `src/ui/components/history/HistoryWorkspace.tsx`
+- `src/ui/components/home/HomeDashboard.tsx`
+- `src/ui/components/workbench/SDLCWorkbench.tsx`
+- `src/ui/services/HostBridge.ts`
+- `src/ui/styles/global.css`
+- `tests/ui/App.test.tsx`
+- `tests/ui/ExecutionValidationWorkspace.test.tsx`
+- `tests/ui/HomeDashboard.test.tsx`
+
+No file was moved or deleted by this task. The complete architecture, restoration behavior, error/empty states, accessibility/responsive/theme evidence, performance, scenario mapping, contract/contribution cleanup, and remaining P2/P3 items are documented in `docs/UI_END_TO_END_HARDENING.md`.
+
+Final assertions: the native dashboard and singleton React Webview operate as one product; the canonical workflow is usable from Intent through optional completion; Task Handoff remains task-centered; Delivery and Git/PR remain optional; PR review remains in Review; no standalone lifecycle product or future-roadmap capability was introduced. No P0 or unresolved verified P1 UI issue remains.

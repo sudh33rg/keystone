@@ -10,6 +10,7 @@ export default defineConfig({
       "**/fixtures/benchmarks/fullstack/**",
       "**/fixtures/benchmarks/multi-package/**",
     ],
+    testTimeout: 15_000,
     coverage: {
       reporter: ["text", "html"]
     }

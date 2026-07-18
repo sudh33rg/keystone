@@ -28,6 +28,35 @@ import {
 } from "./intelligence";
 import type { SerializedKeystoneError } from "../errors/KeystoneError";
 import {
+  InitializationAcknowledgedPayloadSchema,
+  KeystoneDashboardStateSchema,
+  KeystoneInitializationSchema,
+  KeystonePanelStateSchema,
+  NavigationAcknowledgedPayloadSchema,
+  OpenKeystoneRequestSchema,
+  ValidatedNavigationSchema,
+  WebviewReadyPayloadSchema,
+  WebviewStateChangedPayloadSchema,
+  type KeystoneDashboardState,
+  type KeystoneInitialization,
+  type KeystonePanelState,
+  type ValidatedNavigation,
+} from "./nativeShell";
+import {
+  AssistedLaunchIdPayloadSchema,
+  AssistedLaunchPayloadSchema,
+  CopilotCustomizationIdPayloadSchema,
+  CopilotCustomizationTogglePayloadSchema,
+  CopilotScopePayloadSchema,
+  CopilotToolTestPayloadSchema,
+  type AssistedLaunchState,
+  type CopilotCustomizationRecord,
+  type CopilotIntegrationCapabilities,
+  type CopilotToolAuditEntry,
+  type KeystoneToolDescriptor,
+  type KeystoneToolResult,
+} from "./copilotIntegration";
+import {
   CpgScopeQuerySchema,
   CpgSliceQuerySchema,
   type CpgQueryResult,
@@ -87,8 +116,43 @@ import {
   type PreparedDelegation,
   type TaskContextPackage,
 } from "./delegation";
-import { WorkbenchClarificationAnswerPayloadSchema, WorkbenchClarificationPayloadSchema, WorkbenchConstraintsUpdatePayloadSchema, WorkbenchCreateWorkflowPayloadSchema, WorkbenchDependencyUpdatePayloadSchema, WorkbenchIntentUpdatePayloadSchema, WorkbenchLifecycleEventSchema, WorkbenchPlanApprovalPayloadSchema, WorkbenchScopeUpdatePayloadSchema, WorkbenchSpecificationApprovePayloadSchema, WorkbenchSpecificationUpdatePayloadSchema, WorkbenchStageNavigationPayloadSchema, WorkbenchStaleEventSchema, WorkbenchTaskAddPayloadSchema, WorkbenchTaskRemovePayloadSchema, WorkbenchTaskReorderPayloadSchema, WorkbenchTaskUpdatePayloadSchema, type WorkbenchCreateContext, type WorkbenchDefineState, type WorkbenchPlanState, type WorkbenchStageState, type WorkbenchSummary, type WorkbenchTaskPlanValidation, type WorkbenchWorkflowState } from "./workbench";
-import { BuildBlockTaskPayloadSchema, BuildCustomizationSelectionPayloadSchema, BuildLifecycleEventSchema, BuildSelectTaskPayloadSchema, BuildTaskPayloadSchema, type BuildTaskQueue, type BuildTaskState, type CopilotCustomizationItem } from "./build";
+import {
+  WorkbenchClarificationAnswerPayloadSchema,
+  WorkbenchClarificationPayloadSchema,
+  WorkbenchConstraintsUpdatePayloadSchema,
+  WorkbenchCreateWorkflowPayloadSchema,
+  WorkbenchDependencyUpdatePayloadSchema,
+  WorkbenchIntentUpdatePayloadSchema,
+  WorkbenchLifecycleEventSchema,
+  WorkbenchPlanApprovalPayloadSchema,
+  WorkbenchScopeUpdatePayloadSchema,
+  WorkbenchSpecificationApprovePayloadSchema,
+  WorkbenchSpecificationUpdatePayloadSchema,
+  WorkbenchStageNavigationPayloadSchema,
+  WorkbenchStaleEventSchema,
+  WorkbenchTaskAddPayloadSchema,
+  WorkbenchTaskRemovePayloadSchema,
+  WorkbenchTaskReorderPayloadSchema,
+  WorkbenchTaskUpdatePayloadSchema,
+  type WorkbenchCreateContext,
+  type WorkbenchDefineState,
+  type WorkbenchPlanState,
+  type WorkbenchStageState,
+  type WorkbenchSummary,
+  type WorkbenchTaskPlanValidation,
+  type WorkbenchWorkflowState,
+} from "./workbench";
+import {
+  BuildBlockTaskPayloadSchema,
+  BuildCustomizationSelectionPayloadSchema,
+  BuildLifecycleEventSchema,
+  BuildSelectTaskPayloadSchema,
+  BuildSelectAgentPayloadSchema,
+  BuildTaskPayloadSchema,
+  type BuildTaskQueue,
+  type BuildTaskState,
+  type CopilotCustomizationItem,
+} from "./build";
 import {
   AttributeChangePayloadSchema,
   CaptureResultPayloadSchema,
@@ -121,6 +185,7 @@ import {
   type DeliveryReadiness,
   type GitActionResult,
   type GitCapabilities,
+  type GitMutationApproval,
   type GitRepositoryState,
   type PullRequestDraft,
   type PullRequestCreationResult,
@@ -153,7 +218,10 @@ import {
   type TeamPersistentState,
   type TeamProgressSnapshot,
 } from "./team";
-import { ExecutionRoutingRequestSchema, type ExecutionRoutingDecision } from "./routing";
+import {
+  ExecutionRoutingRequestSchema,
+  type ExecutionRoutingDecision,
+} from "./routing";
 import {
   OrchestrationCreatePayloadSchema,
   OrchestrationDecisionPayloadSchema,
@@ -168,6 +236,28 @@ import {
   type WorkflowPolicy,
   type OrchestrationReviewPlan,
 } from "./orchestration";
+import {
+  CompleteApprovalPayloadSchema,
+  CompleteDecisionPayloadSchema,
+  CompletePatchPayloadSchema,
+  ReviewAddNotePayloadSchema,
+  ReviewDecisionPayloadSchema,
+  ReviewDiffPayloadSchema,
+  ReviewFollowUpPayloadSchema,
+  ReviewPrDraftUpdatePayloadSchema,
+  ReviewRequestChangesPayloadSchema,
+  ReviewResolveNotePayloadSchema,
+  ReviewRiskDispositionPayloadSchema,
+  ReviewUpdateNotePayloadSchema,
+  ReviewWorkflowPayloadSchema,
+  ReviewLifecycleEventSchema,
+  type CompletionState,
+  type FindingDisposition,
+  type ReviewDecision,
+  type ReviewNote,
+  type WorkflowCompletionRecord,
+  type WorkflowReviewState,
+} from "./review";
 
 export const SerializedKeystoneErrorSchema = z
   .object({
@@ -197,6 +287,60 @@ export const SerializedKeystoneErrorSchema = z
   .strict();
 
 export const WebviewRequestSchema = z.discriminatedUnion("type", [
+  request("review/getState", ReviewWorkflowPayloadSchema),
+  request("review/getSummary", ReviewWorkflowPayloadSchema),
+  request("review/getTraceability", ReviewWorkflowPayloadSchema),
+  request("review/getChanges", ReviewWorkflowPayloadSchema),
+  request("review/getDiff", ReviewDiffPayloadSchema),
+  request("review/attributeChange", ReviewWorkflowPayloadSchema.extend({ path: z.string().min(1).max(1024), classification: z.enum(["expected", "related", "pre-existing", "excluded"]), reason: z.string().min(1).max(2000) }).strict()),
+  request("review/getQa", ReviewWorkflowPayloadSchema),
+  request("review/getSecurity", ReviewWorkflowPayloadSchema),
+  request("review/getPerformance", ReviewWorkflowPayloadSchema),
+  request("review/getDocumentation", ReviewWorkflowPayloadSchema),
+  request("review/addNote", ReviewAddNotePayloadSchema),
+  request("review/updateNote", ReviewUpdateNotePayloadSchema),
+  request("review/resolveNote", ReviewResolveNotePayloadSchema),
+  request("review/requestChanges", ReviewRequestChangesPayloadSchema),
+  request("review/createFollowUpTask", ReviewFollowUpPayloadSchema),
+  request("review/generatePrDraft", ReviewWorkflowPayloadSchema),
+  request("review/getPrDraft", ReviewWorkflowPayloadSchema),
+  request("review/updatePrDraft", ReviewPrDraftUpdatePayloadSchema),
+  request("review/getPrChecklist", ReviewWorkflowPayloadSchema),
+  request("review/getReadiness", ReviewWorkflowPayloadSchema),
+  request("review/approve", ReviewDecisionPayloadSchema),
+  request("review/approveWithWarnings", ReviewDecisionPayloadSchema),
+  request("review/reject", ReviewDecisionPayloadSchema),
+  request("review/returnToBuild", ReviewRequestChangesPayloadSchema),
+  request("review/returnToDefine", ReviewRequestChangesPayloadSchema),
+  request("review/dispositionFinding", ReviewRiskDispositionPayloadSchema),
+  request("complete/getState", ReviewWorkflowPayloadSchema),
+  request("complete/getOptions", ReviewWorkflowPayloadSchema),
+  request("complete/getReport", ReviewWorkflowPayloadSchema),
+  request("complete/completeLocally", CompleteDecisionPayloadSchema),
+  request("complete/closePartial", CompleteDecisionPayloadSchema),
+  request("complete/cancelWithChanges", CompleteDecisionPayloadSchema),
+  request("complete/archive", ReviewWorkflowPayloadSchema),
+  request("complete/getChangeSet", ReviewWorkflowPayloadSchema),
+  request("complete/updateChangeSet", DeliveryFileDecisionPayloadSchema.extend({ included: z.boolean() }).strict()),
+  request("complete/generateCommitPlan", DeliveryChangeSetPayloadSchema),
+  request("complete/updateCommitPlan", z.object({ commitPlan: CommitPlanSchema }).strict()),
+  request("complete/approveStaging", CompleteApprovalPayloadSchema),
+  request("complete/stageChanges", z.object({ approvalId: z.string().uuid() }).strict()),
+  request("complete/approveCommit", CompleteApprovalPayloadSchema),
+  request("complete/createCommit", z.object({ approvalId: z.string().uuid() }).strict()),
+  request("complete/getPushReadiness", ReviewWorkflowPayloadSchema),
+  request("complete/approvePush", CompleteApprovalPayloadSchema),
+  request("complete/push", z.object({ approvalId: z.string().uuid() }).strict()),
+  request("complete/getPrCapabilities", ReviewWorkflowPayloadSchema),
+  request("complete/preparePr", ReviewWorkflowPayloadSchema),
+  request("complete/approvePrCreation", CompleteApprovalPayloadSchema),
+  request("complete/createPr", z.object({ approvalId: z.string().uuid() }).strict()),
+  request("complete/confirmAssistedPr", z.object({ workflowId: z.string().uuid(), url: z.string().url().max(2000), confirm: z.literal(true) }).strict()),
+  request("complete/preparePatch", CompletePatchPayloadSchema),
+  request("complete/approvePatchExport", CompleteApprovalPayloadSchema),
+  request("complete/exportPatch", z.object({ workflowId: z.string().uuid(), approvalId: z.string().uuid() }).strict()),
+  request("complete/prepareHandoff", ReviewWorkflowPayloadSchema),
+  request("complete/exportHandoff", z.object({ packageId: z.string().uuid() }).strict()),
   request("orchestration/create", OrchestrationCreatePayloadSchema),
   request("orchestration/get", OrchestrationIdPayloadSchema),
   request("orchestration/list", z.object({}).strict()),
@@ -216,7 +360,10 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
   request("orchestration/cancelTask", OrchestrationTaskActionPayloadSchema),
   request("orchestration/retryTask", OrchestrationTaskActionPayloadSchema),
   request("orchestration/changeAgent", OrchestrationTaskActionPayloadSchema),
-  request("orchestration/skipOptionalTask", OrchestrationTaskActionPayloadSchema),
+  request(
+    "orchestration/skipOptionalTask",
+    OrchestrationTaskActionPayloadSchema,
+  ),
   request("orchestration/schedule", OrchestrationIdPayloadSchema),
   request("orchestration/conflicts", OrchestrationIdPayloadSchema),
   request("orchestration/approvals", OrchestrationIdPayloadSchema),
@@ -235,7 +382,10 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
   request("orchestration/securityAccept", OrchestrationFindingPayloadSchema),
   request("orchestration/performancePlan", OrchestrationIdPayloadSchema),
   request("orchestration/performanceRun", OrchestrationIdPayloadSchema),
-  request("orchestration/performanceFinding", OrchestrationFindingPayloadSchema),
+  request(
+    "orchestration/performanceFinding",
+    OrchestrationFindingPayloadSchema,
+  ),
   request("orchestration/performanceAccept", OrchestrationFindingPayloadSchema),
   request("orchestration/validationPlan", OrchestrationIdPayloadSchema),
   request("orchestration/runValidation", OrchestrationIdPayloadSchema),
@@ -248,7 +398,10 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
   request("app/ping", z.object({}).strict()),
   request(
     "navigation/set",
-    z.union([z.object({ route: AppRouteSchema }).strict(), z.object({ section: NavigationSectionSchema }).strict()]),
+    z.union([
+      z.object({ route: AppRouteSchema }).strict(),
+      z.object({ section: NavigationSectionSchema }).strict(),
+    ]),
   ),
   request(
     "settings/open",
@@ -308,16 +461,31 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
   request("workbench/getDefineState", WorkflowIdPayloadSchema),
   request("workbench/updateIntent", WorkbenchIntentUpdatePayloadSchema),
   request("workbench/updateScope", WorkbenchScopeUpdatePayloadSchema),
-  request("workbench/updateConstraints", WorkbenchConstraintsUpdatePayloadSchema),
+  request(
+    "workbench/updateConstraints",
+    WorkbenchConstraintsUpdatePayloadSchema,
+  ),
   request("workbench/getClarifications", WorkflowIdPayloadSchema),
-  request("workbench/answerClarification", WorkbenchClarificationAnswerPayloadSchema),
+  request(
+    "workbench/answerClarification",
+    WorkbenchClarificationAnswerPayloadSchema,
+  ),
   request("workbench/deferClarification", WorkbenchClarificationPayloadSchema),
-  request("workbench/markClarificationNotApplicable", WorkbenchClarificationPayloadSchema),
+  request(
+    "workbench/markClarificationNotApplicable",
+    WorkbenchClarificationPayloadSchema,
+  ),
   request("workbench/reopenClarification", WorkbenchClarificationPayloadSchema),
   request("workbench/generateSpecification", WorkflowIdPayloadSchema),
-  request("workbench/updateSpecification", WorkbenchSpecificationUpdatePayloadSchema),
+  request(
+    "workbench/updateSpecification",
+    WorkbenchSpecificationUpdatePayloadSchema,
+  ),
   request("workbench/generateAcceptanceCriteria", WorkflowIdPayloadSchema),
-  request("workbench/approveSpecification", WorkbenchSpecificationApprovePayloadSchema),
+  request(
+    "workbench/approveSpecification",
+    WorkbenchSpecificationApprovePayloadSchema,
+  ),
   request("workbench/getPlanState", WorkflowIdPayloadSchema),
   request("workbench/generateTaskPlan", WorkflowIdPayloadSchema),
   request("workbench/updateTask", WorkbenchTaskUpdatePayloadSchema),
@@ -340,14 +508,108 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
   request("build/cancelTask", BuildTaskPayloadSchema),
   request("build/getCopilotCapabilities", BuildTaskPayloadSchema),
   request("build/getCustomizations", BuildTaskPayloadSchema),
-  request("build/updateCustomizationSelection", BuildCustomizationSelectionPayloadSchema),
+  request(
+    "build/updateCustomizationSelection",
+    BuildCustomizationSelectionPayloadSchema,
+  ),
   request("build/getAgents", BuildTaskPayloadSchema),
+  request("build/selectAgent", BuildSelectAgentPayloadSchema),
+  request("build/createContext", ContextBuildPayloadSchema),
+  request("build/getContext", ContextGetPayloadSchema),
+  request("build/updateContextItem", ContextItemActionPayloadSchema),
+  request("build/pinContextItem", ContextItemActionPayloadSchema),
+  request("build/excludeContextItem", ContextItemActionPayloadSchema),
+  request("build/regenerateContext", ContextBuildPayloadSchema),
+  request("build/getPromptPreview", DelegationPromptPayloadSchema),
+  request("build/prepareDelegation", DelegationPreparePayloadSchema),
+  request("build/approveDelegation", DelegationApprovePayloadSchema),
+  request("build/startDelegation", DelegationStartPayloadSchema),
+  request("build/confirmAssistedState", DelegationSessionPayloadSchema),
+  request("build/cancelDelegation", DelegationSessionPayloadSchema),
+  request("build/getExecutionState", ExecutionSessionPayloadSchema),
+  request("build/getRepositoryChanges", ExecutionSessionPayloadSchema),
+  request("build/updateChangeAttribution", AttributeChangePayloadSchema),
+  request(
+    "build/getDiff",
+    z
+      .object({
+        path: z.string().max(1024),
+        mode: z.enum(["working-head", "index-head", "working-index"]),
+        maxBytes: z.number().int().min(1000).max(100_000).default(50_000),
+      })
+      .strict(),
+  ),
+  request("build/refreshChanges", ExecutionSessionPayloadSchema),
+  request(
+    "build/getValidationPlan",
+    z.object({ planId: z.string().uuid() }).strict(),
+  ),
+  request("build/runValidation", ValidationRunPayloadSchema),
+  request("build/cancelValidation", ValidationRunIdPayloadSchema),
+  request(
+    "build/rerunValidation",
+    ValidationRunIdPayloadSchema.extend({ stepId: z.string().uuid() }).strict(),
+  ),
+  request(
+    "build/addManualEvidence",
+    ValidationRunIdPayloadSchema.extend({
+      criterionId: z.string().max(200),
+      statement: z.string().min(1).max(5000),
+    }).strict(),
+  ),
+  request("build/getAcceptanceCriteriaState", ValidationRunIdPayloadSchema),
+  request("build/prepareRetry", RetryPlanPayloadSchema),
+  request("build/updateRetryAgent", RetryPlanPayloadSchema),
+  request("build/approveRetry", ExecutionSessionPayloadSchema),
+  request("build/startRetry", ExecutionSessionPayloadSchema),
+  request("build/prepareHandoff", HandoffCreatePayloadSchema),
+  request("build/validateHandoff", HandoffValidatePayloadSchema),
+  request("build/exportHandoff", HandoffExportPayloadSchema),
+  request("build/cancelHandoff", HandoffPackageIdPayloadSchema),
+  request("build/getCompletionReadiness", ExecutionSessionPayloadSchema),
+  request("build/requestCompletionReview", ExecutionSessionPayloadSchema),
   request("copilot/capabilities", z.object({}).strict()),
   request("copilot/refreshCapabilities", z.object({}).strict()),
   request("copilot/agents", z.object({}).strict()),
   request("copilot/refreshAgents", z.object({}).strict()),
   request("copilot/agentRecommendation", AgentRecommendationPayloadSchema),
   request("copilot/selectAgent", AgentSelectionPayloadSchema),
+  request("copilot/getCapabilities", z.object({}).strict()),
+  request("copilot/getIntegrationStatus", z.object({}).strict()),
+  request("copilot/listCustomizations", CopilotScopePayloadSchema),
+  request("copilot/getCustomization", CopilotCustomizationIdPayloadSchema),
+  request("copilot/refreshCustomizations", CopilotScopePayloadSchema),
+  request("copilot/setCustomizationEnabled", CopilotCustomizationTogglePayloadSchema),
+  request("copilot/getApplicableCustomizations", CopilotScopePayloadSchema),
+  request("copilot/listAgents", CopilotScopePayloadSchema),
+  request("copilot/getAgent", z.object({ agentId: z.string().min(1).max(500) }).strict()),
+  request("copilot/recommendAgent", CopilotScopePayloadSchema),
+  request("copilot/listKeystoneTools", z.object({}).strict()),
+  request("copilot/getToolStatus", z.object({ toolName: z.string().min(1).max(100) }).strict()),
+  request("copilot/getToolAudit", z.object({ limit: z.number().int().min(1).max(200).default(50) }).strict()),
+  request("copilot/testTool", CopilotToolTestPayloadSchema),
+  request("copilot/prepareAssistedLaunch", AssistedLaunchPayloadSchema),
+  request("copilot/getPreparedPrompt", AssistedLaunchIdPayloadSchema),
+  request("copilot/openChat", AssistedLaunchIdPayloadSchema),
+  request("copilot/copyPrompt", AssistedLaunchIdPayloadSchema),
+  request("copilot/confirmSubmission", AssistedLaunchIdPayloadSchema),
+  request("copilot/cancelAssistedLaunch", AssistedLaunchIdPayloadSchema),
+  request("copilot/getParticipantStatus", z.object({}).strict()),
+  request("copilot/openParticipant", z.object({}).strict()),
+  request("copilot/disableParticipant", z.object({}).strict()),
+  request("keystone/webviewReady", WebviewReadyPayloadSchema),
+  request("keystone/initializationAcknowledged", InitializationAcknowledgedPayloadSchema),
+  request("keystone/navigationAcknowledged", NavigationAcknowledgedPayloadSchema),
+  request("keystone/webviewStateChanged", WebviewStateChangedPayloadSchema),
+  request("dashboard/getState", z.object({}).strict()),
+  request("dashboard/refresh", z.object({}).strict()),
+  request("dashboard/openAction", z.object({ itemId: z.string().min(1).max(500) }).strict()),
+  request("panel/getState", z.object({}).strict()),
+  request("panel/updateState", WebviewStateChangedPayloadSchema),
+  request("panel/getPendingNavigation", z.object({}).strict()),
+  request("navigation/validateTarget", OpenKeystoneRequestSchema),
+  request("navigation/resolveFallback", OpenKeystoneRequestSchema),
+  request("navigation/open", OpenKeystoneRequestSchema),
   request("context/build", ContextBuildPayloadSchema),
   request("context/get", ContextGetPayloadSchema),
   request("context/update", ContextItemActionPayloadSchema),
@@ -425,35 +687,178 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
   request("git/repositoryState", z.object({}).strict()),
   request("git/remotes", z.object({}).strict()),
   request("git/branches", z.object({}).strict()),
-  request("git/diff", z.object({ path: z.string().max(1024), mode: z.enum(["working-head", "index-head", "working-index"]), maxBytes: z.number().int().min(1000).max(100_000).default(50_000) }).strict()),
+  request(
+    "git/diff",
+    z
+      .object({
+        path: z.string().max(1024),
+        mode: z.enum(["working-head", "index-head", "working-index"]),
+        maxBytes: z.number().int().min(1000).max(100_000).default(50_000),
+      })
+      .strict(),
+  ),
   request("git/readiness", DeliveryWorkflowPayloadSchema),
   request("delivery/createChangeSet", DeliveryWorkflowPayloadSchema),
   request("delivery/getChangeSet", DeliveryChangeSetPayloadSchema),
   request("delivery/includeFile", DeliveryFileDecisionPayloadSchema),
   request("delivery/excludeFile", DeliveryFileDecisionPayloadSchema),
-  request("delivery/attributeFile", DeliveryFileDecisionPayloadSchema.extend({ attribution: z.enum(["expected", "related", "unexpected", "pre-existing", "concurrent", "ambiguous", "excluded", "generated-output"]) }).strict()),
+  request(
+    "delivery/attributeFile",
+    DeliveryFileDecisionPayloadSchema.extend({
+      attribution: z.enum([
+        "expected",
+        "related",
+        "unexpected",
+        "pre-existing",
+        "concurrent",
+        "ambiguous",
+        "excluded",
+        "generated-output",
+      ]),
+    }).strict(),
+  ),
   request("delivery/rebuildChangeSet", DeliveryWorkflowPayloadSchema),
-  request("commitPlan/create", z.object({ changeSetId: z.string().uuid(), convention: z.enum(["conventional", "plain", "repository", "user-template"]).optional() }).strict()),
-  request("commitPlan/get", z.object({ commitPlanId: z.string().uuid() }).strict()),
+  request(
+    "commitPlan/create",
+    z
+      .object({
+        changeSetId: z.string().uuid(),
+        convention: z
+          .enum(["conventional", "plain", "repository", "user-template"])
+          .optional(),
+      })
+      .strict(),
+  ),
+  request(
+    "commitPlan/get",
+    z.object({ commitPlanId: z.string().uuid() }).strict(),
+  ),
   request("commitPlan/update", z.object({ plan: CommitPlanSchema }).strict()),
-  request("commitPlan/merge", z.object({ commitPlanId: z.string().uuid(), commitIds: z.array(z.string().uuid()).min(2).max(50) }).strict()),
-  request("commitPlan/split", z.object({ commitPlanId: z.string().uuid(), commitId: z.string().uuid(), fileIds: z.array(z.string().max(500)).min(1).max(5000), title: z.string().min(1).max(200) }).strict()),
-  request("commitPlan/reorder", z.object({ commitPlanId: z.string().uuid(), commitIds: z.array(z.string().uuid()).min(1).max(50) }).strict()),
-  request("commitPlan/moveFile", z.object({ commitPlanId: z.string().uuid(), fileId: z.string().max(500), targetCommitId: z.string().uuid() }).strict()),
-  request("commitPlan/approve", z.object({ commitPlanId: z.string().uuid(), confirm: z.literal(true) }).strict()),
-  request("git/stage", z.object({ changeSetId: z.string().uuid(), paths: z.array(z.string().max(1024)).min(1).max(5000), confirm: z.literal(true) }).strict()),
-  request("git/unstage", z.object({ changeSetId: z.string().uuid(), paths: z.array(z.string().max(1024)).min(1).max(5000), confirm: z.literal(true) }).strict()),
-  request("git/createBranch", z.object({ branch: z.string().min(1).max(200), confirm: z.literal(true) }).strict()),
-  request("git/commit", z.object({ changeSetId: z.string().uuid(), commitPlanId: z.string().uuid(), proposedCommitId: z.string().uuid(), message: z.string().min(1).max(20_000), confirm: z.literal(true) }).strict()),
-  request("git/push", z.object({ remote: z.string().min(1).max(200), branch: z.string().min(1).max(500), confirm: z.literal(true) }).strict()),
+  request(
+    "commitPlan/merge",
+    z
+      .object({
+        commitPlanId: z.string().uuid(),
+        commitIds: z.array(z.string().uuid()).min(2).max(50),
+      })
+      .strict(),
+  ),
+  request(
+    "commitPlan/split",
+    z
+      .object({
+        commitPlanId: z.string().uuid(),
+        commitId: z.string().uuid(),
+        fileIds: z.array(z.string().max(500)).min(1).max(5000),
+        title: z.string().min(1).max(200),
+      })
+      .strict(),
+  ),
+  request(
+    "commitPlan/reorder",
+    z
+      .object({
+        commitPlanId: z.string().uuid(),
+        commitIds: z.array(z.string().uuid()).min(1).max(50),
+      })
+      .strict(),
+  ),
+  request(
+    "commitPlan/moveFile",
+    z
+      .object({
+        commitPlanId: z.string().uuid(),
+        fileId: z.string().max(500),
+        targetCommitId: z.string().uuid(),
+      })
+      .strict(),
+  ),
+  request(
+    "commitPlan/approve",
+    z
+      .object({ commitPlanId: z.string().uuid(), confirm: z.literal(true) })
+      .strict(),
+  ),
+  request(
+    "git/stage",
+    z
+      .object({
+        changeSetId: z.string().uuid(),
+        paths: z.array(z.string().max(1024)).min(1).max(5000),
+        confirm: z.literal(true),
+      })
+      .strict(),
+  ),
+  request(
+    "git/unstage",
+    z
+      .object({
+        changeSetId: z.string().uuid(),
+        paths: z.array(z.string().max(1024)).min(1).max(5000),
+        confirm: z.literal(true),
+      })
+      .strict(),
+  ),
+  request(
+    "git/createBranch",
+    z
+      .object({ branch: z.string().min(1).max(200), confirm: z.literal(true) })
+      .strict(),
+  ),
+  request(
+    "git/commit",
+    z
+      .object({
+        changeSetId: z.string().uuid(),
+        commitPlanId: z.string().uuid(),
+        proposedCommitId: z.string().uuid(),
+        message: z.string().min(1).max(20_000),
+        confirm: z.literal(true),
+      })
+      .strict(),
+  ),
+  request(
+    "git/push",
+    z
+      .object({
+        remote: z.string().min(1).max(200),
+        branch: z.string().min(1).max(500),
+        confirm: z.literal(true),
+      })
+      .strict(),
+  ),
   request("pullRequest/capabilities", z.object({}).strict()),
   request("pullRequest/templates", z.object({}).strict()),
-  request("pullRequest/createDraft", z.object({ changeSetId: z.string().uuid(), commitPlanId: z.string().uuid(), baseBranch: z.string().min(1).max(500) }).strict()),
-  request("pullRequest/updateDraft", z.object({ draft: PullRequestDraftSchema }).strict()),
+  request(
+    "pullRequest/createDraft",
+    z
+      .object({
+        changeSetId: z.string().uuid(),
+        commitPlanId: z.string().uuid(),
+        baseBranch: z.string().min(1).max(500),
+      })
+      .strict(),
+  ),
+  request(
+    "pullRequest/updateDraft",
+    z.object({ draft: PullRequestDraftSchema }).strict(),
+  ),
   request("pullRequest/validate", PullRequestDraftPayloadSchema),
-  request("pullRequest/approve", PullRequestDraftPayloadSchema.extend({ confirm: z.literal(true) }).strict()),
-  request("pullRequest/create", PullRequestDraftPayloadSchema.extend({ confirm: z.literal(true) }).strict()),
-  request("pullRequest/confirmExternalCreation", PullRequestDraftPayloadSchema.extend({ url: z.string().url().max(2000), confirm: z.literal(true) }).strict()),
+  request(
+    "pullRequest/approve",
+    PullRequestDraftPayloadSchema.extend({ confirm: z.literal(true) }).strict(),
+  ),
+  request(
+    "pullRequest/create",
+    PullRequestDraftPayloadSchema.extend({ confirm: z.literal(true) }).strict(),
+  ),
+  request(
+    "pullRequest/confirmExternalCreation",
+    PullRequestDraftPayloadSchema.extend({
+      url: z.string().url().max(2000),
+      confirm: z.literal(true),
+    }).strict(),
+  ),
   request("pullRequest/status", PullRequestDraftPayloadSchema),
   request("pullRequest/refresh", PullRequestDraftPayloadSchema),
   request("team/participants", z.object({}).strict()),
@@ -462,9 +867,27 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
   request("team/removeParticipant", ParticipantIdPayloadSchema),
   request("team/capabilities", z.object({}).strict()),
   request("assignment/create", AssignmentCreatePayloadSchema),
-  request("assignment/get", z.object({ assignmentId: z.string().uuid() }).strict()),
-  request("assignment/list", z.object({ workflowId: z.string().uuid().optional() }).strict()),
-  request("assignment/update", z.object({ assignmentId: z.string().uuid(), patch: TaskAssignmentSchema.pick({ priority: true, dueDate: true, notes: true }).partial() }).strict()),
+  request(
+    "assignment/get",
+    z.object({ assignmentId: z.string().uuid() }).strict(),
+  ),
+  request(
+    "assignment/list",
+    z.object({ workflowId: z.string().uuid().optional() }).strict(),
+  ),
+  request(
+    "assignment/update",
+    z
+      .object({
+        assignmentId: z.string().uuid(),
+        patch: TaskAssignmentSchema.pick({
+          priority: true,
+          dueDate: true,
+          notes: true,
+        }).partial(),
+      })
+      .strict(),
+  ),
   request("assignment/accept", AssignmentDecisionPayloadSchema),
   request("assignment/reject", AssignmentDecisionPayloadSchema),
   request("assignment/requestClarification", AssignmentDecisionPayloadSchema),
@@ -482,7 +905,10 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
   request("handoff/cancel", HandoffPackageIdPayloadSchema),
   request("progress/workflows", z.object({}).strict()),
   request("progress/tasks", TeamProgressPayloadSchema),
-  request("progress/assignments", z.object({ workflowId: z.string().uuid().optional() }).strict()),
+  request(
+    "progress/assignments",
+    z.object({ workflowId: z.string().uuid().optional() }).strict(),
+  ),
   request("progress/refresh", TeamProgressPayloadSchema),
   request("progress/audit", TeamAuditPayloadSchema),
   request("execution/route", ExecutionRoutingRequestSchema),
@@ -510,8 +936,25 @@ const IntelligenceRuntimeEventPayloadSchema = z
       .optional(),
   })
   .strict();
+const CopilotIntegrationEventPayloadSchema = z.object({ repositoryId: z.string().max(500).optional(), workflowId: z.string().uuid().optional(), taskId: z.string().uuid().optional(), generation: z.number().int().nonnegative().optional(), invocationId: z.string().uuid().optional(), message: z.string().max(2000), at: z.string().datetime() }).strict();
 
 export const HostMessageSchema = z.discriminatedUnion("type", [
+  event("review/stateChanged", ReviewLifecycleEventSchema),
+  event("review/noteChanged", ReviewLifecycleEventSchema),
+  event("review/changesRequested", ReviewLifecycleEventSchema),
+  event("review/approved", ReviewLifecycleEventSchema),
+  event("review/stale", ReviewLifecycleEventSchema),
+  event("review/prDraftChanged", ReviewLifecycleEventSchema),
+  event("complete/optionsChanged", ReviewLifecycleEventSchema),
+  event("complete/changeSetChanged", ReviewLifecycleEventSchema),
+  event("complete/commitPlanChanged", ReviewLifecycleEventSchema),
+  event("complete/commitCreated", ReviewLifecycleEventSchema),
+  event("complete/pushCompleted", ReviewLifecycleEventSchema),
+  event("complete/prCreated", ReviewLifecycleEventSchema),
+  event("complete/patchExported", ReviewLifecycleEventSchema),
+  event("complete/handoffPrepared", ReviewLifecycleEventSchema),
+  event("complete/workflowCompleted", ReviewLifecycleEventSchema),
+  event("complete/workflowClosedPartial", ReviewLifecycleEventSchema),
   event("orchestration/created", OrchestrationEventSchema),
   event("orchestration/planned", OrchestrationEventSchema),
   event("orchestration/started", OrchestrationEventSchema),
@@ -579,11 +1022,17 @@ export const HostMessageSchema = z.discriminatedUnion("type", [
   event("build/taskPaused", BuildLifecycleEventSchema),
   event("build/taskBlocked", BuildLifecycleEventSchema),
   event("build/taskChanged", BuildLifecycleEventSchema),
+  event("build/contextStarted", BuildLifecycleEventSchema),
   event("build/contextCompleted", BuildLifecycleEventSchema),
+  event("build/contextStale", BuildLifecycleEventSchema),
   event("build/agentChanged", BuildLifecycleEventSchema),
+  event("build/delegationPrepared", BuildLifecycleEventSchema),
+  event("build/delegationStarted", BuildLifecycleEventSchema),
   event("build/delegationChanged", BuildLifecycleEventSchema),
   event("build/repositoryChangesChanged", BuildLifecycleEventSchema),
+  event("build/validationStarted", BuildLifecycleEventSchema),
   event("build/validationChanged", BuildLifecycleEventSchema),
+  event("build/retryPrepared", BuildLifecycleEventSchema),
   event("build/retryStarted", BuildLifecycleEventSchema),
   event("build/handoffPrepared", BuildLifecycleEventSchema),
   event("build/completionReadinessChanged", BuildLifecycleEventSchema),
@@ -591,6 +1040,25 @@ export const HostMessageSchema = z.discriminatedUnion("type", [
   event("workbench/staleStateDetected", WorkbenchStaleEventSchema),
   event("copilot/capabilitiesChanged", CapabilityEventPayloadSchema),
   event("copilot/agentsChanged", AgentsEventPayloadSchema),
+  event("copilot/customizationsChanged", CopilotIntegrationEventPayloadSchema),
+  event("copilot/toolsChanged", CopilotIntegrationEventPayloadSchema),
+  event("copilot/toolInvocationStarted", CopilotIntegrationEventPayloadSchema),
+  event("copilot/toolInvocationCompleted", CopilotIntegrationEventPayloadSchema),
+  event("copilot/toolInvocationFailed", CopilotIntegrationEventPayloadSchema),
+  event("copilot/assistedLaunchPrepared", CopilotIntegrationEventPayloadSchema),
+  event("copilot/assistedLaunchConfirmed", CopilotIntegrationEventPayloadSchema),
+  event("copilot/integrationDiagnosticChanged", CopilotIntegrationEventPayloadSchema),
+  event("keystone/initialize", KeystoneInitializationSchema),
+  event("keystone/navigationRequest", ValidatedNavigationSchema.extend({ sequence: z.number().int().nonnegative() }).strict()),
+  event("dashboard/stateChanged", KeystoneDashboardStateSchema),
+  event("panel/created", KeystonePanelStateSchema),
+  event("panel/revealed", KeystonePanelStateSchema),
+  event("panel/disposed", KeystonePanelStateSchema),
+  event("panel/ready", KeystonePanelStateSchema),
+  event("navigation/requested", ValidatedNavigationSchema),
+  event("navigation/completed", ValidatedNavigationSchema),
+  event("navigation/failed", ValidatedNavigationSchema),
+  event("navigation/fallbackApplied", ValidatedNavigationSchema),
   event("context/buildStarted", ContextLifecycleEventSchema),
   event("context/buildProgress", ContextLifecycleEventSchema),
   event("context/buildCompleted", ContextLifecycleEventSchema),
@@ -785,23 +1253,134 @@ export const HostMessageSchema = z.discriminatedUnion("type", [
       })
       .strict(),
   ),
-  event("git/stateChanged", z.object({ message: z.string().max(2000) }).strict()),
-  event("git/actionStarted", z.object({ action: z.string().max(100), message: z.string().max(2000) }).strict()),
-  event("git/actionProgress", z.object({ action: z.string().max(100), message: z.string().max(2000) }).strict()),
-  event("git/actionCompleted", z.object({ action: z.string().max(100), resultId: z.string().uuid(), message: z.string().max(2000) }).strict()),
-  event("git/actionFailed", z.object({ action: z.string().max(100), message: z.string().max(2000) }).strict()),
-  event("delivery/changeSetChanged", z.object({ changeSetId: z.string().uuid(), message: z.string().max(2000) }).strict()),
-  event("delivery/stale", z.object({ changeSetId: z.string().uuid(), message: z.string().max(2000) }).strict()),
-  event("commitPlan/changed", z.object({ commitPlanId: z.string().uuid(), message: z.string().max(2000) }).strict()),
-  event("commitPlan/stale", z.object({ commitPlanId: z.string().uuid(), message: z.string().max(2000) }).strict()),
-  event("commitPlan/commitCreated", z.object({ commitPlanId: z.string().uuid(), commitHash: z.string().max(100), message: z.string().max(2000) }).strict()),
-  event("pullRequest/draftChanged", z.object({ draftId: z.string().uuid(), message: z.string().max(2000) }).strict()),
-  event("pullRequest/creationStarted", z.object({ draftId: z.string().uuid(), message: z.string().max(2000) }).strict()),
-  event("pullRequest/created", z.object({ draftId: z.string().uuid(), url: z.string().url().max(2000), message: z.string().max(2000) }).strict()),
-  event("pullRequest/statusChanged", z.object({ draftId: z.string().uuid(), status: z.string().max(100), message: z.string().max(2000) }).strict()),
-  event("pullRequest/failed", z.object({ draftId: z.string().uuid().optional(), message: z.string().max(2000) }).strict()),
-  event("pullRequest/stale", z.object({ draftId: z.string().uuid(), message: z.string().max(2000) }).strict()),
-  event("team/participantsChanged", z.object({ participantIds: z.array(z.string().uuid()).max(500), message: z.string().max(2000) }).strict()),
+  event(
+    "git/stateChanged",
+    z.object({ message: z.string().max(2000) }).strict(),
+  ),
+  event(
+    "git/actionStarted",
+    z
+      .object({ action: z.string().max(100), message: z.string().max(2000) })
+      .strict(),
+  ),
+  event(
+    "git/actionProgress",
+    z
+      .object({ action: z.string().max(100), message: z.string().max(2000) })
+      .strict(),
+  ),
+  event(
+    "git/actionCompleted",
+    z
+      .object({
+        action: z.string().max(100),
+        resultId: z.string().uuid(),
+        message: z.string().max(2000),
+      })
+      .strict(),
+  ),
+  event(
+    "git/actionFailed",
+    z
+      .object({ action: z.string().max(100), message: z.string().max(2000) })
+      .strict(),
+  ),
+  event(
+    "delivery/changeSetChanged",
+    z
+      .object({ changeSetId: z.string().uuid(), message: z.string().max(2000) })
+      .strict(),
+  ),
+  event(
+    "delivery/stale",
+    z
+      .object({ changeSetId: z.string().uuid(), message: z.string().max(2000) })
+      .strict(),
+  ),
+  event(
+    "commitPlan/changed",
+    z
+      .object({
+        commitPlanId: z.string().uuid(),
+        message: z.string().max(2000),
+      })
+      .strict(),
+  ),
+  event(
+    "commitPlan/stale",
+    z
+      .object({
+        commitPlanId: z.string().uuid(),
+        message: z.string().max(2000),
+      })
+      .strict(),
+  ),
+  event(
+    "commitPlan/commitCreated",
+    z
+      .object({
+        commitPlanId: z.string().uuid(),
+        commitHash: z.string().max(100),
+        message: z.string().max(2000),
+      })
+      .strict(),
+  ),
+  event(
+    "pullRequest/draftChanged",
+    z
+      .object({ draftId: z.string().uuid(), message: z.string().max(2000) })
+      .strict(),
+  ),
+  event(
+    "pullRequest/creationStarted",
+    z
+      .object({ draftId: z.string().uuid(), message: z.string().max(2000) })
+      .strict(),
+  ),
+  event(
+    "pullRequest/created",
+    z
+      .object({
+        draftId: z.string().uuid(),
+        url: z.string().url().max(2000),
+        message: z.string().max(2000),
+      })
+      .strict(),
+  ),
+  event(
+    "pullRequest/statusChanged",
+    z
+      .object({
+        draftId: z.string().uuid(),
+        status: z.string().max(100),
+        message: z.string().max(2000),
+      })
+      .strict(),
+  ),
+  event(
+    "pullRequest/failed",
+    z
+      .object({
+        draftId: z.string().uuid().optional(),
+        message: z.string().max(2000),
+      })
+      .strict(),
+  ),
+  event(
+    "pullRequest/stale",
+    z
+      .object({ draftId: z.string().uuid(), message: z.string().max(2000) })
+      .strict(),
+  ),
+  event(
+    "team/participantsChanged",
+    z
+      .object({
+        participantIds: z.array(z.string().uuid()).max(500),
+        message: z.string().max(2000),
+      })
+      .strict(),
+  ),
   event("assignment/created", teamLifecycle("assignmentId")),
   event("assignment/statusChanged", teamLifecycle("assignmentId")),
   event("assignment/stale", teamLifecycle("assignmentId")),
@@ -815,34 +1394,124 @@ export const HostMessageSchema = z.discriminatedUnion("type", [
   event("handoff/rejected", teamLifecycle("packageId")),
   event("handoff/stale", teamLifecycle("packageId")),
   event("handoff/failed", teamLifecycle("packageId", true)),
-  event("progress/changed", z.object({ workflowId: z.string().uuid(), message: z.string().max(2000) }).strict()),
-  event("progress/blockerChanged", z.object({ workflowId: z.string().uuid(), taskId: z.string().uuid().optional(), message: z.string().max(2000) }).strict()),
+  event(
+    "progress/changed",
+    z
+      .object({ workflowId: z.string().uuid(), message: z.string().max(2000) })
+      .strict(),
+  ),
+  event(
+    "progress/blockerChanged",
+    z
+      .object({
+        workflowId: z.string().uuid(),
+        taskId: z.string().uuid().optional(),
+        message: z.string().max(2000),
+      })
+      .strict(),
+  ),
 ]);
 export type HostMessage = z.infer<typeof HostMessageSchema>;
 
 export interface WebviewRequestResults {
+  "review/getState": WorkflowReviewState;
+  "review/getSummary": WorkflowReviewState["summary"];
+  "review/getTraceability": WorkflowReviewState["traceability"];
+  "review/getChanges": WorkflowReviewState["changes"];
+  "review/getDiff": { path: string; text: string; binary: boolean; truncated: boolean; totalBytes: number };
+  "review/attributeChange": TaskExecutionSession;
+  "review/getQa": WorkflowReviewState["findings"];
+  "review/getSecurity": WorkflowReviewState["findings"];
+  "review/getPerformance": WorkflowReviewState["findings"];
+  "review/getDocumentation": WorkflowReviewState["findings"];
+  "review/addNote": ReviewNote;
+  "review/updateNote": ReviewNote;
+  "review/resolveNote": ReviewNote;
+  "review/requestChanges": ReviewDecision;
+  "review/createFollowUpTask": DevelopmentWorkflowSnapshot;
+  "review/generatePrDraft": PullRequestDraft;
+  "review/getPrDraft": PullRequestDraft | undefined;
+  "review/updatePrDraft": PullRequestDraft;
+  "review/getPrChecklist": WorkflowReviewState["checklist"];
+  "review/getReadiness": { ready: boolean; blockers: string[]; warnings: string[] };
+  "review/approve": ReviewDecision;
+  "review/approveWithWarnings": ReviewDecision;
+  "review/reject": ReviewDecision;
+  "review/returnToBuild": ReviewDecision;
+  "review/returnToDefine": ReviewDecision;
+  "review/dispositionFinding": FindingDisposition;
+  "complete/getState": CompletionState;
+  "complete/getOptions": CompletionState["options"];
+  "complete/getReport": WorkflowCompletionRecord | undefined;
+  "complete/completeLocally": WorkflowCompletionRecord;
+  "complete/closePartial": WorkflowCompletionRecord;
+  "complete/cancelWithChanges": WorkflowCompletionRecord;
+  "complete/archive": WorkflowCompletionRecord;
+  "complete/getChangeSet": DeliveryChangeSet | undefined;
+  "complete/updateChangeSet": DeliveryChangeSet;
+  "complete/generateCommitPlan": CommitPlan;
+  "complete/updateCommitPlan": CommitPlan;
+  "complete/approveStaging": GitMutationApproval;
+  "complete/stageChanges": GitActionResult;
+  "complete/approveCommit": GitMutationApproval;
+  "complete/createCommit": GitActionResult;
+  "complete/getPushReadiness": DeliveryReadiness;
+  "complete/approvePush": GitMutationApproval;
+  "complete/push": GitActionResult;
+  "complete/getPrCapabilities": PullRequestProviderCapability;
+  "complete/preparePr": PullRequestDraft;
+  "complete/approvePrCreation": GitMutationApproval;
+  "complete/createPr": PullRequestCreationResult;
+  "complete/confirmAssistedPr": PullRequestCreationResult;
+  "complete/preparePatch": { paths: string[]; totalBytes: number; blockedPaths: string[] };
+  "complete/approvePatchExport": GitMutationApproval;
+  "complete/exportPatch": { path: string; hash: string };
+  "complete/prepareHandoff": HandoffPackage;
+  "complete/exportHandoff": { uri: string; hash: string };
   "orchestration/create": WorkflowInstance;
   "orchestration/get": WorkflowInstance | undefined;
   "orchestration/list": WorkflowInstance[];
   "orchestration/definitions": WorkflowDefinition[];
   "orchestration/policies": WorkflowPolicy[];
   "orchestration/plan": WorkflowInstance;
-  "orchestration/validatePlan": { valid: boolean; blockers: string[]; warnings: string[] };
+  "orchestration/validatePlan": {
+    valid: boolean;
+    blockers: string[];
+    warnings: string[];
+  };
   "orchestration/start": WorkflowInstance;
   "orchestration/pause": WorkflowInstance;
   "orchestration/resume": WorkflowInstance;
   "orchestration/cancel": WorkflowInstance;
   "orchestration/recover": WorkflowInstance;
   "orchestration/status": WorkflowInstance | undefined;
-  "orchestration/taskReadiness": { ready: boolean; blockers: string[]; warnings: string[] };
+  "orchestration/taskReadiness": {
+    ready: boolean;
+    blockers: string[];
+    warnings: string[];
+  };
   "orchestration/startTask": WorkflowInstance;
   "orchestration/pauseTask": WorkflowInstance;
   "orchestration/cancelTask": WorkflowInstance;
   "orchestration/retryTask": WorkflowInstance;
   "orchestration/changeAgent": WorkflowInstance;
   "orchestration/skipOptionalTask": WorkflowInstance;
-  "orchestration/schedule": { order: string[]; blockedPairs: Array<{ left: string; right: string; classification: string }> };
-  "orchestration/conflicts": { order: string[]; blockedPairs: Array<{ left: string; right: string; classification: string }> };
+  "orchestration/schedule": {
+    order: string[];
+    blockedPairs: Array<{
+      left: string;
+      right: string;
+      classification: string;
+    }>;
+  };
+  "orchestration/conflicts": {
+    order: string[];
+    blockedPairs: Array<{
+      left: string;
+      right: string;
+      classification: string;
+    }>;
+  };
   "orchestration/approvals": WorkflowInstance["approvalGates"];
   "orchestration/approve": WorkflowInstance;
   "orchestration/reject": WorkflowInstance;
@@ -952,12 +1621,88 @@ export interface WebviewRequestResults {
   "build/getCustomizations": CopilotCustomizationItem[];
   "build/updateCustomizationSelection": CopilotCustomizationItem[];
   "build/getAgents": CopilotAgentDescriptor[];
+  "build/selectAgent": DevelopmentWorkflowSnapshot;
+  "build/createContext": TaskContextPackage;
+  "build/getContext": TaskContextPackage | undefined;
+  "build/updateContextItem": TaskContextPackage;
+  "build/pinContextItem": TaskContextPackage;
+  "build/excludeContextItem": TaskContextPackage;
+  "build/regenerateContext": TaskContextPackage;
+  "build/getPromptPreview": PreparedDelegation | undefined;
+  "build/prepareDelegation": PreparedDelegation;
+  "build/approveDelegation": PreparedDelegation;
+  "build/startDelegation": DelegationSession;
+  "build/confirmAssistedState": DelegationSession;
+  "build/cancelDelegation": DelegationSession;
+  "build/getExecutionState": TaskExecutionSession | undefined;
+  "build/getRepositoryChanges": TaskExecutionSession;
+  "build/updateChangeAttribution": TaskExecutionSession;
+  "build/getDiff": {
+    path: string;
+    text: string;
+    binary: boolean;
+    truncated: boolean;
+    totalBytes: number;
+  };
+  "build/refreshChanges": TaskExecutionSession;
+  "build/getValidationPlan": ValidationPlan | undefined;
+  "build/runValidation": ValidationRunV2;
+  "build/cancelValidation": undefined;
+  "build/rerunValidation": ValidationRunV2 | undefined;
+  "build/addManualEvidence": ValidationRunV2;
+  "build/getAcceptanceCriteriaState": ValidationRunV2["acceptanceCriteriaResults"];
+  "build/prepareRetry": RetryPlan;
+  "build/updateRetryAgent": RetryPlan;
+  "build/approveRetry": RetryPlan | undefined;
+  "build/startRetry": TaskExecutionSession;
+  "build/prepareHandoff": HandoffPackage;
+  "build/validateHandoff": HandoffValidationResult;
+  "build/exportHandoff": { destination?: string };
+  "build/cancelHandoff": undefined;
+  "build/getCompletionReadiness": CompletionDecision;
+  "build/requestCompletionReview": CompletionDecision;
   "copilot/capabilities": CopilotCapabilities;
   "copilot/refreshCapabilities": CopilotCapabilities;
   "copilot/agents": CopilotAgentDescriptor[];
   "copilot/refreshAgents": CopilotAgentDescriptor[];
   "copilot/agentRecommendation": AgentRecommendation;
   "copilot/selectAgent": DevelopmentWorkflowSnapshot;
+  "copilot/getCapabilities": CopilotIntegrationCapabilities;
+  "copilot/getIntegrationStatus": CopilotIntegrationCapabilities;
+  "copilot/listCustomizations": CopilotCustomizationRecord[];
+  "copilot/getCustomization": CopilotCustomizationRecord | undefined;
+  "copilot/refreshCustomizations": CopilotCustomizationRecord[];
+  "copilot/setCustomizationEnabled": CopilotCustomizationRecord[];
+  "copilot/getApplicableCustomizations": CopilotCustomizationRecord[];
+  "copilot/listAgents": CopilotAgentDescriptor[];
+  "copilot/getAgent": CopilotAgentDescriptor | undefined;
+  "copilot/recommendAgent": AgentRecommendation;
+  "copilot/listKeystoneTools": KeystoneToolDescriptor[];
+  "copilot/getToolStatus": KeystoneToolDescriptor | undefined;
+  "copilot/getToolAudit": CopilotToolAuditEntry[];
+  "copilot/testTool": KeystoneToolResult;
+  "copilot/prepareAssistedLaunch": AssistedLaunchState;
+  "copilot/getPreparedPrompt": AssistedLaunchState | undefined;
+  "copilot/openChat": AssistedLaunchState;
+  "copilot/copyPrompt": AssistedLaunchState;
+  "copilot/confirmSubmission": AssistedLaunchState;
+  "copilot/cancelAssistedLaunch": AssistedLaunchState;
+  "copilot/getParticipantStatus": { available: boolean; enabled: boolean; limitation?: string };
+  "copilot/openParticipant": undefined;
+  "copilot/disableParticipant": { enabled: false };
+  "keystone/webviewReady": KeystoneInitialization;
+  "keystone/initializationAcknowledged": KeystonePanelState;
+  "keystone/navigationAcknowledged": KeystonePanelState;
+  "keystone/webviewStateChanged": KeystonePanelState;
+  "dashboard/getState": KeystoneDashboardState;
+  "dashboard/refresh": KeystoneDashboardState;
+  "dashboard/openAction": ValidatedNavigation;
+  "panel/getState": KeystonePanelState;
+  "panel/updateState": KeystonePanelState;
+  "panel/getPendingNavigation": ValidatedNavigation | undefined;
+  "navigation/validateTarget": ValidatedNavigation;
+  "navigation/resolveFallback": ValidatedNavigation;
+  "navigation/open": ValidatedNavigation;
   "context/build": TaskContextPackage;
   "context/get": TaskContextPackage | undefined;
   "context/update": TaskContextPackage;
@@ -1021,8 +1766,19 @@ export interface WebviewRequestResults {
   "git/refresh": GitCapabilities;
   "git/repositoryState": GitRepositoryState;
   "git/remotes": GitRepositoryState["remotes"];
-  "git/branches": { current?: string; upstream?: string; defaultBranch?: string; detached: boolean };
-  "git/diff": { path: string; text: string; binary: boolean; truncated: boolean; totalBytes: number };
+  "git/branches": {
+    current?: string;
+    upstream?: string;
+    defaultBranch?: string;
+    detached: boolean;
+  };
+  "git/diff": {
+    path: string;
+    text: string;
+    binary: boolean;
+    truncated: boolean;
+    totalBytes: number;
+  };
   "git/readiness": DeliveryReadiness;
   "delivery/createChangeSet": DeliveryChangeSet;
   "delivery/getChangeSet": DeliveryChangeSet | undefined;
@@ -1047,7 +1803,11 @@ export interface WebviewRequestResults {
   "pullRequest/templates": Array<{ id: string; name: string; body: string }>;
   "pullRequest/createDraft": PullRequestDraft;
   "pullRequest/updateDraft": PullRequestDraft;
-  "pullRequest/validate": { ready: boolean; blockers: string[]; warnings: string[] };
+  "pullRequest/validate": {
+    ready: boolean;
+    blockers: string[];
+    warnings: string[];
+  };
   "pullRequest/approve": PullRequestDraft;
   "pullRequest/create": PullRequestCreationResult;
   "pullRequest/confirmExternalCreation": PullRequestCreationResult;
@@ -1057,7 +1817,11 @@ export interface WebviewRequestResults {
   "team/addParticipant": TeamParticipant;
   "team/updateParticipant": TeamParticipant;
   "team/removeParticipant": undefined;
-  "team/capabilities": { identityAssurance: "self-asserted-local"; capabilities: string[]; limitations: string[] };
+  "team/capabilities": {
+    identityAssurance: "self-asserted-local";
+    capabilities: string[];
+    limitations: string[];
+  };
   "assignment/create": TaskAssignment;
   "assignment/get": TaskAssignment | undefined;
   "assignment/list": TaskAssignment[];
@@ -1071,7 +1835,13 @@ export interface WebviewRequestResults {
   "handoff/get": HandoffPackage | undefined;
   "handoff/validate": HandoffValidationResult;
   "handoff/export": { destination?: string };
-  "handoff/import": { package: HandoffPackage; validation: HandoffValidationResult; importId: string } | undefined;
+  "handoff/import":
+    | {
+        package: HandoffPackage;
+        validation: HandoffValidationResult;
+        importId: string;
+      }
+    | undefined;
   "handoff/reconcile": HandoffReconciliation;
   "handoff/accept": HandoffAcceptance;
   "handoff/reject": HandoffAcceptance;
