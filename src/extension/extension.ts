@@ -82,7 +82,11 @@ import {
   KeystoneChatParticipantService,
 } from "../core/copilot/KeystoneChatAndLaunchService";
 import { VsCodeCopilotIntegration } from "./copilot/VsCodeCopilotIntegration";
+import { GraphIndexerWorker } from "../workers/GraphIndexerWorker";
+import { GitHistoryParser } from "../workers/GitHistoryParser";
+import { SafetyCheckService } from "../core/intelligence/safety/SafetyCheckService";
 import { NativeShellPersistenceStore } from "../core/persistence/NativeShellPersistenceStore";
+import { CopilotToggleService } from "../core/intelligence/markdown/CopilotToggleService";
 import {
   KeystoneDashboardRefreshService,
   KeystoneDashboardViewModelService,
@@ -92,11 +96,13 @@ import {
   type NativeShellStateSource,
 } from "../core/integration/NativeShellServices";
 import { KeystonePanelService } from "./webview/KeystonePanelService";
+import { KeystoneIntelligencePanel } from "./webview/KeystoneIntelligencePanel";
 import {
   KeystoneCodeLensProvider,
   KeystoneCommandService,
   KeystoneContextKeyService,
   KeystoneDashboardProvider,
+  KeystoneExplorerProvider,
   KeystoneNotificationService,
   KeystoneStatusBarService,
 } from "./dashboard/KeystoneDashboard";
@@ -873,6 +879,19 @@ export async function activate(
     },
   );
   dashboardReference.current = dashboard;
+  const intelligencePanel = new KeystoneIntelligencePanel(
+    context.extensionUri,
+    intelligenceStore,
+  );
+  const explorerProvider = new KeystoneExplorerProvider(intelligenceStore);
+  const copilotToggle = new CopilotToggleService(context);
+  const graphIndexer = new GraphIndexerWorker(
+    intelligenceStore,
+    intelligenceRuntime,
+    logger,
+  );
+  const gitHistoryParser = new GitHistoryParser(intelligenceStore, logger);
+  const safetyChecker = new SafetyCheckService();
   serviceRegistry.nativeShell = {
     dashboard: () => dashboard.snapshot,
     refreshDashboard: () => {
@@ -1048,6 +1067,109 @@ export async function activate(
       "keystone.intelligence.query",
       (request: unknown) => intelligenceQuery.unified(request),
     ),
+    vscode.commands.registerCommand(
+      "keystone.intelligence.open",
+      () => intelligencePanel.show(),
+    ),
+    vscode.commands.registerCommand(
+      "keystone.intelligence.exported-symbols",
+      () => intelligencePanel.show(),
+    ),
+    vscode.commands.registerCommand(
+      "keystone.intelligence.wildcard-search",
+      () => intelligencePanel.show(),
+    ),
+    vscode.commands.registerCommand(
+      "keystone.intelligence.module-mapping",
+      () => intelligencePanel.show(),
+    ),
+    vscode.commands.registerCommand(
+      "keystone.intelligence.circular-dependencies",
+      () => intelligencePanel.show(),
+    ),
+    vscode.commands.registerCommand(
+      "keystone.intelligence.node-metrics",
+      () => intelligencePanel.show(),
+    ),
+    vscode.commands.registerCommand(
+      "keystone.intelligence.dead-code",
+      () => intelligencePanel.show(),
+    ),
+    vscode.commands.registerCommand(
+      "keystone.intelligence.filtered-subgraph",
+      () => intelligencePanel.show(),
+    ),
+    vscode.commands.registerCommand(
+      "keystone.intelligence.cyclomatic-complexity",
+      () => intelligencePanel.show(),
+    ),
+    vscode.commands.registerCommand(
+      "keystone.copilot.toggle",
+      async () => {
+        const enabled = await copilotToggle.toggle();
+        vscode.window.showInformationMessage(
+          `Keystone Copilot markdown generation ${enabled ? "enabled" : "disabled"}.`,
+        );
+      },
+    ),
+    vscode.commands.registerCommand(
+      "keystone.graph.index",
+      () => {
+        try {
+          graphIndexer.start();
+          vscode.window.showInformationMessage("Graph indexing started.");
+        } catch (error) {
+          vscode.window.showErrorMessage(
+            `Graph indexing failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      },
+    ),
+    vscode.commands.registerCommand(
+      "keystone.graph.cancel",
+      () => {
+        graphIndexer.cancel();
+        vscode.window.showInformationMessage("Graph indexing cancelled.");
+      },
+    ),
+    vscode.commands.registerCommand(
+      "keystone.git.history",
+      async () => {
+        try {
+          const commits = await gitHistoryParser.parseHistory();
+          vscode.window.showInformationMessage(
+            `Parsed ${commits.length} Git commits.`,
+          );
+        } catch (error) {
+          vscode.window.showErrorMessage(
+            `Failed to parse Git history: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      },
+    ),
+    vscode.commands.registerCommand(
+      "keystone.safety.check",
+      async () => {
+        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+        if (!workspaceFolder) {
+          vscode.window.showErrorMessage("No workspace folder open.");
+          return;
+        }
+
+        const result = await safetyChecker.validateOperation(
+          workspaceFolder.uri.fsPath,
+          "push",
+        );
+
+        if (result.safe) {
+          vscode.window.showInformationMessage(result.message);
+        } else {
+          vscode.window.showWarningMessage(
+            `${result.message} ${result.details ?? ""}`,
+          );
+        }
+      },
+    ),
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (event.affectsConfiguration("keystone"))
         logger?.info(
@@ -1063,6 +1185,11 @@ export async function activate(
     contextKeys,
     notifications,
     commands,
+    intelligencePanel,
+    vscode.window.createTreeView("keystone.explorer", {
+      treeDataProvider: explorerProvider,
+      showCollapseAll: true,
+    }),
     {
       dispose: () => {
         void semanticWorker.dispose();

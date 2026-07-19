@@ -70,11 +70,13 @@
     },
     "views": {
       "keystone": [
-        { "id": "keystone.dashboard", "name": "Dashboard" }
+        { "id": "keystone.dashboard", "name": "Dashboard" },
+        { "id": "keystone.explorer", "name": "Intelligence Explorer" }
       ]
     },
     "viewsWelcome": [
-      { "view": "keystone.dashboard", "contents": "Open a folder to use repository-aware Keystone features.\n[Open Folder](command:keystone.openFolder)\n\n[Open Keystone](command:keystone.open)", "when": "!keystone.workspaceAvailable" }
+      { "view": "keystone.dashboard", "contents": "Open a folder to use repository-aware Keystone features.\n[Open Folder](command:keystone.openFolder)\n\n[Open Keystone](command:keystone.open)", "when": "!keystone.workspaceAvailable" },
+      { "view": "keystone.explorer", "contents": "Intelligence Explorer requires an indexed repository.\n[Open Intelligence Explorer](command:keystone.intelligence.open)", "when": "keystone.intelligenceReady" }
     ],
     "commands": [
       { "command": "keystone.open", "title": "Keystone: Open", "icon": "$(inspect)" },
@@ -92,7 +94,21 @@
       { "command": "keystone.showLogs", "title": "Keystone: Show Logs", "icon": "$(output)" },
       { "command": "keystone.dashboard.refresh", "title": "Refresh", "icon": "$(refresh)" },
       { "command": "keystone.dashboard.openAction", "title": "Open Dashboard Item" },
-      { "command": "keystone.openFolder", "title": "Open Folder", "icon": "$(folder-opened)" }
+      { "command": "keystone.openFolder", "title": "Open Folder", "icon": "$(folder-opened)" },
+      { "command": "keystone.intelligence.open", "title": "Keystone: Open Intelligence Explorer", "icon": "$(graph)" },
+      { "command": "keystone.intelligence.exported-symbols", "title": "Keystone: Show Exported Symbols", "icon": "$(symbol-method)" },
+      { "command": "keystone.intelligence.wildcard-search", "title": "Keystone: Wildcard Search", "icon": "$(search)" },
+      { "command": "keystone.intelligence.module-mapping", "title": "Keystone: Module Mapping", "icon": "$(folder-library)" },
+      { "command": "keystone.intelligence.circular-dependencies", "title": "Keystone: Circular Dependencies", "icon": "$(debug-restart)" },
+      { "command": "keystone.intelligence.node-metrics", "title": "Keystone: Node Metrics", "icon": "$(graph)" },
+      { "command": "keystone.intelligence.dead-code", "title": "Keystone: Dead Code Detection", "icon": "$(trash)" },
+      { "command": "keystone.intelligence.filtered-subgraph", "title": "Keystone: Filtered Subgraph", "icon": "$(filter)" },
+      { "command": "keystone.intelligence.cyclomatic-complexity", "title": "Keystone: Cyclomatic Complexity", "icon": "$(beaker)" },
+      { "command": "keystone.copilot.toggle", "title": "Keystone: Toggle Copilot Markdown Generation", "icon": "$(copilot)" },
+      { "command": "keystone.graph.index", "title": "Keystone: Index Graph", "icon": "$(database)" },
+      { "command": "keystone.graph.cancel", "title": "Keystone: Cancel Graph Indexing", "icon": "$(debug-stop)" },
+      { "command": "keystone.git.history", "title": "Keystone: Parse Git History", "icon": "$(history)" },
+      { "command": "keystone.safety.check", "title": "Keystone: Check Git Safety", "icon": "$(shield)" }
     ],
     "menus": {
       "view/title": [
@@ -103,12 +119,28 @@
         { "command": "keystone.openEntity", "when": "keystone.intelligenceReady && keystone.workspaceTrusted && config.keystone.shell.showEditorContextActions", "group": "navigation@51" },
         { "command": "keystone.showUsages", "when": "keystone.intelligenceReady && keystone.workspaceTrusted && config.keystone.shell.showEditorContextActions", "group": "navigation@52" },
         { "command": "keystone.showFlow", "when": "keystone.intelligenceReady && keystone.workspaceTrusted && config.keystone.shell.showEditorContextActions", "group": "navigation@53" },
-        { "command": "keystone.analyzeImpact", "when": "keystone.intelligenceReady && keystone.workspaceTrusted && config.keystone.shell.showEditorContextActions", "group": "navigation@54" }
+        { "command": "keystone.analyzeImpact", "when": "keystone.intelligenceReady && keystone.workspaceTrusted && config.keystone.shell.showEditorContextActions", "group": "navigation@54" },
+        { "command": "keystone.intelligence.exported-symbols", "when": "keystone.intelligenceReady && keystone.workspaceTrusted && config.keystone.shell.showEditorContextActions", "group": "navigation@55" },
+        { "command": "keystone.intelligence.circular-dependencies", "when": "keystone.intelligenceReady && keystone.workspaceTrusted && config.keystone.shell.showEditorContextActions", "group": "navigation@56" }
       ],
       "commandPalette": [
         { "command": "keystone.dashboard.openAction", "when": "false" },
         { "command": "keystone.dashboard.refresh", "when": "false" },
-        { "command": "keystone.openFolder", "when": "false" }
+        { "command": "keystone.openFolder", "when": "false" },
+        { "command": "keystone.intelligence.open", "when": "keystone.intelligenceReady" },
+        { "command": "keystone.intelligence.exported-symbols", "when": "keystone.intelligenceReady" },
+        { "command": "keystone.intelligence.wildcard-search", "when": "keystone.intelligenceReady" },
+        { "command": "keystone.intelligence.module-mapping", "when": "keystone.intelligenceReady" },
+        { "command": "keystone.intelligence.circular-dependencies", "when": "keystone.intelligenceReady" },
+        { "command": "keystone.intelligence.node-metrics", "when": "keystone.intelligenceReady" },
+        { "command": "keystone.intelligence.dead-code", "when": "keystone.intelligenceReady" },
+        { "command": "keystone.intelligence.filtered-subgraph", "when": "keystone.intelligenceReady" },
+        { "command": "keystone.intelligence.cyclomatic-complexity", "when": "keystone.intelligenceReady" },
+        { "command": "keystone.copilot.toggle" },
+        { "command": "keystone.graph.index", "when": "keystone.intelligenceReady" },
+        { "command": "keystone.graph.cancel", "when": "keystone.intelligenceReady" },
+        { "command": "keystone.git.history", "when": "keystone.intelligenceReady" },
+        { "command": "keystone.safety.check" }
       ]
     },
     "configuration": {

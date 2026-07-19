@@ -26,6 +26,22 @@ There is no backend, external database, centralized intelligence service, or act
 
 ## Release Notes
 
+### v0.2.0 — Intelligence Services, UI, and Copilot Markdown (2026-07-19)
+
+**Major updates:**
+- Added 10 core intelligence services for dependency analysis, cycle detection, node metrics, dead code, cyclomatic complexity, exported symbols, file dependencies, filtered subgraphs, module mapping, and wildcard search
+- Implemented filtered subgraph extraction with configurable filters (relationship types, entity types, depth, direction)
+- Added full context retrieval service (ancestors, children, imports, type edges)
+- Built VS Code UI: single Intelligence Webview panel with tabs, side-bar explorer, toolbar actions, and status-bar indicator
+- Implemented Copilot markdown generation: `.keystone/knowledge-graph.md` and `.keystone/intelligence-overview.md` on toggle enable
+- Added background workers: `GraphIndexerWorker` for repository indexing and `GitHistoryParser` for Git history ingestion
+- All commands prefixed with `keystone.` to avoid conflicts; all data stored under `.keystone/` with `.gitignore`
+
+**Repository state:**
+- 60 test files, 458 tests
+- 10 new service files, 4 markdown generation services, 2 new webview providers, 2 new workers
+- All gates passed — repository verified and ready for use
+
 ### v0.1.0 — Verified and Ready (2026-07-18)
 
 **Major updates:**

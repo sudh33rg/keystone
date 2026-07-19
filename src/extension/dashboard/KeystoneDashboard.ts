@@ -375,6 +375,7 @@ export class KeystoneCommandService implements vscode.Disposable {
   }
 }
 
+export { KeystoneExplorerProvider } from "./KeystoneExplorerProvider";
 export class KeystoneCodeLensProvider implements vscode.CodeLensProvider {
   constructor(
     private readonly resolve: (

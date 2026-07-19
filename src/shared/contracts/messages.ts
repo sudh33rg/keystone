@@ -435,6 +435,14 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
   request("intelligence/cpg", IntelligenceQuerySchema),
   request("intelligence/cpg/scope", CpgScopeQuerySchema),
   request("intelligence/cpg/slice", CpgSliceQuerySchema),
+  request("intelligence/exported-symbols", z.object({ fileId: z.string().min(1).optional() }).strict()),
+  request("intelligence/wildcard-search", z.object({ pattern: z.string().min(1).max(500), fields: z.array(z.enum(["name", "qualifiedName", "relativePath", "type", "language"])).max(5).optional(), limit: z.number().int().min(1).max(200).optional() }).strict()),
+  request("intelligence/module-mapping", z.object({}).strict()),
+  request("intelligence/circular-dependencies", z.object({}).strict()),
+  request("intelligence/node-metrics", z.object({}).strict()),
+  request("intelligence/dead-code", z.object({}).strict()),
+  request("intelligence/filtered-subgraph", z.object({ seedIds: z.array(z.string().min(1)).min(1).max(20), direction: z.enum(["incoming", "outgoing", "both"]).optional(), maxDepth: z.number().int().min(1).max(10).optional() }).strict()),
+  request("intelligence/cyclomatic-complexity", z.object({}).strict()),
   request(
     "intelligence/source/open",
     z

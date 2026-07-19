@@ -50,6 +50,6 @@ describe("final UI architecture audit", () => {
   it("contains no obsolete contributed view", () => {
     const manifest = JSON.parse(read("package.json")) as { contributes: { viewsContainers: { activitybar: unknown[] }; views: Record<string, Array<{ id: string }>> } };
     expect(manifest.contributes.viewsContainers.activitybar).toHaveLength(1);
-    expect((manifest.contributes.views.keystone ?? []).map((view) => view.id)).toEqual(["keystone.dashboard"]);
+    expect((manifest.contributes.views.keystone ?? []).map((view) => view.id)).toEqual(["keystone.dashboard", "keystone.explorer"]);
   });
 });
