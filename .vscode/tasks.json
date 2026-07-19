@@ -4,21 +4,21 @@
     {
       "label": "keystone: build",
       "type": "shell",
-      "command": "pnpm run build:extension",
+      "command": "npm run build:extension",
       "isBackground": true,
       "problemMatcher": "$tsc"
     },
     {
       "label": "keystone: build:extension-tests",
       "type": "shell",
-      "command": "pnpm run build:extension-tests",
+      "command": "npm run build:extension-tests",
       "isBackground": true,
       "problemMatcher": "$tsc"
     },
     {
       "label": "keystone: build:webview",
       "type": "shell",
-      "command": "pnpm run build:webview"
+      "command": "npm run build:webview"
     },
     {
       "type": "npm",

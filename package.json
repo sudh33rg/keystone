@@ -2,31 +2,19 @@
   "name": "keystone",
   "displayName": "Keystone",
   "description": "A visible engineering control layer for repository-aware, spec-driven Copilot work.",
-  "packageManager": "pnpm@9.15.4",
   "version": "0.1.0",
-  "publisher": "keystone-dev",
-  "license": "MIT",
   "engines": {
     "vscode": "^1.95.0",
     "node": ">=20"
   },
-  "categories": [
-    "Other",
-    "Machine Learning"
-  ],
-  "keywords": [
-    "copilot",
-    "specification",
-    "repository intelligence",
-    "development workflow"
-  ],
+  "author": "Sudheer G",
   "activationEvents": [
     "onStartupFinished",
     "onCommand:keystone.open"
   ],
   "main": "./dist/extension/extension.js",
   "scripts": {
-    "clean": "rimraf dist coverage",
+    "clean": "node scripts/clean.mjs",
     "build:extension": "node scripts/build-extension.mjs",
     "build:extension-tests": "node scripts/build-extension-tests.mjs",
     "build:webview": "vite build",
