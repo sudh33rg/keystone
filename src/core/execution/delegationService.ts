@@ -5,12 +5,13 @@
  * the configured execution profiles and capability availability.
  */
 
-import { ExecutionProfile } from './executionProfile';
-import { PromptPackage } from './promptPackageBuilder';
-import { CapabilityDiscoveryService } from './capabilityDiscoveryService';
+import type { ExecutionProfile } from './executionProfile';
+import type { PromptPackage } from './promptPackageBuilder';
+import type { CapabilityDiscoveryService } from './capabilityDiscoveryService';
 import type { KeystoneLogger } from '../../shared/logging/KeystoneLogger';
 import type { VSCodeAPI } from '../../shared/contracts/vscodeApi';
-import { Capability, AgentCapability } from './capability';
+import type { AgentCapability } from './capability';
+import { KeystoneError } from '../../shared/errors/KeystoneError';
 
 /**
  * Delegation request object
@@ -44,7 +45,7 @@ export interface DelegationRequest {
   /**
    * Additional context for the delegation
    */
-  context?: any;
+  context?: unknown;
 }
 
 /**
@@ -79,7 +80,12 @@ export interface DelegationExecutionResult {
   /**
    * Result of the delegation (if captured)
    */
-  result?: any;
+  result?: unknown;
+
+  /**
+   * The workflow the delegation belongs to
+   */
+  workflowId?: string;
 
   /**
    * Error details if the delegation failed
@@ -151,7 +157,7 @@ export class DelegationService {
    * @param request The delegation request to prepare
    * @returns Promise resolving to prepared delegation details
    */
-  async prepareDelegation(request: DelegationRequest): Promise<PreparedDelegation> {
+  prepareDelegation(request: DelegationRequest): PreparedDelegation {
     this.logger.info('delegationService.prepareDelegation', `Preparing delegation for workflow ${request.workflowId}, stage ${request.stageId}`);
 
     try {
@@ -185,7 +191,7 @@ export class DelegationService {
       return prepared;
     } catch (error) {
       this.logger.error(KeystoneError.fromUnknown(error, 'delegationService.prepareDelegation'));
-      throw new Error(`Failed to prepare delegation: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new Error(`Failed to prepare delegation: ${error instanceof Error ? error.message : 'Unknown error'}`, { cause: error });
     }
   }
 
@@ -200,7 +206,8 @@ export class DelegationService {
 
     const result: DelegationExecutionResult = {
       status: 'running',
-      startTime: new Date().toISOString()
+      startTime: new Date().toISOString(),
+      workflowId: prepared.request.workflowId
     };
 
     try {
@@ -220,7 +227,7 @@ export class DelegationService {
             // Fallback to handoff mode
             result.status = 'handed-off';
             result.endTime = new Date().toISOString();
-            this.logger.warn('delegationService.executeDelegation', 'Direct execution not available, falling back to handoff mode');
+            this.logger.warning('delegationService.executeDelegation', 'Direct execution not available, falling back to handoff mode');
           }
           break;
 
@@ -349,7 +356,7 @@ export class DelegationService {
    * @param prepared The prepared delegation
    * @returns Promise resolving to the execution result
    */
-  private async executeDirectly(prepared: PreparedDelegation): Promise<any> {
+  private executeDirectly(prepared: PreparedDelegation): unknown {
     const { request, agentCapability } = prepared;
 
     // In a real implementation, this would use the VS Code Language Model API
@@ -414,7 +421,7 @@ export class DelegationService {
    * @param prepared The prepared delegation
    * @returns Promise resolving to the execution result
    */
-  private async executeDeterministic(prepared: PreparedDelegation): Promise<any> {
+  private executeDeterministic(prepared: PreparedDelegation): unknown {
     const { request } = prepared;
 
     // In a real implementation, this would run internal Keystone logic
@@ -501,9 +508,8 @@ ${request.promptPackage.structured.context?.userPinnedContext?.join('\n') || 'No
    * @returns List of delegation attempts for that workflow
    */
   getDelegationHistoryForWorkflow(workflowId: string): DelegationExecutionResult[] {
-    return this.delegationHistory.filter(entry =>
-      entry.status !== 'superseded' &&
-      (entry as any).workflowId === workflowId
+    return this.delegationHistory.filter((entry) =>
+      entry.status !== 'superseded' && entry.workflowId === workflowId
     );
   }
 }

@@ -5,10 +5,11 @@
  * that define how each SDLC stage should be configured for execution.
  */
 
-import { ExecutionProfile, BuiltInExecutionProfile, BUILT_IN_EXECUTION_PROFILES } from './executionProfile';
-import { CapabilityDiscoveryService } from './capabilityDiscoveryService';
+import { BUILT_IN_EXECUTION_PROFILES } from './executionProfile';
+import type { BuiltInExecutionProfile, ExecutionProfile } from './executionProfile';
+import type { CapabilityDiscoveryService } from './capabilityDiscoveryService';
+import type { AgentCapability, InstructionCapability, SkillCapability } from './capability';
 import type { KeystoneLogger } from '../../shared/logging/KeystoneLogger';
-import type { VSCodeAPI } from '../../shared/contracts/vscodeApi';
 
 /**
  * Service for managing execution profiles in the Keystone system.
@@ -19,7 +20,7 @@ export class ExecutionProfileService {
   private profiles: ExecutionProfile[] = [];
   private builtInProfiles: BuiltInExecutionProfile[] = BUILT_IN_EXECUTION_PROFILES;
 
-  constructor(logger: KeystoneLogger, capabilityService: CapabilityDiscoveryService, vscodeAPI: VSCodeAPI) {
+  constructor(logger: KeystoneLogger, capabilityService: CapabilityDiscoveryService) {
     this.logger = logger;
     this.capabilityService = capabilityService;
     this.profiles = [];
@@ -88,11 +89,16 @@ export class ExecutionProfileService {
       return undefined;
     }
 
+    const existing = this.profiles[index];
+    if (!existing) {
+      return undefined;
+    }
+
     const updatedProfile = {
-      ...this.profiles[index],
+      ...existing,
       ...updates,
       metadata: {
-        ...this.profiles[index].metadata!,
+        ...existing.metadata,
         updatedAt: new Date().toISOString()
       }
     };
@@ -217,7 +223,7 @@ export class ExecutionProfileService {
     // Validate that the selected agent exists
     if (!this.capabilityService.isCapabilityAvailable(profile.executor.agentId)) {
       // This might be okay if it's a fallback or the capability will be discovered later
-      this.logger.warn('executionProfileService.validateProfile', `Selected agent ${profile.executor.agentId} is not currently available`);
+      this.logger.warning('executionProfileService.validateProfile', `Selected agent ${profile.executor.agentId} is not currently available`);
     }
 
     // Validate token budget
@@ -244,15 +250,20 @@ export class ExecutionProfileService {
    *
    * @returns List of available agent capabilities
    */
-  getAvailableAgents(): any[] {
+  getAvailableAgents(): AgentCapability[] {
     const agents = this.capabilityService.getCapabilitiesByType('agent');
-    return agents.map(agent => ({
+    return agents.map((agent) => ({
       id: agent.id,
       name: agent.name,
       description: agent.description,
       state: agent.state,
-      supportsDirectInvocation: (agent as any).supportsDirectInvocation,
-      supportsManualHandoff: (agent as any).supportsManualHandoff
+      type: agent.type,
+      source: agent.source,
+      lastDiscovered: agent.lastDiscovered,
+      supportsDirectInvocation: (agent as AgentCapability).supportsDirectInvocation,
+      supportsManualHandoff: (agent as AgentCapability).supportsManualHandoff,
+      supportedStageTypes: (agent as AgentCapability).supportedStageTypes,
+      invocationModes: (agent as AgentCapability).invocationModes
     }));
   }
 
@@ -261,14 +272,20 @@ export class ExecutionProfileService {
    *
    * @returns List of available skill capabilities
    */
-  getAvailableSkills(): any[] {
+  getAvailableSkills(): SkillCapability[] {
     const skills = this.capabilityService.getCapabilitiesByType('skill');
-    return skills.map(skill => ({
+    return skills.map((skill) => ({
       id: skill.id,
       name: skill.name,
       description: skill.description,
-      applicableStageTypes: (skill as any).applicableStageTypes,
-      state: skill.state
+      state: skill.state,
+      type: skill.type,
+      source: skill.source,
+      lastDiscovered: skill.lastDiscovered,
+      applicableStageTypes: (skill as SkillCapability).applicableStageTypes,
+      requiredCapabilities: (skill as SkillCapability).requiredCapabilities,
+      instructionReferences: (skill as SkillCapability).instructionReferences,
+      version: (skill as SkillCapability).version
     }));
   }
 
@@ -277,16 +294,21 @@ export class ExecutionProfileService {
    *
    * @returns List of available instruction capabilities
    */
-  getAvailableInstructions(): any[] {
+  getAvailableInstructions(): InstructionCapability[] {
     const instructions = this.capabilityService.getCapabilitiesByType('instruction');
-    return instructions.map(instruction => ({
+    return instructions.map((instruction) => ({
       id: instruction.id,
       name: instruction.name,
       description: instruction.description,
-      filePath: (instruction as any).filePath,
-      scope: (instruction as any).scope,
-      enabled: (instruction as any).enabled,
-      state: instruction.state
+      state: instruction.state,
+      type: instruction.type,
+      source: instruction.source,
+      lastDiscovered: instruction.lastDiscovered,
+      filePath: (instruction as InstructionCapability).filePath,
+      scope: (instruction as InstructionCapability).scope,
+      precedence: (instruction as InstructionCapability).precedence,
+      enabled: (instruction as InstructionCapability).enabled,
+      contentHash: (instruction as InstructionCapability).contentHash
     }));
   }
 }

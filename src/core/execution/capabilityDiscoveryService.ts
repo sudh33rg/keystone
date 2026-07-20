@@ -5,11 +5,10 @@
  * VS Code environment, including agents, skills, instructions, and language model providers.
  */
 
-import { Capability, CapabilityDiscoveryResult, CapabilityState, AgentCapability, SkillCapability, InstructionCapability, CapabilityType } from './capability';
-import { ExtensionContributionCapability, LanguageModelProviderCapability, CommandCapability, PromptCapability } from './capability';
+import type { Capability, CapabilityDiscoveryResult, CapabilityState, AgentCapability, SkillCapability, InstructionCapability, CapabilityType, ExtensionContributionCapability, LanguageModelProviderCapability, CommandCapability, PromptCapability } from './capability';
 import type { KeystoneLogger } from '../../shared/logging/KeystoneLogger';
 import type { VSCodeAPI } from '../../shared/contracts/vscodeApi';
-import path from 'path';
+import { KeystoneError } from '../../shared/errors/KeystoneError';
 
 /**
  * Service that discovers available execution capabilities in the VS Code environment.
@@ -30,38 +29,38 @@ export class CapabilityDiscoveryService {
    *
    * @returns Promise resolving to capability discovery results
    */
-  async discoverCapabilities(): Promise<CapabilityDiscoveryResult> {
+  discoverCapabilities(): CapabilityDiscoveryResult {
     this.logger.info('capabilityDiscoveryService.discoverCapabilities', 'Starting capability discovery process');
 
     try {
       const capabilities: Capability[] = [];
 
       // Discover agents
-      const agentCapabilities = await this.discoverAgents();
+      const agentCapabilities = this.discoverAgents();
       capabilities.push(...agentCapabilities);
 
       // Discover skills
-      const skillCapabilities = await this.discoverSkills();
+      const skillCapabilities = this.discoverSkills();
       capabilities.push(...skillCapabilities);
 
       // Discover instructions
-      const instructionCapabilities = await this.discoverInstructions();
+      const instructionCapabilities = this.discoverInstructions();
       capabilities.push(...instructionCapabilities);
 
       // Discover language model providers
-      const languageModelCapabilities = await this.discoverLanguageModelProviders();
+      const languageModelCapabilities = this.discoverLanguageModelProviders();
       capabilities.push(...languageModelCapabilities);
 
       // Discover commands
-      const commandCapabilities = await this.discoverCommands();
+      const commandCapabilities = this.discoverCommands();
       capabilities.push(...commandCapabilities);
 
       // Discover prompts
-      const promptCapabilities = await this.discoverPrompts();
+      const promptCapabilities = this.discoverPrompts();
       capabilities.push(...promptCapabilities);
 
       // Discover extension contributions
-      const extensionContributionCapabilities = await this.discoverExtensionContributions();
+      const extensionContributionCapabilities = this.discoverExtensionContributions();
       capabilities.push(...extensionContributionCapabilities);
 
       this.capabilities = capabilities;
@@ -89,7 +88,7 @@ export class CapabilityDiscoveryService {
    *
    * @returns Promise resolving to list of agent capabilities
    */
-  private async discoverAgents(): Promise<AgentCapability[]> {
+  private discoverAgents(): AgentCapability[] {
     const agents: AgentCapability[] = [];
 
     try {
@@ -163,7 +162,7 @@ export class CapabilityDiscoveryService {
    *
    * @returns Promise resolving to list of skill capabilities
    */
-  private async discoverSkills(): Promise<SkillCapability[]> {
+  private discoverSkills(): SkillCapability[] {
     const skills: SkillCapability[] = [];
 
     try {
@@ -317,24 +316,24 @@ export class CapabilityDiscoveryService {
    *
    * @returns Promise resolving to list of instruction capabilities
    */
-  private async discoverInstructions(): Promise<InstructionCapability[]> {
+  private discoverInstructions(): InstructionCapability[] {
     const instructions: InstructionCapability[] = [];
 
     try {
       // Discover repository instruction files
-      const repoInstructions = await this.discoverRepositoryInstructions();
+      const repoInstructions = this.discoverRepositoryInstructions();
       instructions.push(...repoInstructions);
 
       // Discover workspace instruction files
-      const workspaceInstructions = await this.discoverWorkspaceInstructions();
+      const workspaceInstructions = this.discoverWorkspaceInstructions();
       instructions.push(...workspaceInstructions);
 
       // Discover user instruction files
-      const userInstructions = await this.discoverUserInstructions();
+      const userInstructions = this.discoverUserInstructions();
       instructions.push(...userInstructions);
 
       // Discover system instructions
-      const systemInstructions = await this.discoverSystemInstructions();
+      const systemInstructions = this.discoverSystemInstructions();
       instructions.push(...systemInstructions);
 
       this.logger.debug('capabilityDiscoveryService.discoverInstructions', `Discovered ${instructions.length} instructions`);
@@ -351,7 +350,7 @@ export class CapabilityDiscoveryService {
    *
    * @returns Promise resolving to list of repository instruction capabilities
    */
-  private async discoverRepositoryInstructions(): Promise<InstructionCapability[]> {
+  private discoverRepositoryInstructions(): InstructionCapability[] {
     const instructions: InstructionCapability[] = [];
 
     try {
@@ -398,7 +397,7 @@ export class CapabilityDiscoveryService {
    *
    * @returns Promise resolving to list of workspace instruction capabilities
    */
-  private async discoverWorkspaceInstructions(): Promise<InstructionCapability[]> {
+  private discoverWorkspaceInstructions(): InstructionCapability[] {
     const instructions: InstructionCapability[] = [];
 
     try {
@@ -439,7 +438,7 @@ export class CapabilityDiscoveryService {
    *
    * @returns Promise resolving to list of user instruction capabilities
    */
-  private async discoverUserInstructions(): Promise<InstructionCapability[]> {
+  private discoverUserInstructions(): InstructionCapability[] {
     const instructions: InstructionCapability[] = [];
 
     try {
@@ -480,7 +479,7 @@ export class CapabilityDiscoveryService {
    *
    * @returns Promise resolving to list of system instruction capabilities
    */
-  private async discoverSystemInstructions(): Promise<InstructionCapability[]> {
+  private discoverSystemInstructions(): InstructionCapability[] {
     const instructions: InstructionCapability[] = [];
 
     try {
@@ -530,7 +529,7 @@ export class CapabilityDiscoveryService {
    *
    * @returns Promise resolving to list of language model provider capabilities
    */
-  private async discoverLanguageModelProviders(): Promise<LanguageModelProviderCapability[]> {
+  private discoverLanguageModelProviders(): LanguageModelProviderCapability[] {
     const providers: LanguageModelProviderCapability[] = [];
 
     try {
@@ -584,7 +583,7 @@ export class CapabilityDiscoveryService {
    *
    * @returns Promise resolving to list of command capabilities
    */
-  private async discoverCommands(): Promise<CommandCapability[]> {
+  private discoverCommands(): CommandCapability[] {
     const commands: CommandCapability[] = [];
 
     try {
@@ -626,7 +625,7 @@ export class CapabilityDiscoveryService {
    *
    * @returns Promise resolving to list of prompt capabilities
    */
-  private async discoverPrompts(): Promise<PromptCapability[]> {
+  private discoverPrompts(): PromptCapability[] {
     const prompts: PromptCapability[] = [];
 
     try {
@@ -668,7 +667,7 @@ export class CapabilityDiscoveryService {
    *
    * @returns Promise resolving to list of extension contribution capabilities
    */
-  private async discoverExtensionContributions(): Promise<ExtensionContributionCapability[]> {
+  private discoverExtensionContributions(): ExtensionContributionCapability[] {
     const contributions: ExtensionContributionCapability[] = [];
 
     try {

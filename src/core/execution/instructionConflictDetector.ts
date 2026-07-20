@@ -5,8 +5,8 @@
  * contradict each other or lead to problematic execution scenarios.
  */
 
-import { InstructionCapability } from './capability';
-import { ExecutionProfile } from './executionProfile';
+import type { InstructionCapability } from './capability';
+import type { ExecutionProfile } from './executionProfile';
 import type { KeystoneLogger } from '../../shared/logging/KeystoneLogger';
 
 /**
@@ -68,7 +68,7 @@ export class InstructionConflictDetector {
   detectConflicts(instructions: InstructionCapability[]): InstructionConflict[] {
     const conflicts: InstructionConflict[] = [];
 
-    this.logger.info(`Detecting conflicts in ${instructions.length} instructions`);
+    this.logger.info('instructionConflictDetector.detectConflicts', `Detecting conflicts in ${instructions.length} instructions`);
 
     // Check for contradictory instructions
     const contradictoryConflicts = this.detectContradictoryInstructions(instructions);
@@ -82,7 +82,7 @@ export class InstructionConflictDetector {
     const ambiguousConflicts = this.detectAmbiguousInstructions(instructions);
     conflicts.push(...ambiguousConflicts);
 
-    this.logger.info(`Detected ${conflicts.length} instruction conflicts`);
+    this.logger.info('instructionConflictDetector.detectConflicts', `Detected ${conflicts.length} instruction conflicts`);
 
     return conflicts;
   }
@@ -273,7 +273,7 @@ export class InstructionConflictDetector {
       description: `Mock instruction for ID ${id}`,
       state: 'available',
       lastDiscovered: new Date().toISOString(),
-      filePath: null,
+      filePath: undefined,
       scope: 'user',
       precedence: 5,
       enabled: true,

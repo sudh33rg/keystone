@@ -1,190 +1,78 @@
 /**
  * Service for persisting and loading execution profiles in Keystone.
  *
- * This service handles the storage and retrieval of execution profiles
- * to/from persistent storage (file system or extension storage).
+ * Execution profiles are stored as a single JSON document under the extension
+ * storage root (`.keystone/workflow/execution-profiles.json`). Writes are
+ * atomic via AtomicFileWriter and serialized through a Zod schema so that a
+ * corrupt or schema-incompatible file is quarantined and replaced with an
+ * empty profile set rather than crashing activation.
  */
 
-import type { ExecutionProfile } from '../execution/executionProfile';
-import type { KeystoneLogger } from '../../shared/logging/KeystoneLogger';
-import type { VSCodeAPI } from '../../shared/contracts/vscodeApi';
-import fs from 'fs/promises';
-import path from 'path';
+import { join } from "node:path";
+import { readFile, rename } from "node:fs/promises";
+import { z } from "zod";
+import { AtomicFileWriter } from "./AtomicFileWriter";
+import type { ExecutionProfile } from "../execution/executionProfile";
+import type { KeystoneLogger } from "../../shared/logging/KeystoneLogger";
+import type { VSCodeAPI } from "../../shared/contracts/vscodeApi";
 
-/**
- * Service for managing the persistence of execution profiles.
- */
+const ExecutionProfileDocumentSchema = z.object({
+  schemaVersion: z.literal(1),
+  profiles: z.array(z.custom<ExecutionProfile>((value) => typeof value === "object" && value !== null && "id" in value)),
+  updatedAt: z.string()
+});
+
+type ExecutionProfileDocument = z.infer<typeof ExecutionProfileDocumentSchema>;
+
 export class ExecutionProfilePersistence {
-  private logger: KeystoneLogger;
-  private vscodeAPI: VSCodeAPI;
-  private profiles: ExecutionProfile[] = [];
+  private readonly logger: KeystoneLogger;
+  private readonly writer: AtomicFileWriter;
+  private readonly path?: string;
 
-  constructor(logger: KeystoneLogger, vscodeAPI: VSCodeAPI) {
+  constructor(logger: KeystoneLogger, vscodeAPI?: VSCodeAPI, storageRoot?: string, writer = new AtomicFileWriter()) {
     this.logger = logger;
-    this.vscodeAPI = vscodeAPI;
+    this.writer = writer;
+    this.path = storageRoot ? join(storageRoot, "workflow", "execution-profiles.json") : undefined;
   }
 
   /**
-   * Save an execution profile to persistent storage.
+   * Load all persisted execution profiles.
    *
-   * @param profile The profile to save
-   * @returns Promise resolving when save is complete
-   */
-  async saveProfile(profile: ExecutionProfile): Promise<void> {
-    try {
-      this.logger.info(`Saving execution profile: ${profile.name}`);
-
-      // In a real implementation, this would save to the file system or extension storage
-      // For now, we'll just store in memory
-      const existingIndex = this.profiles.findIndex(p => p.id === profile.id);
-      if (existingIndex !== -1) {
-        this.profiles[existingIndex] = profile;
-      } else {
-        this.profiles.push(profile);
-      }
-
-      this.logger.info(`Successfully saved execution profile: ${profile.name}`);
-    } catch (error) {
-      this.logger.error('Error saving execution profile', { error });
-      throw new Error(`Failed to save profile: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  }
-
-  /**
-   * Load all execution profiles from persistent storage.
-   *
-   * @returns Promise resolving to list of loaded profiles
+   * @returns Promise resolving to the list of loaded profiles (empty if none persisted yet)
    */
   async loadProfiles(): Promise<ExecutionProfile[]> {
+    if (!this.path) return [];
     try {
-      this.logger.info('Loading execution profiles from persistent storage');
-
-      // In a real implementation, this would read from file system or extension storage
-      // For now, we'll just return what's in memory or load from a default location
-      const profiles = this.profiles;
-
-      this.logger.info(`Loaded ${profiles.length} execution profiles`);
-
-      return profiles;
-    } catch (error) {
-      this.logger.error('Error loading execution profiles', { error });
-      throw new Error(`Failed to load profiles: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  }
-
-  /**
-   * Delete an execution profile from persistent storage.
-   *
-   * @param profileId The ID of the profile to delete
-   * @returns Promise resolving when delete is complete
-   */
-  async deleteProfile(profileId: string): Promise<void> {
-    try {
-      this.logger.info(`Deleting execution profile: ${profileId}`);
-
-      const index = this.profiles.findIndex(p => p.id === profileId);
-      if (index !== -1) {
-        this.profiles.splice(index, 1);
+      const raw = await readFile(this.path, "utf8");
+      const parsed = ExecutionProfileDocumentSchema.safeParse(JSON.parse(raw));
+      if (!parsed.success) {
+        await rename(this.path, `${this.path}.invalid-${Date.now()}`).catch(() => undefined);
+        this.logger.warning("executionProfilePersistence.load", "Execution profile document failed validation; starting with an empty set.");
+        return [];
       }
-
-      this.logger.info(`Successfully deleted execution profile: ${profileId}`);
+      return parsed.data.profiles;
     } catch (error) {
-      this.logger.error('Error deleting execution profile', { error });
-      throw new Error(`Failed to delete profile: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  }
-
-  /**
-   * Migrate old execution profile references to new format.
-   *
-   * @param oldProfile The old profile format to migrate
-   * @returns The migrated profile or undefined if migration failed
-   */
-  migrateOldProfile(oldProfile: any): ExecutionProfile | undefined {
-    try {
-      // Migration logic would handle converting from older profile formats to the new format
-      // This is a simplified example showing what might be involved
-
-      if (!oldProfile || !oldProfile.id) {
-        return undefined;
+      if (error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT") {
+        return [];
       }
-
-      // Create a new profile in the current format
-      const migratedProfile: ExecutionProfile = {
-        id: oldProfile.id,
-        name: oldProfile.name || 'Migrated Profile',
-        description: oldProfile.description,
-        executor: {
-          agentId: oldProfile.agentId || '',
-          invocationMode: oldProfile.invocationMode || 'manual',
-          fallbackAgentId: oldProfile.fallbackAgentId,
-          fallbackMode: oldProfile.fallbackMode
-        },
-        skills: (oldProfile.skills || []).map((skill: any) => ({
-          skillId: skill.id || skill.skillId,
-          enabled: skill.enabled !== undefined ? skill.enabled : true,
-          order: skill.order || 0
-        })),
-        instructions: (oldProfile.instructions || []).map((instruction: any) => ({
-          instructionId: instruction.id || instruction.instructionId,
-          enabled: instruction.enabled !== undefined ? instruction.enabled : true,
-          order: instruction.order || 0
-        })),
-        context: {
-          profileId: oldProfile.contextProfileId,
-          tokenBudget: oldProfile.tokenBudget || 12000,
-          includeWorkflowIntent: oldProfile.includeWorkflowIntent !== undefined ? oldProfile.includeWorkflowIntent : true,
-          includeSpecification: oldProfile.includeSpecification !== undefined ? oldProfile.includeSpecification : true,
-          includeAcceptanceCriteria: oldProfile.includeAcceptanceCriteria !== undefined ? oldProfile.includeAcceptanceCriteria : true,
-          includeStageHistory: oldProfile.includeStageHistory !== undefined ? oldProfile.includeStageHistory : true,
-          includeValidationEvidence: oldProfile.includeValidationEvidence !== undefined ? oldProfile.includeValidationEvidence : true,
-          includeUserPinnedContext: oldProfile.includeUserPinnedContext !== undefined ? oldProfile.includeUserPinnedContext : true
-        },
-        control: {
-          approvalRequired: oldProfile.approvalRequired !== undefined ? oldProfile.approvalRequired : false,
-          allowAutomaticInvocation: oldProfile.allowAutomaticInvocation !== undefined ? oldProfile.allowAutomaticInvocation : true,
-          retryLimit: oldProfile.retryLimit || 3,
-          timeoutSeconds: oldProfile.timeoutSeconds,
-          requirePromptPreview: oldProfile.requirePromptPreview !== undefined ? oldProfile.requirePromptPreview : true,
-          requireOutputReview: oldProfile.requireOutputReview !== undefined ? oldProfile.requireOutputReview : true
-        },
-        output: {
-          contractType: oldProfile.outputContractType || 'implementation',
-          expectedArtifacts: oldProfile.expectedArtifacts || [],
-          requireStructuredResult: oldProfile.requireStructuredResult !== undefined ? oldProfile.requireStructuredResult : false,
-          customSchemaId: oldProfile.customSchemaId
-        },
-        metadata: {
-          createdAt: oldProfile.createdAt || new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          source: oldProfile.source || 'user',
-          version: oldProfile.version || 1
-        }
-      };
-
-      return migratedProfile;
-    } catch (error) {
-      this.logger.error('Error migrating old profile', { error });
-      return undefined;
+      this.logger.warning("executionProfilePersistence.load", `Could not read execution profiles: ${error instanceof Error ? error.message : String(error)}`);
+      return [];
     }
   }
 
   /**
-   * Get all stored profiles.
+   * Persist the full set of execution profiles.
    *
-   * @returns List of all stored profiles
+   * @param profiles The profiles to persist
+   * @returns Promise resolving when the write is complete
    */
-  getAllProfiles(): ExecutionProfile[] {
-    return this.profiles;
-  }
-
-  /**
-   * Get a specific profile by ID.
-   *
-   * @param id The profile ID to retrieve
-   * @returns The profile if found, otherwise undefined
-   */
-  getProfileById(id: string): ExecutionProfile | undefined {
-    return this.profiles.find(p => p.id === id);
+  async saveProfiles(profiles: ExecutionProfile[]): Promise<void> {
+    if (!this.path) return;
+    const document: ExecutionProfileDocument = {
+      schemaVersion: 1,
+      profiles,
+      updatedAt: new Date().toISOString()
+    };
+    await this.writer.writeJson(this.path, document);
   }
 }

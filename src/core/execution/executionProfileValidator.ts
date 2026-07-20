@@ -5,10 +5,10 @@
  * and that all referenced capabilities are available or can be resolved.
  */
 
-import { ExecutionProfile } from './executionProfile';
-import { CapabilityDiscoveryService } from './capabilityDiscoveryService';
+import type { ExecutionProfile } from './executionProfile';
+import type { CapabilityDiscoveryService } from './capabilityDiscoveryService';
 import type { KeystoneLogger } from '../../shared/logging/KeystoneLogger';
-import { Capability } from './capability';
+import type { Capability } from './capability';
 
 /**
  * Validation result for an execution profile
