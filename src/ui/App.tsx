@@ -24,6 +24,10 @@ const IntelligenceOverviewRoute = lazy(async () => {
   const module = await import("./components/intelligence/IntelligenceOverview");
   return { default: module.IntelligenceOverview };
 });
+const ActiveWorkRoute = lazy(async () => {
+  const module = await import("./components/workbench/ActiveWork");
+  return { default: module.ActiveWork };
+});
 const WorkbenchRoute = lazy(async () => {
   const module = await import("./components/workbench/SDLCWorkbench");
   return { default: module.SDLCWorkbench };
@@ -269,7 +273,7 @@ export function App({ bridge }: AppProps): React.JSX.Element {
       <nav className="navigation" aria-label="Keystone sections">
         {PRIMARY_NAVIGATION.map((item) => {
           const active =
-            item.id === "workbench"
+            item.id === "active-work"
               ? activeRoute.startsWith("/workbench/")
               : activeRoute === item.route;
           return (
@@ -349,6 +353,14 @@ export function App({ bridge }: AppProps): React.JSX.Element {
                 .then(setOverview)
                 .catch(showError(setError));
             }}
+          />
+          </Suspense>
+        ) : activeRoute === "/active-work" ? (
+          <Suspense fallback={<RouteLoadingView label="Active Work" />}>
+          <ActiveWorkRoute
+            bridge={bridge}
+            workflowId={undefined}
+            navigate={navigate}
           />
           </Suspense>
         ) : activeRoute.startsWith("/workbench/") ? (

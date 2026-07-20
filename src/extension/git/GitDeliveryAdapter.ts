@@ -8,7 +8,7 @@ import { GitCapabilitiesSchema, GitRepositoryStateSchema, type GitCapabilities, 
 const execute = promisify(execFile);
 
 export class GitExecutableDeliveryAdapter implements GitRuntimeAdapter {
-  constructor(private readonly gitExtensionAvailable: () => boolean) {}
+  constructor(private readonly gitExtensionAvailable: () => boolean) { }
   async capabilities(root: string): Promise<GitCapabilities> {
     const available = await this.run(root, ["--version"], true).then(() => true, () => false);
     const repositoryDetected = available && await this.run(root, ["rev-parse", "--is-inside-work-tree"], true).then((item) => item.stdout.trim() === "true", () => false);

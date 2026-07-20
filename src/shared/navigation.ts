@@ -2,7 +2,7 @@ import { AppRouteSchema, WorkbenchStageSchema, type AppRoute, type NavigationSec
 
 export const PRIMARY_NAVIGATION = [
   { id: "home", label: "Home", route: "/", icon: "home" },
-  { id: "workbench", label: "SDLC Workbench", route: "/workbench/new", icon: "tasks" },
+  { id: "active-work", label: "Active Work", route: "/active-work", icon: "tasks" },
   { id: "intelligence", label: "Intelligence", route: "/intelligence", icon: "intelligence" },
   { id: "history", label: "History", route: "/history", icon: "pulse" }
 ] as const;
@@ -23,10 +23,9 @@ export function parseWorkbenchRoute(route: AppRoute): WorkbenchRoute | undefined
 }
 
 export function sectionForRoute(route: AppRoute): NavigationSection {
-  if (route.startsWith("/workbench/")) return "workbench";
+  if (route.startsWith("/workbench/")) return "active-work";
   if (route === "/intelligence") return "intelligence";
   if (route === "/history") return "history";
-  if (route === "/support/diagnostics") return "diagnostics";
   if (route === "/settings") return "settings";
   return "home";
 }
@@ -34,6 +33,13 @@ export function sectionForRoute(route: AppRoute): NavigationSection {
 export function compatibilityRoute(section: NavigationSection, workflowId?: string): AppRoute {
   const selected = workflowId ?? "new";
   switch (section) {
+    // New canonical navigation sections
+    case "home": return "/";
+    case "active-work": return "/workbench/new";
+    case "intelligence": return "/intelligence";
+    case "history": return "/history";
+    case "settings": return "/settings";
+    // Deprecated sections - redirect to new canonical routes
     case "intent": case "specifications": return selected === "new" ? "/workbench/new" : workbenchRoute(selected, "define");
     case "tasks": return selected === "new" ? "/workbench/new" : workbenchRoute(selected, "plan");
     case "context": case "orchestration": return selected === "new" ? "/workbench/new" : workbenchRoute(selected, "build");
@@ -41,10 +47,7 @@ export function compatibilityRoute(section: NavigationSection, workflowId?: stri
     case "delivery": return selected === "new" ? "/workbench/new" : workbenchRoute(selected, "complete");
     case "team": return "/";
     case "diagnostics": return "/support/diagnostics";
-    case "settings": return "/settings";
     case "workbench": return "/workbench/new";
-    case "intelligence": return "/intelligence";
-    case "history": return "/history";
     default: return "/";
   }
 }

@@ -41,7 +41,7 @@ describe("App", () => {
 
     expect(screen.getByText(/Active repository · fixture-repository/)).toBeTruthy();
     expect(screen.getByText(/Engineering work/)).toBeTruthy();
-    expect(["Home", "SDLC Workbench", "Intelligence", "History"].every((name) => screen.getByRole("button", { name }))).toBe(true);
+    expect(["Home", "Active Work", "Intelligence", "History"].every((name) => screen.getByRole("button", { name }))).toBe(true);
     for (const removed of ["Intent & Specs", "Tasks", "Active Workflow", "Validation & QA", "Delivery", "Task Handoff", "Diagnostics"]) expect(screen.queryByRole("button", { name: removed })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Workspace health" }));

@@ -5,28 +5,20 @@
       "label": "keystone: build",
       "type": "shell",
       "command": "npm run build:extension",
-      "isBackground": true,
-      "problemMatcher": "$tsc"
+      "problemMatcher": "$npm",
+      "group": "build"
     },
     {
       "label": "keystone: build:extension-tests",
       "type": "shell",
       "command": "npm run build:extension-tests",
-      "isBackground": true,
-      "problemMatcher": "$tsc"
+      "problemMatcher": "$npm"
     },
     {
       "label": "keystone: build:webview",
       "type": "shell",
-      "command": "npm run build:webview"
-    },
-    {
-      "type": "npm",
-      "script": "build:extension",
-      "group": "build",
-      "problemMatcher": [],
-      "label": "npm: build:extension",
-      "detail": "node scripts/build-extension.mjs"
+      "command": "npm run build:webview",
+      "problemMatcher": []
     }
   ]
 }

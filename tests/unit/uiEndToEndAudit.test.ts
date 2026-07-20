@@ -9,7 +9,7 @@ describe("final UI architecture audit", () => {
   it("keeps exactly four primary destinations and no standalone lifecycle products", () => {
     const navigation = read("src/shared/navigation.ts");
     expect(navigation).toContain('label: "Home"');
-    expect(navigation).toContain('label: "SDLC Workbench"');
+    expect(navigation).toContain('label: "Active Work"');
     expect(navigation).toContain('label: "Intelligence"');
     expect(navigation).toContain('label: "History"');
     for (const obsolete of ["Intent & Specs", "Active Workflow", "Validation & QA", 'label: "Delivery"', 'label: "Task Handoff"'])

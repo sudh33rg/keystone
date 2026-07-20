@@ -1865,7 +1865,7 @@ export interface WebviewRequestResults {
 }
 
 export type WebviewResult<T extends WebviewRequestType> =
-  WebviewRequestResults[T];
+  WebviewRequestResults[Extract<keyof WebviewRequestResults, T>];
 
 export function hostMessage<T extends HostMessage["type"]>(
   type: T,

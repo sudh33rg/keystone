@@ -51,7 +51,7 @@ describe("WorkspaceStateStore", () => {
     const restored = new WorkspaceStateStore(memento);
 
     expect(state.revision).toBe(1);
-    expect(await restored.initialize()).toMatchObject({ activeSection: "workbench", activeRoute: "/workbench/new" });
+    expect(await restored.initialize()).toMatchObject({ activeSection: "active-work", activeRoute: "/workbench/new" });
   });
 
   it("persists a workflow route as the canonical navigation state", async () => {
@@ -62,7 +62,7 @@ describe("WorkspaceStateStore", () => {
 
     const state = await store.setActiveRoute(`/workbench/${workflowId}/review`);
 
-    expect(state).toMatchObject({ activeSection: "workbench", activeRoute: `/workbench/${workflowId}/review` });
+    expect(state).toMatchObject({ activeSection: "active-work", activeRoute: `/workbench/${workflowId}/review` });
   });
 
   it("migrates the supported legacy state", async () => {
@@ -71,7 +71,7 @@ describe("WorkspaceStateStore", () => {
 
     const state = await new WorkspaceStateStore(memento).initialize();
 
-    expect(state).toMatchObject({ schemaVersion: 1, activeSection: "workbench", activeRoute: "/workbench/new", workflowCount: 3 });
+    expect(state).toMatchObject({ schemaVersion: 1, activeSection: "active-work", activeRoute: "/workbench/new", workflowCount: 3 });
   });
 
   it("migrates removed roadmap navigation without discarding valid state", async () => {
@@ -89,7 +89,7 @@ describe("WorkspaceStateStore", () => {
 
     const state = await new WorkspaceStateStore(memento).initialize();
 
-    expect(state).toMatchObject({ revision: 3, activeSection: "workbench", activeRoute: "/workbench/new" });
+    expect(state).toMatchObject({ revision: 3, activeSection: "active-work", activeRoute: "/workbench/new" });
   });
 
   it("preserves invalid data under a recovery key before resetting", async () => {

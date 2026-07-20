@@ -18,19 +18,21 @@ export const hostEnvelopeFields = {
 
 export const NavigationSectionSchema = z.enum([
   "home",
-  "workbench",
+  "active-work",
+  "intelligence",
   "history",
+  "settings",
+  // Legacy sections preserved for backward compatibility
   "intent",
   "specifications",
   "tasks",
-  "intelligence",
   "context",
+  "orchestration",
   "validation",
   "delivery",
   "team",
-  "orchestration",
   "diagnostics",
-  "settings"
+  "workbench",
 ]);
 
 export type NavigationSection = z.infer<typeof NavigationSectionSchema>;

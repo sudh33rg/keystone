@@ -3,7 +3,7 @@ import { COMPATIBILITY_REDIRECTS, PRIMARY_NAVIGATION, compatibilityRoute, parseW
 
 describe("product navigation", () => {
   it("exposes only the four workflow-oriented primary destinations", () => {
-    expect(PRIMARY_NAVIGATION.map((item) => item.label)).toEqual(["Home", "SDLC Workbench", "Intelligence", "History"]);
+    expect(PRIMARY_NAVIGATION.map((item) => item.label)).toEqual(["Home", "Active Work", "Intelligence", "History"]);
   });
 
   it("parses all canonical Workbench stages", () => {
@@ -11,7 +11,7 @@ describe("product navigation", () => {
     for (const stage of ["define", "plan", "build", "validate", "review", "complete"] as const) {
       const route = workbenchRoute(workflowId, stage);
       expect(parseWorkbenchRoute(route)).toEqual({ kind: "workflow", workflowId, stage });
-      expect(sectionForRoute(route)).toBe("workbench");
+      expect(sectionForRoute(route)).toBe("active-work");
     }
   });
 
