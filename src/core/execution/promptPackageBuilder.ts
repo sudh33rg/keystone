@@ -5,7 +5,7 @@
  * context, instructions, and task details for delegation to agents.
  */
 
-import type { Capability, InstructionCapability, SkillCapability, AgentCapability } from './capability';
+import type { InstructionCapability, SkillCapability } from './capability';
 import type { ExecutionProfile } from './executionProfile';
 import type { CapabilityDiscoveryService } from './capabilityDiscoveryService';
 import type { KeystoneLogger } from '../../shared/logging/KeystoneLogger';
@@ -126,13 +126,13 @@ export class PromptPackageBuilder {
    * @param contextItems Additional context items to include
    * @returns The built prompt package
    */
-  async buildPromptPackage(
+  buildPromptPackage(
     workflowId: string,
     stageId: string,
     workItemId: string,
     profile: ExecutionProfile,
     contextItems?: string[]
-  ): Promise<PromptPackage> {
+  ): PromptPackage {
     this.logger.info('promptPackageBuilder.buildPromptPackage', `Building prompt package for workflow ${workflowId}, stage ${stageId}`);
 
     try {
@@ -151,13 +151,13 @@ export class PromptPackageBuilder {
       };
 
       // Build the structured content components
-      packageContent.structured.workflow = this.buildWorkflowSection(profile);
-      packageContent.structured.specification = this.buildSpecificationSection(profile);
-      packageContent.structured.repositoryIntelligence = this.buildRepositoryIntelligenceSection(profile);
-      packageContent.structured.context = this.buildContextSection(profile, contextItems);
+      packageContent.structured.workflow = this.buildWorkflowSection();
+      packageContent.structured.specification = this.buildSpecificationSection();
+      packageContent.structured.repositoryIntelligence = this.buildRepositoryIntelligenceSection();
+      packageContent.structured.context = this.buildContextSection(contextItems);
       packageContent.structured.skills = this.buildSkillsSection(profile);
       packageContent.structured.instructions = this.buildInstructionsSection(profile);
-      packageContent.structured.task = this.buildTaskSection(profile, workflowId, stageId);
+      packageContent.structured.task = this.buildTaskSection();
       packageContent.structured.expectedOutput = this.buildExpectedOutputSection(profile);
 
       // Render the Markdown prompt
@@ -174,7 +174,7 @@ export class PromptPackageBuilder {
       return packageContent;
     } catch (error) {
       this.logger.error(KeystoneError.fromUnknown(error, 'promptPackageBuilder.buildPromptPackage'));
-      throw new Error(`Failed to build prompt package: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new Error(`Failed to build prompt package: ${error instanceof Error ? error.message : 'Unknown error'}`, { cause: error });
     }
   }
 
@@ -184,7 +184,7 @@ export class PromptPackageBuilder {
    * @param profile The execution profile to use
    * @returns The workflow section content
    */
-  private buildWorkflowSection(profile: ExecutionProfile): PromptPackage['structured']['workflow'] {
+  private buildWorkflowSection(): PromptPackage['structured']['workflow'] {
     // In a real implementation, this would pull from actual workflow data
     return {
       intent: "Implementation",
@@ -200,7 +200,7 @@ export class PromptPackageBuilder {
    * @param profile The execution profile to use
    * @returns The specification section content
    */
-  private buildSpecificationSection(profile: ExecutionProfile): PromptPackage['structured']['specification'] {
+  private buildSpecificationSection(): PromptPackage['structured']['specification'] {
     // In a real implementation, this would pull from actual specification data
     return {
       approvedRequirements: ["Requirement 1: Implement feature X", "Requirement 2: Ensure backward compatibility"],
@@ -215,7 +215,7 @@ export class PromptPackageBuilder {
    * @param profile The execution profile to use
    * @returns The repository intelligence section content
    */
-  private buildRepositoryIntelligenceSection(profile: ExecutionProfile): PromptPackage['structured']['repositoryIntelligence'] {
+  private buildRepositoryIntelligenceSection(): PromptPackage['structured']['repositoryIntelligence'] {
     // In a real implementation, this would pull from the intelligence graph
     return {
       relevantArchitecture: ["API Layer", "Data Layer", "UI Layer"],
@@ -233,7 +233,7 @@ export class PromptPackageBuilder {
    * @param contextItems Additional context items to include
    * @returns The context section content
    */
-  private buildContextSection(profile: ExecutionProfile, contextItems?: string[]): PromptPackage['structured']['context'] {
+  private buildContextSection(contextItems?: string[]): PromptPackage['structured']['context'] {
     const context: PromptPackage['structured']['context'] = {
       selectedSourceEvidence: [],
       userPinnedContext: [],
@@ -324,7 +324,7 @@ export class PromptPackageBuilder {
    * @param stageId The stage ID
    * @returns The task section content
    */
-  private buildTaskSection(profile: ExecutionProfile, workflowId: string, stageId: string): PromptPackage['structured']['task'] {
+  private buildTaskSection(): PromptPackage['structured']['task'] {
     return {
       exactWork: "Implement new feature X according to the specification",
       boundaries: ["Only modify files in the src/ directory", "Do not change external dependencies"],

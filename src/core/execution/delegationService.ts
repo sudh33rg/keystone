@@ -257,13 +257,13 @@ export class DelegationService {
         case 'deterministic':
           // Execute a deterministic operation (internal Keystone logic)
           result.status = 'completed';
-          result.result = await this.executeDeterministic(prepared);
+          result.result = this.executeDeterministic(prepared);
           result.endTime = new Date().toISOString();
           this.logger.info('delegationService.executeDelegation', 'Deterministic delegation completed');
           break;
 
         default:
-          throw new Error(`Unsupported delegation mode: ${prepared.delegationMode}`);
+          throw new Error(`Unsupported delegation mode: ${String(prepared.delegationMode)}`);
       }
 
       // Record completion

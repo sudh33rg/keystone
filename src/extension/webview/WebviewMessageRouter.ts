@@ -4097,7 +4097,7 @@ export class WebviewMessageRouter {
     }
   }
 
-  private async runIntelligenceService(
+  private runIntelligenceService(
     service: string,
     payload: unknown,
   ): Promise<unknown> {
@@ -4107,12 +4107,12 @@ export class WebviewMessageRouter {
     // 3. Call the appropriate method with the payload
     // 4. Return the result
     // For now, return a generic response
-    return {
+    return Promise.resolve({
       service,
       payload,
       message: `Service ${service} called with payload`,
       timestamp: new Date().toISOString(),
-    };
+    });
   }
 
   private async sendError(

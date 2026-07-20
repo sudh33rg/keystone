@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   Workflow,
   WorkflowStageType,
@@ -62,6 +62,7 @@ export function ActiveWork({ bridge, workflowId, navigate }: { bridge: HostBridg
   const [workflow, setWorkflow] = useState<Workflow | undefined>();
   const [error, setError] = useState<KeystoneUiError>();
 
+  const loadRef = useRef<() => void>(() => undefined);
   const load = useCallback(async (): Promise<void> => {
     if (!workflowId) return;
     try {
@@ -75,16 +76,16 @@ export function ActiveWork({ bridge, workflowId, navigate }: { bridge: HostBridg
         category: "active-work-load",
         title: "Active Work is temporarily unavailable",
         fallbackMessage: "Keystone could not load the current workflow.",
-        retry: () => load(),
+        retry: () => loadRef.current(),
         dismiss: () => setError(undefined),
       }));
     }
   }, [bridge, workflowId]);
 
   useEffect(() => {
+    loadRef.current = load;
     queueMicrotask(() => void load());
   }, [load]);
-
   if (!workflow) return <section className="page active-work-page"><div className="loading-view"><div className="loader" /></div></section>;
 
   const stages = workflow.stages;

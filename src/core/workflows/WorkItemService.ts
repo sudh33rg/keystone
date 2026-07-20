@@ -1,7 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
-import { WorkItem, WorkflowStageType, Workflow, WorkflowWorkType } from "../../shared/contracts/workflow";
-import { DevelopmentTask, DevelopmentWorkTypeSchema } from "../../shared/contracts/delegation";
-import { WorkflowStageTypeSchema } from "../../shared/contracts/workflow";
+import type { WorkItem, WorkflowStageType, Workflow, WorkflowWorkType } from "../../shared/contracts/workflow";
+import type { DevelopmentTask} from "../../shared/contracts/delegation";
 
 /**
  * Work item categories derived from task categories.
@@ -34,8 +33,6 @@ export const WORK_ITEM_CATEGORIES: Record<string, string> = {
 export function createWorkItemFromTask(
   task: DevelopmentTask,
   stageId: string,
-  stageType: WorkflowStageType,
-  stageDisplayName: string,
 ): WorkItem {
   const category = WORK_ITEM_CATEGORIES[task.category] || task.category;
   return {

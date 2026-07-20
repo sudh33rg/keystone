@@ -29,38 +29,38 @@ export class CapabilityDiscoveryService {
    *
    * @returns Promise resolving to capability discovery results
    */
-  discoverCapabilities(): CapabilityDiscoveryResult {
+  async discoverCapabilities(): Promise<CapabilityDiscoveryResult> {
     this.logger.info('capabilityDiscoveryService.discoverCapabilities', 'Starting capability discovery process');
 
     try {
       const capabilities: Capability[] = [];
 
-      // Discover agents
-      const agentCapabilities = this.discoverAgents();
+      // Discover agents (requires VS Code chat participant queries)
+      const agentCapabilities = await this.discoverAgents();
       capabilities.push(...agentCapabilities);
 
-      // Discover skills
+      // Discover skills (static registry lookup)
       const skillCapabilities = this.discoverSkills();
       capabilities.push(...skillCapabilities);
 
-      // Discover instructions
+      // Discover instructions (static registry lookup)
       const instructionCapabilities = this.discoverInstructions();
       capabilities.push(...instructionCapabilities);
 
-      // Discover language model providers
-      const languageModelCapabilities = this.discoverLanguageModelProviders();
+      // Discover language model providers (requires VS Code LM queries)
+      const languageModelCapabilities = await this.discoverLanguageModelProviders();
       capabilities.push(...languageModelCapabilities);
 
-      // Discover commands
-      const commandCapabilities = this.discoverCommands();
+      // Discover commands (requires VS Code command registry queries)
+      const commandCapabilities = await this.discoverCommands();
       capabilities.push(...commandCapabilities);
 
-      // Discover prompts
+      // Discover prompts (static registry lookup)
       const promptCapabilities = this.discoverPrompts();
       capabilities.push(...promptCapabilities);
 
-      // Discover extension contributions
-      const extensionContributionCapabilities = this.discoverExtensionContributions();
+      // Discover extension contributions (requires VS Code extension API queries)
+      const extensionContributionCapabilities = await this.discoverExtensionContributions();
       capabilities.push(...extensionContributionCapabilities);
 
       this.capabilities = capabilities;
@@ -88,7 +88,7 @@ export class CapabilityDiscoveryService {
    *
    * @returns Promise resolving to list of agent capabilities
    */
-  private discoverAgents(): AgentCapability[] {
+  private async discoverAgents(): Promise<AgentCapability[]> {
     const agents: AgentCapability[] = [];
 
     try {
@@ -529,7 +529,7 @@ export class CapabilityDiscoveryService {
    *
    * @returns Promise resolving to list of language model provider capabilities
    */
-  private discoverLanguageModelProviders(): LanguageModelProviderCapability[] {
+  private async discoverLanguageModelProviders(): Promise<LanguageModelProviderCapability[]> {
     const providers: LanguageModelProviderCapability[] = [];
 
     try {
@@ -583,7 +583,7 @@ export class CapabilityDiscoveryService {
    *
    * @returns Promise resolving to list of command capabilities
    */
-  private discoverCommands(): CommandCapability[] {
+  private async discoverCommands(): Promise<CommandCapability[]> {
     const commands: CommandCapability[] = [];
 
     try {
@@ -667,7 +667,7 @@ export class CapabilityDiscoveryService {
    *
    * @returns Promise resolving to list of extension contribution capabilities
    */
-  private discoverExtensionContributions(): ExtensionContributionCapability[] {
+  private async discoverExtensionContributions(): Promise<ExtensionContributionCapability[]> {
     const contributions: ExtensionContributionCapability[] = [];
 
     try {

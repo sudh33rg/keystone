@@ -69,7 +69,7 @@ export interface VSCodeExtension {
    */
   contributes?: {
     chatParticipants?: VSCodeChatParticipant[];
-    languageModelTools?: any[];
+    languageModelTools?: unknown[];
   };
 }
 

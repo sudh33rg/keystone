@@ -1,4 +1,4 @@
-import { WorkflowState, WorkflowStage, WorkflowStageType } from "../../shared/contracts/workflow";
+import type { WorkflowState, WorkflowStage, WorkflowStageType } from "../../shared/contracts/workflow";
 
 /**
  * Transition error types for invalid state changes.

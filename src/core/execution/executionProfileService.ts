@@ -232,15 +232,12 @@ export class ExecutionProfileService {
     }
 
     // Validate skills exist (if any)
-    for (const skill of profile.skills) {
-      // In a real implementation, we would check if the skill exists
-      // For now, we'll just assume they exist since they might be from extensions
-    }
+    // In a real implementation, we would check if each referenced skill exists
+    // via the capability service; for now we accept the profile's references.
 
     // Validate instructions exist (if any)
-    for (const instruction of profile.instructions) {
-      // In a real implementation, we would check if the instruction exists
-    }
+    // In a real implementation, we would check if each referenced instruction exists
+    // via the capability service; for now we accept the profile's references.
 
     return true;
   }
@@ -251,20 +248,7 @@ export class ExecutionProfileService {
    * @returns List of available agent capabilities
    */
   getAvailableAgents(): AgentCapability[] {
-    const agents = this.capabilityService.getCapabilitiesByType('agent');
-    return agents.map((agent) => ({
-      id: agent.id,
-      name: agent.name,
-      description: agent.description,
-      state: agent.state,
-      type: agent.type,
-      source: agent.source,
-      lastDiscovered: agent.lastDiscovered,
-      supportsDirectInvocation: (agent as AgentCapability).supportsDirectInvocation,
-      supportsManualHandoff: (agent as AgentCapability).supportsManualHandoff,
-      supportedStageTypes: (agent as AgentCapability).supportedStageTypes,
-      invocationModes: (agent as AgentCapability).invocationModes
-    }));
+    return this.capabilityService.getCapabilitiesByType('agent') as AgentCapability[];
   }
 
   /**
@@ -273,20 +257,7 @@ export class ExecutionProfileService {
    * @returns List of available skill capabilities
    */
   getAvailableSkills(): SkillCapability[] {
-    const skills = this.capabilityService.getCapabilitiesByType('skill');
-    return skills.map((skill) => ({
-      id: skill.id,
-      name: skill.name,
-      description: skill.description,
-      state: skill.state,
-      type: skill.type,
-      source: skill.source,
-      lastDiscovered: skill.lastDiscovered,
-      applicableStageTypes: (skill as SkillCapability).applicableStageTypes,
-      requiredCapabilities: (skill as SkillCapability).requiredCapabilities,
-      instructionReferences: (skill as SkillCapability).instructionReferences,
-      version: (skill as SkillCapability).version
-    }));
+    return this.capabilityService.getCapabilitiesByType('skill') as SkillCapability[];
   }
 
   /**
@@ -295,20 +266,6 @@ export class ExecutionProfileService {
    * @returns List of available instruction capabilities
    */
   getAvailableInstructions(): InstructionCapability[] {
-    const instructions = this.capabilityService.getCapabilitiesByType('instruction');
-    return instructions.map((instruction) => ({
-      id: instruction.id,
-      name: instruction.name,
-      description: instruction.description,
-      state: instruction.state,
-      type: instruction.type,
-      source: instruction.source,
-      lastDiscovered: instruction.lastDiscovered,
-      filePath: (instruction as InstructionCapability).filePath,
-      scope: (instruction as InstructionCapability).scope,
-      precedence: (instruction as InstructionCapability).precedence,
-      enabled: (instruction as InstructionCapability).enabled,
-      contentHash: (instruction as InstructionCapability).contentHash
-    }));
+    return this.capabilityService.getCapabilitiesByType('instruction') as InstructionCapability[];
   }
 }

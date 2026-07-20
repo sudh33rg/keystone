@@ -8,7 +8,6 @@
 import type { ExecutionProfile } from './executionProfile';
 import type { CapabilityDiscoveryService } from './capabilityDiscoveryService';
 import type { KeystoneLogger } from '../../shared/logging/KeystoneLogger';
-import type { Capability } from './capability';
 
 /**
  * Validation result for an execution profile

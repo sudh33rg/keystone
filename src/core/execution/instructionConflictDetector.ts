@@ -96,28 +96,6 @@ export class InstructionConflictDetector {
   private detectContradictoryInstructions(instructions: InstructionCapability[]): InstructionConflict[] {
     const conflicts: InstructionConflict[] = [];
 
-    // Example: instructions that prohibit and require the same action
-    const instructionPairs = [
-      {
-        name: 'test-modification-allowed',
-        description: 'Allow modification of test files',
-        conflictingWith: 'test-modification-prohibited',
-        conflictDescription: 'Test file modification is both allowed and prohibited'
-      },
-      {
-        name: 'framework-change-allowed',
-        description: 'Allow changing frameworks',
-        conflictingWith: 'framework-change-prohibited',
-        conflictDescription: 'Framework changes are both allowed and prohibited'
-      },
-      {
-        name: 'automatic-commits-allowed',
-        description: 'Allow automatic commits',
-        conflictingWith: 'automatic-commits-prohibited',
-        conflictDescription: 'Automatic commits are both allowed and prohibited'
-      }
-    ];
-
     // In a real implementation, we would analyze the actual content of instructions
     // For now, we'll simulate some conflicts based on instruction IDs
 
@@ -155,22 +133,6 @@ export class InstructionConflictDetector {
    */
   private detectIncompatibleInstructions(instructions: InstructionCapability[]): InstructionConflict[] {
     const conflicts: InstructionConflict[] = [];
-
-    // Example: instructions that require incompatible approaches
-    const incompatiblePairs = [
-      {
-        name: 'bounded-modification',
-        description: 'Require bounded code modifications',
-        incompatibleWith: 'unbounded-refactoring',
-        conflictDescription: 'Bounded modifications conflict with unbounded refactoring'
-      },
-      {
-        name: 'strict-security',
-        description: 'Enforce strict security requirements',
-        incompatibleWith: 'lenient-security',
-        conflictDescription: 'Strict security is incompatible with lenient security'
-      }
-    ];
 
     // Simulate checking for incompatible instruction patterns
     const boundedModification = instructions.find(i =>

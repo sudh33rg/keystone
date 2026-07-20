@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { RepositoryStateRefSchema } from "./integration";
 import { ContextBudgetSchema, ContextItemSchema } from "./delegation";
 
 export const WORKFLOW_SCHEMA_VERSION = 1 as const;

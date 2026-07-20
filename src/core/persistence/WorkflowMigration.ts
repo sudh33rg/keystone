@@ -1,4 +1,4 @@
-import { z } from "zod";
+import type { z } from "zod";
 import { v4 as uuidv4 } from "uuid";
 import type {
   Workflow,
@@ -6,20 +6,14 @@ import type {
   WorkItem,
   WorkflowWorkType,
   WorkflowStageType,
+  WorkflowStatus,
 } from "../../shared/contracts/workflow";
-import { RequirementKindSchema } from "../../shared/contracts/workflow";
-import type { RequirementKind } from "../../shared/contracts/workflow";
-import {
+import type {
   DevelopmentWorkflowSnapshot,
   DevelopmentTask,
 } from "../../shared/contracts/delegation";
 import type { WorkflowInstance } from "../../shared/contracts/orchestration";
-import {
-  WorkbenchStageState,
-  WorkbenchStageStateSchema,
-} from "../../shared/contracts/workbench";
-import type { WorkbenchStage } from "../../shared/contracts/domain";
-import {
+import type {
   IntentRecord,
   KeystoneSpecification,
   TaskGraph,
@@ -67,11 +61,6 @@ function getStageTypeForTaskCategory(category: string): WorkflowStageType | unde
 // ============================================================================
 
 function generateStageIds(workType: WorkflowWorkType): Record<WorkflowStageType, string> {
-  const allStages: WorkflowStageType[] = [
-    "understand", "plan", "development", "impact-analysis",
-    "test-generation", "test-execution", "failure-analysis", "test-healing",
-    "security-analysis", "performance-analysis", "pr-review", "complete",
-  ];
   switch (workType) {
     case "feature":
       return {
@@ -124,52 +113,7 @@ function createDefaultStage(
     displayName: type,
     enabled: true,
     order: 1,
-    required: "required" as RequirementKind,
-    executionMode: "automatic",
-    entryConditions: [],
-    completionConditions: [],
-    failureBehaviour: "stop",
-    retryLimit: 3,
-    executionProfileId: undefined,
-    contextProfileId: undefined,
-    tokenBudget: 12_000,
-    requiredEvidenceTypes: [],
-    blockingFindingSeverities: ["critical", "high"],
-    state: "not-ready",
-    workItemIds: [],
-    validationRunIds: [],
-    reviewFindingIds: [],
-    completionRecordId: undefined,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
-}
-
-function mapWorkbenchStageState(
-  state: WorkbenchStageState,
-  stageIds: Record<WorkflowStageType, string>,
-): WorkflowStage {
-  const parsed = WorkbenchStageStateSchema.parse(state);
-  const workbenchStage = parsed.stage as WorkbenchStage;
-  // Map workbench stage names to workflow stage types
-  const stageTypeMap: Record<string, WorkflowStageType> = {
-    define: "understand",
-    plan: "plan",
-    build: "development",
-    validate: "test-execution",
-    review: "pr-review",
-    complete: "complete",
-  };
-  const type = stageTypeMap[workbenchStage] ?? "understand";
-  const id = stageIds[type];
-
-  return {
-    id: id!,
-    type,
-    displayName: workbenchStage === "define" ? "Understand" : workbenchStage,
-    enabled: true,
-    order: 1,
-    required: "required" as RequirementKind,
+    required: "required",
     executionMode: "automatic",
     entryConditions: [],
     completionConditions: [],
@@ -194,7 +138,6 @@ export function migrateWorkflowSnapshot(
   snapshot: DevelopmentWorkflowSnapshot,
   workType: WorkflowWorkType,
 ): Workflow {
-  const stageIds = generateStageIds(workType);
   const stages: WorkflowStage[] = [];
 
   // Map tasks to work items
@@ -317,7 +260,7 @@ export function migrateOrchestrationWorkflow(
   }).filter(Boolean) as WorkItem[];
 
   // Map orchestration status to workflow status
-  const statusMap: Record<string, import("../../shared/contracts/workflow").WorkflowStatus> = {
+  const statusMap: Record<string, WorkflowStatus> = {
     "draft": "not-ready",
     "awaiting-review": "awaiting-approval",
     "awaiting-approval": "awaiting-approval",

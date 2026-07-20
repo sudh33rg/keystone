@@ -1,4 +1,4 @@
-import { WorkflowStageConfig, WorkflowStageType, WorkflowWorkType } from "../../shared/contracts/workflow";
+import type { WorkflowStageConfig, WorkflowStageType, WorkflowWorkType } from "../../shared/contracts/workflow";
 
 interface DefaultFlowConfig {
   workType: WorkflowWorkType;
