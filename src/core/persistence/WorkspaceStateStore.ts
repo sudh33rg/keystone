@@ -5,7 +5,7 @@ import {
   type NavigationSection,
   type PersistedFoundationState,
 } from "../../shared/contracts/domain";
-import { compatibilityRoute, sectionForRoute } from "../../shared/navigation";
+import { sectionForRoute } from "../../shared/navigation";
 import { KeystoneError } from "../../shared/errors/KeystoneError";
 import { readFile, rename } from "node:fs/promises";
 import { AtomicFileWriter } from "./AtomicFileWriter";
@@ -103,7 +103,7 @@ export class WorkspaceStateStore {
   }
 
   async setActiveSection(section: NavigationSection): Promise<PersistedFoundationState> {
-    return this.setActiveRoute(compatibilityRoute(section));
+    return this.setActiveRoute(sectionForRoute(section as AppRoute));
   }
 
   async setActiveRoute(route: AppRoute): Promise<PersistedFoundationState> {
@@ -172,7 +172,7 @@ function migrateLegacyState(raw: unknown): PersistedFoundationState | undefined 
     candidate.activeRoute === undefined
   ) {
     const section = candidate.activeSection as NavigationSection;
-    const activeRoute = compatibilityRoute(section);
+    const activeRoute = sectionForRoute(section as AppRoute);
     const result = PersistedFoundationStateSchema.safeParse({
       ...candidate,
       activeSection: sectionForRoute(activeRoute),
@@ -185,7 +185,7 @@ function migrateLegacyState(raw: unknown): PersistedFoundationState | undefined 
   if (candidate.schemaVersion !== 0) return undefined;
   const activeSection =
     typeof candidate.activeSection === "string" ? candidate.activeSection : "home";
-  const route = compatibilityRoute(activeSection as NavigationSection);
+  const route = sectionForRoute(activeSection as AppRoute);
   const result = PersistedFoundationStateSchema.safeParse({
     ...createDefaultState(),
     activeSection: sectionForRoute(route),

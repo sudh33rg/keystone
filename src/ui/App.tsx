@@ -8,13 +8,12 @@ import type {
 import { PRIMARY_NAVIGATION, sectionForRoute } from "../shared/navigation";
 import type { IntelligenceOverview as IntelligenceOverviewModel } from "../shared/contracts/intelligence";
 import { Icon } from "./components/Icon";
-import type { HostBridge } from "./services/HostBridge";
 import { HomeDashboard } from "./components/home/HomeDashboard";
 import { toUiError, UiErrorState, type KeystoneUiError } from "./components/UiState";
 import type { KeystoneInitialization, LaunchRecovery } from "../shared/contracts/nativeShell";
 
 interface AppProps {
-  bridge: HostBridge;
+  bridge: import("./services/HostBridge").HostBridge;
 }
 
 const IntelligenceOverviewRoute = lazy(async () => {
@@ -24,10 +23,6 @@ const IntelligenceOverviewRoute = lazy(async () => {
 const ActiveWorkRoute = lazy(async () => {
   const module = await import("./components/workbench/ActiveWork");
   return { default: module.ActiveWork };
-});
-const WorkbenchRoute = lazy(async () => {
-  const module = await import("./components/workbench/SDLCWorkbench");
-  return { default: module.SDLCWorkbench };
 });
 const HistoryRoute = lazy(async () => {
   const module = await import("./components/history/HistoryWorkspace");
@@ -247,7 +242,7 @@ export function App({ bridge }: AppProps): React.JSX.Element {
         {PRIMARY_NAVIGATION.map((item) => {
           const active =
             item.id === "active-work"
-              ? activeRoute.startsWith("/workbench/")
+              ? activeRoute === "/active-work"
               : activeRoute === item.route;
           return (
             <button
@@ -320,11 +315,7 @@ export function App({ bridge }: AppProps): React.JSX.Element {
           </Suspense>
         ) : activeRoute === "/active-work" ? (
           <Suspense fallback={<RouteLoadingView label="Active Work" />}>
-            <ActiveWorkRoute bridge={bridge} workflowId={undefined} navigate={navigate} />
-          </Suspense>
-        ) : activeRoute.startsWith("/workbench/") ? (
-          <Suspense fallback={<RouteLoadingView label="SDLC Workbench" />}>
-            <WorkbenchRoute bridge={bridge} route={activeRoute} navigate={navigate} />
+            <ActiveWorkRoute bridge={bridge} navigate={navigate} />
           </Suspense>
         ) : activeRoute === "/history" ? (
           <Suspense fallback={<RouteLoadingView label="History" />}>
@@ -443,7 +434,7 @@ function showError(setError: (error: KeystoneUiError) => void): (cause: unknown)
     );
 }
 
-function Settings({ bridge }: { bridge: HostBridge }): React.JSX.Element {
+function Settings({ bridge }: { bridge: import("./services/HostBridge").HostBridge }): React.JSX.Element {
   return (
     <section className="page settings-page">
       <div className="eyebrow">Extension preferences</div>

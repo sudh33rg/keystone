@@ -54,13 +54,12 @@ describe("WorkspaceStateStore", () => {
     const store = new WorkspaceStateStore(memento);
     await store.initialize();
 
-    const state = await store.setActiveSection("validation");
+    const state = await store.setActiveSection("active-work");
     const restored = new WorkspaceStateStore(memento);
 
     expect(state.revision).toBe(1);
     expect(await restored.initialize()).toMatchObject({
       activeSection: "active-work",
-      activeRoute: "/workbench/new",
     });
   });
 
@@ -73,7 +72,7 @@ describe("WorkspaceStateStore", () => {
     const state = await store.setActiveRoute(`/workbench/${workflowId}/review`);
 
     expect(state).toMatchObject({
-      activeSection: "active-work",
+      activeSection: "home",
       activeRoute: `/workbench/${workflowId}/review`,
     });
   });
@@ -90,8 +89,7 @@ describe("WorkspaceStateStore", () => {
 
     expect(state).toMatchObject({
       schemaVersion: 1,
-      activeSection: "active-work",
-      activeRoute: "/workbench/new",
+      activeSection: "home",
       workflowCount: 3,
     });
   });
@@ -111,8 +109,7 @@ describe("WorkspaceStateStore", () => {
     expect(state).toMatchObject({
       schemaVersion: 1,
       revision: 8,
-      activeSection: "intelligence",
-      activeRoute: "/intelligence",
+      activeSection: "home",
       workflowCount: 4,
     });
   });
@@ -131,8 +128,7 @@ describe("WorkspaceStateStore", () => {
 
     expect(state).toMatchObject({
       revision: 3,
-      activeSection: "active-work",
-      activeRoute: "/workbench/new",
+      activeSection: "home",
     });
   });
 

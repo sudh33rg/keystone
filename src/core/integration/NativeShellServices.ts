@@ -13,7 +13,6 @@ import type { DevelopmentWorkflowSnapshot } from "../../shared/contracts/delegat
 import type { WorkflowReviewState } from "../../shared/contracts/review";
 import type { CopilotIntegrationCapabilities } from "../../shared/contracts/copilotIntegration";
 import type { NativeShellPersistenceStore } from "../persistence/NativeShellPersistenceStore";
-import { workbenchRoute } from "../../shared/navigation";
 
 export interface NativeShellStateSource {
   workspace(): {
@@ -397,7 +396,7 @@ export class KeystoneLaunchValidationService {
         "/",
       );
     else if (destination.type === "home") route = "/";
-    else if (destination.type === "new-workflow") route = "/workbench/new";
+    else if (destination.type === "new-workflow") route = "/active-work";
     else if (destination.type === "history") route = "/history";
     else if (destination.type === "diagnostics") route = "/support/diagnostics";
     else if (destination.type === "settings") route = "/settings";
@@ -467,9 +466,9 @@ export class KeystoneLaunchValidationService {
             "task-missing",
             "Task was removed or superseded",
             "Open the current workflow or task plan to choose a current task.",
-            workbenchRoute(workflow.id, "plan"),
+            "/active-work",
           );
-        else route = workbenchRoute(workflow.id, stageForTask(workflow, destination.taskId));
+        else route = "/active-work";
       } else if (destination.type === "finding") {
         const found = this.source
           .review(workflow.id)
@@ -479,12 +478,12 @@ export class KeystoneLaunchValidationService {
             "target-unavailable",
             "Finding no longer exists",
             "The finding was resolved, removed, or superseded.",
-            workbenchRoute(workflow.id, "review"),
+            "/active-work",
           );
-        else route = workbenchRoute(workflow.id, "review");
+        else route = "/active-work";
       } else if (destination.type === "approval")
-        route = workbenchRoute(workflow.id, approvalStage(workflow));
-      else route = workbenchRoute(workflow.id, destination.stage ?? currentStage(workflow));
+        route = "/active-work";
+      else route = "/active-work";
     }
     if (recovery) route = recovery.fallbackRoute;
     return ValidatedNavigationSchema.parse({
@@ -656,27 +655,4 @@ function recover(
       { label: "Open Diagnostics", destination: { type: "diagnostics" } },
     ],
   };
-}
-function stageForTask(
-  workflow: DevelopmentWorkflowSnapshot,
-  taskId: string,
-): "plan" | "build" | "validate" | "review" {
-  const task = workflow.tasks.find((entry) => entry.id === taskId);
-  if (!task || task.status === "pending") return "plan";
-  if (task.status === "completed") return "review";
-  return "build";
-}
-function currentStage(
-  workflow: DevelopmentWorkflowSnapshot,
-): "define" | "plan" | "build" | "validate" | "review" | "complete" {
-  if (workflow.specification?.status !== "approved") return "define";
-  if (!workflow.taskGraph?.ready) return "plan";
-  if (workflow.tasks.some((entry) => !["completed", "cancelled"].includes(entry.status)))
-    return "build";
-  return "review";
-}
-function approvalStage(workflow: DevelopmentWorkflowSnapshot): "define" | "plan" | "review" {
-  if (workflow.specification?.status !== "approved") return "define";
-  if (!workflow.taskGraph?.ready) return "plan";
-  return "review";
 }

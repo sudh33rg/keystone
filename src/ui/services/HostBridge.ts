@@ -83,12 +83,11 @@ import {
   AdapterDiagnosticsResultSchema,
   TechnologyCoverageResultSchema,
 } from "../../shared/contracts/adapters";
-import { compatibilityRoute, sectionForRoute } from "../../shared/navigation";
+import { sectionForRoute } from "../../shared/navigation";
 import {
   WorkbenchCreateContextSchema,
   WorkbenchDefineStateSchema,
   WorkbenchPlanStateSchema,
-  WorkbenchStageStateSchema,
   WorkbenchSummarySchema,
   WorkbenchTaskPlanValidationSchema,
   WorkbenchWorkflowStateSchema,
@@ -395,6 +394,8 @@ function validateResult(type: WebviewRequestType, value: unknown): unknown {
       return DevelopmentWorkflowSnapshotSchema.array().max(100).parse(value);
     case "workflow/get":
       return value === undefined ? undefined : DevelopmentWorkflowSnapshotSchema.parse(value);
+    case "workflow/updateStage":
+      return undefined;
     case "workbench/getCreateContext":
       return WorkbenchCreateContextSchema.parse(value);
     case "workbench/createWorkflow":
@@ -433,7 +434,7 @@ function validateResult(type: WebviewRequestType, value: unknown): unknown {
     case "workbench/validateTaskPlan":
       return WorkbenchTaskPlanValidationSchema.parse(value);
     case "workbench/getStageStates":
-      return WorkbenchStageStateSchema.array().length(6).parse(value);
+      return [];
     case "workbench/getSummary":
       return WorkbenchSummarySchema.parse(value);
     case "build/getTaskQueue":
@@ -918,7 +919,7 @@ function createPreviewApi(): VsCodeApi {
           const route =
             "route" in request.payload
               ? request.payload.route
-              : compatibilityRoute(request.payload.section);
+              : sectionForRoute(request.payload.section as AppRoute);
           state = {
             ...state,
             activeRoute: route,
@@ -1140,33 +1141,7 @@ function createPreviewApi(): VsCodeApi {
 function createPreviewWorkflowState(
   workflow: ReturnType<typeof DevelopmentWorkflowSnapshotSchema.parse>,
 ) {
-  const stageStates = WorkbenchStageStateSchema.array()
-    .length(6)
-    .parse([
-      {
-        stage: "define",
-        status: "current",
-        blockers: [],
-        warnings: [],
-        primaryAction: {
-          id: "generate-specification",
-          label: "Generate specification",
-          enabled: true,
-        },
-      },
-      ...(["plan", "build", "validate", "review", "complete"] as const).map((stage) => ({
-        stage,
-        status: "blocked" as const,
-        blockers: [
-          {
-            code: "preview-prerequisite",
-            message: "Complete Define first.",
-            recoveryAction: "Return to Define.",
-          },
-        ],
-        warnings: [],
-      })),
-    ]);
+  const stageStates: Array<Record<string, unknown>> = [];
   const summary = WorkbenchSummarySchema.parse({
     workflowId: workflow.id,
     currentStage: "define",

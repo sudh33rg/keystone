@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 import type { DevelopmentWorkflowSnapshot } from "../../../shared/contracts/delegation";
 import type { AppRoute } from "../../../shared/contracts/domain";
 import type { WorkflowCompletionRecord } from "../../../shared/contracts/review";
-import { workbenchRoute } from "../../../shared/navigation";
 import type { HostBridge } from "../../services/HostBridge";
 import { EmptyState, toUiError, UiErrorState, type KeystoneUiError } from "../UiState";
 
@@ -90,20 +89,7 @@ export function HistoryWorkspace({
             )}
             <button
               className="ghost-button"
-              onClick={() =>
-                navigate(
-                  workbenchRoute(
-                    workflow.id,
-                    completion
-                      ? "complete"
-                      : workflow.tasks.length
-                        ? "build"
-                        : workflow.specification?.status === "approved"
-                          ? "plan"
-                          : "define",
-                  ),
-                )
-              }
+              onClick={() => navigate("/active-work")}
             >
               {completion ? "Open completion" : "Open workflow"}
             </button>
@@ -117,7 +103,7 @@ export function HistoryWorkspace({
               id: "start",
               label: "Start new work",
               kind: "primary",
-              run: () => navigate("/workbench/new"),
+              run: () => navigate("/active-work"),
             }}
           />
         )}

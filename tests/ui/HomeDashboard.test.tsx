@@ -67,9 +67,7 @@ describe("HomeDashboard", () => {
     expect(screen.getByText("Generation 7")).toBeTruthy();
     expect(screen.getByText("Available")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Resume workflow" }));
-    expect(navigate).toHaveBeenCalledWith(`/workbench/${workflowId}/build`);
-    fireEvent.click(screen.getByRole("button", { name: "Open Validate: 3" }));
-    expect(navigate).toHaveBeenCalledWith(`/workbench/${workflowId}/validate`);
+    expect(navigate).toHaveBeenCalledWith("/active-work");
     fireEvent.click(screen.getByRole("button", { name: "Import handoff" }));
     await waitFor(() => expect(request).toHaveBeenCalledWith("handoff/import", { source: "file" }));
   });

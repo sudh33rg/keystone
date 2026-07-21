@@ -8,7 +8,6 @@ import type { CopilotIntegrationCapabilities } from "../../../shared/contracts/c
 import type { IntelligenceOverview } from "../../../shared/contracts/intelligence";
 import type { WorkflowInstance } from "../../../shared/contracts/orchestration";
 import type { WorkbenchCreateContext } from "../../../shared/contracts/workbench";
-import { workbenchRoute } from "../../../shared/navigation";
 import type { HostBridge } from "../../services/HostBridge";
 import { Icon } from "../Icon";
 import { toUiError, UiErrorState, type KeystoneUiError } from "../UiState";
@@ -70,18 +69,7 @@ export function HomeDashboard({
   const task =
     workflow?.tasks.find((item) => ["executing", "ready", "blocked"].includes(item.status)) ??
     workflow?.tasks[0];
-  const resume: AppRoute = workflow
-    ? workbenchRoute(
-        workflow.id,
-        workflow.tasks.length
-          ? task?.status === "completed"
-            ? "validate"
-            : "build"
-          : workflow.specification?.status === "approved"
-            ? "plan"
-            : "define",
-      )
-    : "/workbench/new";
+  const resume: AppRoute = workflow ? "/active-work" : "/active-work";
   const importHandoff = async (): Promise<void> => {
     try {
       const imported = await bridge.request("handoff/import", { source: "file" });
@@ -124,11 +112,11 @@ export function HomeDashboard({
           <em>in one lifecycle.</em>
         </h1>
         <p>
-          Start from an intent, define the contract, plan tasks, build, validate, review, and
-          complete only the capabilities this workflow needs.
+          Describe what you want to build. Keystone will analyze the repository, create a workflow,
+          and delegate implementation tasks to Copilot.
         </p>
         <div className="button-row">
-          <button className="primary-button" onClick={() => navigate("/workbench/new")}>
+          <button className="primary-button" onClick={() => navigate("/active-work")}>
             Start new work
           </button>
           {workflow && (
@@ -181,8 +169,8 @@ export function HomeDashboard({
           detail={task?.status ?? "No task is active"}
           {...(workflow
             ? {
-                action: "Open task in Build",
-                onOpen: () => navigate(workbenchRoute(workflow.id, "build")),
+                action: "Open task",
+                onOpen: () => navigate(resume),
               }
             : {})}
         />
@@ -198,8 +186,8 @@ export function HomeDashboard({
           detail="Open findings that prevent completion"
           {...(workflow
             ? {
-                action: "Open Review",
-                onOpen: () => navigate(workbenchRoute(workflow.id, "review")),
+                action: "Open workflow",
+                onOpen: () => navigate(resume),
               }
             : {})}
         />
@@ -209,8 +197,8 @@ export function HomeDashboard({
           detail="Tasks with failed validation evidence"
           {...(workflow
             ? {
-                action: "Open Validate",
-                onOpen: () => navigate(workbenchRoute(workflow.id, "validate")),
+                action: "Open workflow",
+                onOpen: () => navigate(resume),
               }
             : {})}
         />
