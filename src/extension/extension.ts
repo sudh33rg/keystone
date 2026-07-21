@@ -49,6 +49,14 @@ import {
   GitHubPullRequestProvider,
   PullRequestProviderRegistry,
 } from "../core/delivery/GitDeliveryService";
+import { WorkflowFreshnessService } from "../core/freshness/WorkflowFreshnessService";
+import { WorkflowRerunPlanner } from "../core/rerun/WorkflowRerunPlanner";
+import { ActivityService } from "../core/activity/ActivityService";
+import { ApprovalService } from "../core/approval/ApprovalService";
+import { BlockerService } from "../core/blocker/BlockerService";
+import { PersistenceConsistencyService } from "../core/persistence/PersistenceConsistencyService";
+import { SupportBundleService } from "../core/support/SupportBundleService";
+import { ResourceLimitService } from "../core/resource/ResourceLimitService";
 import { GitExecutableDeliveryAdapter } from "./git/GitDeliveryAdapter";
 import { VsCodeGitDeliveryAdapter } from "./git/VsCodeGitDeliveryAdapter";
 import { TeamWorkflowPersistenceStore } from "../core/persistence/TeamWorkflowPersistenceStore";

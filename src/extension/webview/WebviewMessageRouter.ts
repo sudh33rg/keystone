@@ -620,6 +620,16 @@ export class WebviewMessageRouter {
           this.services.workflow.get(request.payload.workflowId),
         );
         return;
+      case "workflow/updateStage": {
+        const { workflowId, stageId } = request.payload;
+        try {
+          const updatedWorkflow = await this.services.workflow.updateStage(workflowId, stageId);
+          await this.sendSuccess(request.requestId, updatedWorkflow);
+        } catch (error) {
+          await this.sendError(request.requestId, KeystoneError.fromUnknown(error, "workflow/updateStage"));
+        }
+        return;
+      }
       case "workflow/spec/submit":
         await this.sendWorkflow(
           request.requestId,
