@@ -19,15 +19,10 @@ export function QueryWorkspace({
 }): React.JSX.Element {
   const [input, setInput] = useState(initialInput);
   const [compilation, setCompilation] = useState<QueryCompilation>();
-  const [suggestions, setSuggestions] = useState<
-    QuerySuggestionsResult["items"]
-  >([]);
-  const [templates, setTemplates] = useState<QueryTemplatesResult["templates"]>(
-    [],
-  );
+  const [suggestions, setSuggestions] = useState<QuerySuggestionsResult["items"]>([]);
+  const [templates, setTemplates] = useState<QueryTemplatesResult["templates"]>([]);
   const [result, setResult] = useState<IntelligenceQueryResult>();
-  const [selectedEntity, setSelectedEntity] =
-    useState<IntelligenceEntityDetails>();
+  const [selectedEntity, setSelectedEntity] = useState<IntelligenceEntityDetails>();
   const [selectedProjection, setSelectedProjection] =
     useState<IntelligenceQueryResult["data"]["items"][number]>();
   const [loading, setLoading] = useState(false);
@@ -52,12 +47,7 @@ export function QueryWorkspace({
     return () => window.clearTimeout(timer);
   }, [bridge, input]);
   const grouped = useMemo(
-    () =>
-      result
-        ? Object.entries(result.data.sections).filter(
-            ([, items]) => items.length,
-          )
-        : [],
+    () => (result ? Object.entries(result.data.sections).filter(([, items]) => items.length) : []),
     [result],
   );
   const compile = async (): Promise<QueryCompilation | undefined> => {
@@ -88,15 +78,11 @@ export function QueryWorkspace({
         { signal: next.signal },
       );
       setResult(value);
-      const values = [input, ...history.filter((item) => item !== input)].slice(
-        0,
-        12,
-      );
+      const values = [input, ...history.filter((item) => item !== input)].slice(0, 12);
       setHistory(values);
       localStorage.setItem(HISTORY_KEY, JSON.stringify(values));
     } catch (cause) {
-      if (!(cause instanceof DOMException && cause.name === "AbortError"))
-        report(setError)(cause);
+      if (!(cause instanceof DOMException && cause.name === "AbortError")) report(setError)(cause);
     } finally {
       setLoading(false);
     }
@@ -156,10 +142,7 @@ export function QueryWorkspace({
   const hasPlaceholder = /<[^>]+>/.test(input);
 
   return (
-    <section
-      className="query-workspace"
-      aria-label="Intelligence query workspace"
-    >
+    <section className="query-workspace" aria-label="Intelligence query workspace">
       <header>
         <div>
           <small>Deterministic Query Workspace</small>
@@ -177,11 +160,7 @@ export function QueryWorkspace({
           }}
           placeholder="Path from POST /orders to orders.status"
         />
-        <button
-          className="ghost-button"
-          disabled={!input.trim()}
-          onClick={() => void compile()}
-        >
+        <button className="ghost-button" disabled={!input.trim()} onClick={() => void compile()}>
           Compile
         </button>
         {loading ? (
@@ -200,16 +179,12 @@ export function QueryWorkspace({
       </div>
       {hasPlaceholder && (
         <p className="query-guidance">
-          Replace the highlighted placeholder with a repository entity, module,
-          branch, table, or configuration key.
+          Replace the highlighted placeholder with a repository entity, module, branch, table, or
+          configuration key.
         </p>
       )}
       {suggestions.length > 0 && (
-        <div
-          className="query-suggestions"
-          role="listbox"
-          aria-label="Deterministic autocomplete"
-        >
+        <div className="query-suggestions" role="listbox" aria-label="Deterministic autocomplete">
           {suggestions.map((item) => (
             <button
               key={`${item.kind}:${item.entityId ?? item.value}`}
@@ -227,10 +202,7 @@ export function QueryWorkspace({
         <details>
           <summary>Supported templates</summary>
           {templates.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => applyInput(item.template, true)}
-            >
+            <button key={item.id} onClick={() => applyInput(item.template, true)}>
               <strong>{item.label}</strong>
               <small>{item.template}</small>
             </button>
@@ -262,9 +234,7 @@ export function QueryWorkspace({
                 : "Unsupported"}
             </span>
           </div>
-          {compilation.query && (
-            <pre>{JSON.stringify(compilation.query, null, 2)}</pre>
-          )}
+          {compilation.query && <pre>{JSON.stringify(compilation.query, null, 2)}</pre>}
           {compilation.diagnostics.map((item) => (
             <p key={item.code}>{item.message}</p>
           ))}
@@ -278,30 +248,25 @@ export function QueryWorkspace({
               <h3>{result.data.kind}</h3>
             </div>
             <span>
-              {result.executionTimeMs.toFixed(1)} ms · generation{" "}
-              {result.generation} · cache {result.cacheState}
+              {result.executionTimeMs.toFixed(1)} ms · generation {result.generation} · cache{" "}
+              {result.cacheState}
             </span>
           </header>
           {result.data.kind === "usages" && (
             <p className="query-direct-answer">
               <strong>
-                {result.data.metrics.total ?? result.data.items.length} logical
-                usages
+                {result.data.metrics.total ?? result.data.items.length} logical usages
               </strong>{" "}
               · {result.data.metrics.exact ?? 0} exact/resolved ·{" "}
               {result.data.metrics.candidates ?? 0} candidate/convention ·{" "}
-              {result.data.metrics.physicalRelationships ??
-                result.data.relationships.length}{" "}
+              {result.data.metrics.physicalRelationships ?? result.data.relationships.length}{" "}
               physical relationships
             </p>
           )}
           {result.resolvedSeeds.map((seed, index) => (
             <div className="resolved-seed-group" key={index}>
               <div className="resolved-seed">
-                <strong>
-                  {seed.selected?.qualifiedName ??
-                    "Explicit selection required"}
-                </strong>
+                <strong>{seed.selected?.qualifiedName ?? "Explicit selection required"}</strong>
                 <span>
                   {seed.ambiguous
                     ? `${seed.candidates.length} ranked candidates`
@@ -318,17 +283,14 @@ export function QueryWorkspace({
                       key={candidate.id}
                       onClick={() =>
                         selectCandidate(
-                          seed.selector.value ??
-                            seed.selector.id ??
-                            candidate.id,
+                          seed.selector.value ?? seed.selector.id ?? candidate.id,
                           candidate.id,
                         )
                       }
                     >
                       <strong>{candidate.qualifiedName}</strong>
                       <span>
-                        {candidate.type.replace("keystone.core.", "")} ·{" "}
-                        {candidate.relativePath}
+                        {candidate.type.replace("keystone.core.", "")} · {candidate.relativePath}
                       </span>
                       <small>{candidate.reasons.slice(0, 3).join(" · ")}</small>
                     </button>
@@ -338,10 +300,7 @@ export function QueryWorkspace({
             </div>
           ))}
           {result.diagnostics.map((item) => (
-            <p
-              className={`query-diagnostic ${item.severity}`}
-              key={`${item.code}:${item.message}`}
-            >
+            <p className={`query-diagnostic ${item.severity}`} key={`${item.code}:${item.message}`}>
               {item.code}: {item.message}
             </p>
           ))}
@@ -349,15 +308,11 @@ export function QueryWorkspace({
             <div className="query-items">
               {result.data.items.map((item) => (
                 <article key={`${item.group ?? "item"}:${item.id}`}>
-                  <button
-                    className="query-item-main"
-                    onClick={() => inspect(item.id, item)}
-                  >
+                  <button className="query-item-main" onClick={() => inspect(item.id, item)}>
                     <div>
                       <strong>{item.name}</strong>
                       <span>
-                        {item.group ?? item.classification} ·{" "}
-                        {Math.round(item.confidence * 100)}%
+                        {item.group ?? item.classification} · {Math.round(item.confidence * 100)}%
                       </span>
                     </div>
                     <small>
@@ -368,21 +323,13 @@ export function QueryWorkspace({
                       {item.rankingReasons.slice(0, 3).join(" · ")}
                     </small>
                     {item.details?.riskFactors && (
-                      <p>
-                        {(item.details.riskFactors as string[]).join(" · ")}
-                      </p>
+                      <p>{(item.details.riskFactors as string[]).join(" · ")}</p>
                     )}
                   </button>
                   <div className="query-item-actions">
-                    <button onClick={() => followUp("dependencies", item.id)}>
-                      Dependencies
-                    </button>
-                    <button onClick={() => followUp("impact", item.id)}>
-                      Impact
-                    </button>
-                    <button onClick={() => followUp("tests", item.id)}>
-                      Tests
-                    </button>
+                    <button onClick={() => followUp("dependencies", item.id)}>Dependencies</button>
+                    <button onClick={() => followUp("impact", item.id)}>Impact</button>
+                    <button onClick={() => followUp("tests", item.id)}>Tests</button>
                   </div>
                 </article>
               ))}
@@ -394,8 +341,8 @@ export function QueryWorkspace({
             ) : (
               <div className="query-path" key={index}>
                 <strong>
-                  Path {index + 1} · confidence{" "}
-                  {Math.round(path.confidence * 100)}% · risk {path.risk}
+                  Path {index + 1} · confidence {Math.round(path.confidence * 100)}% · risk{" "}
+                  {path.risk}
                 </strong>
                 <ol>
                   {path.steps.map((step, stepIndex) => (
@@ -404,11 +351,8 @@ export function QueryWorkspace({
                         <span>{step.entityName}</span>
                         {step.relationshipType && (
                           <small>
-                            {step.relationshipType.replace(
-                              "keystone.core.",
-                              "",
-                            )}{" "}
-                            · {step.classification}
+                            {step.relationshipType.replace("keystone.core.", "")} ·{" "}
+                            {step.classification}
                           </small>
                         )}
                       </button>
@@ -430,10 +374,7 @@ export function QueryWorkspace({
                     <span>{items.length}</span>
                   </summary>
                   {items.map((item) => (
-                    <button
-                      key={item.id}
-                      onClick={() => inspect(item.id, item)}
-                    >
+                    <button key={item.id} onClick={() => inspect(item.id, item)}>
                       <strong>{item.name}</strong>
                       <small>
                         {item.qualifiedName ?? item.relativePath ?? item.id} ·{" "}
@@ -446,17 +387,12 @@ export function QueryWorkspace({
             </div>
           )}
           {(selectedEntity || selectedProjection) && (
-            <section
-              className="query-inspector"
-              aria-label="Selected query result details"
-            >
+            <section className="query-inspector" aria-label="Selected query result details">
               <header>
                 <div>
                   <small>
-                    {selectedEntity?.entity.type.replace(
-                      "keystone.core.",
-                      "",
-                    ) ?? selectedProjection?.type.replace("keystone.core.", "")}
+                    {selectedEntity?.entity.type.replace("keystone.core.", "") ??
+                      selectedProjection?.type.replace("keystone.core.", "")}
                   </small>
                   <h3>
                     {selectedEntity?.entity.qualifiedName ??
@@ -483,9 +419,7 @@ export function QueryWorkspace({
                       : ""}{" "}
                     · generation {selectedEntity.generation}
                   </p>
-                  {selectedEntity.entity.signature && (
-                    <pre>{selectedEntity.entity.signature}</pre>
-                  )}
+                  {selectedEntity.entity.signature && <pre>{selectedEntity.entity.signature}</pre>}
                   <div className="diagnostic-actions">
                     <button
                       className="primary-button"
@@ -504,17 +438,13 @@ export function QueryWorkspace({
                     </button>
                     <button
                       className="ghost-button"
-                      onClick={() =>
-                        followUp("dependents", selectedEntity.entity.id)
-                      }
+                      onClick={() => followUp("dependents", selectedEntity.entity.id)}
                     >
                       Dependents
                     </button>
                     <button
                       className="ghost-button"
-                      onClick={() =>
-                        followUp("impact", selectedEntity.entity.id)
-                      }
+                      onClick={() => followUp("impact", selectedEntity.entity.id)}
                     >
                       Impact
                     </button>
@@ -547,8 +477,7 @@ export function QueryWorkspace({
                       <div key={item.id}>
                         <strong>{item.statement}</strong>
                         <span>
-                          {item.derivation} · {item.extractorId}@
-                          {item.extractorVersion} ·{" "}
+                          {item.derivation} · {item.extractorId}@{item.extractorVersion} ·{" "}
                           {Math.round(item.confidence * 100)}%
                         </span>
                         <small>
@@ -562,9 +491,9 @@ export function QueryWorkspace({
               ) : (
                 <>
                   <p>
-                    This result is a calculated query projection rather than a
-                    canonical entity. Its displayed classification and ranking
-                    reasons are the available evidence boundary.
+                    This result is a calculated query projection rather than a canonical entity. Its
+                    displayed classification and ranking reasons are the available evidence
+                    boundary.
                   </p>
                   <dl>
                     <div>
@@ -573,12 +502,7 @@ export function QueryWorkspace({
                     </div>
                     <div>
                       <dt>Confidence</dt>
-                      <dd>
-                        {Math.round(
-                          (selectedProjection?.confidence ?? 0) * 100,
-                        )}
-                        %
-                      </dd>
+                      <dd>{Math.round((selectedProjection?.confidence ?? 0) * 100)}%</dd>
                     </div>
                     <div>
                       <dt>Ranking reasons</dt>
@@ -586,9 +510,7 @@ export function QueryWorkspace({
                     </div>
                   </dl>
                   {selectedProjection?.details && (
-                    <pre>
-                      {JSON.stringify(selectedProjection.details, null, 2)}
-                    </pre>
+                    <pre>{JSON.stringify(selectedProjection.details, null, 2)}</pre>
                   )}
                 </>
               )}
@@ -596,8 +518,8 @@ export function QueryWorkspace({
           )}
           {result.data.cpg && (
             <p className="query-cpg">
-              CPG result: {result.data.cpg.nodes.length} nodes ·{" "}
-              {result.data.cpg.edges.length} edges
+              CPG result: {result.data.cpg.nodes.length} nodes · {result.data.cpg.edges.length}{" "}
+              edges
               {result.data.cpg.truncated ? " · truncated" : ""}
             </p>
           )}
@@ -612,15 +534,12 @@ export function QueryWorkspace({
               <dt>Ambiguous candidates</dt>
               <dd>{result.plan.ambiguousCandidateIds.length}</dd>
               <dt>Indexes</dt>
-              <dd>
-                {result.plan.indexesSelected.join(", ") || "entity indexes"}
-              </dd>
+              <dd>{result.plan.indexesSelected.join(", ") || "entity indexes"}</dd>
               <dt>Relationships</dt>
               <dd>{result.plan.relationshipFamilies.join(", ") || "none"}</dd>
               <dt>Traversal</dt>
               <dd>
-                {result.plan.traversalDirection} · depth{" "}
-                {result.plan.maximumDepth}
+                {result.plan.traversalDirection} · depth {result.plan.maximumDepth}
               </dd>
               <dt>Confidence</dt>
               <dd>{result.plan.confidenceThreshold}</dd>
@@ -630,19 +549,15 @@ export function QueryWorkspace({
               <dd>{result.plan.cpgRequired ? "yes" : "no"}</dd>
               <dt>Limits</dt>
               <dd>
-                {result.plan.resultLimits.results} results ·{" "}
-                {result.plan.resultLimits.nodes} nodes ·{" "}
-                {result.plan.resultLimits.edges} edges ·{" "}
-                {result.plan.timeBudgetMs} ms
+                {result.plan.resultLimits.results} results · {result.plan.resultLimits.nodes} nodes
+                · {result.plan.resultLimits.edges} edges · {result.plan.timeBudgetMs} ms
               </dd>
               <dt>Evidence required</dt>
               <dd>{result.plan.evidenceRequired ? "yes" : "no"}</dd>
               <dt>Ranking</dt>
               <dd>{result.explanation.rankingRules.join(" · ")}</dd>
               <dt>Boundaries</dt>
-              <dd>
-                {result.explanation.capabilityBoundaries.join(" · ") || "none"}
-              </dd>
+              <dd>{result.explanation.capabilityBoundaries.join(" · ") || "none"}</dd>
             </dl>
             {result.evidence.map((item) => (
               <div key={item.id}>
@@ -688,9 +603,7 @@ function FlowPath({
       <div className="flow-stage-summary">
         <span>Matched: {flow.matchedStages.join(" → ") || "start only"}</span>
         {flow.missingStages.length > 0 && (
-          <span className="flow-missing">
-            Missing: {flow.missingStages.join(" or ")}
-          </span>
+          <span className="flow-missing">Missing: {flow.missingStages.join(" or ")}</span>
         )}
       </div>
       <ol>
@@ -702,16 +615,14 @@ function FlowPath({
                 aria-label={`${step.traversalDirection ?? "outgoing"} relationship`}
               >
                 {step.traversalDirection === "incoming" ? "←" : "→"}
-                <small>
-                  {step.relationshipType?.replace("keystone.core.", "")}
-                </small>
+                <small>{step.relationshipType?.replace("keystone.core.", "")}</small>
               </span>
             )}
             <button onClick={() => inspect(step.entityId)}>
               <strong>{step.entityName}</strong>
               <small>
-                {step.entityType.replace("keystone.core.", "")} ·{" "}
-                {step.classification} · {Math.round(step.confidence * 100)}%
+                {step.entityType.replace("keystone.core.", "")} · {step.classification} ·{" "}
+                {Math.round(step.confidence * 100)}%
               </small>
             </button>
           </li>
@@ -719,26 +630,16 @@ function FlowPath({
       </ol>
       <div className="flow-terminal">
         <div>
-          <strong>
-            {flow.status === "complete"
-              ? "Evidence-backed boundary"
-              : "Flow gap"}
-          </strong>
+          <strong>{flow.status === "complete" ? "Evidence-backed boundary" : "Flow gap"}</strong>
           <p>{flow.terminalReason}</p>
           {path.unsupportedBoundaries
-            .filter(
-              (item) =>
-                item !== flow.terminalReason && item !== "flow depth boundary",
-            )
+            .filter((item) => item !== flow.terminalReason && item !== "flow depth boundary")
             .map((item) => (
               <small key={item}>{item}</small>
             ))}
         </div>
         {terminal && (
-          <button
-            className="ghost-button"
-            onClick={() => inspect(terminal.entityId)}
-          >
+          <button className="ghost-button" onClick={() => inspect(terminal.entityId)}>
             Inspect boundary
           </button>
         )}
@@ -747,8 +648,7 @@ function FlowPath({
         <summary>Why this alternate ranked here</summary>
         <p>{flow.scoreReasons.join(" · ")}</p>
         <small>
-          Minimum confidence {Math.round(path.confidence * 100)}% · risk{" "}
-          {path.risk}
+          Minimum confidence {Math.round(path.confidence * 100)}% · risk {path.risk}
           {path.truncated ? " · truncated" : ""}
         </small>
       </details>
@@ -758,19 +658,14 @@ function FlowPath({
 
 function readHistory(): string[] {
   try {
-    const value = JSON.parse(
-      localStorage.getItem(HISTORY_KEY) ?? "[]",
-    ) as unknown;
+    const value = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? "[]") as unknown;
     return Array.isArray(value)
-      ? value
-          .filter((item): item is string => typeof item === "string")
-          .slice(0, 12)
+      ? value.filter((item): item is string => typeof item === "string").slice(0, 12)
       : [];
   } catch {
     return [];
   }
 }
 function report(setError: (value: string) => void): (cause: unknown) => void {
-  return (cause) =>
-    setError(cause instanceof Error ? cause.message : String(cause));
+  return (cause) => setError(cause instanceof Error ? cause.message : String(cause));
 }

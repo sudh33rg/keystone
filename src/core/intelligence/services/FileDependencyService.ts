@@ -26,10 +26,7 @@ export interface FileDependencyResult {
 export class FileDependencyService {
   constructor(private readonly store: IntelligenceSnapshotReader) {}
 
-  async listFileDependencies(
-    fileId: string,
-    signal?: AbortSignal,
-  ): Promise<FileDependencyResult> {
+  async listFileDependencies(fileId: string, signal?: AbortSignal): Promise<FileDependencyResult> {
     const snapshot = this.store.getSnapshot();
     if (!snapshot) {
       throw new Error("Intelligence snapshot unavailable.");

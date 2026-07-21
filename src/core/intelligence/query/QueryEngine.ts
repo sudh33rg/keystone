@@ -1,74 +1,371 @@
 import type { CpgQueryService } from "../cpg/CpgQueryService";
 import type { IntelligenceSnapshotReader } from "../../persistence/IntelligenceStore";
-import type { IntelligenceEvidenceRecord, IntelligenceFileRecord, IntelligenceRelationshipRecord, IntelligenceSnapshot, IntelligenceSymbolRecord } from "../../../shared/contracts/intelligence";
-import { IntelligenceQueryResultSchema, IntelligenceQuerySchema, QueryDataSchema, type CompiledIntelligenceQuery, type IntelligenceQuery, type IntelligenceQueryResult, type QueryData, type QueryDiagnostic, type QueryExplanation, type QueryFlowMetadata, type QueryOperation, type QueryPathStep, type QueryPlan, type QueryResultItem, type ResolvedEntity } from "../../../shared/contracts/query";
+import type {
+  IntelligenceEvidenceRecord,
+  IntelligenceFileRecord,
+  IntelligenceRelationshipRecord,
+  IntelligenceSnapshot,
+  IntelligenceSymbolRecord,
+} from "../../../shared/contracts/intelligence";
+import {
+  IntelligenceQueryResultSchema,
+  IntelligenceQuerySchema,
+  QueryDataSchema,
+  type CompiledIntelligenceQuery,
+  type IntelligenceQuery,
+  type IntelligenceQueryResult,
+  type QueryData,
+  type QueryDiagnostic,
+  type QueryExplanation,
+  type QueryFlowMetadata,
+  type QueryOperation,
+  type QueryPathStep,
+  type QueryPlan,
+  type QueryResultItem,
+  type ResolvedEntity,
+} from "../../../shared/contracts/query";
 import { QueryCache } from "./QueryCache";
 import { QueryCompiler } from "./QueryParser";
 
 type Entity = IntelligenceSymbolRecord | IntelligenceFileRecord;
 type Classification = QueryResultItem["classification"];
-const DEPENDENCY_TYPES = new Set(["keystone.core.IMPORTS", "keystone.core.REFERENCES", "keystone.core.CALLS", "keystone.core.INSTANTIATES", "keystone.core.DEPENDS_ON", "keystone.core.USES", "keystone.core.EXECUTES", "keystone.core.RUNS_BUILD_COMMAND", "keystone.core.RUNS_TEST_COMMAND"]);
-const FLOW_TYPES = new Set(["keystone.core.CALLS", "keystone.core.INSTANTIATES", "keystone.core.ROUTES_TO", "keystone.core.USES_MIDDLEWARE", "keystone.core.HANDLES", "keystone.core.TARGETS", "keystone.core.IMPLEMENTS_CONTRACT_OPERATION", "keystone.core.EMITS", "keystone.core.CONSUMES", "keystone.core.PRODUCES", "keystone.core.TRIGGERS", "keystone.core.FLOWS_TO", "keystone.core.READS_FROM", "keystone.core.WRITES_TO", "keystone.core.PERSISTS", "keystone.core.EXECUTES", "keystone.core.VALIDATES_WITH", "keystone.core.SERIALIZES_WITH", "keystone.core.READS_CONFIGURATION", "keystone.core.USES_CONFIGURATION", "keystone.core.CONFIGURED_BY", "keystone.core.RUNS_BUILD_COMMAND", "keystone.core.DEPLOYS", "keystone.core.PRODUCES_ARTIFACT"]);
-const TEST_TYPES = new Set(["keystone.core.TESTS", "keystone.core.COVERS", "keystone.core.MOCKS", "keystone.core.USES_FIXTURE", "keystone.core.ASSERTS"]);
+const DEPENDENCY_TYPES = new Set([
+  "keystone.core.IMPORTS",
+  "keystone.core.REFERENCES",
+  "keystone.core.CALLS",
+  "keystone.core.INSTANTIATES",
+  "keystone.core.DEPENDS_ON",
+  "keystone.core.USES",
+  "keystone.core.EXECUTES",
+  "keystone.core.RUNS_BUILD_COMMAND",
+  "keystone.core.RUNS_TEST_COMMAND",
+]);
+const FLOW_TYPES = new Set([
+  "keystone.core.CALLS",
+  "keystone.core.INSTANTIATES",
+  "keystone.core.ROUTES_TO",
+  "keystone.core.USES_MIDDLEWARE",
+  "keystone.core.HANDLES",
+  "keystone.core.TARGETS",
+  "keystone.core.IMPLEMENTS_CONTRACT_OPERATION",
+  "keystone.core.EMITS",
+  "keystone.core.CONSUMES",
+  "keystone.core.PRODUCES",
+  "keystone.core.TRIGGERS",
+  "keystone.core.FLOWS_TO",
+  "keystone.core.READS_FROM",
+  "keystone.core.WRITES_TO",
+  "keystone.core.PERSISTS",
+  "keystone.core.EXECUTES",
+  "keystone.core.VALIDATES_WITH",
+  "keystone.core.SERIALIZES_WITH",
+  "keystone.core.READS_CONFIGURATION",
+  "keystone.core.USES_CONFIGURATION",
+  "keystone.core.CONFIGURED_BY",
+  "keystone.core.RUNS_BUILD_COMMAND",
+  "keystone.core.DEPLOYS",
+  "keystone.core.PRODUCES_ARTIFACT",
+]);
+const TEST_TYPES = new Set([
+  "keystone.core.TESTS",
+  "keystone.core.COVERS",
+  "keystone.core.MOCKS",
+  "keystone.core.USES_FIXTURE",
+  "keystone.core.ASSERTS",
+]);
 const USAGE_CATEGORIES = new Map<string, string>([
-  ["keystone.core.IMPORTS", "imported-by"], ["keystone.core.RE_EXPORTS", "imported-by"],
-  ["keystone.core.CALLS", "called-by"], ["keystone.core.INSTANTIATES", "instantiated-by"], ["keystone.core.REFERENCES", "referenced-by"],
-  ["keystone.core.RENDERS", "rendered-by"], ["keystone.core.IMPLEMENTS", "implemented-by"], ["keystone.core.EXTENDS", "extended-by"], ["keystone.core.OVERRIDES", "overridden-by"],
-  ["keystone.core.TESTS", "tested-by"], ["keystone.core.COVERS", "tested-by"], ["keystone.core.MOCKS", "mocked-by"],
-  ["keystone.core.ROUTES_TO", "routed-to"], ["keystone.core.HANDLES", "routed-to"],
-  ["keystone.core.READS_FROM", "read-by"], ["keystone.core.READS_CONFIGURATION", "read-by"],
-  ["keystone.core.WRITES_TO", "written-by"], ["keystone.core.PERSISTS", "written-by"],
-  ["keystone.core.USES_CONFIGURATION", "configured-by"], ["keystone.core.CONFIGURED_BY", "configured-by"],
-  ["keystone.core.BUILDS_WITH", "built-by"], ["keystone.core.RUNS_BUILD_COMMAND", "built-by"],
-  ["keystone.core.DEPLOYS", "deployed-by"]
+  ["keystone.core.IMPORTS", "imported-by"],
+  ["keystone.core.RE_EXPORTS", "imported-by"],
+  ["keystone.core.CALLS", "called-by"],
+  ["keystone.core.INSTANTIATES", "instantiated-by"],
+  ["keystone.core.REFERENCES", "referenced-by"],
+  ["keystone.core.RENDERS", "rendered-by"],
+  ["keystone.core.IMPLEMENTS", "implemented-by"],
+  ["keystone.core.EXTENDS", "extended-by"],
+  ["keystone.core.OVERRIDES", "overridden-by"],
+  ["keystone.core.TESTS", "tested-by"],
+  ["keystone.core.COVERS", "tested-by"],
+  ["keystone.core.MOCKS", "mocked-by"],
+  ["keystone.core.ROUTES_TO", "routed-to"],
+  ["keystone.core.HANDLES", "routed-to"],
+  ["keystone.core.READS_FROM", "read-by"],
+  ["keystone.core.READS_CONFIGURATION", "read-by"],
+  ["keystone.core.WRITES_TO", "written-by"],
+  ["keystone.core.PERSISTS", "written-by"],
+  ["keystone.core.USES_CONFIGURATION", "configured-by"],
+  ["keystone.core.CONFIGURED_BY", "configured-by"],
+  ["keystone.core.BUILDS_WITH", "built-by"],
+  ["keystone.core.RUNS_BUILD_COMMAND", "built-by"],
+  ["keystone.core.DEPLOYS", "deployed-by"],
 ]);
 
 export class QueryContext {
-  readonly started = performance.now(); readonly deadline: number; readonly diagnostics: QueryDiagnostic[] = []; readonly indexesUsed = new Set<string>(); readonly relationshipFamilies = new Set<string>(); readonly capabilityBoundaries = new Set<string>();
-  readonly entityById: Map<string, Entity>; readonly relationshipById: Map<string, IntelligenceRelationshipRecord>; readonly evidenceById: Map<string, IntelligenceEvidenceRecord>;
-  readonly incoming: Map<string, string[]>; readonly outgoing: Map<string, string[]>;
-  constructor(readonly query: CompiledIntelligenceQuery, readonly snapshot: IntelligenceSnapshot, readonly signal?: AbortSignal) {
+  readonly started = performance.now();
+  readonly deadline: number;
+  readonly diagnostics: QueryDiagnostic[] = [];
+  readonly indexesUsed = new Set<string>();
+  readonly relationshipFamilies = new Set<string>();
+  readonly capabilityBoundaries = new Set<string>();
+  readonly entityById: Map<string, Entity>;
+  readonly relationshipById: Map<string, IntelligenceRelationshipRecord>;
+  readonly evidenceById: Map<string, IntelligenceEvidenceRecord>;
+  readonly incoming: Map<string, string[]>;
+  readonly outgoing: Map<string, string[]>;
+  constructor(
+    readonly query: CompiledIntelligenceQuery,
+    readonly snapshot: IntelligenceSnapshot,
+    readonly signal?: AbortSignal,
+  ) {
     this.deadline = performance.now() + query.limits.timeBudgetMs;
-    this.entityById = new Map([...snapshot.files, ...snapshot.symbols].map((item) => [item.id, item]));
-    this.relationshipById = new Map(snapshot.relationships.map((item) => [item.id, item])); this.evidenceById = new Map(snapshot.evidence.map((item) => [item.id, item]));
-    this.incoming = indexMap(snapshot.indexes?.incoming, snapshot.relationships, "targetId"); this.outgoing = indexMap(snapshot.indexes?.outgoing, snapshot.relationships, "sourceId");
+    this.entityById = new Map(
+      [...snapshot.files, ...snapshot.symbols].map((item) => [item.id, item]),
+    );
+    this.relationshipById = new Map(snapshot.relationships.map((item) => [item.id, item]));
+    this.evidenceById = new Map(snapshot.evidence.map((item) => [item.id, item]));
+    this.incoming = indexMap(snapshot.indexes?.incoming, snapshot.relationships, "targetId");
+    this.outgoing = indexMap(snapshot.indexes?.outgoing, snapshot.relationships, "sourceId");
   }
-  check(): void { if (this.signal?.aborted) { const error = new Error("The intelligence query was cancelled."); error.name = "AbortError"; throw error; } if (performance.now() > this.deadline) { const error = new Error("The intelligence query exceeded its time budget."); error.name = "TimeoutError"; throw error; } }
-  async yield(index: number, interval = 200): Promise<void> { if (index % interval !== 0) return; this.check(); await new Promise<void>((resolve) => setImmediate(resolve)); }
-  relationships(id: string, direction: "incoming" | "outgoing" | "both"): IntelligenceRelationshipRecord[] { const effective = this.query.operation === "PATH" && direction === "both" ? this.query.traversal.direction : direction; this.indexesUsed.add(effective === "both" ? "incoming,outgoing" : effective); const ids = effective === "incoming" ? this.incoming.get(id) ?? [] : effective === "outgoing" ? this.outgoing.get(id) ?? [] : [...(this.incoming.get(id) ?? []), ...(this.outgoing.get(id) ?? [])]; return [...new Set(ids)].flatMap((key) => { const value = this.relationshipById.get(key); return value ? [value] : []; }); }
+  check(): void {
+    if (this.signal?.aborted) {
+      const error = new Error("The intelligence query was cancelled.");
+      error.name = "AbortError";
+      throw error;
+    }
+    if (performance.now() > this.deadline) {
+      const error = new Error("The intelligence query exceeded its time budget.");
+      error.name = "TimeoutError";
+      throw error;
+    }
+  }
+  async yield(index: number, interval = 200): Promise<void> {
+    if (index % interval !== 0) return;
+    this.check();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+  relationships(
+    id: string,
+    direction: "incoming" | "outgoing" | "both",
+  ): IntelligenceRelationshipRecord[] {
+    const effective =
+      this.query.operation === "PATH" && direction === "both"
+        ? this.query.traversal.direction
+        : direction;
+    this.indexesUsed.add(effective === "both" ? "incoming,outgoing" : effective);
+    const ids =
+      effective === "incoming"
+        ? (this.incoming.get(id) ?? [])
+        : effective === "outgoing"
+          ? (this.outgoing.get(id) ?? [])
+          : [...(this.incoming.get(id) ?? []), ...(this.outgoing.get(id) ?? [])];
+    return [...new Set(ids)].flatMap((key) => {
+      const value = this.relationshipById.get(key);
+      return value ? [value] : [];
+    });
+  }
 }
 
-export const RANKING_WEIGHTS = Object.freeze({ exactId: 1200, exactQualified: 1000, exactName: 900, exactPath: 950, exactDomainKey: 925, prefix: 650, token: 120, sameModule: 90, samePackage: 80, currentFile: 75, pinned: 70, confidence: 100, centrality: 5 });
+export const RANKING_WEIGHTS = Object.freeze({
+  exactId: 1200,
+  exactQualified: 1000,
+  exactName: 900,
+  exactPath: 950,
+  exactDomainKey: 925,
+  prefix: 650,
+  token: 120,
+  sameModule: 90,
+  samePackage: 80,
+  currentFile: 75,
+  pinned: 70,
+  confidence: 100,
+  centrality: 5,
+});
 export class ResultRanker {
-  score(entity: Entity, selector: { id?: string; value?: string }, context: QueryContext): { score: number; reasons: string[] } {
-    const value = normalize(selector.value ?? selector.id ?? ""); const name = normalize(entityName(entity)); const qualified = normalize(entityQualifiedName(entity)); const path = normalize(entityPath(entity)); const properties = "properties" in entity ? entity.properties : undefined;
-    let score = 0; const reasons: string[] = [];
-    if (selector.id === entity.id || value === normalize(entity.id)) { score += RANKING_WEIGHTS.exactId; reasons.push("exact stable ID"); }
-    if (value && value === qualified) { score += RANKING_WEIGHTS.exactQualified; reasons.push("exact qualified name"); }
-    if (value && value === name) { score += RANKING_WEIGHTS.exactName; reasons.push("exact name"); }
-    if (value && value === path) { score += RANKING_WEIGHTS.exactPath; reasons.push("exact path"); }
-    if (value && [properties?.path, properties?.routePath, properties?.keyPath, properties?.tableName, properties?.packageName].some((item) => typeof item === "string" && normalize(item) === value)) { score += RANKING_WEIGHTS.exactDomainKey; reasons.push("exact domain key"); }
-    if (value && (qualified.startsWith(value) || name.startsWith(value) || path.startsWith(value))) { score += RANKING_WEIGHTS.prefix; reasons.push("prefix match"); }
-    const wanted = tokens(selector.value ?? selector.id ?? ""); const entityTokens = tokens(`${entityName(entity)} ${entityQualifiedName(entity)} ${entityPath(entity)}`); const matched = wanted.filter((token) => entityTokens.includes(token)).length; if (matched) { score += matched * RANKING_WEIGHTS.token; reasons.push(`${matched} normalized token match${matched === 1 ? "" : "es"}`); }
-    const file = context.snapshot.files.find((item) => item.id === entityFileId(entity)); if (context.query.filters.modules?.includes(file?.moduleId ?? "")) { score += RANKING_WEIGHTS.sameModule; reasons.push("requested module"); } if (context.query.filters.packages?.includes(file?.packageId ?? "")) { score += RANKING_WEIGHTS.samePackage; reasons.push("requested package"); }
-    if (context.query.filters.currentFile && path === normalize(context.query.filters.currentFile)) { score += RANKING_WEIGHTS.currentFile; reasons.push("current file proximity"); } if (context.query.filters.pinnedEntityIds?.includes(entity.id)) { score += RANKING_WEIGHTS.pinned; reasons.push("pinned context"); }
-    const confidence = "confidence" in entity ? entity.confidence : 1; score += confidence * RANKING_WEIGHTS.confidence; reasons.push(`evidence confidence ${confidence.toFixed(2)}`);
-    const centrality = (context.incoming.get(entity.id)?.length ?? 0) + (context.outgoing.get(entity.id)?.length ?? 0); if (centrality) { score += Math.min(centrality, 20) * RANKING_WEIGHTS.centrality; reasons.push(`graph degree ${centrality}`); }
+  score(
+    entity: Entity,
+    selector: { id?: string; value?: string },
+    context: QueryContext,
+  ): { score: number; reasons: string[] } {
+    const value = normalize(selector.value ?? selector.id ?? "");
+    const name = normalize(entityName(entity));
+    const qualified = normalize(entityQualifiedName(entity));
+    const path = normalize(entityPath(entity));
+    const properties = "properties" in entity ? entity.properties : undefined;
+    let score = 0;
+    const reasons: string[] = [];
+    if (selector.id === entity.id || value === normalize(entity.id)) {
+      score += RANKING_WEIGHTS.exactId;
+      reasons.push("exact stable ID");
+    }
+    if (value && value === qualified) {
+      score += RANKING_WEIGHTS.exactQualified;
+      reasons.push("exact qualified name");
+    }
+    if (value && value === name) {
+      score += RANKING_WEIGHTS.exactName;
+      reasons.push("exact name");
+    }
+    if (value && value === path) {
+      score += RANKING_WEIGHTS.exactPath;
+      reasons.push("exact path");
+    }
+    if (
+      value &&
+      [
+        properties?.path,
+        properties?.routePath,
+        properties?.keyPath,
+        properties?.tableName,
+        properties?.packageName,
+      ].some((item) => typeof item === "string" && normalize(item) === value)
+    ) {
+      score += RANKING_WEIGHTS.exactDomainKey;
+      reasons.push("exact domain key");
+    }
+    if (
+      value &&
+      (qualified.startsWith(value) || name.startsWith(value) || path.startsWith(value))
+    ) {
+      score += RANKING_WEIGHTS.prefix;
+      reasons.push("prefix match");
+    }
+    const wanted = tokens(selector.value ?? selector.id ?? "");
+    const entityTokens = tokens(
+      `${entityName(entity)} ${entityQualifiedName(entity)} ${entityPath(entity)}`,
+    );
+    const matched = wanted.filter((token) => entityTokens.includes(token)).length;
+    if (matched) {
+      score += matched * RANKING_WEIGHTS.token;
+      reasons.push(`${matched} normalized token match${matched === 1 ? "" : "es"}`);
+    }
+    const file = context.snapshot.files.find((item) => item.id === entityFileId(entity));
+    if (context.query.filters.modules?.includes(file?.moduleId ?? "")) {
+      score += RANKING_WEIGHTS.sameModule;
+      reasons.push("requested module");
+    }
+    if (context.query.filters.packages?.includes(file?.packageId ?? "")) {
+      score += RANKING_WEIGHTS.samePackage;
+      reasons.push("requested package");
+    }
+    if (
+      context.query.filters.currentFile &&
+      path === normalize(context.query.filters.currentFile)
+    ) {
+      score += RANKING_WEIGHTS.currentFile;
+      reasons.push("current file proximity");
+    }
+    if (context.query.filters.pinnedEntityIds?.includes(entity.id)) {
+      score += RANKING_WEIGHTS.pinned;
+      reasons.push("pinned context");
+    }
+    const confidence = "confidence" in entity ? entity.confidence : 1;
+    score += confidence * RANKING_WEIGHTS.confidence;
+    reasons.push(`evidence confidence ${confidence.toFixed(2)}`);
+    const centrality =
+      (context.incoming.get(entity.id)?.length ?? 0) +
+      (context.outgoing.get(entity.id)?.length ?? 0);
+    if (centrality) {
+      score += Math.min(centrality, 20) * RANKING_WEIGHTS.centrality;
+      reasons.push(`graph degree ${centrality}`);
+    }
     return { score, reasons };
   }
-  rank(items: QueryResultItem[], strategy: CompiledIntelligenceQuery["ranking"]["strategy"]): QueryResultItem[] { return [...items].sort((left, right) => strategy === "confidence" ? right.confidence - left.confidence || right.score - left.score : strategy === "risk" ? Number(right.details?.riskScore ?? 0) - Number(left.details?.riskScore ?? 0) : right.score - left.score || left.name.localeCompare(right.name) || left.id.localeCompare(right.id)); }
+  rank(
+    items: QueryResultItem[],
+    strategy: CompiledIntelligenceQuery["ranking"]["strategy"],
+  ): QueryResultItem[] {
+    return [...items].sort((left, right) =>
+      strategy === "confidence"
+        ? right.confidence - left.confidence || right.score - left.score
+        : strategy === "risk"
+          ? Number(right.details?.riskScore ?? 0) - Number(left.details?.riskScore ?? 0)
+          : right.score - left.score ||
+            left.name.localeCompare(right.name) ||
+            left.id.localeCompare(right.id),
+    );
+  }
 }
 
 export class EntityResolver {
   constructor(private readonly ranker = new ResultRanker()) {}
-  async resolve(query: CompiledIntelligenceQuery, context: QueryContext): Promise<ResolvedEntity[]> {
-    const selectors = query.seeds ?? []; const results: ResolvedEntity[] = [];
+  async resolve(
+    query: CompiledIntelligenceQuery,
+    context: QueryContext,
+  ): Promise<ResolvedEntity[]> {
+    const selectors = query.seeds ?? [];
+    const results: ResolvedEntity[] = [];
     for (let selectorIndex = 0; selectorIndex < selectors.length; selectorIndex++) {
-      const selector = selectors[selectorIndex]!; const candidates: ResolvedEntity["candidates"] = [];
-      const rankSelector = selector.kind === "cpg-node" && selector.value?.includes("#") ? { ...selector, value: selector.value.split("#", 1)[0] } : selector;
-      for (let index = 0; index < context.entityById.size; index++) { const entity = [...context.entityById.values()][index]!; await context.yield(index); if (!matchesEntityFilters(entity, selector.entityTypes ?? query.filters.entityTypes, query.filters.languages, context)) continue; const ranked = this.ranker.score(entity, rankSelector, context); if (ranked.score < 200) continue; candidates.push({ id: entity.id, type: entityType(entity), name: entityName(entity), qualifiedName: entityQualifiedName(entity), relativePath: entityPath(entity), confidence: "confidence" in entity ? entity.confidence : 1, score: ranked.score, reasons: ranked.reasons.slice(0, 20) }); }
-      candidates.sort((a, b) => b.score - a.score || a.qualifiedName.localeCompare(b.qualifiedName) || a.id.localeCompare(b.id)); const bounded = candidates.slice(0, 20); const top = bounded[0]; const second = bounded[1]; const exact = Boolean(top?.reasons.some((reason) => reason.startsWith("exact"))); const sharedExact = Boolean(top && second && top.reasons.some((reason) => reason === "exact qualified name" || reason === "exact name") && second.reasons.some((reason) => reason === "exact qualified name" || reason === "exact name")); const ambiguous = Boolean(top && second && !top.reasons.includes("exact stable ID") && (sharedExact || top.score - second.score < 100)); const selected = top && !ambiguous && (exact || top.score >= 500) ? top : undefined;
-      results.push({ selector, ...(selected ? { selected } : {}), candidates: bounded, ambiguous, requiresSelection: Boolean(!selected && bounded.length > 0), reasons: !bounded.length ? ["no candidate passed deterministic matching"] : ambiguous ? ["top candidates have similar deterministic scores"] : selected ? selected.reasons : ["candidate confidence is below the selection threshold"] });
+      const selector = selectors[selectorIndex]!;
+      const candidates: ResolvedEntity["candidates"] = [];
+      const rankSelector =
+        selector.kind === "cpg-node" && selector.value?.includes("#")
+          ? { ...selector, value: selector.value.split("#", 1)[0] }
+          : selector;
+      for (let index = 0; index < context.entityById.size; index++) {
+        const entity = [...context.entityById.values()][index]!;
+        await context.yield(index);
+        if (
+          !matchesEntityFilters(
+            entity,
+            selector.entityTypes ?? query.filters.entityTypes,
+            query.filters.languages,
+            context,
+          )
+        )
+          continue;
+        const ranked = this.ranker.score(entity, rankSelector, context);
+        if (ranked.score < 200) continue;
+        candidates.push({
+          id: entity.id,
+          type: entityType(entity),
+          name: entityName(entity),
+          qualifiedName: entityQualifiedName(entity),
+          relativePath: entityPath(entity),
+          confidence: "confidence" in entity ? entity.confidence : 1,
+          score: ranked.score,
+          reasons: ranked.reasons.slice(0, 20),
+        });
+      }
+      candidates.sort(
+        (a, b) =>
+          b.score - a.score ||
+          a.qualifiedName.localeCompare(b.qualifiedName) ||
+          a.id.localeCompare(b.id),
+      );
+      const bounded = candidates.slice(0, 20);
+      const top = bounded[0];
+      const second = bounded[1];
+      const exact = Boolean(top?.reasons.some((reason) => reason.startsWith("exact")));
+      const sharedExact = Boolean(
+        top &&
+        second &&
+        top.reasons.some(
+          (reason) => reason === "exact qualified name" || reason === "exact name",
+        ) &&
+        second.reasons.some(
+          (reason) => reason === "exact qualified name" || reason === "exact name",
+        ),
+      );
+      const ambiguous = Boolean(
+        top &&
+        second &&
+        !top.reasons.includes("exact stable ID") &&
+        (sharedExact || top.score - second.score < 100),
+      );
+      const selected = top && !ambiguous && (exact || top.score >= 500) ? top : undefined;
+      results.push({
+        selector,
+        ...(selected ? { selected } : {}),
+        candidates: bounded,
+        ambiguous,
+        requiresSelection: Boolean(!selected && bounded.length > 0),
+        reasons: !bounded.length
+          ? ["no candidate passed deterministic matching"]
+          : ambiguous
+            ? ["top candidates have similar deterministic scores"]
+            : selected
+              ? selected.reasons
+              : ["candidate confidence is below the selection threshold"],
+      });
     }
     return results;
   }
@@ -76,143 +373,588 @@ export class EntityResolver {
 
 export class SearchService {
   constructor(private readonly ranker = new ResultRanker()) {}
-  async search(context: QueryContext, selector?: { id?: string; value?: string }): Promise<QueryResultItem[]> {
+  async search(
+    context: QueryContext,
+    selector?: { id?: string; value?: string },
+  ): Promise<QueryResultItem[]> {
     const stableId = selector?.id ?? selector?.value;
     const exact = stableId ? context.entityById.get(stableId) : undefined;
     if (exact) {
-      if (!matchesEntityFilters(exact, context.query.filters.entityTypes, context.query.filters.languages, context)) return [];
+      if (
+        !matchesEntityFilters(
+          exact,
+          context.query.filters.entityTypes,
+          context.query.filters.languages,
+          context,
+        )
+      )
+        return [];
       const ranked = this.ranker.score(exact, { id: stableId }, context);
       return [toItem(exact, ranked.score, ranked.reasons)];
     }
-    const results: QueryResultItem[] = []; let index = 0;
-    for (const entity of context.entityById.values()) { await context.yield(++index); if (!matchesEntityFilters(entity, context.query.filters.entityTypes, context.query.filters.languages, context)) continue; const ranked = this.ranker.score(entity, selector ?? {}, context); if ((selector?.value || selector?.id) && ranked.score < 200) continue; results.push(toItem(entity, ranked.score, ranked.reasons)); }
+    const results: QueryResultItem[] = [];
+    let index = 0;
+    for (const entity of context.entityById.values()) {
+      await context.yield(++index);
+      if (
+        !matchesEntityFilters(
+          entity,
+          context.query.filters.entityTypes,
+          context.query.filters.languages,
+          context,
+        )
+      )
+        continue;
+      const ranked = this.ranker.score(entity, selector ?? {}, context);
+      if ((selector?.value || selector?.id) && ranked.score < 200) continue;
+      results.push(toItem(entity, ranked.score, ranked.reasons));
+    }
     return this.ranker.rank(results, context.query.ranking.strategy);
   }
 }
 
-export interface TraversalResult { nodes: QueryResultItem[]; relationships: IntelligenceRelationshipRecord[]; distances: Map<string, number>; truncated: boolean; reasons: string[] }
+export interface TraversalResult {
+  nodes: QueryResultItem[];
+  relationships: IntelligenceRelationshipRecord[];
+  distances: Map<string, number>;
+  truncated: boolean;
+  reasons: string[];
+}
 export class GraphTraversalService {
-  async traverse(context: QueryContext, seeds: string[], options: { direction?: "incoming" | "outgoing" | "both"; relationshipTypes?: readonly string[]; maxDepth?: number } = {}): Promise<TraversalResult> {
-    const direction = options.direction ?? context.query.traversal.direction; const maxDepth = Math.min(options.maxDepth ?? context.query.traversal.maxDepth, context.query.limits.depth); const selected = new Set(seeds); const distances = new Map(seeds.map((id) => [id, 0])); const edges = new Map<string, IntelligenceRelationshipRecord>(); let frontier = [...seeds]; let truncated = false; const reasons: string[] = [];
-    const relationFilter = new Set(options.relationshipTypes ?? context.query.filters.relationshipTypes ?? []); const stopEntities = new Set(context.query.traversal.stopEntityTypes ?? []); const stopRelations = new Set(context.query.traversal.stopRelationshipTypes ?? []);
-    for (let depth = 0; depth < maxDepth && frontier.length; depth++) { const next: string[] = []; for (let i = 0; i < frontier.length; i++) { context.check(); const id = frontier[i]!; for (const relation of context.relationships(id, direction)) { if (relation.confidence < context.query.filters.confidenceAtLeast || relationFilter.size && !relationFilter.has(relation.type) || stopRelations.has(relation.type)) continue; context.relationshipFamilies.add(relation.type); const other = relation.sourceId === id ? relation.targetId : relation.sourceId; const entity = context.entityById.get(other); if (!entity || !matchesEntityFilters(entity, context.query.filters.entityTypes, context.query.filters.languages, context)) continue; if (edges.size >= context.query.limits.edges) { truncated = true; reasons.push("edge limit reached"); continue; } edges.set(relation.id, relation); if (!selected.has(other)) { if (selected.size >= context.query.limits.nodes) { truncated = true; reasons.push("node limit reached"); continue; } selected.add(other); distances.set(other, depth + 1); if (!stopEntities.has(entityType(entity))) next.push(other); } } await context.yield(i + 1, 50); } frontier = next; }
-    if (frontier.length) { truncated = true; reasons.push("depth limit reached"); }
-    const nodes = [...selected].flatMap((id) => { const entity = context.entityById.get(id); return entity ? [toItem(entity, 1000 - (distances.get(id) ?? 0) * 100, [`graph distance ${distances.get(id) ?? 0}`], classificationForEntity(entity, context))] : []; });
-    return { nodes, relationships: [...edges.values()], distances, truncated, reasons: [...new Set(reasons)] };
+  async traverse(
+    context: QueryContext,
+    seeds: string[],
+    options: {
+      direction?: "incoming" | "outgoing" | "both";
+      relationshipTypes?: readonly string[];
+      maxDepth?: number;
+    } = {},
+  ): Promise<TraversalResult> {
+    const direction = options.direction ?? context.query.traversal.direction;
+    const maxDepth = Math.min(
+      options.maxDepth ?? context.query.traversal.maxDepth,
+      context.query.limits.depth,
+    );
+    const selected = new Set(seeds);
+    const distances = new Map(seeds.map((id) => [id, 0]));
+    const edges = new Map<string, IntelligenceRelationshipRecord>();
+    let frontier = [...seeds];
+    let truncated = false;
+    const reasons: string[] = [];
+    const relationFilter = new Set(
+      options.relationshipTypes ?? context.query.filters.relationshipTypes ?? [],
+    );
+    const stopEntities = new Set(context.query.traversal.stopEntityTypes ?? []);
+    const stopRelations = new Set(context.query.traversal.stopRelationshipTypes ?? []);
+    for (let depth = 0; depth < maxDepth && frontier.length; depth++) {
+      const next: string[] = [];
+      for (let i = 0; i < frontier.length; i++) {
+        context.check();
+        const id = frontier[i]!;
+        for (const relation of context.relationships(id, direction)) {
+          if (
+            relation.confidence < context.query.filters.confidenceAtLeast ||
+            (relationFilter.size && !relationFilter.has(relation.type)) ||
+            stopRelations.has(relation.type)
+          )
+            continue;
+          context.relationshipFamilies.add(relation.type);
+          const other = relation.sourceId === id ? relation.targetId : relation.sourceId;
+          const entity = context.entityById.get(other);
+          if (
+            !entity ||
+            !matchesEntityFilters(
+              entity,
+              context.query.filters.entityTypes,
+              context.query.filters.languages,
+              context,
+            )
+          )
+            continue;
+          if (edges.size >= context.query.limits.edges) {
+            truncated = true;
+            reasons.push("edge limit reached");
+            continue;
+          }
+          edges.set(relation.id, relation);
+          if (!selected.has(other)) {
+            if (selected.size >= context.query.limits.nodes) {
+              truncated = true;
+              reasons.push("node limit reached");
+              continue;
+            }
+            selected.add(other);
+            distances.set(other, depth + 1);
+            if (!stopEntities.has(entityType(entity))) next.push(other);
+          }
+        }
+        await context.yield(i + 1, 50);
+      }
+      frontier = next;
+    }
+    if (frontier.length) {
+      truncated = true;
+      reasons.push("depth limit reached");
+    }
+    const nodes = [...selected].flatMap((id) => {
+      const entity = context.entityById.get(id);
+      return entity
+        ? [
+            toItem(
+              entity,
+              1000 - (distances.get(id) ?? 0) * 100,
+              [`graph distance ${distances.get(id) ?? 0}`],
+              classificationForEntity(entity, context),
+            ),
+          ]
+        : [];
+    });
+    return {
+      nodes,
+      relationships: [...edges.values()],
+      distances,
+      truncated,
+      reasons: [...new Set(reasons)],
+    };
   }
 }
 
 export class PathQueryService {
   async find(context: QueryContext, sourceId: string, targetId: string): Promise<QueryData> {
-    const paths: QueryData["paths"] = []; const queue: Array<{ id: string; entities: string[]; relations: IntelligenceRelationshipRecord[]; confidence: number; risk: number }> = [{ id: sourceId, entities: [sourceId], relations: [], confidence: 1, risk: 0 }]; let visited = 0; let truncated = false;
-    while (queue.length && paths.length < context.query.limits.paths) { context.check(); const current = context.query.traversal.pathMode === "highest-confidence" ? queue.sort((a, b) => b.confidence - a.confidence).shift()! : context.query.traversal.pathMode === "lowest-risk" ? queue.sort((a, b) => a.risk - b.risk).shift()! : queue.shift()!; if (current.entities.length - 1 > context.query.limits.depth) { truncated = true; continue; } if (current.id === targetId) { paths.push(pathResult(current, context)); if (context.query.traversal.pathMode !== "all-bounded") break; continue; } for (const relation of context.relationships(current.id, "both")) { if (!relationshipAllowed(relation, context)) continue; const next = relation.sourceId === current.id ? relation.targetId : relation.sourceId; if (current.entities.includes(next) || !context.entityById.has(next)) continue; queue.push({ id: next, entities: [...current.entities, next], relations: [...current.relations, relation], confidence: Math.min(current.confidence, relation.confidence), risk: current.risk + relationshipRisk(relation) }); if (queue.length > context.query.limits.nodes * 4) { queue.length = context.query.limits.nodes * 4; truncated = true; } context.relationshipFamilies.add(relation.type); } await context.yield(++visited, 50); }
-    return QueryDataSchema.parse({ kind: "path", paths, metrics: { pathsConsidered: visited, pathsReturned: paths.length, truncatedSearch: truncated ? 1 : 0 }, items: [], nodes: [], relationships: [], sections: {} });
+    const paths: QueryData["paths"] = [];
+    const queue: Array<{
+      id: string;
+      entities: string[];
+      relations: IntelligenceRelationshipRecord[];
+      confidence: number;
+      risk: number;
+    }> = [{ id: sourceId, entities: [sourceId], relations: [], confidence: 1, risk: 0 }];
+    let visited = 0;
+    let truncated = false;
+    while (queue.length && paths.length < context.query.limits.paths) {
+      context.check();
+      const current =
+        context.query.traversal.pathMode === "highest-confidence"
+          ? queue.sort((a, b) => b.confidence - a.confidence).shift()!
+          : context.query.traversal.pathMode === "lowest-risk"
+            ? queue.sort((a, b) => a.risk - b.risk).shift()!
+            : queue.shift()!;
+      if (current.entities.length - 1 > context.query.limits.depth) {
+        truncated = true;
+        continue;
+      }
+      if (current.id === targetId) {
+        paths.push(pathResult(current, context));
+        if (context.query.traversal.pathMode !== "all-bounded") break;
+        continue;
+      }
+      for (const relation of context.relationships(current.id, "both")) {
+        if (!relationshipAllowed(relation, context)) continue;
+        const next = relation.sourceId === current.id ? relation.targetId : relation.sourceId;
+        if (current.entities.includes(next) || !context.entityById.has(next)) continue;
+        queue.push({
+          id: next,
+          entities: [...current.entities, next],
+          relations: [...current.relations, relation],
+          confidence: Math.min(current.confidence, relation.confidence),
+          risk: current.risk + relationshipRisk(relation),
+        });
+        if (queue.length > context.query.limits.nodes * 4) {
+          queue.length = context.query.limits.nodes * 4;
+          truncated = true;
+        }
+        context.relationshipFamilies.add(relation.type);
+      }
+      await context.yield(++visited, 50);
+    }
+    return QueryDataSchema.parse({
+      kind: "path",
+      paths,
+      metrics: {
+        pathsConsidered: visited,
+        pathsReturned: paths.length,
+        truncatedSearch: truncated ? 1 : 0,
+      },
+      items: [],
+      nodes: [],
+      relationships: [],
+      sections: {},
+    });
   }
 }
 
 export class DependencyQueryService {
   constructor(private readonly traversal = new GraphTraversalService()) {}
-  async query(context: QueryContext, seeds: string[], reverse: boolean): Promise<QueryData> { const relationTypes = context.query.filters.relationshipTypes?.length ? context.query.filters.relationshipTypes : [...DEPENDENCY_TYPES]; const result = await this.traversal.traverse(context, seeds, { direction: reverse ? "incoming" : "outgoing", relationshipTypes: relationTypes }); return QueryDataSchema.parse({ kind: reverse ? "dependents" : "dependencies", items: result.nodes.filter((item) => !seeds.includes(item.id)), nodes: result.nodes, relationships: result.relationships, paths: [], sections: {}, metrics: { nodes: result.nodes.length, relationships: result.relationships.length } }); }
+  async query(context: QueryContext, seeds: string[], reverse: boolean): Promise<QueryData> {
+    const relationTypes = context.query.filters.relationshipTypes?.length
+      ? context.query.filters.relationshipTypes
+      : [...DEPENDENCY_TYPES];
+    const result = await this.traversal.traverse(context, seeds, {
+      direction: reverse ? "incoming" : "outgoing",
+      relationshipTypes: relationTypes,
+    });
+    return QueryDataSchema.parse({
+      kind: reverse ? "dependents" : "dependencies",
+      items: result.nodes.filter((item) => !seeds.includes(item.id)),
+      nodes: result.nodes,
+      relationships: result.relationships,
+      paths: [],
+      sections: {},
+      metrics: { nodes: result.nodes.length, relationships: result.relationships.length },
+    });
+  }
 }
 
 export class UsageQueryService {
   async query(context: QueryContext, seeds: string[]): Promise<QueryData> {
-    const logical = new Map<string, { entity: Entity; category: string; relationships: IntelligenceRelationshipRecord[] }>();
+    const logical = new Map<
+      string,
+      { entity: Entity; category: string; relationships: IntelligenceRelationshipRecord[] }
+    >();
     for (const seed of seeds) {
       const incoming = context.relationships(seed, "incoming");
       for (let index = 0; index < incoming.length; index++) {
-        const relationship = incoming[index]!; const category = USAGE_CATEGORIES.get(relationship.type);
+        const relationship = incoming[index]!;
+        const category = USAGE_CATEGORIES.get(relationship.type);
         if (!category || !relationshipAllowed(relationship, context)) continue;
-        const entity = context.entityById.get(relationship.sourceId); if (!entity || !matchesEntityFilters(entity, context.query.filters.entityTypes, context.query.filters.languages, context)) continue;
+        const entity = context.entityById.get(relationship.sourceId);
+        if (
+          !entity ||
+          !matchesEntityFilters(
+            entity,
+            context.query.filters.entityTypes,
+            context.query.filters.languages,
+            context,
+          )
+        )
+          continue;
         context.relationshipFamilies.add(relationship.type);
-        const key = `${relationship.sourceId}\u0000${category}\u0000${seed}`; const existing = logical.get(key);
-        if (existing) existing.relationships.push(relationship); else logical.set(key, { entity, category, relationships: [relationship] });
+        const key = `${relationship.sourceId}\u0000${category}\u0000${seed}`;
+        const existing = logical.get(key);
+        if (existing) existing.relationships.push(relationship);
+        else logical.set(key, { entity, category, relationships: [relationship] });
         await context.yield(index + 1, 50);
       }
     }
-    const usages = [...logical.values()].map(({ entity, category, relationships }) => {
-      const strongest = [...relationships].sort(compareUsageRelationships)[0]!;
-      const evidenceIds = [...new Set(relationships.flatMap((item) => item.evidenceIds))].slice(0, 100);
-      const evidence = evidenceIds.flatMap((id) => { const item = context.evidenceById.get(id); return item ? [item] : []; }).sort((left, right) => left.relativePath.localeCompare(right.relativePath) || (left.range?.startLine ?? 0) - (right.range?.startLine ?? 0));
-      const first = evidence[0]; const classification = classificationForRelation(strongest);
-      return { ...toItem(entity, usageScore(category, classification, strongest.confidence), [`${category} via ${strongest.type}`, `${relationships.length} physical relationship${relationships.length === 1 ? "" : "s"}`, `${evidenceIds.length} evidence record${evidenceIds.length === 1 ? "" : "s"}`], classification), group: category, confidence: strongest.confidence, details: { usageCategory: category, relationshipType: strongest.type, relationshipIds: relationships.map((item) => item.id).slice(0, 100), evidenceIds, logicalOccurrenceCount: 1, physicalOccurrenceCount: relationships.length, containingSymbolId: entity.id, sourceLocation: first ? `${first.relativePath}${first.range ? `:${first.range.startLine + 1}:${first.range.startColumn + 1}` : ""}` : entityPath(entity), openEntityId: entity.id, sourceKind: isTestEntity(entity) ? "test" : "production" } } satisfies QueryResultItem;
-    }).sort((left, right) => right.score - left.score || left.relativePath!.localeCompare(right.relativePath!) || left.id.localeCompare(right.id));
-    const offset = queryCursor(context.query.limits.cursor); const items = usages.slice(offset, offset + context.query.limits.results);
+    const usages = [...logical.values()]
+      .map(({ entity, category, relationships }) => {
+        const strongest = [...relationships].sort(compareUsageRelationships)[0]!;
+        const evidenceIds = [...new Set(relationships.flatMap((item) => item.evidenceIds))].slice(
+          0,
+          100,
+        );
+        const evidence = evidenceIds
+          .flatMap((id) => {
+            const item = context.evidenceById.get(id);
+            return item ? [item] : [];
+          })
+          .sort(
+            (left, right) =>
+              left.relativePath.localeCompare(right.relativePath) ||
+              (left.range?.startLine ?? 0) - (right.range?.startLine ?? 0),
+          );
+        const first = evidence[0];
+        const classification = classificationForRelation(strongest);
+        return {
+          ...toItem(
+            entity,
+            usageScore(category, classification, strongest.confidence),
+            [
+              `${category} via ${strongest.type}`,
+              `${relationships.length} physical relationship${relationships.length === 1 ? "" : "s"}`,
+              `${evidenceIds.length} evidence record${evidenceIds.length === 1 ? "" : "s"}`,
+            ],
+            classification,
+          ),
+          group: category,
+          confidence: strongest.confidence,
+          details: {
+            usageCategory: category,
+            relationshipType: strongest.type,
+            relationshipIds: relationships.map((item) => item.id).slice(0, 100),
+            evidenceIds,
+            logicalOccurrenceCount: 1,
+            physicalOccurrenceCount: relationships.length,
+            containingSymbolId: entity.id,
+            sourceLocation: first
+              ? `${first.relativePath}${first.range ? `:${first.range.startLine + 1}:${first.range.startColumn + 1}` : ""}`
+              : entityPath(entity),
+            openEntityId: entity.id,
+            sourceKind: isTestEntity(entity) ? "test" : "production",
+          },
+        } satisfies QueryResultItem;
+      })
+      .sort(
+        (left, right) =>
+          right.score - left.score ||
+          left.relativePath!.localeCompare(right.relativePath!) ||
+          left.id.localeCompare(right.id),
+      );
+    const offset = queryCursor(context.query.limits.cursor);
+    const items = usages.slice(offset, offset + context.query.limits.results);
     const selectedKeys = new Set(items.flatMap((item) => item.details?.relationshipIds ?? []));
-    const relationships = context.snapshot.relationships.filter((item) => selectedKeys.has(item.id)).slice(0, context.query.limits.edges);
+    const relationships = context.snapshot.relationships
+      .filter((item) => selectedKeys.has(item.id))
+      .slice(0, context.query.limits.edges);
     const sections: Record<string, QueryResultItem[]> = {};
-    for (const item of items) { (sections[item.group] ??= []).push(item); (sections[item.details?.sourceKind === "test" ? "tests" : "production"] ??= []).push(item); }
-    const exact = usages.filter((item) => item.classification === "exact" || item.classification === "resolved").length;
-    const candidates = usages.filter((item) => item.classification === "candidate" || item.classification === "convention-based" || item.classification === "unresolved").length;
-    return QueryDataSchema.parse({ kind: "usages", items, nodes: items, relationships, paths: [], sections, metrics: { total: usages.length, offset, exact, candidates, physicalRelationships: usages.reduce((sum, item) => sum + Number(item.details?.physicalOccurrenceCount ?? 0), 0) } });
+    for (const item of items) {
+      (sections[item.group] ??= []).push(item);
+      (sections[item.details?.sourceKind === "test" ? "tests" : "production"] ??= []).push(item);
+    }
+    const exact = usages.filter(
+      (item) => item.classification === "exact" || item.classification === "resolved",
+    ).length;
+    const candidates = usages.filter(
+      (item) =>
+        item.classification === "candidate" ||
+        item.classification === "convention-based" ||
+        item.classification === "unresolved",
+    ).length;
+    return QueryDataSchema.parse({
+      kind: "usages",
+      items,
+      nodes: items,
+      relationships,
+      paths: [],
+      sections,
+      metrics: {
+        total: usages.length,
+        offset,
+        exact,
+        candidates,
+        physicalRelationships: usages.reduce(
+          (sum, item) => sum + Number(item.details?.physicalOccurrenceCount ?? 0),
+          0,
+        ),
+      },
+    });
   }
 }
 
 export class ImpactQueryService {
   constructor(private readonly traversal = new GraphTraversalService()) {}
   async analyze(context: QueryContext, seeds: string[]): Promise<QueryData> {
-    const result = await this.traversal.traverse(context, seeds, { direction: "incoming" }); const impacted = result.nodes.filter((item) => !seeds.includes(item.id)); const sections: Record<string, QueryResultItem[]> = { direct: [], transitive: [], behavioral: [], contract: [], data: [], tests: [], architecture: [] };
-    for (const seed of seeds) { const entity = context.entityById.get(seed); if (!entity) continue; const family = impactFamily(entity); if (family) sections[family]!.push(toItem(entity, 1000, ["impact seed"])); }
-    for (const item of impacted) { const distance = result.distances.get(item.id) ?? 1; (distance === 1 ? sections.direct! : sections.transitive!).push(item); const entity = context.entityById.get(item.id)!; const family = impactFamily(entity); if (family) sections[family]!.push(item); const risk = riskFactors(item.id, entity, context, result); item.details = { ...(item.details ?? {}), riskScore: risk.score, riskFactors: risk.factors }; item.rankingReasons.push(...risk.factors.map((factor) => `risk: ${factor}`)); }
-    impacted.sort((a, b) => Number(b.details?.riskScore ?? 0) - Number(a.details?.riskScore ?? 0)); return QueryDataSchema.parse({ kind: "impact", items: impacted, nodes: result.nodes, relationships: result.relationships, paths: [], sections, metrics: { direct: sections.direct!.length, transitive: sections.transitive!.length, maximumRisk: Math.max(0, ...impacted.map((item) => Number(item.details?.riskScore ?? 0))) } });
+    const result = await this.traversal.traverse(context, seeds, { direction: "incoming" });
+    const impacted = result.nodes.filter((item) => !seeds.includes(item.id));
+    const sections: Record<string, QueryResultItem[]> = {
+      direct: [],
+      transitive: [],
+      behavioral: [],
+      contract: [],
+      data: [],
+      tests: [],
+      architecture: [],
+    };
+    for (const seed of seeds) {
+      const entity = context.entityById.get(seed);
+      if (!entity) continue;
+      const family = impactFamily(entity);
+      if (family) sections[family]!.push(toItem(entity, 1000, ["impact seed"]));
+    }
+    for (const item of impacted) {
+      const distance = result.distances.get(item.id) ?? 1;
+      (distance === 1 ? sections.direct! : sections.transitive!).push(item);
+      const entity = context.entityById.get(item.id)!;
+      const family = impactFamily(entity);
+      if (family) sections[family]!.push(item);
+      const risk = riskFactors(item.id, entity, context, result);
+      item.details = { ...(item.details ?? {}), riskScore: risk.score, riskFactors: risk.factors };
+      item.rankingReasons.push(...risk.factors.map((factor) => `risk: ${factor}`));
+    }
+    impacted.sort((a, b) => Number(b.details?.riskScore ?? 0) - Number(a.details?.riskScore ?? 0));
+    return QueryDataSchema.parse({
+      kind: "impact",
+      items: impacted,
+      nodes: result.nodes,
+      relationships: result.relationships,
+      paths: [],
+      sections,
+      metrics: {
+        direct: sections.direct!.length,
+        transitive: sections.transitive!.length,
+        maximumRisk: Math.max(0, ...impacted.map((item) => Number(item.details?.riskScore ?? 0))),
+      },
+    });
   }
 }
 
 export class FlowQueryService {
   async reconstruct(context: QueryContext, seeds: string[]): Promise<QueryData> {
     const candidates: FlowCandidate[] = [];
-    const visitedNodes = new Set<string>(); const traversedEdges = new Set<string>(); let searchTruncated = false;
+    const visitedNodes = new Set<string>();
+    const traversedEdges = new Set<string>();
+    let searchTruncated = false;
     for (const seed of seeds) {
-      const entity = context.entityById.get(seed); if (!entity) continue;
+      const entity = context.entityById.get(seed);
+      if (!entity) continue;
       const template = selectFlowTemplate(entity, context);
       if (!template) {
-        context.diagnostics.push({ code: "flow-template-unavailable", severity: "warning", message: `No deterministic flow template applies to ${entityQualifiedName(entity)}.`, limitation: true });
+        context.diagnostics.push({
+          code: "flow-template-unavailable",
+          severity: "warning",
+          message: `No deterministic flow template applies to ${entityQualifiedName(entity)}.`,
+          limitation: true,
+        });
         continue;
       }
       const initial = template.initial(entity);
       visitedNodes.add(seed);
-      const queue: FlowCandidate[] = [{ id: seed, entities: [seed], relations: [], directions: [], confidence: 1, risk: 0, phase: initial.phase, matchedStages: [...initial.matchedStages], template }];
+      const queue: FlowCandidate[] = [
+        {
+          id: seed,
+          entities: [seed],
+          relations: [],
+          directions: [],
+          confidence: 1,
+          risk: 0,
+          phase: initial.phase,
+          matchedStages: [...initial.matchedStages],
+          template,
+        },
+      ];
       while (queue.length && candidates.length < context.query.limits.paths * 4) {
-        const current = queue.shift()!; context.check();
+        const current = queue.shift()!;
+        context.check();
         const depthReached = current.relations.length >= context.query.limits.depth;
-        const rawTransitions = depthReached ? [] : flowTransitions(current, context).filter((transition) => !current.entities.includes(transition.targetId));
-        const transitions: FlowTransition[] = []; let resourceLimitReached = false;
+        const rawTransitions = depthReached
+          ? []
+          : flowTransitions(current, context).filter(
+              (transition) => !current.entities.includes(transition.targetId),
+            );
+        const transitions: FlowTransition[] = [];
+        let resourceLimitReached = false;
         for (const transition of rawTransitions) {
-          if (!visitedNodes.has(transition.targetId) && visitedNodes.size >= context.query.limits.nodes || !traversedEdges.has(transition.relationship.id) && traversedEdges.size >= context.query.limits.edges) { resourceLimitReached = true; searchTruncated = true; continue; }
-          visitedNodes.add(transition.targetId); traversedEdges.add(transition.relationship.id); transitions.push(transition);
+          if (
+            (!visitedNodes.has(transition.targetId) &&
+              visitedNodes.size >= context.query.limits.nodes) ||
+            (!traversedEdges.has(transition.relationship.id) &&
+              traversedEdges.size >= context.query.limits.edges)
+          ) {
+            resourceLimitReached = true;
+            searchTruncated = true;
+            continue;
+          }
+          visitedNodes.add(transition.targetId);
+          traversedEdges.add(transition.relationship.id);
+          transitions.push(transition);
         }
         if (!transitions.length) {
           const complete = current.template.complete(current);
           const missing = complete ? [] : current.template.missing(current);
-          candidates.push({ ...current, terminalReason: depthReached ? "The configured flow depth limit was reached." : resourceLimitReached ? "The configured flow node or relationship limit was reached." : complete ? current.template.terminal(current) : `No evidence-backed ${missing.join(" or ")} transition follows ${entityQualifiedName(context.entityById.get(current.id)!)}.` , missingStages: missing, truncated: depthReached || resourceLimitReached });
+          candidates.push({
+            ...current,
+            terminalReason: depthReached
+              ? "The configured flow depth limit was reached."
+              : resourceLimitReached
+                ? "The configured flow node or relationship limit was reached."
+                : complete
+                  ? current.template.terminal(current)
+                  : `No evidence-backed ${missing.join(" or ")} transition follows ${entityQualifiedName(context.entityById.get(current.id)!)}.`,
+            missingStages: missing,
+            truncated: depthReached || resourceLimitReached,
+          });
         } else {
           for (const transition of transitions) {
-            queue.push({ id: transition.targetId, entities: [...current.entities, transition.targetId], relations: [...current.relations, transition.relationship], directions: [...current.directions, transition.direction], confidence: Math.min(current.confidence, transition.relationship.confidence), risk: current.risk + relationshipRisk(transition.relationship), phase: transition.phase, matchedStages: [...new Set([...current.matchedStages, transition.stage])], template });
+            queue.push({
+              id: transition.targetId,
+              entities: [...current.entities, transition.targetId],
+              relations: [...current.relations, transition.relationship],
+              directions: [...current.directions, transition.direction],
+              confidence: Math.min(current.confidence, transition.relationship.confidence),
+              risk: current.risk + relationshipRisk(transition.relationship),
+              phase: transition.phase,
+              matchedStages: [...new Set([...current.matchedStages, transition.stage])],
+              template,
+            });
           }
         }
         await context.yield(candidates.length + queue.length, 25);
       }
       if (queue.length) searchTruncated = true;
     }
-    const ranked = candidates.map((candidate) => flowPathResult(candidate, context)).sort(compareFlowPaths).slice(0, context.query.limits.paths).map((path, index) => ({ ...path, truncated: path.truncated || searchTruncated && index === 0, flow: { ...path.flow!, alternateRank: index + 1 } }));
+    const ranked = candidates
+      .map((candidate) => flowPathResult(candidate, context))
+      .sort(compareFlowPaths)
+      .slice(0, context.query.limits.paths)
+      .map((path, index) => ({
+        ...path,
+        truncated: path.truncated || (searchTruncated && index === 0),
+        flow: { ...path.flow!, alternateRank: index + 1 },
+      }));
     const ids = new Set(ranked.flatMap((path) => path.steps.map((step) => step.entityId)));
-    const relationshipIds = new Set(ranked.flatMap((path) => path.steps.flatMap((step) => step.relationshipId ? [step.relationshipId] : [])));
+    const relationshipIds = new Set(
+      ranked.flatMap((path) =>
+        path.steps.flatMap((step) => (step.relationshipId ? [step.relationshipId] : [])),
+      ),
+    );
     const complete = ranked.filter((path) => path.flow?.status === "complete").length;
     const partial = ranked.length - complete;
-    return QueryDataSchema.parse({ kind: "flow", paths: ranked, nodes: [...ids].flatMap((id) => { const participant = context.entityById.get(id); return participant ? [toItem(participant, 1, ["ordered flow participant"], classificationForEntity(participant, context))] : []; }), relationships: [...relationshipIds].flatMap((id) => { const relationship = context.relationshipById.get(id); return relationship ? [relationship] : []; }), items: [], sections: {}, metrics: { flows: ranked.length, complete, partial, templates: new Set(ranked.map((path) => path.flow?.templateId)).size, exploredNodes: visitedNodes.size, exploredRelationships: traversedEdges.size, truncatedSearch: searchTruncated ? 1 : 0 } });
+    return QueryDataSchema.parse({
+      kind: "flow",
+      paths: ranked,
+      nodes: [...ids].flatMap((id) => {
+        const participant = context.entityById.get(id);
+        return participant
+          ? [
+              toItem(
+                participant,
+                1,
+                ["ordered flow participant"],
+                classificationForEntity(participant, context),
+              ),
+            ]
+          : [];
+      }),
+      relationships: [...relationshipIds].flatMap((id) => {
+        const relationship = context.relationshipById.get(id);
+        return relationship ? [relationship] : [];
+      }),
+      items: [],
+      sections: {},
+      metrics: {
+        flows: ranked.length,
+        complete,
+        partial,
+        templates: new Set(ranked.map((path) => path.flow?.templateId)).size,
+        exploredNodes: visitedNodes.size,
+        exploredRelationships: traversedEdges.size,
+        truncatedSearch: searchTruncated ? 1 : 0,
+      },
+    });
   }
 }
 
-type FlowPhase = "presentation" | "endpoint" | "handler" | "application" | "data" | "producer" | "event" | "consumer" | "configuration" | "pipeline" | "build-step" | "artifact" | "deployment";
+type FlowPhase =
+  | "presentation"
+  | "endpoint"
+  | "handler"
+  | "application"
+  | "data"
+  | "producer"
+  | "event"
+  | "consumer"
+  | "configuration"
+  | "pipeline"
+  | "build-step"
+  | "artifact"
+  | "deployment";
 type FlowDirection = "incoming" | "outgoing";
-interface FlowAdvance { phase: FlowPhase; stage: string; }
+interface FlowAdvance {
+  phase: FlowPhase;
+  stage: string;
+}
 interface FlowTemplate {
   id: QueryFlowMetadata["templateId"];
   label: string;
   requiredStages: string[];
   initial(entity: Entity): { phase: FlowPhase; matchedStages: string[] };
   directions(phase: FlowPhase): FlowDirection[];
-  advance(phase: FlowPhase, relationship: IntelligenceRelationshipRecord, direction: FlowDirection, target: Entity): FlowAdvance | undefined;
+  advance(
+    phase: FlowPhase,
+    relationship: IntelligenceRelationshipRecord,
+    direction: FlowDirection,
+    target: Entity,
+  ): FlowAdvance | undefined;
   complete(candidate: FlowCandidate): boolean;
   missing(candidate: FlowCandidate): string[];
   terminal(candidate: FlowCandidate): string;
@@ -231,295 +973,1691 @@ interface FlowCandidate {
   missingStages?: string[];
   truncated?: boolean;
 }
-interface FlowTransition extends FlowAdvance { targetId: string; relationship: IntelligenceRelationshipRecord; direction: FlowDirection; }
+interface FlowTransition extends FlowAdvance {
+  targetId: string;
+  relationship: IntelligenceRelationshipRecord;
+  direction: FlowDirection;
+}
 
 const HTTP_TEMPLATE = flowTemplate({
-  id: "http-persistence", label: "HTTP / UI-to-persistence flow", requiredStages: ["API target", "route handler", "data access"],
-  initial: (entity) => /Route|Endpoint|ApiContract/.test(entityType(entity)) ? { phase: "endpoint", matchedStages: ["API target"] } : /Middleware|Handler|Controller/.test(entityType(entity)) ? { phase: "handler", matchedStages: ["route handler"] } : { phase: "presentation", matchedStages: [] },
+  id: "http-persistence",
+  label: "HTTP / UI-to-persistence flow",
+  requiredStages: ["API target", "route handler", "data access"],
+  initial: (entity) =>
+    /Route|Endpoint|ApiContract/.test(entityType(entity))
+      ? { phase: "endpoint", matchedStages: ["API target"] }
+      : /Middleware|Handler|Controller/.test(entityType(entity))
+        ? { phase: "handler", matchedStages: ["route handler"] }
+        : { phase: "presentation", matchedStages: [] },
   directions: () => ["outgoing"],
   advance: (phase, relation) => {
-    if (phase === "presentation" && ["keystone.core.CALLS", "keystone.core.RENDERS", "keystone.core.FLOWS_TO"].includes(relation.type)) return { phase: "presentation", stage: "UI / client call" };
-    if (phase === "presentation" && ["keystone.core.TARGETS", "keystone.core.IMPLEMENTS_CONTRACT_OPERATION"].includes(relation.type)) return { phase: "endpoint", stage: "API target" };
-    if (phase === "endpoint" && ["keystone.core.ROUTES_TO", "keystone.core.USES_MIDDLEWARE"].includes(relation.type)) return { phase: "handler", stage: "route handler" };
-    if ((phase === "handler" || phase === "application") && ["keystone.core.CALLS", "keystone.core.INSTANTIATES", "keystone.core.VALIDATES_WITH", "keystone.core.SERIALIZES_WITH"].includes(relation.type)) return { phase: "application", stage: "application call" };
-    if ((phase === "handler" || phase === "application") && isDataFlowRelationship(relation.type)) return { phase: "data", stage: "data access" };
+    if (
+      phase === "presentation" &&
+      ["keystone.core.CALLS", "keystone.core.RENDERS", "keystone.core.FLOWS_TO"].includes(
+        relation.type,
+      )
+    )
+      return { phase: "presentation", stage: "UI / client call" };
+    if (
+      phase === "presentation" &&
+      ["keystone.core.TARGETS", "keystone.core.IMPLEMENTS_CONTRACT_OPERATION"].includes(
+        relation.type,
+      )
+    )
+      return { phase: "endpoint", stage: "API target" };
+    if (
+      phase === "endpoint" &&
+      ["keystone.core.ROUTES_TO", "keystone.core.USES_MIDDLEWARE"].includes(relation.type)
+    )
+      return { phase: "handler", stage: "route handler" };
+    if (
+      (phase === "handler" || phase === "application") &&
+      [
+        "keystone.core.CALLS",
+        "keystone.core.INSTANTIATES",
+        "keystone.core.VALIDATES_WITH",
+        "keystone.core.SERIALIZES_WITH",
+      ].includes(relation.type)
+    )
+      return { phase: "application", stage: "application call" };
+    if ((phase === "handler" || phase === "application") && isDataFlowRelationship(relation.type))
+      return { phase: "data", stage: "data access" };
     return undefined;
   },
   complete: (candidate) => candidate.phase === "data" && requiredStagesMatched(candidate),
-  terminal: () => "The flow reaches an evidence-backed persistence or data-access boundary."
+  terminal: () => "The flow reaches an evidence-backed persistence or data-access boundary.",
 });
 
 const EVENT_TEMPLATE = flowTemplate({
-  id: "event", label: "Event producer-to-consumer flow", requiredStages: ["event emission", "event handler"],
-  initial: (entity) => /Consumer|EventHandler/.test(entityType(entity)) ? { phase: "consumer", matchedStages: ["event handler"] } : /Event|Message/.test(entityType(entity)) ? { phase: "event", matchedStages: [] } : { phase: "producer", matchedStages: [] },
-  directions: (phase) => phase === "event" ? ["outgoing", "incoming"] : ["outgoing"],
+  id: "event",
+  label: "Event producer-to-consumer flow",
+  requiredStages: ["event emission", "event handler"],
+  initial: (entity) =>
+    /Consumer|EventHandler/.test(entityType(entity))
+      ? { phase: "consumer", matchedStages: ["event handler"] }
+      : /Event|Message/.test(entityType(entity))
+        ? { phase: "event", matchedStages: [] }
+        : { phase: "producer", matchedStages: [] },
+  directions: (phase) => (phase === "event" ? ["outgoing", "incoming"] : ["outgoing"]),
   advance: (phase, relation, direction) => {
-    if (phase === "producer" && direction === "outgoing" && ["keystone.core.EMITS", "keystone.core.PRODUCES"].includes(relation.type)) return { phase: "event", stage: "event emission" };
-    if (phase === "event" && ["keystone.core.HANDLES", "keystone.core.CONSUMES"].includes(relation.type)) return { phase: "consumer", stage: "event handler" };
-    if ((phase === "consumer" || phase === "application") && direction === "outgoing" && ["keystone.core.CALLS", "keystone.core.TRIGGERS", "keystone.core.EXECUTES"].includes(relation.type)) return { phase: "application", stage: "consumer execution" };
-    if ((phase === "consumer" || phase === "application") && direction === "outgoing" && isDataFlowRelationship(relation.type)) return { phase: "data", stage: "data access" };
+    if (
+      phase === "producer" &&
+      direction === "outgoing" &&
+      ["keystone.core.EMITS", "keystone.core.PRODUCES"].includes(relation.type)
+    )
+      return { phase: "event", stage: "event emission" };
+    if (
+      phase === "event" &&
+      ["keystone.core.HANDLES", "keystone.core.CONSUMES"].includes(relation.type)
+    )
+      return { phase: "consumer", stage: "event handler" };
+    if (
+      (phase === "consumer" || phase === "application") &&
+      direction === "outgoing" &&
+      ["keystone.core.CALLS", "keystone.core.TRIGGERS", "keystone.core.EXECUTES"].includes(
+        relation.type,
+      )
+    )
+      return { phase: "application", stage: "consumer execution" };
+    if (
+      (phase === "consumer" || phase === "application") &&
+      direction === "outgoing" &&
+      isDataFlowRelationship(relation.type)
+    )
+      return { phase: "data", stage: "data access" };
     return undefined;
   },
   complete: (candidate) => requiredStagesMatched(candidate),
-  terminal: (candidate) => candidate.phase === "data" ? "The consumer reaches an evidence-backed data boundary." : "The event reaches an evidence-backed consumer."
+  terminal: (candidate) =>
+    candidate.phase === "data"
+      ? "The consumer reaches an evidence-backed data boundary."
+      : "The event reaches an evidence-backed consumer.",
 });
 
 const CONFIGURATION_TEMPLATE = flowTemplate({
-  id: "configuration", label: "Configuration-to-behavior flow", requiredStages: ["configuration use"],
+  id: "configuration",
+  label: "Configuration-to-behavior flow",
+  requiredStages: ["configuration use"],
   initial: () => ({ phase: "configuration", matchedStages: [] }),
-  directions: (phase) => phase === "configuration" ? ["incoming"] : ["outgoing"],
+  directions: (phase) => (phase === "configuration" ? ["incoming"] : ["outgoing"]),
   advance: (phase, relation, direction) => {
-    if (phase === "configuration" && direction === "incoming" && ["keystone.core.READS_CONFIGURATION", "keystone.core.USES_CONFIGURATION", "keystone.core.CONFIGURED_BY"].includes(relation.type)) return { phase: "application", stage: "configuration use" };
-    if (phase === "application" && direction === "outgoing" && ["keystone.core.CALLS", "keystone.core.TRIGGERS", "keystone.core.EXECUTES"].includes(relation.type)) return { phase: "application", stage: "affected behavior" };
+    if (
+      phase === "configuration" &&
+      direction === "incoming" &&
+      [
+        "keystone.core.READS_CONFIGURATION",
+        "keystone.core.USES_CONFIGURATION",
+        "keystone.core.CONFIGURED_BY",
+      ].includes(relation.type)
+    )
+      return { phase: "application", stage: "configuration use" };
+    if (
+      phase === "application" &&
+      direction === "outgoing" &&
+      ["keystone.core.CALLS", "keystone.core.TRIGGERS", "keystone.core.EXECUTES"].includes(
+        relation.type,
+      )
+    )
+      return { phase: "application", stage: "affected behavior" };
     return undefined;
   },
   complete: (candidate) => requiredStagesMatched(candidate),
-  terminal: () => "The configuration key reaches an evidence-backed reader or affected behavior."
+  terminal: () => "The configuration key reaches an evidence-backed reader or affected behavior.",
 });
 
 const COMMAND_TEMPLATE = flowTemplate({
-  id: "command-execution", label: "Command / execution flow", requiredStages: ["execution step"],
+  id: "command-execution",
+  label: "Command / execution flow",
+  requiredStages: ["execution step"],
   initial: () => ({ phase: "application", matchedStages: [] }),
   directions: () => ["outgoing"],
   advance: (phase, relation) => {
-    if (phase === "application" && ["keystone.core.CALLS", "keystone.core.INSTANTIATES", "keystone.core.TRIGGERS", "keystone.core.EXECUTES", "keystone.core.VALIDATES_WITH", "keystone.core.SERIALIZES_WITH"].includes(relation.type)) return { phase: "application", stage: "execution step" };
-    if (phase === "application" && isDataFlowRelationship(relation.type)) return { phase: "data", stage: "data access" };
+    if (
+      phase === "application" &&
+      [
+        "keystone.core.CALLS",
+        "keystone.core.INSTANTIATES",
+        "keystone.core.TRIGGERS",
+        "keystone.core.EXECUTES",
+        "keystone.core.VALIDATES_WITH",
+        "keystone.core.SERIALIZES_WITH",
+      ].includes(relation.type)
+    )
+      return { phase: "application", stage: "execution step" };
+    if (phase === "application" && isDataFlowRelationship(relation.type))
+      return { phase: "data", stage: "data access" };
     return undefined;
   },
   complete: (candidate) => candidate.relations.length > 0 && requiredStagesMatched(candidate),
-  terminal: (candidate) => candidate.phase === "data" ? "Execution reaches an evidence-backed data boundary." : "The path ends at the last evidence-backed executable step."
+  terminal: (candidate) =>
+    candidate.phase === "data"
+      ? "Execution reaches an evidence-backed data boundary."
+      : "The path ends at the last evidence-backed executable step.",
 });
 
 const BUILD_TEMPLATE = flowTemplate({
-  id: "build-pipeline", label: "Build / pipeline flow", requiredStages: ["build execution", "build output"],
+  id: "build-pipeline",
+  label: "Build / pipeline flow",
+  requiredStages: ["build execution", "build output"],
   initial: () => ({ phase: "pipeline", matchedStages: [] }),
   directions: () => ["outgoing"],
   advance: (phase, relation) => {
-    if ((phase === "pipeline" || phase === "build-step") && ["keystone.core.RUNS_BUILD_COMMAND", "keystone.core.EXECUTES", "keystone.core.TRIGGERS", "keystone.core.CALLS"].includes(relation.type)) return { phase: "build-step", stage: "build execution" };
-    if ((phase === "pipeline" || phase === "build-step") && relation.type === "keystone.core.PRODUCES_ARTIFACT") return { phase: "artifact", stage: "build output" };
-    if ((phase === "pipeline" || phase === "build-step" || phase === "artifact") && relation.type === "keystone.core.DEPLOYS") return { phase: "deployment", stage: "build output" };
+    if (
+      (phase === "pipeline" || phase === "build-step") &&
+      [
+        "keystone.core.RUNS_BUILD_COMMAND",
+        "keystone.core.EXECUTES",
+        "keystone.core.TRIGGERS",
+        "keystone.core.CALLS",
+      ].includes(relation.type)
+    )
+      return { phase: "build-step", stage: "build execution" };
+    if (
+      (phase === "pipeline" || phase === "build-step") &&
+      relation.type === "keystone.core.PRODUCES_ARTIFACT"
+    )
+      return { phase: "artifact", stage: "build output" };
+    if (
+      (phase === "pipeline" || phase === "build-step" || phase === "artifact") &&
+      relation.type === "keystone.core.DEPLOYS"
+    )
+      return { phase: "deployment", stage: "build output" };
     return undefined;
   },
-  complete: (candidate) => (candidate.phase === "artifact" || candidate.phase === "deployment") && requiredStagesMatched(candidate),
-  terminal: (candidate) => candidate.phase === "deployment" ? "The pipeline reaches an evidence-backed deployment." : "The build reaches an evidence-backed generated artifact."
+  complete: (candidate) =>
+    (candidate.phase === "artifact" || candidate.phase === "deployment") &&
+    requiredStagesMatched(candidate),
+  terminal: (candidate) =>
+    candidate.phase === "deployment"
+      ? "The pipeline reaches an evidence-backed deployment."
+      : "The build reaches an evidence-backed generated artifact.",
 });
 
 function flowTemplate(template: Omit<FlowTemplate, "missing">): FlowTemplate {
-  return { ...template, missing: (candidate) => template.requiredStages.filter((stage) => !candidate.matchedStages.includes(stage)) };
+  return {
+    ...template,
+    missing: (candidate) =>
+      template.requiredStages.filter((stage) => !candidate.matchedStages.includes(stage)),
+  };
 }
-function requiredStagesMatched(candidate: FlowCandidate): boolean { return candidate.template.requiredStages.every((stage) => candidate.matchedStages.includes(stage)); }
-function isDataFlowRelationship(type: string): boolean { return ["keystone.core.READS_FROM", "keystone.core.WRITES_TO", "keystone.core.PERSISTS"].includes(type); }
+function requiredStagesMatched(candidate: FlowCandidate): boolean {
+  return candidate.template.requiredStages.every((stage) =>
+    candidate.matchedStages.includes(stage),
+  );
+}
+function isDataFlowRelationship(type: string): boolean {
+  return ["keystone.core.READS_FROM", "keystone.core.WRITES_TO", "keystone.core.PERSISTS"].includes(
+    type,
+  );
+}
 function selectFlowTemplate(entity: Entity, context: QueryContext): FlowTemplate | undefined {
-  const type = entityType(entity); const outgoing = context.relationships(entity.id, "outgoing"); const incoming = context.relationships(entity.id, "incoming");
+  const type = entityType(entity);
+  const outgoing = context.relationships(entity.id, "outgoing");
+  const incoming = context.relationships(entity.id, "incoming");
   if (/ConfigurationKey|EnvironmentVariable|FeatureFlag/.test(type)) return CONFIGURATION_TEMPLATE;
-  if (/Producer|Event|Message|Consumer|EventHandler/.test(type) || outgoing.some((item) => ["keystone.core.EMITS", "keystone.core.PRODUCES"].includes(item.type)) || incoming.some((item) => ["keystone.core.HANDLES", "keystone.core.CONSUMES"].includes(item.type))) return EVENT_TEMPLATE;
-  if (/Component|Route|Endpoint|ApiContract|Middleware|Controller/.test(type) || outgoing.some((item) => ["keystone.core.TARGETS", "keystone.core.ROUTES_TO", "keystone.core.IMPLEMENTS_CONTRACT_OPERATION"].includes(item.type))) return HTTP_TEMPLATE;
-  if (/Pipeline|BuildTarget|BuildCommand|Deployment|Artifact/.test(type) || outgoing.some((item) => ["keystone.core.RUNS_BUILD_COMMAND", "keystone.core.PRODUCES_ARTIFACT", "keystone.core.DEPLOYS"].includes(item.type))) return BUILD_TEMPLATE;
-  if (/Command|Job|Scheduler|Function|Method|Constructor|Handler|Service|Repository/.test(type) || outgoing.some((item) => ["keystone.core.CALLS", "keystone.core.EXECUTES", "keystone.core.TRIGGERS"].includes(item.type))) return COMMAND_TEMPLATE;
+  if (
+    /Producer|Event|Message|Consumer|EventHandler/.test(type) ||
+    outgoing.some((item) =>
+      ["keystone.core.EMITS", "keystone.core.PRODUCES"].includes(item.type),
+    ) ||
+    incoming.some((item) => ["keystone.core.HANDLES", "keystone.core.CONSUMES"].includes(item.type))
+  )
+    return EVENT_TEMPLATE;
+  if (
+    /Component|Route|Endpoint|ApiContract|Middleware|Controller/.test(type) ||
+    outgoing.some((item) =>
+      [
+        "keystone.core.TARGETS",
+        "keystone.core.ROUTES_TO",
+        "keystone.core.IMPLEMENTS_CONTRACT_OPERATION",
+      ].includes(item.type),
+    )
+  )
+    return HTTP_TEMPLATE;
+  if (
+    /Pipeline|BuildTarget|BuildCommand|Deployment|Artifact/.test(type) ||
+    outgoing.some((item) =>
+      [
+        "keystone.core.RUNS_BUILD_COMMAND",
+        "keystone.core.PRODUCES_ARTIFACT",
+        "keystone.core.DEPLOYS",
+      ].includes(item.type),
+    )
+  )
+    return BUILD_TEMPLATE;
+  if (
+    /Command|Job|Scheduler|Function|Method|Constructor|Handler|Service|Repository/.test(type) ||
+    outgoing.some((item) =>
+      ["keystone.core.CALLS", "keystone.core.EXECUTES", "keystone.core.TRIGGERS"].includes(
+        item.type,
+      ),
+    )
+  )
+    return COMMAND_TEMPLATE;
   return undefined;
 }
 function flowTransitions(candidate: FlowCandidate, context: QueryContext): FlowTransition[] {
   const values: FlowTransition[] = [];
   for (const direction of candidate.template.directions(candidate.phase)) {
     for (const relationship of context.relationships(candidate.id, direction)) {
-      if (!FLOW_TYPES.has(relationship.type) || !relationshipAllowed(relationship, context)) continue;
-      const targetId = direction === "outgoing" ? relationship.targetId : relationship.sourceId; const target = context.entityById.get(targetId); if (!target) continue;
-      const advance = candidate.template.advance(candidate.phase, relationship, direction, target); if (!advance) continue;
-      context.relationshipFamilies.add(relationship.type); values.push({ ...advance, targetId, relationship, direction });
+      if (!FLOW_TYPES.has(relationship.type) || !relationshipAllowed(relationship, context))
+        continue;
+      const targetId = direction === "outgoing" ? relationship.targetId : relationship.sourceId;
+      const target = context.entityById.get(targetId);
+      if (!target) continue;
+      const advance = candidate.template.advance(candidate.phase, relationship, direction, target);
+      if (!advance) continue;
+      context.relationshipFamilies.add(relationship.type);
+      values.push({ ...advance, targetId, relationship, direction });
     }
   }
-  return values.sort((left, right) => flowStagePriority(left.stage) - flowStagePriority(right.stage) || right.relationship.confidence - left.relationship.confidence || left.relationship.id.localeCompare(right.relationship.id));
+  return values.sort(
+    (left, right) =>
+      flowStagePriority(left.stage) - flowStagePriority(right.stage) ||
+      right.relationship.confidence - left.relationship.confidence ||
+      left.relationship.id.localeCompare(right.relationship.id),
+  );
 }
-function flowStagePriority(stage: string): number { return ({ "API target": 1, "route handler": 2, "event emission": 1, "event handler": 2, "configuration use": 1, "build execution": 1, "build output": 2, "data access": 5 } as Record<string, number>)[stage] ?? 3; }
-function flowPathResult(candidate: FlowCandidate, context: QueryContext): QueryData["paths"][number] {
-  const complete = candidate.template.complete(candidate); const missingStages = candidate.missingStages ?? candidate.template.missing(candidate); const coverage = candidate.template.requiredStages.length ? (candidate.template.requiredStages.length - missingStages.length) / candidate.template.requiredStages.length : 1; const riskPenalty = Math.min(.1, candidate.risk / 100); const score = Math.max(0, Math.min(1, coverage * .55 + candidate.confidence * .35 + (complete ? .1 : 0) - riskPenalty));
-  const boundaries = complete ? [] : [candidate.terminalReason ?? `Missing ${missingStages.join(" or ")}.`]; if (candidate.truncated) boundaries.push("flow depth boundary");
+function flowStagePriority(stage: string): number {
+  return (
+    (
+      {
+        "API target": 1,
+        "route handler": 2,
+        "event emission": 1,
+        "event handler": 2,
+        "configuration use": 1,
+        "build execution": 1,
+        "build output": 2,
+        "data access": 5,
+      } as Record<string, number>
+    )[stage] ?? 3
+  );
+}
+function flowPathResult(
+  candidate: FlowCandidate,
+  context: QueryContext,
+): QueryData["paths"][number] {
+  const complete = candidate.template.complete(candidate);
+  const missingStages = candidate.missingStages ?? candidate.template.missing(candidate);
+  const coverage = candidate.template.requiredStages.length
+    ? (candidate.template.requiredStages.length - missingStages.length) /
+      candidate.template.requiredStages.length
+    : 1;
+  const riskPenalty = Math.min(0.1, candidate.risk / 100);
+  const score = Math.max(
+    0,
+    Math.min(1, coverage * 0.55 + candidate.confidence * 0.35 + (complete ? 0.1 : 0) - riskPenalty),
+  );
+  const boundaries = complete
+    ? []
+    : [candidate.terminalReason ?? `Missing ${missingStages.join(" or ")}.`];
+  if (candidate.truncated) boundaries.push("flow depth boundary");
   const path = pathResult(candidate, context, boundaries, candidate.directions);
-  const flow: QueryFlowMetadata = { templateId: candidate.template.id, label: candidate.template.label, status: complete ? "complete" : "partial", matchedStages: candidate.matchedStages, missingStages, score, scoreReasons: [`required-stage coverage ${Math.round(coverage * 100)}%`, `minimum relationship confidence ${Math.round(candidate.confidence * 100)}%`, complete ? "complete template +10%" : "partial template +0%", `risk penalty ${Math.round(riskPenalty * 100)}%`], terminalReason: candidate.terminalReason ?? candidate.template.terminal(candidate), alternateRank: 1 };
+  const flow: QueryFlowMetadata = {
+    templateId: candidate.template.id,
+    label: candidate.template.label,
+    status: complete ? "complete" : "partial",
+    matchedStages: candidate.matchedStages,
+    missingStages,
+    score,
+    scoreReasons: [
+      `required-stage coverage ${Math.round(coverage * 100)}%`,
+      `minimum relationship confidence ${Math.round(candidate.confidence * 100)}%`,
+      complete ? "complete template +10%" : "partial template +0%",
+      `risk penalty ${Math.round(riskPenalty * 100)}%`,
+    ],
+    terminalReason: candidate.terminalReason ?? candidate.template.terminal(candidate),
+    alternateRank: 1,
+  };
   return { ...path, truncated: Boolean(candidate.truncated), flow };
 }
-function compareFlowPaths(left: QueryData["paths"][number], right: QueryData["paths"][number]): number { return Number(right.flow?.status === "complete") - Number(left.flow?.status === "complete") || (right.flow?.score ?? 0) - (left.flow?.score ?? 0) || right.confidence - left.confidence || left.steps.map((step) => step.entityId).join("|").localeCompare(right.steps.map((step) => step.entityId).join("|")); }
+function compareFlowPaths(
+  left: QueryData["paths"][number],
+  right: QueryData["paths"][number],
+): number {
+  return (
+    Number(right.flow?.status === "complete") - Number(left.flow?.status === "complete") ||
+    (right.flow?.score ?? 0) - (left.flow?.score ?? 0) ||
+    right.confidence - left.confidence ||
+    left.steps
+      .map((step) => step.entityId)
+      .join("|")
+      .localeCompare(right.steps.map((step) => step.entityId).join("|"))
+  );
+}
 
 export class TestQueryService {
   query(context: QueryContext, seeds: string[], untested = false): QueryData {
-    const testEntities = context.snapshot.symbols.filter((item) => isTestEntity(item)); const mappedTargets = new Set<string>(); const items: QueryResultItem[] = [];
-    for (const relation of context.snapshot.relationships) if (TEST_TYPES.has(relation.type) || relation.type === "keystone.core.CALLS" && isTestEntity(context.entityById.get(relation.sourceId))) { mappedTargets.add(relation.targetId); if (!untested && seeds.includes(relation.targetId)) { const test = context.entityById.get(relation.sourceId); if (test) items.push(testMappingItem(test, relation)); } }
-    if (untested) for (const entity of context.snapshot.symbols) if (isPublicExecutable(entity) && !mappedTargets.has(entity.id) && matchesEntityFilters(entity, context.query.filters.entityTypes, context.query.filters.languages, context)) {
-      items.push({ ...toItem(entity, 1, ["public executable has no evidence-backed test mapping"]), classification: "candidate", group: "untested-public-symbol" });
-      if (entity.codeAnalysis?.branches) items.push({ ...toItem(entity, 1, ["CPG branches exist without coverage-confirmed mapping"]), classification: "candidate", group: "untested-cpg-branch", details: { uncoveredBranchCandidates: entity.codeAnalysis.branches } });
-    }
-    const unique = [...new Map(items.map((item) => [`${item.group}:${item.id}`, item])).values()].sort((a, b) => b.score - a.score);
-    return QueryDataSchema.parse({ kind: untested ? "untested" : "tests", items: unique, nodes: unique, relationships: context.snapshot.relationships.filter((relation) => seeds.includes(relation.targetId) && TEST_TYPES.has(relation.type)).slice(0, context.query.limits.edges), paths: [], sections: { suites: unique.filter((item) => item.type.includes("TestSuite")), cases: unique.filter((item) => item.type.includes("TestCase")), cpgBranchCandidates: unique.filter((item) => item.group === "untested-cpg-branch") }, metrics: { testsKnown: testEntities.length, results: unique.length } });
+    const testEntities = context.snapshot.symbols.filter((item) => isTestEntity(item));
+    const mappedTargets = new Set<string>();
+    const items: QueryResultItem[] = [];
+    for (const relation of context.snapshot.relationships)
+      if (
+        TEST_TYPES.has(relation.type) ||
+        (relation.type === "keystone.core.CALLS" &&
+          isTestEntity(context.entityById.get(relation.sourceId)))
+      ) {
+        mappedTargets.add(relation.targetId);
+        if (!untested && seeds.includes(relation.targetId)) {
+          const test = context.entityById.get(relation.sourceId);
+          if (test) items.push(testMappingItem(test, relation));
+        }
+      }
+    if (untested)
+      for (const entity of context.snapshot.symbols)
+        if (
+          isPublicExecutable(entity) &&
+          !mappedTargets.has(entity.id) &&
+          matchesEntityFilters(
+            entity,
+            context.query.filters.entityTypes,
+            context.query.filters.languages,
+            context,
+          )
+        ) {
+          items.push({
+            ...toItem(entity, 1, ["public executable has no evidence-backed test mapping"]),
+            classification: "candidate",
+            group: "untested-public-symbol",
+          });
+          if (entity.codeAnalysis?.branches)
+            items.push({
+              ...toItem(entity, 1, ["CPG branches exist without coverage-confirmed mapping"]),
+              classification: "candidate",
+              group: "untested-cpg-branch",
+              details: { uncoveredBranchCandidates: entity.codeAnalysis.branches },
+            });
+        }
+    const unique = [
+      ...new Map(items.map((item) => [`${item.group}:${item.id}`, item])).values(),
+    ].sort((a, b) => b.score - a.score);
+    return QueryDataSchema.parse({
+      kind: untested ? "untested" : "tests",
+      items: unique,
+      nodes: unique,
+      relationships: context.snapshot.relationships
+        .filter((relation) => seeds.includes(relation.targetId) && TEST_TYPES.has(relation.type))
+        .slice(0, context.query.limits.edges),
+      paths: [],
+      sections: {
+        suites: unique.filter((item) => item.type.includes("TestSuite")),
+        cases: unique.filter((item) => item.type.includes("TestCase")),
+        cpgBranchCandidates: unique.filter((item) => item.group === "untested-cpg-branch"),
+      },
+      metrics: { testsKnown: testEntities.length, results: unique.length },
+    });
   }
 }
 
 export class ArchitectureQueryService {
   analyze(context: QueryContext, cyclesOnly = false): QueryData {
-    const edges = context.snapshot.relationships.filter((item) => DEPENDENCY_TYPES.has(item.type) && relationshipAllowed(item, context)); const cycles = findCycles(edges, context.query.limits.paths, context.query.limits.depth);
-    const central = [...context.entityById.values()].map((entity) => ({ entity, degree: (context.incoming.get(entity.id)?.length ?? 0) + (context.outgoing.get(entity.id)?.length ?? 0) })).sort((a, b) => b.degree - a.degree).slice(0, context.query.limits.results).map(({ entity, degree }) => toItem(entity, degree, [`fan-in/out degree ${degree}`]));
-    const cycleEntities = cycles.flatMap((cycle) => cycle.map((id) => context.entityById.get(id))).filter((value): value is Entity => Boolean(value));
-    const cycleItems = [...new Map(cycleEntities.map((entity) => [entity.id, { ...toItem(entity, 1, ["member of a bounded dependency cycle"]), group: "cycle" }])).values()];
-    const orphan = context.snapshot.symbols.filter((item) => /Package|Module/.test(item.type) && !(context.incoming.get(item.id)?.length || context.outgoing.get(item.id)?.length)).map((entity) => ({ ...toItem(entity, 0, ["no indexed dependencies"]), classification: "candidate" as const, group: "orphan-module-candidate" }));
-    const violations = edges.flatMap((edge) => { const source = context.entityById.get(edge.sourceId); const target = context.entityById.get(edge.targetId); if (!source || !target || !("properties" in source) || !("properties" in target)) return []; const sourceLayer = typeof source.properties?.layer === "string" ? source.properties.layer : undefined; const targetLayer = typeof target.properties?.layer === "string" ? target.properties.layer : undefined; if (!sourceLayer || !targetLayer || layerOrder(sourceLayer) <= layerOrder(targetLayer)) return []; return [{ ...toItem(source, 1, [`${sourceLayer} depends against allowed direction on ${targetLayer}`]), classification: "candidate" as const, group: "layer-violation", details: { targetId: target.id, sourceLayer, targetLayer, relationshipId: edge.id } }]; });
-    const dead = context.snapshot.symbols.filter((item) => isPublicExecutable(item) && !(context.incoming.get(item.id)?.length)).map((entity) => ({ ...toItem(entity, 0, ["no indexed incoming reference; dynamic/runtime use may exist"]), classification: "candidate" as const, group: "dead-code-candidate" }));
-    return QueryDataSchema.parse({ kind: cyclesOnly ? "cycles" : "architecture", items: cyclesOnly ? cycleItems : central, nodes: cyclesOnly ? cycleItems : [...central, ...orphan, ...violations, ...dead].slice(0, context.query.limits.nodes), relationships: edges.filter((edge) => cycles.some((cycle) => cycle.includes(edge.sourceId) && cycle.includes(edge.targetId)) || violations.some((item) => item.details?.relationshipId === edge.id)).slice(0, context.query.limits.edges), paths: cycles.map((cycle) => cyclePath(cycle, edges, context)), sections: { central, orphans: orphan, violations, deadCodeCandidates: dead }, metrics: { cycles: cycles.length, centralEntities: central.length, orphanCandidates: orphan.length, violations: violations.length, deadCodeCandidates: dead.length } });
+    const edges = context.snapshot.relationships.filter(
+      (item) => DEPENDENCY_TYPES.has(item.type) && relationshipAllowed(item, context),
+    );
+    const cycles = findCycles(edges, context.query.limits.paths, context.query.limits.depth);
+    const central = [...context.entityById.values()]
+      .map((entity) => ({
+        entity,
+        degree:
+          (context.incoming.get(entity.id)?.length ?? 0) +
+          (context.outgoing.get(entity.id)?.length ?? 0),
+      }))
+      .sort((a, b) => b.degree - a.degree)
+      .slice(0, context.query.limits.results)
+      .map(({ entity, degree }) => toItem(entity, degree, [`fan-in/out degree ${degree}`]));
+    const cycleEntities = cycles
+      .flatMap((cycle) => cycle.map((id) => context.entityById.get(id)))
+      .filter((value): value is Entity => Boolean(value));
+    const cycleItems = [
+      ...new Map(
+        cycleEntities.map((entity) => [
+          entity.id,
+          { ...toItem(entity, 1, ["member of a bounded dependency cycle"]), group: "cycle" },
+        ]),
+      ).values(),
+    ];
+    const orphan = context.snapshot.symbols
+      .filter(
+        (item) =>
+          /Package|Module/.test(item.type) &&
+          !(context.incoming.get(item.id)?.length || context.outgoing.get(item.id)?.length),
+      )
+      .map((entity) => ({
+        ...toItem(entity, 0, ["no indexed dependencies"]),
+        classification: "candidate" as const,
+        group: "orphan-module-candidate",
+      }));
+    const violations = edges.flatMap((edge) => {
+      const source = context.entityById.get(edge.sourceId);
+      const target = context.entityById.get(edge.targetId);
+      if (!source || !target || !("properties" in source) || !("properties" in target)) return [];
+      const sourceLayer =
+        typeof source.properties?.layer === "string" ? source.properties.layer : undefined;
+      const targetLayer =
+        typeof target.properties?.layer === "string" ? target.properties.layer : undefined;
+      if (!sourceLayer || !targetLayer || layerOrder(sourceLayer) <= layerOrder(targetLayer))
+        return [];
+      return [
+        {
+          ...toItem(source, 1, [
+            `${sourceLayer} depends against allowed direction on ${targetLayer}`,
+          ]),
+          classification: "candidate" as const,
+          group: "layer-violation",
+          details: { targetId: target.id, sourceLayer, targetLayer, relationshipId: edge.id },
+        },
+      ];
+    });
+    const dead = context.snapshot.symbols
+      .filter((item) => isPublicExecutable(item) && !context.incoming.get(item.id)?.length)
+      .map((entity) => ({
+        ...toItem(entity, 0, ["no indexed incoming reference; dynamic/runtime use may exist"]),
+        classification: "candidate" as const,
+        group: "dead-code-candidate",
+      }));
+    return QueryDataSchema.parse({
+      kind: cyclesOnly ? "cycles" : "architecture",
+      items: cyclesOnly ? cycleItems : central,
+      nodes: cyclesOnly
+        ? cycleItems
+        : [...central, ...orphan, ...violations, ...dead].slice(0, context.query.limits.nodes),
+      relationships: edges
+        .filter(
+          (edge) =>
+            cycles.some(
+              (cycle) => cycle.includes(edge.sourceId) && cycle.includes(edge.targetId),
+            ) || violations.some((item) => item.details?.relationshipId === edge.id),
+        )
+        .slice(0, context.query.limits.edges),
+      paths: cycles.map((cycle) => cyclePath(cycle, edges, context)),
+      sections: { central, orphans: orphan, violations, deadCodeCandidates: dead },
+      metrics: {
+        cycles: cycles.length,
+        centralEntities: central.length,
+        orphanCandidates: orphan.length,
+        violations: violations.length,
+        deadCodeCandidates: dead.length,
+      },
+    });
   }
 }
 
 export class ChangeQueryService {
   constructor(private readonly store: IntelligenceSnapshotReader) {}
   async analyze(context: QueryContext, seeds: string[]): Promise<QueryData> {
-    const retained = await this.store.getRetainedSnapshots?.() ?? [context.snapshot]; let previous: IntelligenceSnapshot | undefined; let current = context.snapshot;
-    if (context.query.operation === "DIFFERENCE_BETWEEN") { previous = retained.find((item) => item.repository.branch === context.query.filters.branch); current = retained.find((item) => item.repository.branch === context.query.filters.compareTo) ?? context.snapshot; }
-    else previous = retained.filter((item) => item.manifest.generation < context.snapshot.manifest.generation).sort((a, b) => b.manifest.generation - a.manifest.generation)[0];
-    if (!previous) { context.diagnostics.push({ code: "temporal-state-unavailable", severity: "warning", message: "The requested previous generation or branch is not retained locally.", limitation: true }); return QueryDataSchema.parse({ kind: "changes", items: [], nodes: [], relationships: [], paths: [], sections: {}, metrics: {} }); }
-    const oldById = new Map<string, Entity>([...previous.files, ...previous.symbols].map((item) => [item.id, item])); const currentById = new Map<string, Entity>([...current.files, ...current.symbols].map((item) => [item.id, item])); const ids = seeds.length ? new Set(seeds) : new Set([...oldById.keys(), ...currentById.keys()]); const items: QueryResultItem[] = [];
-    for (const id of ids) { const oldValue = oldById.get(id); const next = currentById.get(id); if (!oldValue && next) items.push(changeItem(next, "added", previous.manifest.generation)); else if (oldValue && !next) items.push(changeItem(oldValue, "deleted", previous.manifest.generation)); else if (oldValue && next && structuralIdentity(oldValue) !== structuralIdentity(next)) items.push(changeItem(next, changeKind(oldValue, next), previous.manifest.generation)); }
-    return QueryDataSchema.parse({ kind: "changes", items, nodes: items, relationships: [], paths: [], sections: { added: items.filter((item) => item.group === "added"), modified: items.filter((item) => item.group === "modified" || item.group?.endsWith("-change")), deleted: items.filter((item) => item.group === "deleted") }, metrics: { fromGeneration: previous.manifest.generation, toGeneration: current.manifest.generation, changes: items.length } });
+    const retained = (await this.store.getRetainedSnapshots?.()) ?? [context.snapshot];
+    let previous: IntelligenceSnapshot | undefined;
+    let current = context.snapshot;
+    if (context.query.operation === "DIFFERENCE_BETWEEN") {
+      previous = retained.find((item) => item.repository.branch === context.query.filters.branch);
+      current =
+        retained.find((item) => item.repository.branch === context.query.filters.compareTo) ??
+        context.snapshot;
+    } else
+      previous = retained
+        .filter((item) => item.manifest.generation < context.snapshot.manifest.generation)
+        .sort((a, b) => b.manifest.generation - a.manifest.generation)[0];
+    if (!previous) {
+      context.diagnostics.push({
+        code: "temporal-state-unavailable",
+        severity: "warning",
+        message: "The requested previous generation or branch is not retained locally.",
+        limitation: true,
+      });
+      return QueryDataSchema.parse({
+        kind: "changes",
+        items: [],
+        nodes: [],
+        relationships: [],
+        paths: [],
+        sections: {},
+        metrics: {},
+      });
+    }
+    const oldById = new Map<string, Entity>(
+      [...previous.files, ...previous.symbols].map((item) => [item.id, item]),
+    );
+    const currentById = new Map<string, Entity>(
+      [...current.files, ...current.symbols].map((item) => [item.id, item]),
+    );
+    const ids = seeds.length ? new Set(seeds) : new Set([...oldById.keys(), ...currentById.keys()]);
+    const items: QueryResultItem[] = [];
+    for (const id of ids) {
+      const oldValue = oldById.get(id);
+      const next = currentById.get(id);
+      if (!oldValue && next) items.push(changeItem(next, "added", previous.manifest.generation));
+      else if (oldValue && !next)
+        items.push(changeItem(oldValue, "deleted", previous.manifest.generation));
+      else if (oldValue && next && structuralIdentity(oldValue) !== structuralIdentity(next))
+        items.push(changeItem(next, changeKind(oldValue, next), previous.manifest.generation));
+    }
+    return QueryDataSchema.parse({
+      kind: "changes",
+      items,
+      nodes: items,
+      relationships: [],
+      paths: [],
+      sections: {
+        added: items.filter((item) => item.group === "added"),
+        modified: items.filter(
+          (item) => item.group === "modified" || item.group?.endsWith("-change"),
+        ),
+        deleted: items.filter((item) => item.group === "deleted"),
+      },
+      metrics: {
+        fromGeneration: previous.manifest.generation,
+        toGeneration: current.manifest.generation,
+        changes: items.length,
+      },
+    });
   }
 }
 
 export class CpgQueryFacade {
   constructor(private readonly service: CpgQueryService) {}
-  async execute(context: QueryContext, resolved: ResolvedEntity[]): Promise<QueryData> { const selected = resolved[0]?.selected; if (!selected) return QueryDataSchema.parse({ kind: "cpg", items: [], nodes: [], relationships: [], paths: [], sections: {}, metrics: {} }); const selector = context.query.seeds?.[0]; const [rawSemanticId, explicitNode] = (selector?.value ?? selected.id).split("#"); const semanticId = rawSemanticId ?? selected.id; const symbolId = semanticId.startsWith("entity:") ? semanticId : selected.id; let cpg; if (context.query.operation === "CPG_SCOPE") cpg = await this.service.scope({ semanticSymbolId: symbolId, overlays: ["ast", "control-flow", "data-flow", "calls"], maxNodes: context.query.limits.nodes, includeSource: context.query.include.source }, context.signal); else if (context.query.operation === "CONTROL_FLOW") cpg = await this.service.controlFlow(symbolId, context.query.limits.nodes, context.signal); else if (context.query.operation === "DATA_FLOW") cpg = await this.service.dataFlow(symbolId, context.query.limits.nodes, context.signal); else { const nodeId = explicitNode; if (!nodeId) { context.diagnostics.push({ code: "cpg-node-required", severity: "error", message: "Slice and condition queries require <semantic-entity-id>#<cpg-node-id>.", limitation: true }); return QueryDataSchema.parse({ kind: "cpg", items: [], nodes: [], relationships: [], paths: [], sections: {}, metrics: {} }); } cpg = context.query.operation === "CONDITIONS_FOR" ? await this.service.conditionsForNode(symbolId, nodeId, context.signal) : await this.service.slice({ semanticSymbolId: symbolId, nodeId, direction: context.query.operation === "BACKWARD_SLICE" ? "backward" : "forward", includeConditions: true, maxNodes: Math.min(300, context.query.limits.nodes), maxDepth: context.query.limits.depth, maxPaths: context.query.limits.paths, timeBudgetMs: context.query.limits.timeBudgetMs }, context.signal); } if (!cpg) context.diagnostics.push({ code: "cpg-scope-unavailable", severity: "warning", message: "No compatible CPG scope is available for the resolved entity.", limitation: true }); return QueryDataSchema.parse({ kind: "cpg", ...(cpg ? { cpg } : {}), items: [], nodes: [], relationships: [], paths: [], sections: {}, metrics: cpg ? { cpgNodes: cpg.nodes.length, cpgEdges: cpg.edges.length } : {} }); }
+  async execute(context: QueryContext, resolved: ResolvedEntity[]): Promise<QueryData> {
+    const selected = resolved[0]?.selected;
+    if (!selected)
+      return QueryDataSchema.parse({
+        kind: "cpg",
+        items: [],
+        nodes: [],
+        relationships: [],
+        paths: [],
+        sections: {},
+        metrics: {},
+      });
+    const selector = context.query.seeds?.[0];
+    const [rawSemanticId, explicitNode] = (selector?.value ?? selected.id).split("#");
+    const semanticId = rawSemanticId ?? selected.id;
+    const symbolId = semanticId.startsWith("entity:") ? semanticId : selected.id;
+    let cpg;
+    if (context.query.operation === "CPG_SCOPE")
+      cpg = await this.service.scope(
+        {
+          semanticSymbolId: symbolId,
+          overlays: ["ast", "control-flow", "data-flow", "calls"],
+          maxNodes: context.query.limits.nodes,
+          includeSource: context.query.include.source,
+        },
+        context.signal,
+      );
+    else if (context.query.operation === "CONTROL_FLOW")
+      cpg = await this.service.controlFlow(symbolId, context.query.limits.nodes, context.signal);
+    else if (context.query.operation === "DATA_FLOW")
+      cpg = await this.service.dataFlow(symbolId, context.query.limits.nodes, context.signal);
+    else {
+      const nodeId = explicitNode;
+      if (!nodeId) {
+        context.diagnostics.push({
+          code: "cpg-node-required",
+          severity: "error",
+          message: "Slice and condition queries require <semantic-entity-id>#<cpg-node-id>.",
+          limitation: true,
+        });
+        return QueryDataSchema.parse({
+          kind: "cpg",
+          items: [],
+          nodes: [],
+          relationships: [],
+          paths: [],
+          sections: {},
+          metrics: {},
+        });
+      }
+      cpg =
+        context.query.operation === "CONDITIONS_FOR"
+          ? await this.service.conditionsForNode(symbolId, nodeId, context.signal)
+          : await this.service.slice(
+              {
+                semanticSymbolId: symbolId,
+                nodeId,
+                direction: context.query.operation === "BACKWARD_SLICE" ? "backward" : "forward",
+                includeConditions: true,
+                maxNodes: Math.min(300, context.query.limits.nodes),
+                maxDepth: context.query.limits.depth,
+                maxPaths: context.query.limits.paths,
+                timeBudgetMs: context.query.limits.timeBudgetMs,
+              },
+              context.signal,
+            );
+    }
+    if (!cpg)
+      context.diagnostics.push({
+        code: "cpg-scope-unavailable",
+        severity: "warning",
+        message: "No compatible CPG scope is available for the resolved entity.",
+        limitation: true,
+      });
+    return QueryDataSchema.parse({
+      kind: "cpg",
+      ...(cpg ? { cpg } : {}),
+      items: [],
+      nodes: [],
+      relationships: [],
+      paths: [],
+      sections: {},
+      metrics: cpg ? { cpgNodes: cpg.nodes.length, cpgEdges: cpg.edges.length } : {},
+    });
+  }
 }
 
 export class EvidenceAssembler {
-  assemble(context: QueryContext, data: QueryData): Array<Pick<IntelligenceEvidenceRecord, "id" | "subjectId" | "relativePath" | "range" | "extractorId" | "extractorVersion" | "derivation" | "confidence" | "statement">> { if (!context.query.include.evidence) return []; const ids = new Set<string>(); for (const relation of data.relationships) relation.evidenceIds.forEach((id) => ids.add(id)); for (const path of data.paths) for (const step of path.steps) step.evidenceIds.forEach((id) => ids.add(id)); for (const item of data.items) context.entityById.get(item.id)?.evidenceIds.forEach((id) => ids.add(id)); return [...ids].slice(0, context.query.limits.evidence).flatMap((id) => { const item = context.evidenceById.get(id); return item ? [{ id: item.id, subjectId: item.subjectId, relativePath: item.relativePath, ...(item.range ? { range: item.range } : {}), extractorId: item.extractorId, extractorVersion: item.extractorVersion, derivation: item.derivation, confidence: item.confidence, statement: item.statement }] : []; }); }
+  assemble(
+    context: QueryContext,
+    data: QueryData,
+  ): Array<
+    Pick<
+      IntelligenceEvidenceRecord,
+      | "id"
+      | "subjectId"
+      | "relativePath"
+      | "range"
+      | "extractorId"
+      | "extractorVersion"
+      | "derivation"
+      | "confidence"
+      | "statement"
+    >
+  > {
+    if (!context.query.include.evidence) return [];
+    const ids = new Set<string>();
+    for (const relation of data.relationships) relation.evidenceIds.forEach((id) => ids.add(id));
+    for (const path of data.paths)
+      for (const step of path.steps) step.evidenceIds.forEach((id) => ids.add(id));
+    for (const item of data.items)
+      context.entityById.get(item.id)?.evidenceIds.forEach((id) => ids.add(id));
+    return [...ids].slice(0, context.query.limits.evidence).flatMap((id) => {
+      const item = context.evidenceById.get(id);
+      return item
+        ? [
+            {
+              id: item.id,
+              subjectId: item.subjectId,
+              relativePath: item.relativePath,
+              ...(item.range ? { range: item.range } : {}),
+              extractorId: item.extractorId,
+              extractorVersion: item.extractorVersion,
+              derivation: item.derivation,
+              confidence: item.confidence,
+              statement: item.statement,
+            },
+          ]
+        : [];
+    });
+  }
 }
 export class QueryExplanationService {
-  build(context: QueryContext, parserRule: string, resolved: ResolvedEntity[], data: QueryData, truncation: string[]): QueryExplanation { return { parsedAs: context.query.operation, parserRule, indexesUsed: [...context.indexesUsed], relationshipFamilies: [...context.relationshipFamilies], confidenceThreshold: context.query.filters.confidenceAtLeast, rankingRules: Object.entries(RANKING_WEIGHTS).map(([key, value]) => `${key}=${value}`), truncationReasons: truncation, capabilityBoundaries: [...context.capabilityBoundaries], steps: [`Resolved ${resolved.length} seed selector(s).`, `Executed ${data.kind} against immutable generation ${context.snapshot.manifest.generation}.`, `Returned ${data.items.length} items, ${data.nodes.length} nodes, ${data.relationships.length} relationships, and ${data.paths.length} paths.`] }; }
+  build(
+    context: QueryContext,
+    parserRule: string,
+    resolved: ResolvedEntity[],
+    data: QueryData,
+    truncation: string[],
+  ): QueryExplanation {
+    return {
+      parsedAs: context.query.operation,
+      parserRule,
+      indexesUsed: [...context.indexesUsed],
+      relationshipFamilies: [...context.relationshipFamilies],
+      confidenceThreshold: context.query.filters.confidenceAtLeast,
+      rankingRules: Object.entries(RANKING_WEIGHTS).map(([key, value]) => `${key}=${value}`),
+      truncationReasons: truncation,
+      capabilityBoundaries: [...context.capabilityBoundaries],
+      steps: [
+        `Resolved ${resolved.length} seed selector(s).`,
+        `Executed ${data.kind} against immutable generation ${context.snapshot.manifest.generation}.`,
+        `Returned ${data.items.length} items, ${data.nodes.length} nodes, ${data.relationships.length} relationships, and ${data.paths.length} paths.`,
+      ],
+    };
+  }
 }
-export class QueryDiagnosticsService { unsupported(operation: QueryOperation): QueryDiagnostic { return { code: "unsupported-operation", severity: "error", message: `${operation} is not implemented in the current deterministic query engine.`, limitation: true }; } }
+export class QueryDiagnosticsService {
+  unsupported(operation: QueryOperation): QueryDiagnostic {
+    return {
+      code: "unsupported-operation",
+      severity: "error",
+      message: `${operation} is not implemented in the current deterministic query engine.`,
+      limitation: true,
+    };
+  }
+}
 export class QueryPlanner {
-  plan(query: CompiledIntelligenceQuery, resolved: ResolvedEntity[]): { publicPlan: QueryPlan; requiresSeeds: number; requiresExplicitSelection: boolean } {
-    const requiresSeeds = query.operation === "PATH" ? 2 : ["SEARCH", "CYCLES", "ARCHITECTURE", "DIFFERENCE_BETWEEN"].includes(query.operation) ? 0 : 1;
-    const cpgRequired = ["CPG_SCOPE", "CONTROL_FLOW", "DATA_FLOW", "BACKWARD_SLICE", "FORWARD_SLICE", "CONDITIONS_FOR"].includes(query.operation);
+  plan(
+    query: CompiledIntelligenceQuery,
+    resolved: ResolvedEntity[],
+  ): { publicPlan: QueryPlan; requiresSeeds: number; requiresExplicitSelection: boolean } {
+    const requiresSeeds =
+      query.operation === "PATH"
+        ? 2
+        : ["SEARCH", "CYCLES", "ARCHITECTURE", "DIFFERENCE_BETWEEN"].includes(query.operation)
+          ? 0
+          : 1;
+    const cpgRequired = [
+      "CPG_SCOPE",
+      "CONTROL_FLOW",
+      "DATA_FLOW",
+      "BACKWARD_SLICE",
+      "FORWARD_SLICE",
+      "CONDITIONS_FOR",
+    ].includes(query.operation);
     const requiresExplicitSelection = query.operation !== "SEARCH" && requiresSeeds > 0;
-    const relationshipFamilies = query.filters.relationshipTypes?.length ? query.filters.relationshipTypes : defaultRelationshipFamilies(query.operation);
+    const relationshipFamilies = query.filters.relationshipTypes?.length
+      ? query.filters.relationshipTypes
+      : defaultRelationshipFamilies(query.operation);
     const indexesSelected = planIndexes(query.operation);
     const publicPlan: QueryPlan = {
       operation: query.operation,
-      resolvedSeedIds: resolved.flatMap((item) => item.selected?.id ? [item.selected.id] : []),
-      ambiguousCandidateIds: resolved.filter((item) => item.ambiguous || item.requiresSelection).flatMap((item) => item.candidates.map((candidate) => candidate.id)).slice(0, 200),
+      resolvedSeedIds: resolved.flatMap((item) => (item.selected?.id ? [item.selected.id] : [])),
+      ambiguousCandidateIds: resolved
+        .filter((item) => item.ambiguous || item.requiresSelection)
+        .flatMap((item) => item.candidates.map((candidate) => candidate.id))
+        .slice(0, 200),
       indexesSelected,
       relationshipFamilies,
-      traversalDirection: query.operation === "USAGES" || query.operation === "DEPENDENTS" || query.operation === "IMPACT" || query.operation === "TESTS_FOR" || query.operation === "DATA_USAGE" || query.operation === "CONFIGURATION_USAGE" ? "incoming" : query.operation === "DEPENDENCIES" || query.operation === "FLOW" ? "outgoing" : query.traversal.direction,
-      maximumDepth: ["SEARCH", "ENTITY"].includes(query.operation) ? 0 : query.operation === "USAGES" ? 1 : Math.min(query.traversal.maxDepth, query.limits.depth),
+      traversalDirection:
+        query.operation === "USAGES" ||
+        query.operation === "DEPENDENTS" ||
+        query.operation === "IMPACT" ||
+        query.operation === "TESTS_FOR" ||
+        query.operation === "DATA_USAGE" ||
+        query.operation === "CONFIGURATION_USAGE"
+          ? "incoming"
+          : query.operation === "DEPENDENCIES" || query.operation === "FLOW"
+            ? "outgoing"
+            : query.traversal.direction,
+      maximumDepth: ["SEARCH", "ENTITY"].includes(query.operation)
+        ? 0
+        : query.operation === "USAGES"
+          ? 1
+          : Math.min(query.traversal.maxDepth, query.limits.depth),
       confidenceThreshold: query.filters.confidenceAtLeast,
-      capabilityThresholds: query.filters.capabilityLevels ?? ["deep", "semantic", "structural", "metadata-only", "unsupported"],
+      capabilityThresholds: query.filters.capabilityLevels ?? [
+        "deep",
+        "semantic",
+        "structural",
+        "metadata-only",
+        "unsupported",
+      ],
       cpgRequired,
       resultLimits: query.limits,
       evidenceRequired: query.include.evidence,
-      timeBudgetMs: query.limits.timeBudgetMs
+      timeBudgetMs: query.limits.timeBudgetMs,
     };
     return { publicPlan, requiresSeeds, requiresExplicitSelection };
   }
 }
 
 export class QueryExecutor {
-  readonly resolver = new EntityResolver(); readonly search = new SearchService(); readonly traversal = new GraphTraversalService(); readonly path = new PathQueryService(); readonly impact = new ImpactQueryService(this.traversal); readonly flow = new FlowQueryService(); readonly architecture = new ArchitectureQueryService(); readonly dependencies = new DependencyQueryService(this.traversal); readonly usages = new UsageQueryService(); readonly tests = new TestQueryService(); readonly changes: ChangeQueryService; readonly cpg: CpgQueryFacade;
-  constructor(store: IntelligenceSnapshotReader, cpg: CpgQueryService) { this.changes = new ChangeQueryService(store); this.cpg = new CpgQueryFacade(cpg); }
-  async execute(context: QueryContext, resolved: ResolvedEntity[]): Promise<QueryData> { const seeds = resolved.flatMap((item) => item.selected?.id ? [item.selected.id] : []); switch (context.query.operation) {
-    case "SEARCH": { const all = await this.search.search(context, context.query.seeds?.[0]); const offset = queryCursor(context.query.limits.cursor); return QueryDataSchema.parse({ kind: "search", items: all.slice(offset, offset + context.query.limits.results), nodes: [], relationships: [], paths: [], sections: {}, metrics: { total: all.length, offset } }); }
-    case "ENTITY": { const item = seeds[0] ? context.entityById.get(seeds[0]) : undefined; return QueryDataSchema.parse({ kind: "entity", items: item ? [toItem(item, 1, ["resolved seed"])] : [], nodes: [], relationships: [], paths: [], sections: {}, metrics: {} }); }
-    case "NEIGHBORHOOD": { const result = await this.traversal.traverse(context, seeds); return QueryDataSchema.parse({ kind: "neighborhood", items: result.nodes, nodes: result.nodes, relationships: result.relationships, paths: [], sections: {}, metrics: { nodes: result.nodes.length, relationships: result.relationships.length } }); }
-    case "USAGES": return this.usages.query(context, seeds); case "DEPENDENCIES": return this.dependencies.query(context, seeds, false); case "DEPENDENTS": case "DATA_USAGE": case "CONFIGURATION_USAGE": return this.dependencies.query(context, seeds, true);
-    case "PATH": return this.path.find(context, seeds[0]!, seeds[1]!); case "IMPACT": return this.impact.analyze(context, seeds); case "FLOW": return this.flow.reconstruct(context, seeds);
-    case "TESTS_FOR": return this.tests.query(context, seeds); case "UNTESTED": return this.tests.query(context, seeds, true);
-    case "ARCHITECTURE": return this.architecture.analyze(context); case "CYCLES": return this.architecture.analyze(context, true);
-    case "CHANGES_TO": case "DIFFERENCE_BETWEEN": return this.changes.analyze(context, seeds);
-    case "CPG_SCOPE": case "CONTROL_FLOW": case "DATA_FLOW": case "BACKWARD_SLICE": case "FORWARD_SLICE": case "CONDITIONS_FOR": return this.cpg.execute(context, resolved);
-    case "OKF_CONCEPT": context.diagnostics.push(new QueryDiagnosticsService().unsupported(context.query.operation)); return QueryDataSchema.parse({ kind: "unsupported", items: [], nodes: [], relationships: [], paths: [], sections: {}, metrics: {} });
-  } }
+  readonly resolver = new EntityResolver();
+  readonly search = new SearchService();
+  readonly traversal = new GraphTraversalService();
+  readonly path = new PathQueryService();
+  readonly impact = new ImpactQueryService(this.traversal);
+  readonly flow = new FlowQueryService();
+  readonly architecture = new ArchitectureQueryService();
+  readonly dependencies = new DependencyQueryService(this.traversal);
+  readonly usages = new UsageQueryService();
+  readonly tests = new TestQueryService();
+  readonly changes: ChangeQueryService;
+  readonly cpg: CpgQueryFacade;
+  constructor(store: IntelligenceSnapshotReader, cpg: CpgQueryService) {
+    this.changes = new ChangeQueryService(store);
+    this.cpg = new CpgQueryFacade(cpg);
+  }
+  async execute(context: QueryContext, resolved: ResolvedEntity[]): Promise<QueryData> {
+    const seeds = resolved.flatMap((item) => (item.selected?.id ? [item.selected.id] : []));
+    switch (context.query.operation) {
+      case "SEARCH": {
+        const all = await this.search.search(context, context.query.seeds?.[0]);
+        const offset = queryCursor(context.query.limits.cursor);
+        return QueryDataSchema.parse({
+          kind: "search",
+          items: all.slice(offset, offset + context.query.limits.results),
+          nodes: [],
+          relationships: [],
+          paths: [],
+          sections: {},
+          metrics: { total: all.length, offset },
+        });
+      }
+      case "ENTITY": {
+        const item = seeds[0] ? context.entityById.get(seeds[0]) : undefined;
+        return QueryDataSchema.parse({
+          kind: "entity",
+          items: item ? [toItem(item, 1, ["resolved seed"])] : [],
+          nodes: [],
+          relationships: [],
+          paths: [],
+          sections: {},
+          metrics: {},
+        });
+      }
+      case "NEIGHBORHOOD": {
+        const result = await this.traversal.traverse(context, seeds);
+        return QueryDataSchema.parse({
+          kind: "neighborhood",
+          items: result.nodes,
+          nodes: result.nodes,
+          relationships: result.relationships,
+          paths: [],
+          sections: {},
+          metrics: { nodes: result.nodes.length, relationships: result.relationships.length },
+        });
+      }
+      case "USAGES":
+        return this.usages.query(context, seeds);
+      case "DEPENDENCIES":
+        return this.dependencies.query(context, seeds, false);
+      case "DEPENDENTS":
+      case "DATA_USAGE":
+      case "CONFIGURATION_USAGE":
+        return this.dependencies.query(context, seeds, true);
+      case "PATH":
+        return this.path.find(context, seeds[0]!, seeds[1]!);
+      case "IMPACT":
+        return this.impact.analyze(context, seeds);
+      case "FLOW":
+        return this.flow.reconstruct(context, seeds);
+      case "TESTS_FOR":
+        return this.tests.query(context, seeds);
+      case "UNTESTED":
+        return this.tests.query(context, seeds, true);
+      case "ARCHITECTURE":
+        return this.architecture.analyze(context);
+      case "CYCLES":
+        return this.architecture.analyze(context, true);
+      case "CHANGES_TO":
+      case "DIFFERENCE_BETWEEN":
+        return this.changes.analyze(context, seeds);
+      case "CPG_SCOPE":
+      case "CONTROL_FLOW":
+      case "DATA_FLOW":
+      case "BACKWARD_SLICE":
+      case "FORWARD_SLICE":
+      case "CONDITIONS_FOR":
+        return this.cpg.execute(context, resolved);
+      case "OKF_CONCEPT":
+        context.diagnostics.push(
+          new QueryDiagnosticsService().unsupported(context.query.operation),
+        );
+        return QueryDataSchema.parse({
+          kind: "unsupported",
+          items: [],
+          nodes: [],
+          relationships: [],
+          paths: [],
+          sections: {},
+          metrics: {},
+        });
+    }
+  }
 }
 
 export class CompleteQueryEngine {
-  readonly compiler = new QueryCompiler(); readonly planner = new QueryPlanner(); readonly executor: QueryExecutor; readonly evidence = new EvidenceAssembler(); readonly explanations = new QueryExplanationService(); private generation = 0; private readonly latencies: number[] = [];
-  constructor(private readonly store: IntelligenceSnapshotReader, cpg: CpgQueryService, private readonly cache = new QueryCache()) { this.executor = new QueryExecutor(store, cpg); }
-  compile(text: string, context?: Parameters<QueryCompiler["compile"]>[1]) { return this.compiler.compile(text, context); }
-  async query(raw: IntelligenceQuery, signal?: AbortSignal, parserRule = "structured-query", requestedQueryId?: string): Promise<IntelligenceQueryResult> {
-    const query = IntelligenceQuerySchema.parse(raw); const snapshot = this.store.getSnapshot(); const started = performance.now(); const queryId = requestedQueryId ?? crypto.randomUUID();
-    if (!snapshot) return emptyResult(queryId, query.operation, started, [{ code: "intelligence-unavailable", severity: "error", message: "No active intelligence generation is available." }]);
-    if (query.generation && query.generation !== snapshot.manifest.generation) return emptyResult(queryId, query.operation, started, [{ code: "generation-unavailable", severity: "error", message: `Requested generation ${query.generation} is not active.`, limitation: true }], snapshot);
-    if (query.branch && query.branch !== snapshot.repository.branch) return emptyResult(queryId, query.operation, started, [{ code: "branch-unavailable", severity: "error", message: `Requested branch ${query.branch} is not the active retained branch.`, limitation: true }], snapshot);
-    if (this.generation !== snapshot.manifest.generation) { this.cache.invalidateGeneration(snapshot.manifest.generation); this.generation = snapshot.manifest.generation; }
-    const context = new QueryContext(query, snapshot, signal); context.check(); const resolved = await this.executor.resolver.resolve(query, context); const plan = this.planner.plan(query, resolved); if ((query.seeds?.length ?? 0) < plan.requiresSeeds) context.diagnostics.push({ code: "missing-seed", severity: "error", message: `${query.operation} requires ${plan.requiresSeeds} explicit seed selector(s).` }); if (plan.requiresExplicitSelection && resolved.some((item) => item.requiresSelection)) context.diagnostics.push({ code: "ambiguous-seed", severity: "error", message: "Explicit entity selection is required before this bounded analysis can run." });
-    const seedIds = resolved.flatMap((item) => item.selected?.id ? [item.selected.id] : []); const versions = versionIdentity(snapshot, this.store); const key = stableStringify({ query, seedIds, versions }); const cached = context.diagnostics.some((item) => item.severity === "error") ? undefined : this.cache.get(key, snapshot.manifest.generation, versions); if (cached) return { ...cached, queryId, executionTimeMs: performance.now() - started, cacheState: "hit" };
-    let data = QueryDataSchema.parse({ kind: query.operation.toLowerCase(), items: [], nodes: [], relationships: [], paths: [], sections: {}, metrics: {} }); let truncation: string[] = [];
-    if (!context.diagnostics.some((item) => item.severity === "error")) try { data = await this.executor.execute(context, resolved); } catch (cause) { if (cause instanceof Error && cause.name === "AbortError") throw cause; context.diagnostics.push({ code: cause instanceof Error && cause.name === "TimeoutError" ? "time-budget-exceeded" : "query-execution-failed", severity: "error", message: cause instanceof Error ? cause.message : String(cause), limitation: cause instanceof Error && cause.name === "TimeoutError" }); truncation = cause instanceof Error && cause.name === "TimeoutError" ? ["time budget reached"] : []; }
-    const evidence = this.evidence.assemble(context, data); const truncated = truncation.length > 0 || Number(data.metrics.total ?? 0) > Number(data.metrics.offset ?? 0) + data.items.length || data.nodes.length >= query.limits.nodes || data.relationships.length >= query.limits.edges || data.paths.some((path) => path.truncated); const pageable = query.operation === "SEARCH" || query.operation === "USAGES"; const continuationToken = pageable && Number(data.metrics.total ?? 0) > Number(data.metrics.offset ?? 0) + data.items.length ? String(Number(data.metrics.offset ?? 0) + data.items.length) : undefined; const result = IntelligenceQueryResultSchema.parse({ queryId, operation: query.operation, generation: snapshot.manifest.generation, repositoryState: { repositoryId: snapshot.repository.id, ...(snapshot.repository.branch ? { branch: snapshot.repository.branch } : {}), ...(snapshot.repository.headCommit ? { headCommit: snapshot.repository.headCommit } : {}), generation: snapshot.manifest.generation }, executionTimeMs: performance.now() - started, resolvedSeeds: resolved, plan: plan.publicPlan, data, evidence, diagnostics: context.diagnostics.slice(0, 100), explanation: this.explanations.build(context, parserRule, resolved, data, truncation), truncated, ...(continuationToken ? { continuationToken } : {}), cacheState: "miss" });
-    if (!result.diagnostics.some((item) => item.severity === "error")) this.cache.set(key, snapshot.manifest.generation, versions, [...seedIds, ...data.items.map((item) => item.id)], result); this.latencies.push(result.executionTimeMs); if (this.latencies.length > 100) this.latencies.shift(); return result;
+  readonly compiler = new QueryCompiler();
+  readonly planner = new QueryPlanner();
+  readonly executor: QueryExecutor;
+  readonly evidence = new EvidenceAssembler();
+  readonly explanations = new QueryExplanationService();
+  private generation = 0;
+  private readonly latencies: number[] = [];
+  constructor(
+    private readonly store: IntelligenceSnapshotReader,
+    cpg: CpgQueryService,
+    private readonly cache = new QueryCache(),
+  ) {
+    this.executor = new QueryExecutor(store, cpg);
   }
-  metrics() { return { queryCount: this.latencies.length, averageLatencyMs: this.latencies.length ? this.latencies.reduce((sum, value) => sum + value, 0) / this.latencies.length : 0, cacheEntries: this.cache.size() }; }
+  compile(text: string, context?: Parameters<QueryCompiler["compile"]>[1]) {
+    return this.compiler.compile(text, context);
+  }
+  async query(
+    raw: IntelligenceQuery,
+    signal?: AbortSignal,
+    parserRule = "structured-query",
+    requestedQueryId?: string,
+  ): Promise<IntelligenceQueryResult> {
+    const query = IntelligenceQuerySchema.parse(raw);
+    const snapshot = this.store.getSnapshot();
+    const started = performance.now();
+    const queryId = requestedQueryId ?? crypto.randomUUID();
+    if (!snapshot)
+      return emptyResult(queryId, query.operation, started, [
+        {
+          code: "intelligence-unavailable",
+          severity: "error",
+          message: "No active intelligence generation is available.",
+        },
+      ]);
+    if (query.generation && query.generation !== snapshot.manifest.generation)
+      return emptyResult(
+        queryId,
+        query.operation,
+        started,
+        [
+          {
+            code: "generation-unavailable",
+            severity: "error",
+            message: `Requested generation ${query.generation} is not active.`,
+            limitation: true,
+          },
+        ],
+        snapshot,
+      );
+    if (query.branch && query.branch !== snapshot.repository.branch)
+      return emptyResult(
+        queryId,
+        query.operation,
+        started,
+        [
+          {
+            code: "branch-unavailable",
+            severity: "error",
+            message: `Requested branch ${query.branch} is not the active retained branch.`,
+            limitation: true,
+          },
+        ],
+        snapshot,
+      );
+    if (this.generation !== snapshot.manifest.generation) {
+      this.cache.invalidateGeneration(snapshot.manifest.generation);
+      this.generation = snapshot.manifest.generation;
+    }
+    const context = new QueryContext(query, snapshot, signal);
+    context.check();
+    const resolved = await this.executor.resolver.resolve(query, context);
+    const plan = this.planner.plan(query, resolved);
+    if ((query.seeds?.length ?? 0) < plan.requiresSeeds)
+      context.diagnostics.push({
+        code: "missing-seed",
+        severity: "error",
+        message: `${query.operation} requires ${plan.requiresSeeds} explicit seed selector(s).`,
+      });
+    if (plan.requiresExplicitSelection && resolved.some((item) => item.requiresSelection))
+      context.diagnostics.push({
+        code: "ambiguous-seed",
+        severity: "error",
+        message: "Explicit entity selection is required before this bounded analysis can run.",
+      });
+    const seedIds = resolved.flatMap((item) => (item.selected?.id ? [item.selected.id] : []));
+    const versions = versionIdentity(snapshot, this.store);
+    const key = stableStringify({ query, seedIds, versions });
+    const cached = context.diagnostics.some((item) => item.severity === "error")
+      ? undefined
+      : this.cache.get(key, snapshot.manifest.generation, versions);
+    if (cached)
+      return {
+        ...cached,
+        queryId,
+        executionTimeMs: performance.now() - started,
+        cacheState: "hit",
+      };
+    let data = QueryDataSchema.parse({
+      kind: query.operation.toLowerCase(),
+      items: [],
+      nodes: [],
+      relationships: [],
+      paths: [],
+      sections: {},
+      metrics: {},
+    });
+    let truncation: string[] = [];
+    if (!context.diagnostics.some((item) => item.severity === "error"))
+      try {
+        data = await this.executor.execute(context, resolved);
+      } catch (cause) {
+        if (cause instanceof Error && cause.name === "AbortError") throw cause;
+        context.diagnostics.push({
+          code:
+            cause instanceof Error && cause.name === "TimeoutError"
+              ? "time-budget-exceeded"
+              : "query-execution-failed",
+          severity: "error",
+          message: cause instanceof Error ? cause.message : String(cause),
+          limitation: cause instanceof Error && cause.name === "TimeoutError",
+        });
+        truncation =
+          cause instanceof Error && cause.name === "TimeoutError" ? ["time budget reached"] : [];
+      }
+    const evidence = this.evidence.assemble(context, data);
+    const truncated =
+      truncation.length > 0 ||
+      Number(data.metrics.total ?? 0) > Number(data.metrics.offset ?? 0) + data.items.length ||
+      data.nodes.length >= query.limits.nodes ||
+      data.relationships.length >= query.limits.edges ||
+      data.paths.some((path) => path.truncated);
+    const pageable = query.operation === "SEARCH" || query.operation === "USAGES";
+    const continuationToken =
+      pageable &&
+      Number(data.metrics.total ?? 0) > Number(data.metrics.offset ?? 0) + data.items.length
+        ? String(Number(data.metrics.offset ?? 0) + data.items.length)
+        : undefined;
+    const result = IntelligenceQueryResultSchema.parse({
+      queryId,
+      operation: query.operation,
+      generation: snapshot.manifest.generation,
+      repositoryState: {
+        repositoryId: snapshot.repository.id,
+        ...(snapshot.repository.branch ? { branch: snapshot.repository.branch } : {}),
+        ...(snapshot.repository.headCommit ? { headCommit: snapshot.repository.headCommit } : {}),
+        generation: snapshot.manifest.generation,
+      },
+      executionTimeMs: performance.now() - started,
+      resolvedSeeds: resolved,
+      plan: plan.publicPlan,
+      data,
+      evidence,
+      diagnostics: context.diagnostics.slice(0, 100),
+      explanation: this.explanations.build(context, parserRule, resolved, data, truncation),
+      truncated,
+      ...(continuationToken ? { continuationToken } : {}),
+      cacheState: "miss",
+    });
+    if (!result.diagnostics.some((item) => item.severity === "error"))
+      this.cache.set(
+        key,
+        snapshot.manifest.generation,
+        versions,
+        [...seedIds, ...data.items.map((item) => item.id)],
+        result,
+      );
+    this.latencies.push(result.executionTimeMs);
+    if (this.latencies.length > 100) this.latencies.shift();
+    return result;
+  }
+  metrics() {
+    return {
+      queryCount: this.latencies.length,
+      averageLatencyMs: this.latencies.length
+        ? this.latencies.reduce((sum, value) => sum + value, 0) / this.latencies.length
+        : 0,
+      cacheEntries: this.cache.size(),
+    };
+  }
 }
 
-function indexMap(index: Record<string, string[]> | undefined, relationships: IntelligenceRelationshipRecord[], field: "sourceId" | "targetId"): Map<string, string[]> { if (index) return new Map(Object.entries(index)); const result = new Map<string, string[]>(); for (const relation of relationships) { const id = relation[field]; result.set(id, [...(result.get(id) ?? []), relation.id]); } return result; }
-function entityType(entity: Entity): string { return "type" in entity ? entity.type : "keystone.core.File"; }
-function entityName(entity: Entity): string { return "name" in entity ? entity.name : entity.relativePath.split("/").at(-1) ?? entity.relativePath; }
-function entityQualifiedName(entity: Entity): string { return "qualifiedName" in entity ? entity.qualifiedName : entity.relativePath; }
-function entityPath(entity: Entity): string { return "relativePath" in entity ? entity.relativePath : ""; }
-function entityFileId(entity: Entity): string { return "fileId" in entity ? entity.fileId : entity.id; }
-function normalize(value: string): string { return value.trim().toLowerCase().replace(/\\/g, "/"); }
-function queryCursor(value: string | undefined): number { return value && /^\d+$/.test(value) ? Number(value) : 0; }
-function tokens(value: string): string[] { return normalize(value.replace(/([a-z0-9])([A-Z])/g, "$1 $2")).split(/[^a-z0-9]+/).filter(Boolean); }
-function matchesEntityFilters(entity: Entity, types: readonly string[] | undefined, languages: readonly string[] | undefined, context: QueryContext): boolean { if (types?.length && !types.includes(entityType(entity))) return false; if (languages?.length && !languages.includes(entity.language)) return false; const file = context.snapshot.files.find((item) => item.id === entityFileId(entity)); if (context.query.filters.modules?.length && (!file?.moduleId || !context.query.filters.modules.includes(file.moduleId))) return false; if (context.query.filters.packages?.length && (!file?.packageId || !context.query.filters.packages.includes(file.packageId))) return false; if (context.query.filters.publicOnly && "visibility" in entity && entity.visibility && entity.visibility !== "public" || context.query.filters.publicOnly && "exported" in entity && entity.exported === false) return false; return true; }
-function classificationForEntity(entity: Entity, context: QueryContext): Classification { const evidence = entity.evidenceIds.flatMap((id) => { const value = context.evidenceById.get(id); return value ? [value] : []; }); if (evidence.some((item) => item.derivation === "calculated")) return "structurally-inferred"; if (evidence.some((item) => item.derivation === "framework-rule")) return "structurally-inferred"; return "exact"; }
-function classificationForRelation(relation: IntelligenceRelationshipRecord): Classification { if (relation.resolution === "convention") return "convention-based"; if (relation.resolution === "candidate") return "candidate"; if (relation.resolution === "unresolved") return "unresolved"; if (relation.derivation === "calculated") return "structurally-inferred"; return relation.confidence === 1 ? "exact" : "resolved"; }
-function usageScore(category: string, classification: Classification, confidence: number): number { const categoryWeight = category === "called-by" || category === "instantiated-by" ? 300 : category === "tested-by" || category === "mocked-by" ? 250 : category === "referenced-by" || category === "imported-by" ? 200 : 150; const classificationWeight = classification === "exact" ? 500 : classification === "resolved" ? 400 : classification === "structurally-inferred" ? 300 : classification === "convention-based" ? 150 : classification === "candidate" ? 100 : 0; return categoryWeight + classificationWeight + confidence * 100; }
-function compareUsageRelationships(left: IntelligenceRelationshipRecord, right: IntelligenceRelationshipRecord): number { return usageClassificationRank(classificationForRelation(right)) - usageClassificationRank(classificationForRelation(left)) || right.confidence - left.confidence || left.id.localeCompare(right.id); }
-function usageClassificationRank(value: Classification): number { return ({ exact: 7, resolved: 6, "cpg-assisted": 5, "structurally-inferred": 4, "convention-based": 3, candidate: 2, unresolved: 1 } as Record<Classification, number>)[value]; }
-function toItem(entity: Entity, score: number, reasons: string[], classification: Classification = "exact"): QueryResultItem { return { id: entity.id, type: entityType(entity), name: entityName(entity), qualifiedName: entityQualifiedName(entity), relativePath: entityPath(entity), score, confidence: "confidence" in entity ? entity.confidence : 1, classification, rankingReasons: reasons.slice(0, 20) }; }
-function relationshipAllowed(relation: IntelligenceRelationshipRecord, context: QueryContext): boolean { return relation.confidence >= context.query.filters.confidenceAtLeast && (!context.query.filters.relationshipTypes?.length || context.query.filters.relationshipTypes.includes(relation.type)); }
-function relationshipRisk(relation: IntelligenceRelationshipRecord): number { const explicit = relation.properties?.riskWeight; return typeof explicit === "number" ? explicit : relation.type.includes("WRITES") || relation.type.includes("PERSISTS") ? 3 : relation.confidence < 0.8 ? 2 : 1; }
+function indexMap(
+  index: Record<string, string[]> | undefined,
+  relationships: IntelligenceRelationshipRecord[],
+  field: "sourceId" | "targetId",
+): Map<string, string[]> {
+  if (index) return new Map(Object.entries(index));
+  const result = new Map<string, string[]>();
+  for (const relation of relationships) {
+    const id = relation[field];
+    result.set(id, [...(result.get(id) ?? []), relation.id]);
+  }
+  return result;
+}
+function entityType(entity: Entity): string {
+  return "type" in entity ? entity.type : "keystone.core.File";
+}
+function entityName(entity: Entity): string {
+  return "name" in entity
+    ? entity.name
+    : (entity.relativePath.split("/").at(-1) ?? entity.relativePath);
+}
+function entityQualifiedName(entity: Entity): string {
+  return "qualifiedName" in entity ? entity.qualifiedName : entity.relativePath;
+}
+function entityPath(entity: Entity): string {
+  return "relativePath" in entity ? entity.relativePath : "";
+}
+function entityFileId(entity: Entity): string {
+  return "fileId" in entity ? entity.fileId : entity.id;
+}
+function normalize(value: string): string {
+  return value.trim().toLowerCase().replace(/\\/g, "/");
+}
+function queryCursor(value: string | undefined): number {
+  return value && /^\d+$/.test(value) ? Number(value) : 0;
+}
+function tokens(value: string): string[] {
+  return normalize(value.replace(/([a-z0-9])([A-Z])/g, "$1 $2"))
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+}
+function matchesEntityFilters(
+  entity: Entity,
+  types: readonly string[] | undefined,
+  languages: readonly string[] | undefined,
+  context: QueryContext,
+): boolean {
+  if (types?.length && !types.includes(entityType(entity))) return false;
+  if (languages?.length && !languages.includes(entity.language)) return false;
+  const file = context.snapshot.files.find((item) => item.id === entityFileId(entity));
+  if (
+    context.query.filters.modules?.length &&
+    (!file?.moduleId || !context.query.filters.modules.includes(file.moduleId))
+  )
+    return false;
+  if (
+    context.query.filters.packages?.length &&
+    (!file?.packageId || !context.query.filters.packages.includes(file.packageId))
+  )
+    return false;
+  if (
+    (context.query.filters.publicOnly &&
+      "visibility" in entity &&
+      entity.visibility &&
+      entity.visibility !== "public") ||
+    (context.query.filters.publicOnly && "exported" in entity && entity.exported === false)
+  )
+    return false;
+  return true;
+}
+function classificationForEntity(entity: Entity, context: QueryContext): Classification {
+  const evidence = entity.evidenceIds.flatMap((id) => {
+    const value = context.evidenceById.get(id);
+    return value ? [value] : [];
+  });
+  if (evidence.some((item) => item.derivation === "calculated")) return "structurally-inferred";
+  if (evidence.some((item) => item.derivation === "framework-rule")) return "structurally-inferred";
+  return "exact";
+}
+function classificationForRelation(relation: IntelligenceRelationshipRecord): Classification {
+  if (relation.resolution === "convention") return "convention-based";
+  if (relation.resolution === "candidate") return "candidate";
+  if (relation.resolution === "unresolved") return "unresolved";
+  if (relation.derivation === "calculated") return "structurally-inferred";
+  return relation.confidence === 1 ? "exact" : "resolved";
+}
+function usageScore(category: string, classification: Classification, confidence: number): number {
+  const categoryWeight =
+    category === "called-by" || category === "instantiated-by"
+      ? 300
+      : category === "tested-by" || category === "mocked-by"
+        ? 250
+        : category === "referenced-by" || category === "imported-by"
+          ? 200
+          : 150;
+  const classificationWeight =
+    classification === "exact"
+      ? 500
+      : classification === "resolved"
+        ? 400
+        : classification === "structurally-inferred"
+          ? 300
+          : classification === "convention-based"
+            ? 150
+            : classification === "candidate"
+              ? 100
+              : 0;
+  return categoryWeight + classificationWeight + confidence * 100;
+}
+function compareUsageRelationships(
+  left: IntelligenceRelationshipRecord,
+  right: IntelligenceRelationshipRecord,
+): number {
+  return (
+    usageClassificationRank(classificationForRelation(right)) -
+      usageClassificationRank(classificationForRelation(left)) ||
+    right.confidence - left.confidence ||
+    left.id.localeCompare(right.id)
+  );
+}
+function usageClassificationRank(value: Classification): number {
+  return (
+    {
+      exact: 7,
+      resolved: 6,
+      "cpg-assisted": 5,
+      "structurally-inferred": 4,
+      "convention-based": 3,
+      candidate: 2,
+      unresolved: 1,
+    } as Record<Classification, number>
+  )[value];
+}
+function toItem(
+  entity: Entity,
+  score: number,
+  reasons: string[],
+  classification: Classification = "exact",
+): QueryResultItem {
+  return {
+    id: entity.id,
+    type: entityType(entity),
+    name: entityName(entity),
+    qualifiedName: entityQualifiedName(entity),
+    relativePath: entityPath(entity),
+    score,
+    confidence: "confidence" in entity ? entity.confidence : 1,
+    classification,
+    rankingReasons: reasons.slice(0, 20),
+  };
+}
+function relationshipAllowed(
+  relation: IntelligenceRelationshipRecord,
+  context: QueryContext,
+): boolean {
+  return (
+    relation.confidence >= context.query.filters.confidenceAtLeast &&
+    (!context.query.filters.relationshipTypes?.length ||
+      context.query.filters.relationshipTypes.includes(relation.type))
+  );
+}
+function relationshipRisk(relation: IntelligenceRelationshipRecord): number {
+  const explicit = relation.properties?.riskWeight;
+  return typeof explicit === "number"
+    ? explicit
+    : relation.type.includes("WRITES") || relation.type.includes("PERSISTS")
+      ? 3
+      : relation.confidence < 0.8
+        ? 2
+        : 1;
+}
 function pathResult(
-  current: { entities: string[]; relations: IntelligenceRelationshipRecord[]; confidence: number; risk: number },
+  current: {
+    entities: string[];
+    relations: IntelligenceRelationshipRecord[];
+    confidence: number;
+    risk: number;
+  },
   context: QueryContext,
   boundaries: string[] = [],
-  directions?: Array<"incoming" | "outgoing">
+  directions?: Array<"incoming" | "outgoing">,
 ): QueryData["paths"][number] {
   const steps: QueryPathStep[] = current.entities.flatMap((id, index) => {
-    const entity = context.entityById.get(id); if (!entity) return [];
+    const entity = context.entityById.get(id);
+    if (!entity) return [];
     const relation = index ? current.relations[index - 1] : undefined;
     if (relation) context.relationshipFamilies.add(relation.type);
     const capability = capabilityBoundary(entity, context);
-    if (capability) { context.capabilityBoundaries.add(capability); boundaries.push(capability); }
-    return [{
-      entityId: id,
-      entityName: entityName(entity),
-      entityType: entityType(entity),
-      ...(relation ? { relationshipId: relation.id, relationshipType: relation.type, ...(directions?.[index - 1] ? { traversalDirection: directions[index - 1] } : {}) } : {}),
-      confidence: relation?.confidence ?? ("confidence" in entity ? entity.confidence : 1),
-      classification: relation ? classificationForRelation(relation) : classificationForEntity(entity, context),
-      evidenceIds: relation?.evidenceIds.slice(0, 20) ?? entity.evidenceIds.slice(0, 20),
-      ...(capability ? { capabilityBoundary: capability } : {})
-    }];
+    if (capability) {
+      context.capabilityBoundaries.add(capability);
+      boundaries.push(capability);
+    }
+    return [
+      {
+        entityId: id,
+        entityName: entityName(entity),
+        entityType: entityType(entity),
+        ...(relation
+          ? {
+              relationshipId: relation.id,
+              relationshipType: relation.type,
+              ...(directions?.[index - 1] ? { traversalDirection: directions[index - 1] } : {}),
+            }
+          : {}),
+        confidence: relation?.confidence ?? ("confidence" in entity ? entity.confidence : 1),
+        classification: relation
+          ? classificationForRelation(relation)
+          : classificationForEntity(entity, context),
+        evidenceIds: relation?.evidenceIds.slice(0, 20) ?? entity.evidenceIds.slice(0, 20),
+        ...(capability ? { capabilityBoundary: capability } : {}),
+      },
+    ];
   });
-  return { steps, confidence: current.confidence, risk: current.risk, unsupportedBoundaries: [...new Set(boundaries)], truncated: boundaries.includes("flow depth boundary") };
+  return {
+    steps,
+    confidence: current.confidence,
+    risk: current.risk,
+    unsupportedBoundaries: [...new Set(boundaries)],
+    truncated: boundaries.includes("flow depth boundary"),
+  };
 }
-function cyclePath(cycle: string[], edges: IntelligenceRelationshipRecord[], context: QueryContext): QueryData["paths"][number] {
-  const relations = cycle.slice(1).map((id, index) => edges.find((edge) => edge.sourceId === cycle[index] && edge.targetId === id));
+function cyclePath(
+  cycle: string[],
+  edges: IntelligenceRelationshipRecord[],
+  context: QueryContext,
+): QueryData["paths"][number] {
+  const relations = cycle
+    .slice(1)
+    .map((id, index) =>
+      edges.find((edge) => edge.sourceId === cycle[index] && edge.targetId === id),
+    );
   const steps = cycle.flatMap((id, index): QueryPathStep[] => {
-    const entity = context.entityById.get(id); if (!entity) return [];
-    const relation = index ? relations[index - 1] : undefined; if (relation) context.relationshipFamilies.add(relation.type);
-    return [{ entityId: id, entityName: entityName(entity), entityType: entityType(entity), ...(relation ? { relationshipId: relation.id, relationshipType: relation.type } : {}), confidence: relation?.confidence ?? ("confidence" in entity ? entity.confidence : 1), classification: relation ? classificationForRelation(relation) : classificationForEntity(entity, context), evidenceIds: relation?.evidenceIds.slice(0, 20) ?? entity.evidenceIds.slice(0, 20) }];
+    const entity = context.entityById.get(id);
+    if (!entity) return [];
+    const relation = index ? relations[index - 1] : undefined;
+    if (relation) context.relationshipFamilies.add(relation.type);
+    return [
+      {
+        entityId: id,
+        entityName: entityName(entity),
+        entityType: entityType(entity),
+        ...(relation ? { relationshipId: relation.id, relationshipType: relation.type } : {}),
+        confidence: relation?.confidence ?? ("confidence" in entity ? entity.confidence : 1),
+        classification: relation
+          ? classificationForRelation(relation)
+          : classificationForEntity(entity, context),
+        evidenceIds: relation?.evidenceIds.slice(0, 20) ?? entity.evidenceIds.slice(0, 20),
+      },
+    ];
   });
-  const resolvedRelations = relations.filter((value): value is IntelligenceRelationshipRecord => Boolean(value));
-  return { steps, confidence: resolvedRelations.length ? Math.min(...resolvedRelations.map((relation) => relation.confidence)) : 0, risk: resolvedRelations.reduce((sum, relation) => sum + relationshipRisk(relation), 0), unsupportedBoundaries: relations.some((relation) => !relation) ? ["unresolved dependency-cycle edge"] : [], truncated: false };
+  const resolvedRelations = relations.filter((value): value is IntelligenceRelationshipRecord =>
+    Boolean(value),
+  );
+  return {
+    steps,
+    confidence: resolvedRelations.length
+      ? Math.min(...resolvedRelations.map((relation) => relation.confidence))
+      : 0,
+    risk: resolvedRelations.reduce((sum, relation) => sum + relationshipRisk(relation), 0),
+    unsupportedBoundaries: relations.some((relation) => !relation)
+      ? ["unresolved dependency-cycle edge"]
+      : [],
+    truncated: false,
+  };
 }
-function capabilityBoundary(entity: Entity, context: QueryContext): string | undefined { const state = context.snapshot.manifest.extractorVersions; if (["typescript", "typescriptreact", "javascript", "javascriptreact"].includes(entity.language)) return undefined; if ("type" in entity && Object.keys(state).some((key) => key.startsWith("keystone.adapter."))) return `${entity.language}: structural capability boundary`; return `${entity.language}: metadata or unsupported capability boundary`; }
-function impactFamily(entity: Entity): "behavioral" | "contract" | "data" | "tests" | "architecture" | undefined { const type = entityType(entity); if (/Route|Endpoint|Contract|Schema|Request|Response|Api/.test(type)) return "contract"; if (/Function|Method|Command|Job|Event|Handler/.test(type)) return "behavioral"; if (/Table|Column|Orm|Database|Migration|Query/.test(type)) return "data"; if (/Test|Fixture|Mock|Coverage/.test(type)) return "tests"; if (/Package|Module|Layer|Service|BuildTarget/.test(type)) return "architecture"; return undefined; }
-function riskFactors(id: string, entity: Entity, context: QueryContext, traversal: TraversalResult): { score: number; factors: string[] } { const factors: string[] = []; let score = 0; const incoming = context.incoming.get(id)?.length ?? 0; const outgoing = context.outgoing.get(id)?.length ?? 0; if ("exported" in entity && entity.exported) { score += 20; factors.push("public API exposure +20"); } if (incoming > 5) { score += Math.min(20, incoming * 2); factors.push(`fan-in ${incoming} +${Math.min(20, incoming * 2)}`); } if (outgoing > 5) { score += Math.min(15, outgoing); factors.push(`fan-out ${outgoing} +${Math.min(15, outgoing)}`); } const family = impactFamily(entity); if (family === "data") { score += 20; factors.push("data/schema reach +20"); } if (family === "contract") { score += 20; factors.push("contract surface +20"); } if (("codeAnalysis" in entity && entity.codeAnalysis?.branches)) { const value = Math.min(15, entity.codeAnalysis.branches); score += value; factors.push(`CPG branch count ${entity.codeAnalysis.branches} +${value}`); } const tested = context.snapshot.relationships.some((relation) => relation.targetId === id && TEST_TYPES.has(relation.type)); if (!tested) { score += 15; factors.push("test gap +15"); } const low = traversal.relationships.filter((relation) => (relation.sourceId === id || relation.targetId === id) && relation.confidence < 0.8).length; if (low) { score += Math.min(10, low * 2); factors.push(`low-confidence mappings ${low} +${Math.min(10, low * 2)}`); } return { score: Math.min(100, score), factors }; }
-function isTestEntity(entity: Entity | undefined): boolean { return Boolean(entity && (/Test|Fixture|Mock/.test(entityType(entity)) || "isTest" in entity && entity.isTest)); }
-function isPublicExecutable(entity: IntelligenceSymbolRecord): boolean { return /Function|Method|Constructor|Endpoint|Command/.test(entity.type) && (entity.visibility === "public" || entity.exported === true); }
-function testMappingItem(entity: Entity, relation: IntelligenceRelationshipRecord): QueryResultItem { const tier = relation.type === "keystone.core.COVERS" ? "coverage-confirmed" : relation.type === "keystone.core.CALLS" && relation.resolution === "compiler" ? "exact-resolved-call" : relation.resolution === "exact" || relation.resolution === "compiler" ? "exact-reference/import" : relation.resolution === "framework" ? "framework-binding" : "naming-candidate"; const score = ({ "coverage-confirmed": 1000, "exact-resolved-call": 900, "exact-reference/import": 800, "framework-binding": 650, "naming-candidate": 300 } as Record<string, number>)[tier]!; return { ...toItem(entity, score, [tier], classificationForRelation(relation)), group: tier, details: { relationshipId: relation.id } }; }
-function findCycles(edges: IntelligenceRelationshipRecord[], limit: number, maxDepth: number): string[][] { const adjacency = new Map<string, string[]>(); for (const edge of edges) adjacency.set(edge.sourceId, [...(adjacency.get(edge.sourceId) ?? []), edge.targetId]); const cycles: string[][] = []; const canonical = new Set<string>(); for (const start of adjacency.keys()) { const visit = (id: string, path: string[]): void => { if (path.length > maxDepth || cycles.length >= limit) return; for (const next of adjacency.get(id) ?? []) { const at = path.indexOf(next); if (at >= 0) { const cycle = [...path.slice(at), next]; const key = [...new Set(cycle)].sort().join("|"); if (!canonical.has(key)) { canonical.add(key); cycles.push(cycle); } } else visit(next, [...path, next]); } }; visit(start, [start]); if (cycles.length >= limit) break; } return cycles; }
-function layerOrder(layer: string): number { return ({ presentation: 1, ui: 1, application: 2, domain: 3, data: 4, infrastructure: 5 } as Record<string, number>)[layer.toLowerCase()] ?? 0; }
-function structuralIdentity(entity: Entity): string { return JSON.stringify([entityType(entity), entityQualifiedName(entity), "signature" in entity ? entity.signature : undefined, "properties" in entity ? entity.properties : undefined, "contentHash" in entity ? entity.contentHash : undefined]); }
-function changeKind(oldValue: Entity, next: Entity): string { if ("signature" in oldValue && "signature" in next && oldValue.signature !== next.signature) return "signature-change"; const oldPath = "properties" in oldValue ? oldValue.properties?.path : undefined; const nextPath = "properties" in next ? next.properties?.path : undefined; if (oldPath !== nextPath && (/Route|Endpoint/.test(entityType(next)))) return "route-change"; if (/Schema|Table|Column|Migration/.test(entityType(next))) return "schema-change"; return "modified"; }
-function changeItem(entity: Entity, kind: string, fromGeneration: number): QueryResultItem { return { ...toItem(entity, 1, [`${kind} since generation ${fromGeneration}`], "resolved"), group: kind, details: { changeKind: kind, fromGeneration } }; }
-function stableStringify(value: unknown): string { if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`; if (value && typeof value === "object") return `{${Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => `${JSON.stringify(key)}:${stableStringify(item)}`).join(",")}}`; return JSON.stringify(value); }
-function versionIdentity(snapshot: IntelligenceSnapshot, store: IntelligenceSnapshotReader): string { const adapters = store.getAdapterState?.()?.capabilities.map((item) => `${item.adapterId}@${item.version}`).sort() ?? []; const cpg = store.getCpgManifest?.(); return stableStringify({ ontology: snapshot.manifest.schemaVersion, extractors: snapshot.manifest.extractorVersions, adapters, cpg: cpg ? { generation: cpg.semanticGeneration, versions: cpg.providerVersions, scopes: cpg.scopes.map((item) => `${item.id}:${item.structuralHash}`) } : undefined }); }
-function defaultRelationshipFamilies(operation: QueryOperation): string[] { if (operation === "USAGES") return [...USAGE_CATEGORIES.keys()]; if (operation === "DEPENDENCIES" || operation === "DEPENDENTS") return [...DEPENDENCY_TYPES]; if (operation === "FLOW") return [...FLOW_TYPES]; if (operation === "TESTS_FOR" || operation === "UNTESTED") return [...TEST_TYPES]; return []; }
-function planIndexes(operation: QueryOperation): string[] { if (operation === "SEARCH") return ["entity-scan"]; if (operation === "USAGES" || operation === "DEPENDENTS" || operation === "IMPACT" || operation === "TESTS_FOR" || operation === "DATA_USAGE" || operation === "CONFIGURATION_USAGE") return ["entity-scan", "incoming-adjacency", "relationship-type"]; if (operation === "DEPENDENCIES" || operation === "FLOW") return ["entity-scan", "outgoing-adjacency", "relationship-type"]; if (operation === "PATH") return ["entity-scan", "incoming-adjacency", "outgoing-adjacency", "relationship-type"]; if (["CPG_SCOPE", "CONTROL_FLOW", "DATA_FLOW", "BACKWARD_SLICE", "FORWARD_SLICE", "CONDITIONS_FOR"].includes(operation)) return ["entity-scan", "cpg-scope", "cpg-node"]; return ["entity-scan"]; }
-function emptyResult(queryId: string, operation: QueryOperation, started: number, diagnostics: QueryDiagnostic[], snapshot?: IntelligenceSnapshot): IntelligenceQueryResult { return IntelligenceQueryResultSchema.parse({ queryId, operation, generation: snapshot?.manifest.generation ?? 0, repositoryState: { repositoryId: snapshot?.repository.id ?? "unavailable", generation: snapshot?.manifest.generation ?? 0 }, executionTimeMs: performance.now() - started, resolvedSeeds: [], plan: { operation, resolvedSeedIds: [], ambiguousCandidateIds: [], indexesSelected: planIndexes(operation), relationshipFamilies: defaultRelationshipFamilies(operation), traversalDirection: "both", maximumDepth: 0, confidenceThreshold: 0, capabilityThresholds: ["deep", "semantic", "structural", "metadata-only", "unsupported"], cpgRequired: ["CPG_SCOPE", "CONTROL_FLOW", "DATA_FLOW", "BACKWARD_SLICE", "FORWARD_SLICE", "CONDITIONS_FOR"].includes(operation), resultLimits: { results: 25, nodes: 100, edges: 300, paths: 5, depth: 3, evidence: 30, timeBudgetMs: 1000 }, evidenceRequired: true, timeBudgetMs: 1000 }, data: { kind: "unavailable", items: [], nodes: [], relationships: [], paths: [], sections: {}, metrics: {} }, evidence: [], diagnostics, explanation: { parsedAs: operation, parserRule: "structured-query", indexesUsed: [], relationshipFamilies: [], confidenceThreshold: 0, rankingRules: [], truncationReasons: [], capabilityBoundaries: [], steps: [] }, truncated: false, cacheState: "bypassed" }); }
+function capabilityBoundary(entity: Entity, context: QueryContext): string | undefined {
+  const state = context.snapshot.manifest.extractorVersions;
+  if (["typescript", "typescriptreact", "javascript", "javascriptreact"].includes(entity.language))
+    return undefined;
+  if ("type" in entity && Object.keys(state).some((key) => key.startsWith("keystone.adapter.")))
+    return `${entity.language}: structural capability boundary`;
+  return `${entity.language}: metadata or unsupported capability boundary`;
+}
+function impactFamily(
+  entity: Entity,
+): "behavioral" | "contract" | "data" | "tests" | "architecture" | undefined {
+  const type = entityType(entity);
+  if (/Route|Endpoint|Contract|Schema|Request|Response|Api/.test(type)) return "contract";
+  if (/Function|Method|Command|Job|Event|Handler/.test(type)) return "behavioral";
+  if (/Table|Column|Orm|Database|Migration|Query/.test(type)) return "data";
+  if (/Test|Fixture|Mock|Coverage/.test(type)) return "tests";
+  if (/Package|Module|Layer|Service|BuildTarget/.test(type)) return "architecture";
+  return undefined;
+}
+function riskFactors(
+  id: string,
+  entity: Entity,
+  context: QueryContext,
+  traversal: TraversalResult,
+): { score: number; factors: string[] } {
+  const factors: string[] = [];
+  let score = 0;
+  const incoming = context.incoming.get(id)?.length ?? 0;
+  const outgoing = context.outgoing.get(id)?.length ?? 0;
+  if ("exported" in entity && entity.exported) {
+    score += 20;
+    factors.push("public API exposure +20");
+  }
+  if (incoming > 5) {
+    score += Math.min(20, incoming * 2);
+    factors.push(`fan-in ${incoming} +${Math.min(20, incoming * 2)}`);
+  }
+  if (outgoing > 5) {
+    score += Math.min(15, outgoing);
+    factors.push(`fan-out ${outgoing} +${Math.min(15, outgoing)}`);
+  }
+  const family = impactFamily(entity);
+  if (family === "data") {
+    score += 20;
+    factors.push("data/schema reach +20");
+  }
+  if (family === "contract") {
+    score += 20;
+    factors.push("contract surface +20");
+  }
+  if ("codeAnalysis" in entity && entity.codeAnalysis?.branches) {
+    const value = Math.min(15, entity.codeAnalysis.branches);
+    score += value;
+    factors.push(`CPG branch count ${entity.codeAnalysis.branches} +${value}`);
+  }
+  const tested = context.snapshot.relationships.some(
+    (relation) => relation.targetId === id && TEST_TYPES.has(relation.type),
+  );
+  if (!tested) {
+    score += 15;
+    factors.push("test gap +15");
+  }
+  const low = traversal.relationships.filter(
+    (relation) =>
+      (relation.sourceId === id || relation.targetId === id) && relation.confidence < 0.8,
+  ).length;
+  if (low) {
+    score += Math.min(10, low * 2);
+    factors.push(`low-confidence mappings ${low} +${Math.min(10, low * 2)}`);
+  }
+  return { score: Math.min(100, score), factors };
+}
+function isTestEntity(entity: Entity | undefined): boolean {
+  return Boolean(
+    entity &&
+    (/Test|Fixture|Mock/.test(entityType(entity)) || ("isTest" in entity && entity.isTest)),
+  );
+}
+function isPublicExecutable(entity: IntelligenceSymbolRecord): boolean {
+  return (
+    /Function|Method|Constructor|Endpoint|Command/.test(entity.type) &&
+    (entity.visibility === "public" || entity.exported === true)
+  );
+}
+function testMappingItem(
+  entity: Entity,
+  relation: IntelligenceRelationshipRecord,
+): QueryResultItem {
+  const tier =
+    relation.type === "keystone.core.COVERS"
+      ? "coverage-confirmed"
+      : relation.type === "keystone.core.CALLS" && relation.resolution === "compiler"
+        ? "exact-resolved-call"
+        : relation.resolution === "exact" || relation.resolution === "compiler"
+          ? "exact-reference/import"
+          : relation.resolution === "framework"
+            ? "framework-binding"
+            : "naming-candidate";
+  const score = (
+    {
+      "coverage-confirmed": 1000,
+      "exact-resolved-call": 900,
+      "exact-reference/import": 800,
+      "framework-binding": 650,
+      "naming-candidate": 300,
+    } as Record<string, number>
+  )[tier]!;
+  return {
+    ...toItem(entity, score, [tier], classificationForRelation(relation)),
+    group: tier,
+    details: { relationshipId: relation.id },
+  };
+}
+function findCycles(
+  edges: IntelligenceRelationshipRecord[],
+  limit: number,
+  maxDepth: number,
+): string[][] {
+  const adjacency = new Map<string, string[]>();
+  for (const edge of edges)
+    adjacency.set(edge.sourceId, [...(adjacency.get(edge.sourceId) ?? []), edge.targetId]);
+  const cycles: string[][] = [];
+  const canonical = new Set<string>();
+  for (const start of adjacency.keys()) {
+    const visit = (id: string, path: string[]): void => {
+      if (path.length > maxDepth || cycles.length >= limit) return;
+      for (const next of adjacency.get(id) ?? []) {
+        const at = path.indexOf(next);
+        if (at >= 0) {
+          const cycle = [...path.slice(at), next];
+          const key = [...new Set(cycle)].sort().join("|");
+          if (!canonical.has(key)) {
+            canonical.add(key);
+            cycles.push(cycle);
+          }
+        } else visit(next, [...path, next]);
+      }
+    };
+    visit(start, [start]);
+    if (cycles.length >= limit) break;
+  }
+  return cycles;
+}
+function layerOrder(layer: string): number {
+  return (
+    (
+      { presentation: 1, ui: 1, application: 2, domain: 3, data: 4, infrastructure: 5 } as Record<
+        string,
+        number
+      >
+    )[layer.toLowerCase()] ?? 0
+  );
+}
+function structuralIdentity(entity: Entity): string {
+  return JSON.stringify([
+    entityType(entity),
+    entityQualifiedName(entity),
+    "signature" in entity ? entity.signature : undefined,
+    "properties" in entity ? entity.properties : undefined,
+    "contentHash" in entity ? entity.contentHash : undefined,
+  ]);
+}
+function changeKind(oldValue: Entity, next: Entity): string {
+  if ("signature" in oldValue && "signature" in next && oldValue.signature !== next.signature)
+    return "signature-change";
+  const oldPath = "properties" in oldValue ? oldValue.properties?.path : undefined;
+  const nextPath = "properties" in next ? next.properties?.path : undefined;
+  if (oldPath !== nextPath && /Route|Endpoint/.test(entityType(next))) return "route-change";
+  if (/Schema|Table|Column|Migration/.test(entityType(next))) return "schema-change";
+  return "modified";
+}
+function changeItem(entity: Entity, kind: string, fromGeneration: number): QueryResultItem {
+  return {
+    ...toItem(entity, 1, [`${kind} since generation ${fromGeneration}`], "resolved"),
+    group: kind,
+    details: { changeKind: kind, fromGeneration },
+  };
+}
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  if (value && typeof value === "object")
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, item]) => `${JSON.stringify(key)}:${stableStringify(item)}`)
+      .join(",")}}`;
+  return JSON.stringify(value);
+}
+function versionIdentity(
+  snapshot: IntelligenceSnapshot,
+  store: IntelligenceSnapshotReader,
+): string {
+  const adapters =
+    store
+      .getAdapterState?.()
+      ?.capabilities.map((item) => `${item.adapterId}@${item.version}`)
+      .sort() ?? [];
+  const cpg = store.getCpgManifest?.();
+  return stableStringify({
+    ontology: snapshot.manifest.schemaVersion,
+    extractors: snapshot.manifest.extractorVersions,
+    adapters,
+    cpg: cpg
+      ? {
+          generation: cpg.semanticGeneration,
+          versions: cpg.providerVersions,
+          scopes: cpg.scopes.map((item) => `${item.id}:${item.structuralHash}`),
+        }
+      : undefined,
+  });
+}
+function defaultRelationshipFamilies(operation: QueryOperation): string[] {
+  if (operation === "USAGES") return [...USAGE_CATEGORIES.keys()];
+  if (operation === "DEPENDENCIES" || operation === "DEPENDENTS") return [...DEPENDENCY_TYPES];
+  if (operation === "FLOW") return [...FLOW_TYPES];
+  if (operation === "TESTS_FOR" || operation === "UNTESTED") return [...TEST_TYPES];
+  return [];
+}
+function planIndexes(operation: QueryOperation): string[] {
+  if (operation === "SEARCH") return ["entity-scan"];
+  if (
+    operation === "USAGES" ||
+    operation === "DEPENDENTS" ||
+    operation === "IMPACT" ||
+    operation === "TESTS_FOR" ||
+    operation === "DATA_USAGE" ||
+    operation === "CONFIGURATION_USAGE"
+  )
+    return ["entity-scan", "incoming-adjacency", "relationship-type"];
+  if (operation === "DEPENDENCIES" || operation === "FLOW")
+    return ["entity-scan", "outgoing-adjacency", "relationship-type"];
+  if (operation === "PATH")
+    return ["entity-scan", "incoming-adjacency", "outgoing-adjacency", "relationship-type"];
+  if (
+    [
+      "CPG_SCOPE",
+      "CONTROL_FLOW",
+      "DATA_FLOW",
+      "BACKWARD_SLICE",
+      "FORWARD_SLICE",
+      "CONDITIONS_FOR",
+    ].includes(operation)
+  )
+    return ["entity-scan", "cpg-scope", "cpg-node"];
+  return ["entity-scan"];
+}
+function emptyResult(
+  queryId: string,
+  operation: QueryOperation,
+  started: number,
+  diagnostics: QueryDiagnostic[],
+  snapshot?: IntelligenceSnapshot,
+): IntelligenceQueryResult {
+  return IntelligenceQueryResultSchema.parse({
+    queryId,
+    operation,
+    generation: snapshot?.manifest.generation ?? 0,
+    repositoryState: {
+      repositoryId: snapshot?.repository.id ?? "unavailable",
+      generation: snapshot?.manifest.generation ?? 0,
+    },
+    executionTimeMs: performance.now() - started,
+    resolvedSeeds: [],
+    plan: {
+      operation,
+      resolvedSeedIds: [],
+      ambiguousCandidateIds: [],
+      indexesSelected: planIndexes(operation),
+      relationshipFamilies: defaultRelationshipFamilies(operation),
+      traversalDirection: "both",
+      maximumDepth: 0,
+      confidenceThreshold: 0,
+      capabilityThresholds: ["deep", "semantic", "structural", "metadata-only", "unsupported"],
+      cpgRequired: [
+        "CPG_SCOPE",
+        "CONTROL_FLOW",
+        "DATA_FLOW",
+        "BACKWARD_SLICE",
+        "FORWARD_SLICE",
+        "CONDITIONS_FOR",
+      ].includes(operation),
+      resultLimits: {
+        results: 25,
+        nodes: 100,
+        edges: 300,
+        paths: 5,
+        depth: 3,
+        evidence: 30,
+        timeBudgetMs: 1000,
+      },
+      evidenceRequired: true,
+      timeBudgetMs: 1000,
+    },
+    data: {
+      kind: "unavailable",
+      items: [],
+      nodes: [],
+      relationships: [],
+      paths: [],
+      sections: {},
+      metrics: {},
+    },
+    evidence: [],
+    diagnostics,
+    explanation: {
+      parsedAs: operation,
+      parserRule: "structured-query",
+      indexesUsed: [],
+      relationshipFamilies: [],
+      confidenceThreshold: 0,
+      rankingRules: [],
+      truncationReasons: [],
+      capabilityBoundaries: [],
+      steps: [],
+    },
+    truncated: false,
+    cacheState: "bypassed",
+  });
+}

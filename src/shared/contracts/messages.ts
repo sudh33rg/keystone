@@ -114,8 +114,8 @@ import {
   type DelegationSession,
   type DevelopmentWorkflowSnapshot,
   type PreparedDelegation,
-  type TaskContextPackage,
 } from "./delegation";
+import type { ContextPackage } from "./contextPackage";
 import {
   WorkbenchClarificationAnswerPayloadSchema,
   WorkbenchClarificationPayloadSchema,
@@ -218,10 +218,7 @@ import {
   type TeamPersistentState,
   type TeamProgressSnapshot,
 } from "./team";
-import {
-  ExecutionRoutingRequestSchema,
-  type ExecutionRoutingDecision,
-} from "./routing";
+import { ExecutionRoutingRequestSchema, type ExecutionRoutingDecision } from "./routing";
 import {
   OrchestrationCreatePayloadSchema,
   OrchestrationDecisionPayloadSchema,
@@ -292,7 +289,14 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
   request("review/getTraceability", ReviewWorkflowPayloadSchema),
   request("review/getChanges", ReviewWorkflowPayloadSchema),
   request("review/getDiff", ReviewDiffPayloadSchema),
-  request("review/attributeChange", ReviewWorkflowPayloadSchema.extend({ path: z.string().min(1).max(1024), classification: z.enum(["expected", "related", "pre-existing", "excluded"]), reason: z.string().min(1).max(2000) }).strict()),
+  request(
+    "review/attributeChange",
+    ReviewWorkflowPayloadSchema.extend({
+      path: z.string().min(1).max(1024),
+      classification: z.enum(["expected", "related", "pre-existing", "excluded"]),
+      reason: z.string().min(1).max(2000),
+    }).strict(),
+  ),
   request("review/getQa", ReviewWorkflowPayloadSchema),
   request("review/getSecurity", ReviewWorkflowPayloadSchema),
   request("review/getPerformance", ReviewWorkflowPayloadSchema),
@@ -321,7 +325,10 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
   request("complete/cancelWithChanges", CompleteDecisionPayloadSchema),
   request("complete/archive", ReviewWorkflowPayloadSchema),
   request("complete/getChangeSet", ReviewWorkflowPayloadSchema),
-  request("complete/updateChangeSet", DeliveryFileDecisionPayloadSchema.extend({ included: z.boolean() }).strict()),
+  request(
+    "complete/updateChangeSet",
+    DeliveryFileDecisionPayloadSchema.extend({ included: z.boolean() }).strict(),
+  ),
   request("complete/generateCommitPlan", DeliveryChangeSetPayloadSchema),
   request("complete/updateCommitPlan", z.object({ commitPlan: CommitPlanSchema }).strict()),
   request("complete/approveStaging", CompleteApprovalPayloadSchema),
@@ -335,10 +342,22 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
   request("complete/preparePr", ReviewWorkflowPayloadSchema),
   request("complete/approvePrCreation", CompleteApprovalPayloadSchema),
   request("complete/createPr", z.object({ approvalId: z.string().uuid() }).strict()),
-  request("complete/confirmAssistedPr", z.object({ workflowId: z.string().uuid(), url: z.string().url().max(2000), confirm: z.literal(true) }).strict()),
+  request(
+    "complete/confirmAssistedPr",
+    z
+      .object({
+        workflowId: z.string().uuid(),
+        url: z.string().url().max(2000),
+        confirm: z.literal(true),
+      })
+      .strict(),
+  ),
   request("complete/preparePatch", CompletePatchPayloadSchema),
   request("complete/approvePatchExport", CompleteApprovalPayloadSchema),
-  request("complete/exportPatch", z.object({ workflowId: z.string().uuid(), approvalId: z.string().uuid() }).strict()),
+  request(
+    "complete/exportPatch",
+    z.object({ workflowId: z.string().uuid(), approvalId: z.string().uuid() }).strict(),
+  ),
   request("complete/prepareHandoff", ReviewWorkflowPayloadSchema),
   request("complete/exportHandoff", z.object({ packageId: z.string().uuid() }).strict()),
   request("orchestration/create", OrchestrationCreatePayloadSchema),
@@ -360,10 +379,7 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
   request("orchestration/cancelTask", OrchestrationTaskActionPayloadSchema),
   request("orchestration/retryTask", OrchestrationTaskActionPayloadSchema),
   request("orchestration/changeAgent", OrchestrationTaskActionPayloadSchema),
-  request(
-    "orchestration/skipOptionalTask",
-    OrchestrationTaskActionPayloadSchema,
-  ),
+  request("orchestration/skipOptionalTask", OrchestrationTaskActionPayloadSchema),
   request("orchestration/schedule", OrchestrationIdPayloadSchema),
   request("orchestration/conflicts", OrchestrationIdPayloadSchema),
   request("orchestration/approvals", OrchestrationIdPayloadSchema),
@@ -382,10 +398,7 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
   request("orchestration/securityAccept", OrchestrationFindingPayloadSchema),
   request("orchestration/performancePlan", OrchestrationIdPayloadSchema),
   request("orchestration/performanceRun", OrchestrationIdPayloadSchema),
-  request(
-    "orchestration/performanceFinding",
-    OrchestrationFindingPayloadSchema,
-  ),
+  request("orchestration/performanceFinding", OrchestrationFindingPayloadSchema),
   request("orchestration/performanceAccept", OrchestrationFindingPayloadSchema),
   request("orchestration/validationPlan", OrchestrationIdPayloadSchema),
   request("orchestration/runValidation", OrchestrationIdPayloadSchema),
@@ -403,10 +416,7 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
       z.object({ section: NavigationSectionSchema }).strict(),
     ]),
   ),
-  request(
-    "settings/open",
-    z.object({ query: z.string().max(120).optional() }).strict(),
-  ),
+  request("settings/open", z.object({ query: z.string().max(120).optional() }).strict()),
   request("logs/show", z.object({}).strict()),
   request("intelligence/overview", z.object({}).strict()),
   request("intelligence/scan/start", z.object({}).strict()),
@@ -435,13 +445,37 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
   request("intelligence/cpg", IntelligenceQuerySchema),
   request("intelligence/cpg/scope", CpgScopeQuerySchema),
   request("intelligence/cpg/slice", CpgSliceQuerySchema),
-  request("intelligence/exported-symbols", z.object({ fileId: z.string().min(1).optional() }).strict()),
-  request("intelligence/wildcard-search", z.object({ pattern: z.string().min(1).max(500), fields: z.array(z.enum(["name", "qualifiedName", "relativePath", "type", "language"])).max(5).optional(), limit: z.number().int().min(1).max(200).optional() }).strict()),
+  request(
+    "intelligence/exported-symbols",
+    z.object({ fileId: z.string().min(1).optional() }).strict(),
+  ),
+  request(
+    "intelligence/wildcard-search",
+    z
+      .object({
+        pattern: z.string().min(1).max(500),
+        fields: z
+          .array(z.enum(["name", "qualifiedName", "relativePath", "type", "language"]))
+          .max(5)
+          .optional(),
+        limit: z.number().int().min(1).max(200).optional(),
+      })
+      .strict(),
+  ),
   request("intelligence/module-mapping", z.object({}).strict()),
   request("intelligence/circular-dependencies", z.object({}).strict()),
   request("intelligence/node-metrics", z.object({}).strict()),
   request("intelligence/dead-code", z.object({}).strict()),
-  request("intelligence/filtered-subgraph", z.object({ seedIds: z.array(z.string().min(1)).min(1).max(20), direction: z.enum(["incoming", "outgoing", "both"]).optional(), maxDepth: z.number().int().min(1).max(10).optional() }).strict()),
+  request(
+    "intelligence/filtered-subgraph",
+    z
+      .object({
+        seedIds: z.array(z.string().min(1)).min(1).max(20),
+        direction: z.enum(["incoming", "outgoing", "both"]).optional(),
+        maxDepth: z.number().int().min(1).max(10).optional(),
+      })
+      .strict(),
+  ),
   request("intelligence/cyclomatic-complexity", z.object({}).strict()),
   request(
     "intelligence/source/open",
@@ -464,36 +498,22 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
   request("workbench/getCreateContext", z.object({}).strict()),
   request("workbench/createWorkflow", WorkbenchCreateWorkflowPayloadSchema),
   request("workbench/getWorkflow", WorkflowIdPayloadSchema),
+  request("workflow/updateStage", z.object({ workflowId: z.string().uuid(), stageId: z.string() })),
   request("workbench/listWorkflows", z.object({}).strict()),
   request("workbench/openWorkflow", WorkbenchStageNavigationPayloadSchema),
   request("workbench/getDefineState", WorkflowIdPayloadSchema),
   request("workbench/updateIntent", WorkbenchIntentUpdatePayloadSchema),
   request("workbench/updateScope", WorkbenchScopeUpdatePayloadSchema),
-  request(
-    "workbench/updateConstraints",
-    WorkbenchConstraintsUpdatePayloadSchema,
-  ),
+  request("workbench/updateConstraints", WorkbenchConstraintsUpdatePayloadSchema),
   request("workbench/getClarifications", WorkflowIdPayloadSchema),
-  request(
-    "workbench/answerClarification",
-    WorkbenchClarificationAnswerPayloadSchema,
-  ),
+  request("workbench/answerClarification", WorkbenchClarificationAnswerPayloadSchema),
   request("workbench/deferClarification", WorkbenchClarificationPayloadSchema),
-  request(
-    "workbench/markClarificationNotApplicable",
-    WorkbenchClarificationPayloadSchema,
-  ),
+  request("workbench/markClarificationNotApplicable", WorkbenchClarificationPayloadSchema),
   request("workbench/reopenClarification", WorkbenchClarificationPayloadSchema),
   request("workbench/generateSpecification", WorkflowIdPayloadSchema),
-  request(
-    "workbench/updateSpecification",
-    WorkbenchSpecificationUpdatePayloadSchema,
-  ),
+  request("workbench/updateSpecification", WorkbenchSpecificationUpdatePayloadSchema),
   request("workbench/generateAcceptanceCriteria", WorkflowIdPayloadSchema),
-  request(
-    "workbench/approveSpecification",
-    WorkbenchSpecificationApprovePayloadSchema,
-  ),
+  request("workbench/approveSpecification", WorkbenchSpecificationApprovePayloadSchema),
   request("workbench/getPlanState", WorkflowIdPayloadSchema),
   request("workbench/generateTaskPlan", WorkflowIdPayloadSchema),
   request("workbench/updateTask", WorkbenchTaskUpdatePayloadSchema),
@@ -516,10 +536,7 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
   request("build/cancelTask", BuildTaskPayloadSchema),
   request("build/getCopilotCapabilities", BuildTaskPayloadSchema),
   request("build/getCustomizations", BuildTaskPayloadSchema),
-  request(
-    "build/updateCustomizationSelection",
-    BuildCustomizationSelectionPayloadSchema,
-  ),
+  request("build/updateCustomizationSelection", BuildCustomizationSelectionPayloadSchema),
   request("build/getAgents", BuildTaskPayloadSchema),
   request("build/selectAgent", BuildSelectAgentPayloadSchema),
   request("build/createContext", ContextBuildPayloadSchema),
@@ -548,10 +565,7 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
       .strict(),
   ),
   request("build/refreshChanges", ExecutionSessionPayloadSchema),
-  request(
-    "build/getValidationPlan",
-    z.object({ planId: z.string().uuid() }).strict(),
-  ),
+  request("build/getValidationPlan", z.object({ planId: z.string().uuid() }).strict()),
   request("build/runValidation", ValidationRunPayloadSchema),
   request("build/cancelValidation", ValidationRunIdPayloadSchema),
   request(
@@ -594,7 +608,10 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
   request("copilot/recommendAgent", CopilotScopePayloadSchema),
   request("copilot/listKeystoneTools", z.object({}).strict()),
   request("copilot/getToolStatus", z.object({ toolName: z.string().min(1).max(100) }).strict()),
-  request("copilot/getToolAudit", z.object({ limit: z.number().int().min(1).max(200).default(50) }).strict()),
+  request(
+    "copilot/getToolAudit",
+    z.object({ limit: z.number().int().min(1).max(200).default(50) }).strict(),
+  ),
   request("copilot/testTool", CopilotToolTestPayloadSchema),
   request("copilot/prepareAssistedLaunch", AssistedLaunchPayloadSchema),
   request("copilot/getPreparedPrompt", AssistedLaunchIdPayloadSchema),
@@ -649,10 +666,7 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
   request("execution/attributeChange", AttributeChangePayloadSchema),
   request("execution/captureResult", CaptureResultPayloadSchema),
   request("validation/plan", ValidationPlanPayloadSchema),
-  request(
-    "validation/getPlan",
-    z.object({ planId: z.string().uuid() }).strict(),
-  ),
+  request("validation/getPlan", z.object({ planId: z.string().uuid() }).strict()),
   request(
     "validation/updatePlan",
     z
@@ -731,16 +745,11 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
     z
       .object({
         changeSetId: z.string().uuid(),
-        convention: z
-          .enum(["conventional", "plain", "repository", "user-template"])
-          .optional(),
+        convention: z.enum(["conventional", "plain", "repository", "user-template"]).optional(),
       })
       .strict(),
   ),
-  request(
-    "commitPlan/get",
-    z.object({ commitPlanId: z.string().uuid() }).strict(),
-  ),
+  request("commitPlan/get", z.object({ commitPlanId: z.string().uuid() }).strict()),
   request("commitPlan/update", z.object({ plan: CommitPlanSchema }).strict()),
   request(
     "commitPlan/merge",
@@ -783,9 +792,7 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
   ),
   request(
     "commitPlan/approve",
-    z
-      .object({ commitPlanId: z.string().uuid(), confirm: z.literal(true) })
-      .strict(),
+    z.object({ commitPlanId: z.string().uuid(), confirm: z.literal(true) }).strict(),
   ),
   request(
     "git/stage",
@@ -809,9 +816,7 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
   ),
   request(
     "git/createBranch",
-    z
-      .object({ branch: z.string().min(1).max(200), confirm: z.literal(true) })
-      .strict(),
+    z.object({ branch: z.string().min(1).max(200), confirm: z.literal(true) }).strict(),
   ),
   request(
     "git/commit",
@@ -847,10 +852,7 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
       })
       .strict(),
   ),
-  request(
-    "pullRequest/updateDraft",
-    z.object({ draft: PullRequestDraftSchema }).strict(),
-  ),
+  request("pullRequest/updateDraft", z.object({ draft: PullRequestDraftSchema }).strict()),
   request("pullRequest/validate", PullRequestDraftPayloadSchema),
   request(
     "pullRequest/approve",
@@ -875,14 +877,8 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
   request("team/removeParticipant", ParticipantIdPayloadSchema),
   request("team/capabilities", z.object({}).strict()),
   request("assignment/create", AssignmentCreatePayloadSchema),
-  request(
-    "assignment/get",
-    z.object({ assignmentId: z.string().uuid() }).strict(),
-  ),
-  request(
-    "assignment/list",
-    z.object({ workflowId: z.string().uuid().optional() }).strict(),
-  ),
+  request("assignment/get", z.object({ assignmentId: z.string().uuid() }).strict()),
+  request("assignment/list", z.object({ workflowId: z.string().uuid().optional() }).strict()),
   request(
     "assignment/update",
     z
@@ -913,17 +909,11 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
   request("handoff/cancel", HandoffPackageIdPayloadSchema),
   request("progress/workflows", z.object({}).strict()),
   request("progress/tasks", TeamProgressPayloadSchema),
-  request(
-    "progress/assignments",
-    z.object({ workflowId: z.string().uuid().optional() }).strict(),
-  ),
+  request("progress/assignments", z.object({ workflowId: z.string().uuid().optional() }).strict()),
   request("progress/refresh", TeamProgressPayloadSchema),
   request("progress/audit", TeamAuditPayloadSchema),
   request("execution/route", ExecutionRoutingRequestSchema),
-  request(
-    "request/cancel",
-    z.object({ targetRequestId: z.string().uuid() }).strict(),
-  ),
+  request("request/cancel", z.object({ targetRequestId: z.string().uuid() }).strict()),
 ]);
 export type WebviewRequest = z.infer<typeof WebviewRequestSchema>;
 export type WebviewRequestType = WebviewRequest["type"];
@@ -938,13 +928,20 @@ const IntelligenceRuntimeEventPayloadSchema = z
     pendingUpdate: z.boolean(),
     scanRevision: z.number().int().nonnegative(),
     ...IntelligenceRuntimeOverviewSchema.shape,
-    error: z
-      .object({ code: z.string(), message: z.string() })
-      .strict()
-      .optional(),
+    error: z.object({ code: z.string(), message: z.string() }).strict().optional(),
   })
   .strict();
-const CopilotIntegrationEventPayloadSchema = z.object({ repositoryId: z.string().max(500).optional(), workflowId: z.string().uuid().optional(), taskId: z.string().uuid().optional(), generation: z.number().int().nonnegative().optional(), invocationId: z.string().uuid().optional(), message: z.string().max(2000), at: z.string().datetime() }).strict();
+const CopilotIntegrationEventPayloadSchema = z
+  .object({
+    repositoryId: z.string().max(500).optional(),
+    workflowId: z.string().uuid().optional(),
+    taskId: z.string().uuid().optional(),
+    generation: z.number().int().nonnegative().optional(),
+    invocationId: z.string().uuid().optional(),
+    message: z.string().max(2000),
+    at: z.string().datetime(),
+  })
+  .strict();
 
 export const HostMessageSchema = z.discriminatedUnion("type", [
   event("review/stateChanged", ReviewLifecycleEventSchema),
@@ -990,9 +987,7 @@ export const HostMessageSchema = z.discriminatedUnion("type", [
   event("orchestration/findingChanged", OrchestrationEventSchema),
   event(
     "response/success",
-    z
-      .object({ requestId: z.string().uuid(), data: z.unknown().optional() })
-      .strict(),
+    z.object({ requestId: z.string().uuid(), data: z.unknown().optional() }).strict(),
   ),
   event(
     "response/error",
@@ -1057,7 +1052,10 @@ export const HostMessageSchema = z.discriminatedUnion("type", [
   event("copilot/assistedLaunchConfirmed", CopilotIntegrationEventPayloadSchema),
   event("copilot/integrationDiagnosticChanged", CopilotIntegrationEventPayloadSchema),
   event("keystone/initialize", KeystoneInitializationSchema),
-  event("keystone/navigationRequest", ValidatedNavigationSchema.extend({ sequence: z.number().int().nonnegative() }).strict()),
+  event(
+    "keystone/navigationRequest",
+    ValidatedNavigationSchema.extend({ sequence: z.number().int().nonnegative() }).strict(),
+  ),
   event("dashboard/stateChanged", KeystoneDashboardStateSchema),
   event("panel/created", KeystonePanelStateSchema),
   event("panel/revealed", KeystonePanelStateSchema),
@@ -1187,9 +1185,7 @@ export const HostMessageSchema = z.discriminatedUnion("type", [
   ),
   event(
     "validation/cancelled",
-    z
-      .object({ runId: z.string().uuid(), message: z.string().max(2000) })
-      .strict(),
+    z.object({ runId: z.string().uuid(), message: z.string().max(2000) }).strict(),
   ),
   event(
     "retry/prepared",
@@ -1261,21 +1257,14 @@ export const HostMessageSchema = z.discriminatedUnion("type", [
       })
       .strict(),
   ),
-  event(
-    "git/stateChanged",
-    z.object({ message: z.string().max(2000) }).strict(),
-  ),
+  event("git/stateChanged", z.object({ message: z.string().max(2000) }).strict()),
   event(
     "git/actionStarted",
-    z
-      .object({ action: z.string().max(100), message: z.string().max(2000) })
-      .strict(),
+    z.object({ action: z.string().max(100), message: z.string().max(2000) }).strict(),
   ),
   event(
     "git/actionProgress",
-    z
-      .object({ action: z.string().max(100), message: z.string().max(2000) })
-      .strict(),
+    z.object({ action: z.string().max(100), message: z.string().max(2000) }).strict(),
   ),
   event(
     "git/actionCompleted",
@@ -1289,21 +1278,15 @@ export const HostMessageSchema = z.discriminatedUnion("type", [
   ),
   event(
     "git/actionFailed",
-    z
-      .object({ action: z.string().max(100), message: z.string().max(2000) })
-      .strict(),
+    z.object({ action: z.string().max(100), message: z.string().max(2000) }).strict(),
   ),
   event(
     "delivery/changeSetChanged",
-    z
-      .object({ changeSetId: z.string().uuid(), message: z.string().max(2000) })
-      .strict(),
+    z.object({ changeSetId: z.string().uuid(), message: z.string().max(2000) }).strict(),
   ),
   event(
     "delivery/stale",
-    z
-      .object({ changeSetId: z.string().uuid(), message: z.string().max(2000) })
-      .strict(),
+    z.object({ changeSetId: z.string().uuid(), message: z.string().max(2000) }).strict(),
   ),
   event(
     "commitPlan/changed",
@@ -1335,15 +1318,11 @@ export const HostMessageSchema = z.discriminatedUnion("type", [
   ),
   event(
     "pullRequest/draftChanged",
-    z
-      .object({ draftId: z.string().uuid(), message: z.string().max(2000) })
-      .strict(),
+    z.object({ draftId: z.string().uuid(), message: z.string().max(2000) }).strict(),
   ),
   event(
     "pullRequest/creationStarted",
-    z
-      .object({ draftId: z.string().uuid(), message: z.string().max(2000) })
-      .strict(),
+    z.object({ draftId: z.string().uuid(), message: z.string().max(2000) }).strict(),
   ),
   event(
     "pullRequest/created",
@@ -1376,9 +1355,7 @@ export const HostMessageSchema = z.discriminatedUnion("type", [
   ),
   event(
     "pullRequest/stale",
-    z
-      .object({ draftId: z.string().uuid(), message: z.string().max(2000) })
-      .strict(),
+    z.object({ draftId: z.string().uuid(), message: z.string().max(2000) }).strict(),
   ),
   event(
     "team/participantsChanged",
@@ -1404,9 +1381,7 @@ export const HostMessageSchema = z.discriminatedUnion("type", [
   event("handoff/failed", teamLifecycle("packageId", true)),
   event(
     "progress/changed",
-    z
-      .object({ workflowId: z.string().uuid(), message: z.string().max(2000) })
-      .strict(),
+    z.object({ workflowId: z.string().uuid(), message: z.string().max(2000) }).strict(),
   ),
   event(
     "progress/blockerChanged",
@@ -1426,7 +1401,13 @@ export interface WebviewRequestResults {
   "review/getSummary": WorkflowReviewState["summary"];
   "review/getTraceability": WorkflowReviewState["traceability"];
   "review/getChanges": WorkflowReviewState["changes"];
-  "review/getDiff": { path: string; text: string; binary: boolean; truncated: boolean; totalBytes: number };
+  "review/getDiff": {
+    path: string;
+    text: string;
+    binary: boolean;
+    truncated: boolean;
+    totalBytes: number;
+  };
   "review/attributeChange": TaskExecutionSession;
   "review/getQa": WorkflowReviewState["findings"];
   "review/getSecurity": WorkflowReviewState["findings"];
@@ -1630,12 +1611,12 @@ export interface WebviewRequestResults {
   "build/updateCustomizationSelection": CopilotCustomizationItem[];
   "build/getAgents": CopilotAgentDescriptor[];
   "build/selectAgent": DevelopmentWorkflowSnapshot;
-  "build/createContext": TaskContextPackage;
-  "build/getContext": TaskContextPackage | undefined;
-  "build/updateContextItem": TaskContextPackage;
-  "build/pinContextItem": TaskContextPackage;
-  "build/excludeContextItem": TaskContextPackage;
-  "build/regenerateContext": TaskContextPackage;
+  "build/createContext": ContextPackage;
+  "build/getContext": ContextPackage | undefined;
+  "build/updateContextItem": ContextPackage;
+  "build/pinContextItem": ContextPackage;
+  "build/excludeContextItem": ContextPackage;
+  "build/regenerateContext": ContextPackage;
   "build/getPromptPreview": PreparedDelegation | undefined;
   "build/prepareDelegation": PreparedDelegation;
   "build/approveDelegation": PreparedDelegation;
@@ -1711,17 +1692,17 @@ export interface WebviewRequestResults {
   "navigation/validateTarget": ValidatedNavigation;
   "navigation/resolveFallback": ValidatedNavigation;
   "navigation/open": ValidatedNavigation;
-  "context/build": TaskContextPackage;
-  "context/get": TaskContextPackage | undefined;
-  "context/update": TaskContextPackage;
-  "context/addEntity": TaskContextPackage;
-  "context/addFile": TaskContextPackage;
-  "context/removeItem": TaskContextPackage;
-  "context/pinItem": TaskContextPackage;
-  "context/unpinItem": TaskContextPackage;
-  "context/changeBudget": TaskContextPackage;
-  "context/regenerate": TaskContextPackage;
-  "context/validate": TaskContextPackage;
+  "context/build": ContextPackage;
+  "context/get": ContextPackage | undefined;
+  "context/update": ContextPackage;
+  "context/addEntity": ContextPackage;
+  "context/addFile": ContextPackage;
+  "context/removeItem": ContextPackage;
+  "context/pinItem": ContextPackage;
+  "context/unpinItem": ContextPackage;
+  "context/changeBudget": ContextPackage;
+  "context/regenerate": ContextPackage;
+  "context/validate": ContextPackage;
   "delegation/prepare": PreparedDelegation;
   "delegation/getPrompt": PreparedDelegation | undefined;
   "delegation/approve": PreparedDelegation;
@@ -1864,8 +1845,10 @@ export interface WebviewRequestResults {
   "request/cancel": undefined;
 }
 
-export type WebviewResult<T extends WebviewRequestType> =
-  WebviewRequestResults[Extract<keyof WebviewRequestResults, T>];
+export type WebviewResult<T extends WebviewRequestType> = WebviewRequestResults[Extract<
+  keyof WebviewRequestResults,
+  T
+>];
 
 export function hostMessage<T extends HostMessage["type"]>(
   type: T,
@@ -1881,15 +1864,11 @@ export function hostMessage<T extends HostMessage["type"]>(
 }
 
 function request<T extends string, P extends z.ZodType>(type: T, payload: P) {
-  return z
-    .object({ ...envelopeFields, type: z.literal(type), payload })
-    .strict();
+  return z.object({ ...envelopeFields, type: z.literal(type), payload }).strict();
 }
 
 function event<T extends string, P extends z.ZodType>(type: T, payload: P) {
-  return z
-    .object({ ...hostEnvelopeFields, type: z.literal(type), payload })
-    .strict();
+  return z.object({ ...hostEnvelopeFields, type: z.literal(type), payload }).strict();
 }
 
 function teamLifecycle(key: "assignmentId" | "packageId", optional = false) {

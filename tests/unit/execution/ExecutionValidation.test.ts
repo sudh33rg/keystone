@@ -33,11 +33,7 @@ import { intelligenceSnapshot } from "../intelligence/fixtures";
 
 const temporary: string[] = [];
 afterEach(async () =>
-  Promise.all(
-    temporary
-      .splice(0)
-      .map((path) => rm(path, { recursive: true, force: true })),
-  ),
+  Promise.all(temporary.splice(0).map((path) => rm(path, { recursive: true, force: true }))),
 );
 const NOW = "2026-07-16T10:00:00.000Z";
 const TASK = "10000000-0000-4000-8000-000000000001";
@@ -100,9 +96,7 @@ function session(status: TaskExecutionStatus = "executing") {
 describe("execution state and change attribution", () => {
   it("permits explicit transitions and rejects invalid completion jumps", () => {
     const machine = new ExecutionStateMachine();
-    expect(() =>
-      machine.transition("awaiting-start", "executing"),
-    ).not.toThrow();
+    expect(() => machine.transition("awaiting-start", "executing")).not.toThrow();
     expect(() => machine.transition("awaiting-start", "completed")).toThrow(
       "Invalid execution transition",
     );
@@ -145,9 +139,9 @@ describe("execution state and change attribution", () => {
 
 describe("result capture honesty", () => {
   it("rejects unsupported direct result capture", () => {
-    expect(() =>
-      new ResultCaptureService().capture(session(), { mode: "direct" }),
-    ).toThrow("supported integration");
+    expect(() => new ResultCaptureService().capture(session(), { mode: "direct" })).toThrow(
+      "supported integration",
+    );
   });
   it("records assisted claims separately and redacts secret-like text", () => {
     const result = new ResultCaptureService().capture(session(), {
@@ -199,9 +193,9 @@ describe("safe command execution", () => {
       approved: false,
       timeoutMs: 10_000,
     });
-    await expect(
-      new CommandExecutionService().execute("blocked", command),
-    ).rejects.toThrow("explicit approval");
+    await expect(new CommandExecutionService().execute("blocked", command)).rejects.toThrow(
+      "explicit approval",
+    );
   });
   it("bounds output and redacts secrets", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "keystone-command-"));
@@ -342,15 +336,8 @@ describe("acceptance criteria mapping", () => {
         baselineClassification: "unknown",
       }),
     ];
-    const criteria = new AcceptanceCriteriaValidator().evaluate(
-      value,
-      results,
-      evidence,
-    );
-    expect(criteria.map((item) => item.status)).toEqual([
-      "passed",
-      "requires-manual-review",
-    ]);
+    const criteria = new AcceptanceCriteriaValidator().evaluate(value, results, evidence);
+    expect(criteria.map((item) => item.status)).toEqual(["passed", "requires-manual-review"]);
   });
   it("fails a criterion when a mapped required step fails", () => {
     const value = plan();
@@ -368,9 +355,9 @@ describe("acceptance criteria mapping", () => {
         baselineClassification: "new",
       }),
     ];
-    expect(
-      new AcceptanceCriteriaValidator().evaluate(value, results, [])[0]?.status,
-    ).toBe("failed");
+    expect(new AcceptanceCriteriaValidator().evaluate(value, results, [])[0]?.status).toBe(
+      "failed",
+    );
   });
 });
 
@@ -431,27 +418,16 @@ describe("validation and completion integration", () => {
       }),
     } as unknown as WorkspaceAdapter;
     const git = {
-      getMetadata: () =>
-        Promise.resolve({ branch: "main", headCommit: "retry-head" }),
-      getChangedFiles: () =>
-        Promise.resolve(["file:///workspace/src/index.ts"]),
+      getMetadata: () => Promise.resolve({ branch: "main", headCommit: "retry-head" }),
+      getChangedFiles: () => Promise.resolve(["file:///workspace/src/index.ts"]),
       getStagedFiles: () => Promise.resolve([]),
       getUntrackedFiles: () => Promise.resolve([]),
     } as unknown as GitAdapter;
-    const service = new TaskExecutionService(
-      store,
-      {} as never,
-      {} as never,
-      git,
-      workspace,
-      { getSnapshot: () => intelligenceSnapshot(7) } as never,
-    );
+    const service = new TaskExecutionService(store, {} as never, {} as never, git, workspace, {
+      getSnapshot: () => intelligenceSnapshot(7),
+    } as never);
 
-    const plan = await service.planRetry(
-      original.id,
-      "same-agent",
-      "Repair AC-1 only.",
-    );
+    const plan = await service.planRetry(original.id, "same-agent", "Repair AC-1 only.");
     const retry = await service.startRetry(original.id);
 
     expect(plan.failedCriterionIds).toEqual(["AC-1"]);
@@ -483,9 +459,7 @@ describe("validation and completion integration", () => {
       }),
       readTextFile: (uri: string) => readFile(new URL(uri), "utf8"),
       resolveFile: (uri: string) => ({
-        relativePath: uri.startsWith("file:")
-          ? new URL(uri).pathname.slice(cwd.length + 1)
-          : uri,
+        relativePath: uri.startsWith("file:") ? new URL(uri).pathname.slice(cwd.length + 1) : uri,
       }),
     } as unknown as WorkspaceAdapter;
     const snapshot = intelligenceSnapshot(7);
@@ -566,9 +540,7 @@ describe("validation and completion integration", () => {
         workflow = {
           ...workflow,
           tasks: workflow.tasks.map((item) =>
-            item.id === taskId
-              ? { ...item, status: status as typeof item.status }
-              : item,
+            item.id === taskId ? { ...item, status: status as typeof item.status } : item,
           ),
         };
         return Promise.resolve(workflow);
@@ -591,28 +563,16 @@ describe("validation and completion integration", () => {
     );
     const plan = await validation.plan(current.id);
     expect(
-      plan.steps.some(
-        (step) =>
-          step.type === "type-check" && step.command?.executable === "npm",
-      ),
+      plan.steps.some((step) => step.type === "type-check" && step.command?.executable === "npm"),
     ).toBe(true);
-    expect(plan.steps.filter((step) => step.type === "unit-test")).toHaveLength(
-      1,
-    );
-    expect(plan.steps.some((step) => step.type === "impacted-test")).toBe(
-      false,
-    );
+    expect(plan.steps.filter((step) => step.type === "unit-test")).toHaveLength(1);
+    expect(plan.steps.some((step) => step.type === "impacted-test")).toBe(false);
     expect(plan.diagnostics.join(" ")).toContain("conservative fallback");
     const run = await validation.run(plan.id);
     expect(run.status).toBe("passed");
     expect(run.acceptanceCriteriaResults[0]?.status).toBe("passed");
     expect(workflow.tasks[0]?.status).not.toBe("completed");
-    const completion = new CompletionDecisionService(
-      store,
-      execution,
-      workflows,
-      snapshots,
-    );
+    const completion = new CompletionDecisionService(store, execution, workflows, snapshots);
     expect(completion.evaluate(current.id).status).toBe("ready");
     const result = await completion.complete(current.id, true);
     expect(result.unlockedTaskIds).toEqual([workflow.tasks[1]?.id]);
@@ -711,7 +671,11 @@ function workflowFixture(): DevelopmentWorkflowSnapshot {
     intelligenceGeneration: 7,
     intent,
     specification,
-    intentHistory: [], clarifications: [], decisions: [], specificationHistory: [], taskGraphHistory: [],
+    intentHistory: [],
+    clarifications: [],
+    decisions: [],
+    specificationHistory: [],
+    taskGraphHistory: [],
     tasks: [
       {
         ...base,

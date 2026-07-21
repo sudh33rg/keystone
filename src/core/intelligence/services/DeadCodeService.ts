@@ -67,7 +67,9 @@ export class DeadCodeService {
       // Only flag public/exported symbols or those with CPG branches
       const isPublic = symbol.visibility === "public" || symbol.visibility === "package";
       const isExported = symbol.exported === true;
-      const hasCpgBranches = symbol.codeAnalysis?.branches ? symbol.codeAnalysis.branches > 0 : false;
+      const hasCpgBranches = symbol.codeAnalysis?.branches
+        ? symbol.codeAnalysis.branches > 0
+        : false;
 
       if (!isPublic && !isExported && !hasCpgBranches) continue;
 

@@ -5,7 +5,7 @@ import type {
   IntelligenceRelationshipRecord,
   IntelligenceSnapshot,
   IntelligenceSymbolRecord,
-  WorkspaceRootRecord
+  WorkspaceRootRecord,
 } from "../../../shared/contracts/intelligence";
 import { normalizeRelativePath } from "../StableId";
 import type { RepositoryChange } from "./ChangeCollector";
@@ -31,24 +31,50 @@ export function emptyIngestionDelta(): IngestionDelta {
 }
 
 export class DependencyInvalidator {
-  invalidate(snapshot: IntelligenceSnapshot, changes: readonly RepositoryChange[], roots: ReadonlyMap<string, WorkspaceRootRecord | undefined>): IngestionDelta {
-    const rootIdByUri = new Map(changes.map((change) => [change.rootUri, roots.get(change.rootUri)?.id]));
-    const changedKeys = new Set(changes.map((change) => `${rootIdByUri.get(change.rootUri) ?? ""}\u001f${normalizeRelativePath(change.relativePath)}`));
-    const removedFiles = new Set(snapshot.files.filter((file) => changedKeys.has(`${file.workspaceRootId}\u001f${file.relativePath}`)).map((file) => file.id));
-    const removedSymbols = new Set(snapshot.symbols.filter((symbol) => removedFiles.has(symbol.fileId)).map((symbol) => symbol.id));
+  invalidate(
+    snapshot: IntelligenceSnapshot,
+    changes: readonly RepositoryChange[],
+    roots: ReadonlyMap<string, WorkspaceRootRecord | undefined>,
+  ): IngestionDelta {
+    const rootIdByUri = new Map(
+      changes.map((change) => [change.rootUri, roots.get(change.rootUri)?.id]),
+    );
+    const changedKeys = new Set(
+      changes.map(
+        (change) =>
+          `${rootIdByUri.get(change.rootUri) ?? ""}\u001f${normalizeRelativePath(change.relativePath)}`,
+      ),
+    );
+    const removedFiles = new Set(
+      snapshot.files
+        .filter((file) => changedKeys.has(`${file.workspaceRootId}\u001f${file.relativePath}`))
+        .map((file) => file.id),
+    );
+    const removedSymbols = new Set(
+      snapshot.symbols
+        .filter((symbol) => removedFiles.has(symbol.fileId))
+        .map((symbol) => symbol.id),
+    );
     const removedEntities = new Set([...removedFiles, ...removedSymbols]);
-    const relationships = snapshot.relationships.filter((relationship) => !removedEntities.has(relationship.sourceId) && !removedEntities.has(relationship.targetId));
+    const relationships = snapshot.relationships.filter(
+      (relationship) =>
+        !removedEntities.has(relationship.sourceId) && !removedEntities.has(relationship.targetId),
+    );
     const retainedSubjectIds = new Set([
       ...snapshot.files.filter((file) => !removedFiles.has(file.id)).map((file) => file.id),
-      ...snapshot.symbols.filter((symbol) => !removedSymbols.has(symbol.id)).map((symbol) => symbol.id),
-      ...relationships.map((relationship) => relationship.id)
+      ...snapshot.symbols
+        .filter((symbol) => !removedSymbols.has(symbol.id))
+        .map((symbol) => symbol.id),
+      ...relationships.map((relationship) => relationship.id),
     ]);
     return {
       files: snapshot.files.filter((file) => !removedFiles.has(file.id)),
       symbols: snapshot.symbols.filter((symbol) => !removedSymbols.has(symbol.id)),
       relationships,
       evidence: snapshot.evidence.filter((item) => retainedSubjectIds.has(item.subjectId)),
-      diagnostics: snapshot.diagnostics.filter((item) => !changedKeys.has(`${item.workspaceRootId ?? ""}\u001f${item.relativePath ?? ""}`))
+      diagnostics: snapshot.diagnostics.filter(
+        (item) => !changedKeys.has(`${item.workspaceRootId ?? ""}\u001f${item.relativePath ?? ""}`),
+      ),
     };
   }
 }

@@ -83,7 +83,10 @@ class PersistentWorkerPool {
   private sequence = 0;
   private disposed = false;
 
-  constructor(capacity: number, private readonly onStatus: (failed: boolean) => void) {
+  constructor(
+    capacity: number,
+    private readonly onStatus: (failed: boolean) => void,
+  ) {
     for (let index = 0; index < capacity; index++) this.workers.push(this.createWorker());
   }
 
@@ -92,12 +95,19 @@ class PersistentWorkerPool {
       active: this.workers.filter((item) => item.task !== undefined).length,
       queued: this.queue.length,
       capacity: this.workers.length,
-      operations: this.workers.flatMap((item) => item.task ? [item.task.operation.operation] : [])
+      operations: this.workers.flatMap((item) =>
+        item.task ? [item.task.operation.operation] : [],
+      ),
     };
   }
 
-  run(operation: WorkerOperation, transfer: ArrayBuffer[] = [], options: WorkerTaskOptions = {}): Promise<unknown> {
-    if (this.disposed) return Promise.reject(new Error("The intelligence worker pool is disposed."));
+  run(
+    operation: WorkerOperation,
+    transfer: ArrayBuffer[] = [],
+    options: WorkerTaskOptions = {},
+  ): Promise<unknown> {
+    if (this.disposed)
+      return Promise.reject(new Error("The intelligence worker pool is disposed."));
     if (options.signal?.aborted) return Promise.reject(abortError());
     return new Promise((resolve, reject) => {
       const task: PendingTask = {
@@ -109,14 +119,16 @@ class PersistentWorkerPool {
         ...(options.signal ? { signal: options.signal } : {}),
         settled: false,
         resolve,
-        reject
+        reject,
       };
       if (options.signal) {
         task.abortListener = () => this.cancelTask(task);
         options.signal.addEventListener("abort", task.abortListener, { once: true });
       }
       this.queue.push(task);
-      this.queue.sort((left, right) => left.priority - right.priority || left.sequence - right.sequence);
+      this.queue.sort(
+        (left, right) => left.priority - right.priority || left.sequence - right.sequence,
+      );
       this.dispatch();
     });
   }
@@ -124,9 +136,11 @@ class PersistentWorkerPool {
   async dispose(): Promise<void> {
     if (this.disposed) return;
     this.disposed = true;
-    for (const task of this.queue.splice(0)) this.rejectTask(task, new Error("The intelligence worker pool was disposed."));
+    for (const task of this.queue.splice(0))
+      this.rejectTask(task, new Error("The intelligence worker pool was disposed."));
     for (const item of this.workers) {
-      if (item.task) this.rejectTask(item.task, new Error("The intelligence worker pool was disposed."));
+      if (item.task)
+        this.rejectTask(item.task, new Error("The intelligence worker pool was disposed."));
       item.task = undefined;
     }
     await Promise.all(this.workers.map((item) => item.worker.terminate()));
@@ -135,11 +149,17 @@ class PersistentWorkerPool {
   }
 
   private createWorker(): PoolWorker {
-    const item: PoolWorker = { id: ++this.nextWorkerId, worker: new Worker(WORKER_SOURCE, { eval: true }) };
+    const item: PoolWorker = {
+      id: ++this.nextWorkerId,
+      worker: new Worker(WORKER_SOURCE, { eval: true }),
+    };
     item.worker.on("message", (message: unknown) => this.complete(item, message));
-    item.worker.on("error", (cause) => this.failWorker(item, cause instanceof Error ? cause : new Error(String(cause))));
+    item.worker.on("error", (cause) =>
+      this.failWorker(item, cause instanceof Error ? cause : new Error(String(cause))),
+    );
     item.worker.on("exit", (code) => {
-      if (!this.disposed && code !== 0 && this.workers.includes(item)) this.failWorker(item, new Error(`Intelligence worker exited with code ${code}.`));
+      if (!this.disposed && code !== 0 && this.workers.includes(item))
+        this.failWorker(item, new Error(`Intelligence worker exited with code ${code}.`));
     });
     return item;
   }
@@ -149,11 +169,18 @@ class PersistentWorkerPool {
       if (item.task) continue;
       const task = this.queue.shift();
       if (!task) break;
-      if (task.priority === 3 && this.workers.length > 1 && this.workers.filter((worker) => worker.task !== undefined).length >= this.workers.length - 1) {
+      if (
+        task.priority === 3 &&
+        this.workers.length > 1 &&
+        this.workers.filter((worker) => worker.task !== undefined).length >= this.workers.length - 1
+      ) {
         this.queue.unshift(task);
         break;
       }
-      if (task.signal?.aborted) { this.rejectTask(task, abortError()); continue; }
+      if (task.signal?.aborted) {
+        this.rejectTask(task, abortError());
+        continue;
+      }
       item.task = task;
       item.worker.postMessage({ id: task.id, ...task.operation }, task.transfer);
     }
@@ -164,10 +191,24 @@ class PersistentWorkerPool {
     const task = item.task;
     if (!task) return;
     item.task = undefined;
-    if (message && typeof message === "object" && "id" in message && message.id === task.id && "ok" in message && message.ok === true && "value" in message) {
+    if (
+      message &&
+      typeof message === "object" &&
+      "id" in message &&
+      message.id === task.id &&
+      "ok" in message &&
+      message.ok === true &&
+      "value" in message
+    ) {
       this.resolveTask(task, message.value);
     } else {
-      const error = message && typeof message === "object" && "error" in message && typeof message.error === "string" ? message.error : "Intelligence worker task failed.";
+      const error =
+        message &&
+        typeof message === "object" &&
+        "error" in message &&
+        typeof message.error === "string"
+          ? message.error
+          : "Intelligence worker task failed.";
       this.rejectTask(task, new Error(error));
     }
     this.dispatch();
@@ -218,7 +259,8 @@ class PersistentWorkerPool {
   }
 
   private detachAbort(task: PendingTask): void {
-    if (task.signal && task.abortListener) task.signal.removeEventListener("abort", task.abortListener);
+    if (task.signal && task.abortListener)
+      task.signal.removeEventListener("abort", task.abortListener);
   }
 }
 
@@ -227,16 +269,25 @@ export class WorkerPoolManager {
   private readonly fastPool: PersistentWorkerPool;
   private readonly storagePool: PersistentWorkerPool;
   private failedRestarts = 0;
-  private readonly externalWorkers = new Set<{ getStatus(): WorkerPoolStatus; onDidChange(listener: () => void): { dispose(): void } }>();
+  private readonly externalWorkers = new Set<{
+    getStatus(): WorkerPoolStatus;
+    onDidChange(listener: () => void): { dispose(): void };
+  }>();
   private readonly externalDisposables: Array<{ dispose(): void }> = [];
 
   constructor(requestedWorkerCount = 0, legacyStorageCapacity?: number) {
     const processors = availableParallelism();
-    const total = legacyStorageCapacity === undefined
-      ? requestedWorkerCount > 0 ? Math.max(2, Math.min(requestedWorkerCount, Math.max(2, processors - 1))) : 2
-      : Math.max(2, requestedWorkerCount + legacyStorageCapacity);
+    const total =
+      legacyStorageCapacity === undefined
+        ? requestedWorkerCount > 0
+          ? Math.max(2, Math.min(requestedWorkerCount, Math.max(2, processors - 1)))
+          : 2
+        : Math.max(2, requestedWorkerCount + legacyStorageCapacity);
     const storageCapacity = legacyStorageCapacity ?? 1;
-    this.fastPool = new PersistentWorkerPool(Math.max(1, total - storageCapacity), this.handleStatus);
+    this.fastPool = new PersistentWorkerPool(
+      Math.max(1, total - storageCapacity),
+      this.handleStatus,
+    );
     this.storagePool = new PersistentWorkerPool(Math.max(1, storageCapacity), this.handleStatus);
   }
 
@@ -247,18 +298,33 @@ export class WorkerPoolManager {
     return {
       active: fast.active + storage.active + external.reduce((sum, item) => sum + item.active, 0),
       queued: fast.queued + storage.queued + external.reduce((sum, item) => sum + item.queued, 0),
-      capacity: fast.capacity + storage.capacity + external.reduce((sum, item) => sum + item.capacity, 0),
-      failedRestarts: this.failedRestarts + external.reduce((sum, item) => sum + item.failedRestarts, 0),
-      operations: [...fast.operations, ...storage.operations, ...external.flatMap((item) => item.operations)].slice(0, 20)
+      capacity:
+        fast.capacity + storage.capacity + external.reduce((sum, item) => sum + item.capacity, 0),
+      failedRestarts:
+        this.failedRestarts + external.reduce((sum, item) => sum + item.failedRestarts, 0),
+      operations: [
+        ...fast.operations,
+        ...storage.operations,
+        ...external.flatMap((item) => item.operations),
+      ].slice(0, 20),
     };
   }
 
-  attach(worker: { getStatus(): WorkerPoolStatus; onDidChange(listener: () => void): { dispose(): void } }): { dispose(): void } {
+  attach(worker: {
+    getStatus(): WorkerPoolStatus;
+    onDidChange(listener: () => void): { dispose(): void };
+  }): { dispose(): void } {
     this.externalWorkers.add(worker);
     const subscription = worker.onDidChange(() => this.handleStatus(false));
     this.externalDisposables.push(subscription);
     this.handleStatus(false);
-    return { dispose: () => { subscription.dispose(); this.externalWorkers.delete(worker); this.handleStatus(false); } };
+    return {
+      dispose: () => {
+        subscription.dispose();
+        this.externalWorkers.delete(worker);
+        this.handleStatus(false);
+      },
+    };
   }
 
   onDidChange(listener: (status: WorkerPoolStatus) => void): { dispose(): void } {
@@ -268,8 +334,13 @@ export class WorkerPoolManager {
 
   async sha256(value: Uint8Array, options: WorkerTaskOptions = {}): Promise<string> {
     const transferable = Uint8Array.from(value).buffer;
-    const result = await this.fastPool.run({ operation: "sha256", value: transferable }, [transferable], options);
-    if (typeof result !== "string") throw new Error("Intelligence hash worker returned an invalid result.");
+    const result = await this.fastPool.run(
+      { operation: "sha256", value: transferable },
+      [transferable],
+      options,
+    );
+    if (typeof result !== "string")
+      throw new Error("Intelligence hash worker returned an invalid result.");
     return result;
   }
 
@@ -279,20 +350,30 @@ export class WorkerPoolManager {
 
   async stringifyJson(value: unknown, options: WorkerTaskOptions = {}): Promise<string> {
     const result = await this.storagePool.run({ operation: "stringify-json", value }, [], options);
-    if (typeof result !== "string") throw new Error("Intelligence serialization worker returned an invalid result.");
+    if (typeof result !== "string")
+      throw new Error("Intelligence serialization worker returned an invalid result.");
     return result;
   }
 
   async gzip(value: Uint8Array, options: WorkerTaskOptions = {}): Promise<Uint8Array> {
     const transferable = Uint8Array.from(value).buffer;
-    const result = await this.storagePool.run({ operation: "gzip", value: transferable }, [transferable], options);
-    if (!(result instanceof ArrayBuffer)) throw new Error("Intelligence compression worker returned an invalid result.");
+    const result = await this.storagePool.run(
+      { operation: "gzip", value: transferable },
+      [transferable],
+      options,
+    );
+    if (!(result instanceof ArrayBuffer))
+      throw new Error("Intelligence compression worker returned an invalid result.");
     return new Uint8Array(result);
   }
 
   parseGzipJson(value: Uint8Array, options: WorkerTaskOptions = {}): Promise<unknown> {
     const transferable = Uint8Array.from(value).buffer;
-    return this.storagePool.run({ operation: "gunzip-json", value: transferable }, [transferable], options);
+    return this.storagePool.run(
+      { operation: "gunzip-json", value: transferable },
+      [transferable],
+      options,
+    );
   }
 
   async simulateFailureForTest(): Promise<void> {

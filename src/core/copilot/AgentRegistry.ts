@@ -9,8 +9,7 @@ import {
   type DevelopmentTask,
 } from "../../shared/contracts/delegation";
 
-export type AgentSelectionMode =
-  "manual" | "recommended" | "rule-based" | "fixed-workflow";
+export type AgentSelectionMode = "manual" | "recommended" | "rule-based" | "fixed-workflow";
 export interface AgentSelectionRule {
   id: string;
   category?: DevelopmentTask["category"];
@@ -26,11 +25,7 @@ export class CopilotAgentDiscoveryService {
 
   parseConfigured(
     value: unknown,
-    source:
-      | "workspace-configured"
-      | "repository-configured"
-      | "keystone-profile"
-      | "user-alias",
+    source: "workspace-configured" | "repository-configured" | "keystone-profile" | "user-alias",
   ): CopilotAgentDescriptor[] {
     if (!Array.isArray(value)) return [];
     return value.slice(0, 100).flatMap((raw) => {
@@ -48,15 +43,12 @@ export class CopilotAgentDiscoveryService {
         restrictions: candidate.restrictions ?? [
           {
             kind: "invocation",
-            description:
-              "Configured metadata does not prove runtime invocation availability.",
+            description: "Configured metadata does not prove runtime invocation availability.",
             blocking: false,
           },
         ],
         confidence:
-          typeof candidate.confidence === "number"
-            ? Math.min(candidate.confidence, 0.8)
-            : 0.6,
+          typeof candidate.confidence === "number" ? Math.min(candidate.confidence, 0.8) : 0.6,
         evidence: [
           {
             kind: source === "user-alias" ? "alias" : "configuration",
@@ -100,8 +92,7 @@ export class AgentProfileService {
                   {
                     kind: "alias" as const,
                     source: target.id,
-                    statement:
-                      "Availability is inherited from the explicitly referenced agent.",
+                    statement: "Availability is inherited from the explicitly referenced agent.",
                   },
                 ]
               : []),
@@ -110,8 +101,7 @@ export class AgentProfileService {
       }
     return [...result.values()].sort(
       (left, right) =>
-        availabilityRank(right.availability) -
-          availabilityRank(left.availability) ||
+        availabilityRank(right.availability) - availabilityRank(left.availability) ||
         left.displayName.localeCompare(right.displayName),
     );
   }
@@ -139,8 +129,7 @@ export class AgentRecommendationService {
     const rule = rules.find(
       (item) =>
         (!item.category || item.category === task.category) &&
-        (!item.requiredCapability ||
-          task.requiredCapabilities.includes(item.requiredCapability)),
+        (!item.requiredCapability || task.requiredCapabilities.includes(item.requiredCapability)),
     );
     const candidates = agents
       .map((agent) => {
@@ -164,22 +153,16 @@ export class AgentRecommendationService {
             : 0) +
           missing.length * AGENT_RECOMMENDATION_WEIGHTS.missingCapability +
           blocking.length * AGENT_RECOMMENDATION_WEIGHTS.restriction;
-        if (rule?.agentId === agent.id)
-          score += AGENT_RECOMMENDATION_WEIGHTS.userRule;
-        if (priorAgentId === agent.id)
-          score += AGENT_RECOMMENDATION_WEIGHTS.priorSelection;
+        if (rule?.agentId === agent.id) score += AGENT_RECOMMENDATION_WEIGHTS.userRule;
+        if (priorAgentId === agent.id) score += AGENT_RECOMMENDATION_WEIGHTS.priorSelection;
         const reasons = [
           `availability=${agent.availability}`,
           `${matching.length}/${task.requiredCapabilities.length} required capabilities match`,
           ...(agent.taskCategories.includes(task.category)
             ? [`task category ${task.category} matches`]
             : []),
-          ...(rule?.agentId === agent.id
-            ? [`explicit rule ${rule.id} matches`]
-            : []),
-          ...(blocking.length
-            ? [`${blocking.length} blocking restriction(s)`]
-            : []),
+          ...(rule?.agentId === agent.id ? [`explicit rule ${rule.id} matches`] : []),
+          ...(blocking.length ? [`${blocking.length} blocking restriction(s)`] : []),
           ...(missing.length ? [`missing: ${missing.join(", ")}`] : []),
         ];
         return {
@@ -192,18 +175,14 @@ export class AgentRecommendationService {
         };
       })
       .sort(
-        (left, right) =>
-          right.score - left.score ||
-          left.agent.id.localeCompare(right.agent.id),
+        (left, right) => right.score - left.score || left.agent.id.localeCompare(right.agent.id),
       )
       .map((item, index) => ({ ...item, rank: index + 1 }));
     const selectedAgentId =
       (mode === "rule-based" || mode === "fixed-workflow") &&
       rule &&
       candidates.some(
-        (item) =>
-          item.agent.id === rule.agentId &&
-          item.agent.availability !== "unavailable",
+        (item) => item.agent.id === rule.agentId && item.agent.availability !== "unavailable",
       )
         ? rule.agentId
         : undefined;
@@ -221,13 +200,8 @@ export class AgentSelectionService {
   get(taskId: string): string | undefined {
     return this.persistence?.snapshot.selections[taskId];
   }
-  async select(
-    taskId: string,
-    agent: CopilotAgentDescriptor,
-    confirmed: boolean,
-  ): Promise<string> {
-    if (!confirmed)
-      throw new Error("Agent selection requires explicit user confirmation.");
+  async select(taskId: string, agent: CopilotAgentDescriptor, confirmed: boolean): Promise<string> {
+    if (!confirmed) throw new Error("Agent selection requires explicit user confirmation.");
     if (agent.availability === "unavailable")
       throw new Error(`Agent ${agent.displayName} is unavailable.`);
     if (this.persistence)
@@ -345,8 +319,6 @@ export class CopilotAgentRegistry {
 
 /** Backward-compatible name retained while the production registry moves to evidence-backed descriptors. */
 export class AgentRegistry extends CopilotAgentRegistry {}
-function availabilityRank(
-  value: CopilotAgentDescriptor["availability"],
-): number {
+function availabilityRank(value: CopilotAgentDescriptor["availability"]): number {
   return value === "available" ? 3 : value === "unknown" ? 2 : 1;
 }

@@ -16,11 +16,10 @@ export class SafetyCheckService {
   async checkGitRemoteSafety(repoPath: string): Promise<SafetyCheckResult> {
     try {
       // Get the remote URL
-      const { stdout } = await execFileAsync(
-        "git",
-        ["remote", "get-url", "origin"],
-        { cwd: repoPath, maxBuffer: 1024 * 1024 },
-      );
+      const { stdout } = await execFileAsync("git", ["remote", "get-url", "origin"], {
+        cwd: repoPath,
+        maxBuffer: 1024 * 1024,
+      });
 
       const remoteUrl = stdout.trim();
 
@@ -34,12 +33,7 @@ export class SafetyCheckService {
       }
 
       // Check for common remote URL patterns
-      const remotePatterns = [
-        /^https?:\/\//i,
-        /^git@/,
-        /^ssh:\/\//i,
-        /^ftp:\/\//i,
-      ];
+      const remotePatterns = [/^https?:\/\//i, /^git@/, /^ssh:\/\//i, /^ftp:\/\//i];
 
       for (const pattern of remotePatterns) {
         if (pattern.test(remoteUrl)) {
@@ -68,11 +62,10 @@ export class SafetyCheckService {
   async checkGitPushSafety(repoPath: string): Promise<SafetyCheckResult> {
     try {
       // Check if there are unpushed commits
-      const { stdout } = await execFileAsync(
-        "git",
-        ["rev-list", "--count", "HEAD..@{upstream}"],
-        { cwd: repoPath, maxBuffer: 1024 * 1024 },
-      );
+      const { stdout } = await execFileAsync("git", ["rev-list", "--count", "HEAD..@{upstream}"], {
+        cwd: repoPath,
+        maxBuffer: 1024 * 1024,
+      });
 
       const unpushedCount = parseInt(stdout.trim(), 10);
 

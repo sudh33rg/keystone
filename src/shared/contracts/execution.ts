@@ -1,9 +1,6 @@
 import { z } from "zod";
 import { RepositoryStateRefSchema, StalenessRecordSchema } from "./integration";
-import {
-  CopilotAgentDescriptorSchema,
-  RepositoryBaselineSchema,
-} from "./delegation";
+import { CopilotAgentDescriptorSchema, RepositoryBaselineSchema } from "./delegation";
 
 export const EXECUTION_SCHEMA_VERSION = 1 as const;
 export const TaskExecutionStatusSchema = z.enum([
@@ -113,9 +110,7 @@ export const ExecutionResultCaptureSchema = z
     diagnostics: z.array(z.string().max(2000)).max(100),
   })
   .strict();
-export type ExecutionResultCapture = z.infer<
-  typeof ExecutionResultCaptureSchema
->;
+export type ExecutionResultCapture = z.infer<typeof ExecutionResultCaptureSchema>;
 
 export const ExecutionMetricsSchema = z
   .object({
@@ -230,17 +225,8 @@ export const CommandDescriptorSchema = z
     ]),
     args: z.array(z.string().max(500)).max(50),
     workingDirectory: z.string().min(1).max(2048),
-    safety: z.enum([
-      "safe-readonly",
-      "project-validation",
-      "potentially-mutating",
-      "prohibited",
-    ]),
-    provenance: z.enum([
-      "repository-script",
-      "repository-config",
-      "keystone-static",
-    ]),
+    safety: z.enum(["safe-readonly", "project-validation", "potentially-mutating", "prohibited"]),
+    provenance: z.enum(["repository-script", "repository-config", "keystone-static"]),
     approved: z.boolean(),
     timeoutMs: z
       .number()
@@ -447,14 +433,7 @@ export const ValidationRunSchemaV2 = z
     id: z.string().uuid(),
     executionSessionId: z.string().uuid(),
     taskId: z.string().uuid(),
-    status: z.enum([
-      "running",
-      "passed",
-      "failed",
-      "cancelled",
-      "stale",
-      "awaiting-user-review",
-    ]),
+    status: z.enum(["running", "passed", "failed", "cancelled", "stale", "awaiting-user-review"]),
     startedAt: z.string().datetime(),
     completedAt: z.string().datetime().optional(),
     stepResults: z.array(ValidationStepResultSchema).max(200),
@@ -492,12 +471,7 @@ export const RetryPlanSchema = z
     id: z.string().uuid(),
     executionSessionId: z.string().uuid(),
     attempt: z.number().int().positive(),
-    mode: z.enum([
-      "same-agent",
-      "different-agent",
-      "manual-repair",
-      "partial-repair",
-    ]),
+    mode: z.enum(["same-agent", "different-agent", "manual-repair", "partial-repair"]),
     selectedAgentId: z.string().max(200).optional(),
     partialRepairTaskId: z.string().uuid().optional(),
     reason: z.string().min(1).max(3000),
@@ -515,13 +489,7 @@ export const RetryPlanSchema = z
       )
       .max(100),
     createdAt: z.string().datetime(),
-    status: z.enum([
-      "planned",
-      "prepared",
-      "started",
-      "completed",
-      "cancelled",
-    ]),
+    status: z.enum(["planned", "prepared", "started", "completed", "cancelled"]),
   })
   .strict();
 export type RetryPlan = z.infer<typeof RetryPlanSchema>;
@@ -587,9 +555,7 @@ export const WorkflowCompletionReportSchema = z
     createdAt: z.string().datetime(),
   })
   .strict();
-export type WorkflowCompletionReport = z.infer<
-  typeof WorkflowCompletionReportSchema
->;
+export type WorkflowCompletionReport = z.infer<typeof WorkflowCompletionReportSchema>;
 
 export const ExecutionPersistentStateSchema = z
   .object({
@@ -605,9 +571,7 @@ export const ExecutionPersistentStateSchema = z
     updatedAt: z.string().datetime(),
   })
   .strict();
-export type ExecutionPersistentState = z.infer<
-  typeof ExecutionPersistentStateSchema
->;
+export type ExecutionPersistentState = z.infer<typeof ExecutionPersistentStateSchema>;
 
 export const ExecutionStartPayloadSchema = z
   .object({
@@ -616,48 +580,33 @@ export const ExecutionStartPayloadSchema = z
     delegationSessionId: z.string().uuid(),
   })
   .strict();
-export const ExecutionSessionPayloadSchema = z
-  .object({ sessionId: z.string().uuid() })
-  .strict();
-export const AttributeChangePayloadSchema =
-  ExecutionSessionPayloadSchema.extend({
-    relativePath: z.string().max(1024),
-    classification: ChangeClassificationSchema,
-    reason: z.string().min(1).max(2000),
-  }).strict();
+export const ExecutionSessionPayloadSchema = z.object({ sessionId: z.string().uuid() }).strict();
+export const AttributeChangePayloadSchema = ExecutionSessionPayloadSchema.extend({
+  relativePath: z.string().max(1024),
+  classification: ChangeClassificationSchema,
+  reason: z.string().min(1).max(2000),
+}).strict();
 export const CaptureResultPayloadSchema = ExecutionSessionPayloadSchema.extend({
   mode: z.enum(["direct", "assisted", "repository-only"]),
   agentClaims: ExecutionResultCaptureSchema.shape.agentClaims.optional(),
   userNotes: z.string().max(20_000).optional(),
 }).strict();
-export const ValidationPlanPayloadSchema = ExecutionSessionPayloadSchema.extend(
-  {
-    testMode: z.enum(["impacted", "affected-suite", "all"]).optional(),
-    excludedTestEntityIds: z.array(z.string().max(500)).max(500).optional(),
-  },
-).strict();
+export const ValidationPlanPayloadSchema = ExecutionSessionPayloadSchema.extend({
+  testMode: z.enum(["impacted", "affected-suite", "all"]).optional(),
+  excludedTestEntityIds: z.array(z.string().max(500)).max(500).optional(),
+}).strict();
 export const ValidationApprovePayloadSchema = z
   .object({ planId: z.string().uuid(), stepId: z.string().uuid() })
   .strict();
-export const ValidationRunPayloadSchema = z
-  .object({ planId: z.string().uuid() })
-  .strict();
-export const ValidationRunIdPayloadSchema = z
-  .object({ runId: z.string().uuid() })
-  .strict();
-export const ValidationOverridePayloadSchema =
-  ValidationRunIdPayloadSchema.extend({
-    targetType: z.enum(["criterion", "finding", "step"]),
-    targetId: z.string().min(1).max(500),
-    reason: z.string().min(1).max(2000),
-  }).strict();
+export const ValidationRunPayloadSchema = z.object({ planId: z.string().uuid() }).strict();
+export const ValidationRunIdPayloadSchema = z.object({ runId: z.string().uuid() }).strict();
+export const ValidationOverridePayloadSchema = ValidationRunIdPayloadSchema.extend({
+  targetType: z.enum(["criterion", "finding", "step"]),
+  targetId: z.string().min(1).max(500),
+  reason: z.string().min(1).max(2000),
+}).strict();
 export const RetryPlanPayloadSchema = ExecutionSessionPayloadSchema.extend({
-  mode: z.enum([
-    "same-agent",
-    "different-agent",
-    "manual-repair",
-    "partial-repair",
-  ]),
+  mode: z.enum(["same-agent", "different-agent", "manual-repair", "partial-repair"]),
   agentId: z.string().max(200).optional(),
   reason: z.string().min(1).max(3000),
 }).strict();
@@ -665,6 +614,4 @@ export const CompleteTaskPayloadSchema = ExecutionSessionPayloadSchema.extend({
   confirm: z.literal(true),
   overrideReason: z.string().min(1).max(2000).optional(),
 }).strict();
-export const WorkflowReportPayloadSchema = z
-  .object({ workflowId: z.string().uuid() })
-  .strict();
+export const WorkflowReportPayloadSchema = z.object({ workflowId: z.string().uuid() }).strict();

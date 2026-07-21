@@ -64,49 +64,83 @@ function generateStageIds(workType: WorkflowWorkType): Record<WorkflowStageType,
   switch (workType) {
     case "feature":
       return {
-        understand: "u1", plan: "p1", development: "d1", "impact-analysis": "ia1",
-        "test-generation": "tg1", "test-execution": "te1", "security-analysis": "sa1",
-        "performance-analysis": "pa1", "pr-review": "pr1", complete: "c1",
-        "failure-analysis": "fa1", "test-healing": "th1",
+        understand: "u1",
+        plan: "p1",
+        development: "d1",
+        "impact-analysis": "ia1",
+        "test-generation": "tg1",
+        "test-execution": "te1",
+        "security-analysis": "sa1",
+        "performance-analysis": "pa1",
+        "pr-review": "pr1",
+        complete: "c1",
+        "failure-analysis": "fa1",
+        "test-healing": "th1",
       };
     case "bug-fix":
       return {
-        understand: "u1", plan: "p1", "impact-analysis": "ia1", development: "d1",
-        "test-generation": "tg1", "test-execution": "te1", "failure-analysis": "fa1",
-        "test-healing": "th1", "pr-review": "pr1", complete: "c1",
-        "security-analysis": "sa1", "performance-analysis": "pa1",
+        understand: "u1",
+        plan: "p1",
+        "impact-analysis": "ia1",
+        development: "d1",
+        "test-generation": "tg1",
+        "test-execution": "te1",
+        "failure-analysis": "fa1",
+        "test-healing": "th1",
+        "pr-review": "pr1",
+        complete: "c1",
+        "security-analysis": "sa1",
+        "performance-analysis": "pa1",
       };
     case "refactoring":
       return {
-        understand: "u1", "impact-analysis": "ia1", plan: "p1", development: "d1",
-        "test-execution": "te1", "performance-analysis": "pa1", "pr-review": "pr1", complete: "c1",
-        "test-generation": "tg1", "failure-analysis": "fa1",
-        "test-healing": "th1", "security-analysis": "sa1",
+        understand: "u1",
+        "impact-analysis": "ia1",
+        plan: "p1",
+        development: "d1",
+        "test-execution": "te1",
+        "performance-analysis": "pa1",
+        "pr-review": "pr1",
+        complete: "c1",
+        "test-generation": "tg1",
+        "failure-analysis": "fa1",
+        "test-healing": "th1",
+        "security-analysis": "sa1",
       };
     case "test":
       return {
-        understand: "u1", "impact-analysis": "ia1", "test-generation": "tg1",
-        "test-execution": "te1", "failure-analysis": "fa1", "test-healing": "th1",
-        "pr-review": "pr1", complete: "c1",
-        "plan": "p1", "development": "d1",
-        "security-analysis": "sa1", "performance-analysis": "pa1",
+        understand: "u1",
+        "impact-analysis": "ia1",
+        "test-generation": "tg1",
+        "test-execution": "te1",
+        "failure-analysis": "fa1",
+        "test-healing": "th1",
+        "pr-review": "pr1",
+        complete: "c1",
+        plan: "p1",
+        development: "d1",
+        "security-analysis": "sa1",
+        "performance-analysis": "pa1",
       };
     case "investigation":
       return {
-        understand: "u1", "impact-analysis": "ia1", complete: "c1",
-        "plan": "p1", "development": "d1",
-        "test-generation": "tg1", "test-execution": "te1",
-        "failure-analysis": "fa1", "test-healing": "th1",
-        "security-analysis": "sa1", "performance-analysis": "pa1",
+        understand: "u1",
+        "impact-analysis": "ia1",
+        complete: "c1",
+        plan: "p1",
+        development: "d1",
+        "test-generation": "tg1",
+        "test-execution": "te1",
+        "failure-analysis": "fa1",
+        "test-healing": "th1",
+        "security-analysis": "sa1",
+        "performance-analysis": "pa1",
         "pr-review": "pr1",
       };
   }
 }
 
-function createDefaultStage(
-  type: WorkflowStageType,
-  id: string,
-): WorkflowStage {
+function createDefaultStage(type: WorkflowStageType, id: string): WorkflowStage {
   return {
     id,
     type,
@@ -141,29 +175,31 @@ export function migrateWorkflowSnapshot(
   const stages: WorkflowStage[] = [];
 
   // Map tasks to work items
-  const workItems: WorkItem[] = snapshot.tasks.map((task: DevelopmentTask) => {
-    const stageType = getStageTypeForTaskCategory(task.category);
-    const stage = stages.find((s) => s.type === stageType);
-    if (!stage) return null;
-    return {
-      id: uuidv4(),
-      stageId: stage.id,
-      title: task.title,
-      description: task.description,
-      objective: task.objective,
-      category: task.category,
-      dependencies: task.dependencies,
-      requiredCapabilities: task.requiredCapabilities.map((c) => c),
-      executionRoute: task.executionRoute,
-      risk: task.risk,
-      optional: task.optional,
-      staleReasons: task.staleReasons,
-      baseEntityFingerprints: task.baseEntityFingerprints,
-      originalTaskId: task.id,
-      createdAt: task.createdAt,
-      updatedAt: task.updatedAt,
-    };
-  }).filter(Boolean) as WorkItem[];
+  const workItems: WorkItem[] = snapshot.tasks
+    .map((task: DevelopmentTask) => {
+      const stageType = getStageTypeForTaskCategory(task.category);
+      const stage = stages.find((s) => s.type === stageType);
+      if (!stage) return null;
+      return {
+        id: uuidv4(),
+        stageId: stage.id,
+        title: task.title,
+        description: task.description,
+        objective: task.objective,
+        category: task.category,
+        dependencies: task.dependencies,
+        requiredCapabilities: task.requiredCapabilities.map((c) => c),
+        executionRoute: task.executionRoute,
+        risk: task.risk,
+        optional: task.optional,
+        staleReasons: task.staleReasons,
+        baseEntityFingerprints: task.baseEntityFingerprints,
+        originalTaskId: task.id,
+        createdAt: task.createdAt,
+        updatedAt: task.updatedAt,
+      };
+    })
+    .filter(Boolean) as WorkItem[];
 
   return {
     id: snapshot.id,
@@ -224,7 +260,8 @@ function mapOrchestrationTaskState(
     category,
     dependencies: taskState.dependencies,
     requiredCapabilities: taskState.requiredCapabilities,
-    executionRoute: taskState.route as "deterministic" | "github-copilot" | "manual" | "unsupported" | undefined,
+    executionRoute: taskState.route as
+      "deterministic" | "github-copilot" | "manual" | "unsupported" | undefined,
     risk: taskState.risk as "low" | "medium" | "high" | "critical" | undefined,
     optional: taskState.optional,
     staleReasons: [],
@@ -244,41 +281,52 @@ export function migrateOrchestrationWorkflow(
 
   // Create stages with default states
   const stageTypes: WorkflowStageType[] = [
-    "understand", "plan", "development", "impact-analysis",
-    "test-generation", "test-execution", "failure-analysis", "test-healing",
-    "security-analysis", "performance-analysis", "pr-review", "complete",
+    "understand",
+    "plan",
+    "development",
+    "impact-analysis",
+    "test-generation",
+    "test-execution",
+    "failure-analysis",
+    "test-healing",
+    "security-analysis",
+    "performance-analysis",
+    "pr-review",
+    "complete",
   ];
   for (const type of stageTypes) {
     stages.push(createDefaultStage(type, stageIds[type]));
   }
 
   // Map task states to work items
-  const workItems: WorkItem[] = instance.taskStates.map((ts) => {
-    const wi = mapOrchestrationTaskState(ts, stageIds);
-    if (wi) wi.originalTaskId = ts.taskId;
-    return wi;
-  }).filter(Boolean) as WorkItem[];
+  const workItems: WorkItem[] = instance.taskStates
+    .map((ts) => {
+      const wi = mapOrchestrationTaskState(ts, stageIds);
+      if (wi) wi.originalTaskId = ts.taskId;
+      return wi;
+    })
+    .filter(Boolean) as WorkItem[];
 
   // Map orchestration status to workflow status
   const statusMap: Record<string, WorkflowStatus> = {
-    "draft": "not-ready",
+    draft: "not-ready",
     "awaiting-review": "awaiting-approval",
     "awaiting-approval": "awaiting-approval",
-    "ready": "ready",
-    "running": "running",
-    "paused": "blocked",
-    "blocked": "blocked",
+    ready: "ready",
+    running: "running",
+    paused: "blocked",
+    blocked: "blocked",
     "awaiting-user-action": "awaiting-approval",
     "validation-failed": "failed",
-    "cancelling": "cancelled",
-    "cancelled": "cancelled",
-    "recovering": "preparing-context",
+    cancelling: "cancelled",
+    cancelled: "cancelled",
+    recovering: "preparing-context",
     "delivery-ready": "passed",
-    "completed": "passed",
+    completed: "passed",
     "completed-with-warnings": "passed",
-    "failed": "failed",
-    "stale": "skipped",
-    "superseded": "skipped",
+    failed: "failed",
+    stale: "skipped",
+    superseded: "skipped",
   };
 
   return {
@@ -325,9 +373,18 @@ export function createWorkflowFromIntent(
   const stages: WorkflowStage[] = [];
 
   const stageTypes: WorkflowStageType[] = [
-    "understand", "plan", "development", "impact-analysis",
-    "test-generation", "test-execution", "failure-analysis", "test-healing",
-    "security-analysis", "performance-analysis", "pr-review", "complete",
+    "understand",
+    "plan",
+    "development",
+    "impact-analysis",
+    "test-generation",
+    "test-execution",
+    "failure-analysis",
+    "test-healing",
+    "security-analysis",
+    "performance-analysis",
+    "pr-review",
+    "complete",
   ];
   for (const type of stageTypes) {
     stages.push(createDefaultStage(type, stageIds[type]));
@@ -399,9 +456,18 @@ export function createWorkflowFromTask(
   const stages: WorkflowStage[] = [];
 
   const stageTypes: WorkflowStageType[] = [
-    "understand", "plan", "development", "impact-analysis",
-    "test-generation", "test-execution", "failure-analysis", "test-healing",
-    "security-analysis", "performance-analysis", "pr-review", "complete",
+    "understand",
+    "plan",
+    "development",
+    "impact-analysis",
+    "test-generation",
+    "test-execution",
+    "failure-analysis",
+    "test-healing",
+    "security-analysis",
+    "performance-analysis",
+    "pr-review",
+    "complete",
   ];
   for (const type of stageTypes) {
     stages.push(createDefaultStage(type, stageIds[type]));
@@ -459,9 +525,4 @@ export function createWorkflowFromTask(
 // Exports
 // ============================================================================
 
-export type {
-  Workflow,
-  WorkflowStage,
-  WorkItem,
-  WorkflowWorkType,
-};
+export type { Workflow, WorkflowStage, WorkItem, WorkflowWorkType };

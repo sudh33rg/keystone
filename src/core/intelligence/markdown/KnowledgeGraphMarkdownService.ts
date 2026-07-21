@@ -25,20 +25,13 @@ export interface KnowledgeGraphMarkdownResult {
 export class KnowledgeGraphMarkdownService {
   constructor(private readonly store: IntelligenceSnapshotReader) {}
 
-  generate(
-    options: KnowledgeGraphMarkdownOptions = {},
-  ): KnowledgeGraphMarkdownResult {
+  generate(options: KnowledgeGraphMarkdownOptions = {}): KnowledgeGraphMarkdownResult {
     const snapshot = this.store.getSnapshot();
     if (!snapshot) {
       throw new Error("Intelligence snapshot unavailable.");
     }
 
-    const {
-      maxSymbols = 100,
-      maxRelationships = 200,
-      entityTypeFilter,
-      languageFilter,
-    } = options;
+    const { maxSymbols = 100, maxRelationships = 200, entityTypeFilter, languageFilter } = options;
 
     const lines: string[] = [];
     lines.push("# Repository Knowledge Graph");
@@ -64,9 +57,7 @@ export class KnowledgeGraphMarkdownService {
     for (const file of snapshot.files.slice(0, maxSymbols)) {
       if (languageFilter && file.language !== languageFilter) continue;
       const symbolCount = fileSymbols.get(file.id) ?? 0;
-      lines.push(
-        `| ${file.relativePath} | ${file.language} | ${file.category} | ${symbolCount} |`,
-      );
+      lines.push(`| ${file.relativePath} | ${file.language} | ${file.category} | ${symbolCount} |`);
     }
     lines.push("");
 

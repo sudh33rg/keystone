@@ -17,7 +17,7 @@ describe("shared UI states", () => {
       retry,
       dismiss,
     });
-    render(<UiErrorState error={error}/>);
+    render(<UiErrorState error={error} />);
     expect(screen.getByRole("alert").textContent).toContain("Your current state was preserved.");
     expect(error.retryable).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
@@ -32,14 +32,20 @@ describe("shared UI states", () => {
       title: "Action unavailable",
       fallbackMessage: "This capability is not available in the current workspace.",
     });
-    render(<UiErrorState error={error}/>);
+    render(<UiErrorState error={error} />);
     expect(error.retryable).toBe(false);
     expect(screen.queryByRole("button")).toBeNull();
   });
 
   it("makes an empty-state next action explicit", () => {
     const run = vi.fn();
-    render(<EmptyState title="No workflows" message="Start with an intent." action={{ id: "start", label: "Start new work", kind: "primary", run }}/>);
+    render(
+      <EmptyState
+        title="No workflows"
+        message="Start with an intent."
+        action={{ id: "start", label: "Start new work", kind: "primary", run }}
+      />,
+    );
     fireEvent.click(screen.getByRole("button", { name: "Start new work" }));
     expect(run).toHaveBeenCalledOnce();
   });

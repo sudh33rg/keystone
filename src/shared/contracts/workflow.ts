@@ -57,19 +57,19 @@ export const WorkflowStateSchema = z.enum([
 ]);
 export type WorkflowState = z.infer<typeof WorkflowStateSchema>;
 
-export const WorkflowWorkTypeSchema = z.enum(["feature", "bug-fix", "refactoring", "test", "investigation"]);
+export const WorkflowWorkTypeSchema = z.enum([
+  "feature",
+  "bug-fix",
+  "refactoring",
+  "test",
+  "investigation",
+]);
 export type WorkflowWorkType = z.infer<typeof WorkflowWorkTypeSchema>;
 
 export const ExecutionModeSchema = z.enum(["automatic", "approval-required"]);
 export type ExecutionMode = z.infer<typeof ExecutionModeSchema>;
 
-export const FailureBehaviourSchema = z.enum([
-  "stop",
-  "retry",
-  "skip",
-  "fallback",
-  "escalate",
-]);
+export const FailureBehaviourSchema = z.enum(["stop", "retry", "skip", "fallback", "escalate"]);
 export type FailureBehaviour = z.infer<typeof FailureBehaviourSchema>;
 
 export const RequirementKindSchema = z.enum(["required", "optional"]);
@@ -183,15 +183,19 @@ export const WorkflowSchema = z.object({
   stages: z.array(WorkflowStageSchema).min(1).max(12),
   workItems: z.array(WorkItemSchema).max(500),
   contextPackages: z.array(ContextItemSchema).max(500),
-  delegationRuns: z.array(z.object({
-    id: z.string().uuid(),
-    workItemId: z.string().uuid(),
-    agentId: z.string().max(200),
-    contextPackageId: z.string().uuid(),
-    status: z.string(),
-    startedAt: z.string().datetime().optional(),
-    completedAt: z.string().datetime().optional(),
-  })).max(100),
+  delegationRuns: z
+    .array(
+      z.object({
+        id: z.string().uuid(),
+        workItemId: z.string().uuid(),
+        agentId: z.string().max(200),
+        contextPackageId: z.string().uuid(),
+        status: z.string(),
+        startedAt: z.string().datetime().optional(),
+        completedAt: z.string().datetime().optional(),
+      }),
+    )
+    .max(100),
   validationRuns: z.array(z.string().uuid()).max(100),
   reviewFindingIds: z.array(z.string().uuid()).max(100),
   completionRecordId: z.string().uuid().optional(),

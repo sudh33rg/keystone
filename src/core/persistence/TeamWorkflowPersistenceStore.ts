@@ -16,9 +16,7 @@ export class TeamWorkflowPersistenceStore {
     storageRoot?: string,
     private readonly writer = new AtomicFileWriter(),
   ) {
-    this.path = storageRoot
-      ? join(storageRoot, "workflow", "team-state.json")
-      : undefined;
+    this.path = storageRoot ? join(storageRoot, "workflow", "team-state.json") : undefined;
   }
 
   get snapshot(): TeamPersistentState {
@@ -53,16 +51,18 @@ export class TeamWorkflowPersistenceStore {
     mutate: (state: TeamPersistentState) => TeamPersistentState,
   ): Promise<TeamPersistentState> {
     let output: TeamPersistentState | undefined;
-    this.chain = this.chain.catch(() => undefined).then(async () => {
-      const next = TeamPersistentStateSchema.parse({
-        ...mutate(this.snapshot),
-        revision: this.state.revision + 1,
-        updatedAt: new Date().toISOString(),
+    this.chain = this.chain
+      .catch(() => undefined)
+      .then(async () => {
+        const next = TeamPersistentStateSchema.parse({
+          ...mutate(this.snapshot),
+          revision: this.state.revision + 1,
+          updatedAt: new Date().toISOString(),
+        });
+        await this.persist(next);
+        this.state = next;
+        output = this.snapshot;
       });
-      await this.persist(next);
-      this.state = next;
-      output = this.snapshot;
-    });
     await this.chain;
     return output!;
   }
@@ -72,9 +72,7 @@ export class TeamWorkflowPersistenceStore {
   }
 }
 
-function recoverInterruptedImports(
-  value: TeamPersistentState,
-): TeamPersistentState {
+function recoverInterruptedImports(value: TeamPersistentState): TeamPersistentState {
   if (!value.imports.some((entry) => entry.status === "validating")) return value;
   const now = new Date().toISOString();
   return TeamPersistentStateSchema.parse({
@@ -85,8 +83,7 @@ function recoverInterruptedImports(
         ? {
             ...entry,
             status: "interrupted" as const,
-            reason:
-              "Import validation was interrupted. Review and import the artifact again.",
+            reason: "Import validation was interrupted. Review and import the artifact again.",
             updatedAt: now,
           }
         : entry,

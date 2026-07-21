@@ -51,11 +51,19 @@ export interface WorkspaceAdapter {
 
 export class VsCodeWorkspaceAdapter implements WorkspaceAdapter {
   getRoots(): readonly WorkspaceRootReference[] {
-    return (vscode.workspace.workspaceFolders ?? []).map((root) => ({ name: root.name, uri: root.uri.toString() }));
+    return (vscode.workspace.workspaceFolders ?? []).map((root) => ({
+      name: root.name,
+      uri: root.uri.toString(),
+    }));
   }
 
   getWorkspaceId(): string {
-    return this.getRoots().map((root) => root.uri).sort().join("|") || "no-workspace";
+    return (
+      this.getRoots()
+        .map((root) => root.uri)
+        .sort()
+        .join("|") || "no-workspace"
+    );
   }
 
   getWorkspaceRoot(rootIndex: number): string {
@@ -66,14 +74,25 @@ export class VsCodeWorkspaceAdapter implements WorkspaceAdapter {
     return vscode.workspace.isTrusted;
   }
 
-  async listFiles(root: WorkspaceRootReference, maxFiles: number): Promise<WorkspaceFileReference[]> {
+  async listFiles(
+    root: WorkspaceRootReference,
+    maxFiles: number,
+  ): Promise<WorkspaceFileReference[]> {
     const rootUri = vscode.Uri.parse(root.uri);
-    const uris = await vscode.workspace.findFiles(new vscode.RelativePattern(rootUri, "**/*"), DEFAULT_DISCOVERY_EXCLUDE, maxFiles);
+    const uris = await vscode.workspace.findFiles(
+      new vscode.RelativePattern(rootUri, "**/*"),
+      DEFAULT_DISCOVERY_EXCLUDE,
+      maxFiles,
+    );
     const output: WorkspaceFileReference[] = [];
     for (let index = 0; index < uris.length; index++) {
       const uri = uris[index];
       if (!uri) continue;
-      output.push({ root, uri: uri.toString(), relativePath: normalizeRelativePath(posix.relative(rootUri.path, uri.path)) });
+      output.push({
+        root,
+        uri: uri.toString(),
+        relativePath: normalizeRelativePath(posix.relative(rootUri.path, uri.path)),
+      });
       if ((index + 1) % 500 === 0) await new Promise<void>((resolve) => setImmediate(resolve));
     }
     return output;
@@ -84,17 +103,33 @@ export class VsCodeWorkspaceAdapter implements WorkspaceAdapter {
     const root = this.getRoots()
       .filter((item) => {
         const rootUri = vscode.Uri.parse(item.uri);
-        return rootUri.scheme === target.scheme && rootUri.authority === target.authority && (target.path === rootUri.path || target.path.startsWith(`${rootUri.path.replace(/\/$/, "")}/`));
+        return (
+          rootUri.scheme === target.scheme &&
+          rootUri.authority === target.authority &&
+          (target.path === rootUri.path ||
+            target.path.startsWith(`${rootUri.path.replace(/\/$/, "")}/`))
+        );
       })
-      .sort((left, right) => vscode.Uri.parse(right.uri).path.length - vscode.Uri.parse(left.uri).path.length)[0];
+      .sort(
+        (left, right) =>
+          vscode.Uri.parse(right.uri).path.length - vscode.Uri.parse(left.uri).path.length,
+      )[0];
     if (!root) return undefined;
     const rootUri = vscode.Uri.parse(root.uri);
-    return { root, uri: target.toString(), relativePath: normalizeRelativePath(posix.relative(rootUri.path, target.path)) };
+    return {
+      root,
+      uri: target.toString(),
+      relativePath: normalizeRelativePath(posix.relative(rootUri.path, target.path)),
+    };
   }
 
   fileReference(root: WorkspaceRootReference, relativePath: string): WorkspaceFileReference {
     const normalized = normalizeRelativePath(relativePath);
-    return { root, relativePath: normalized, uri: vscode.Uri.joinPath(vscode.Uri.parse(root.uri), ...normalized.split("/")).toString() };
+    return {
+      root,
+      relativePath: normalized,
+      uri: vscode.Uri.joinPath(vscode.Uri.parse(root.uri), ...normalized.split("/")).toString(),
+    };
   }
 
   async statFile(uri: string): Promise<WorkspaceFileStat> {
@@ -102,7 +137,7 @@ export class VsCodeWorkspaceAdapter implements WorkspaceAdapter {
     return {
       byteSize: stat.size,
       modifiedAt: new Date(stat.mtime).toISOString(),
-      type: fileType(stat.type)
+      type: fileType(stat.type),
     };
   }
 
@@ -124,7 +159,7 @@ export class VsCodeWorkspaceAdapter implements WorkspaceAdapter {
       maxFileSizeBytes: configuration.get("maxFileSizeKb", 1024) * 1024,
       workerCount: configuration.get("workerCount", 0),
       retainedGenerations: configuration.get("retainedGenerations", 2),
-      exclusions: configuration.get<string[]>("exclusions", [])
+      exclusions: configuration.get<string[]>("exclusions", []),
     };
   }
 
@@ -133,7 +168,8 @@ export class VsCodeWorkspaceAdapter implements WorkspaceAdapter {
   }
 }
 
-const DEFAULT_DISCOVERY_EXCLUDE = "{**/.git/**,**/.hg/**,**/.svn/**,**/.keystone/**,**/.vscode-test/**,**/node_modules/**,**/vendor/**,**/bower_components/**,**/site-packages/**,**/.pnpm-store/**,**/.yarn/**,**/dist/**,**/build/**,**/out/**,**/bin/**,**/obj/**,**/target/**,**/coverage/**,**/.coverage/**,**/.nyc_output/**,**/test-results/**,**/__pycache__/**,**/.pytest_cache/**,**/.mypy_cache/**,**/.ruff_cache/**,**/.tox/**,**/.nox/**,**/.cache/**,**/.turbo/**,**/.next/**,**/.nuxt/**,**/.svelte-kit/**,**/.astro/**,**/.gradle/**,**/.idea/**,**/.venv/**,**/venv/**,**/env/**,**/tmp/**,**/temp/**}";
+const DEFAULT_DISCOVERY_EXCLUDE =
+  "{**/.git/**,**/.hg/**,**/.svn/**,**/.keystone/**,**/.vscode-test/**,**/node_modules/**,**/vendor/**,**/bower_components/**,**/site-packages/**,**/.pnpm-store/**,**/.yarn/**,**/dist/**,**/build/**,**/out/**,**/bin/**,**/obj/**,**/target/**,**/coverage/**,**/.coverage/**,**/.nyc_output/**,**/test-results/**,**/__pycache__/**,**/.pytest_cache/**,**/.mypy_cache/**,**/.ruff_cache/**,**/.tox/**,**/.nox/**,**/.cache/**,**/.turbo/**,**/.next/**,**/.nuxt/**,**/.svelte-kit/**,**/.astro/**,**/.gradle/**,**/.idea/**,**/.venv/**,**/venv/**,**/env/**,**/tmp/**,**/temp/**}";
 
 function fileType(type: vscode.FileType): WorkspaceFileStat["type"] {
   if ((type & vscode.FileType.File) !== 0) return "file";

@@ -36,9 +36,7 @@ function source(available = true): NativeShellStateSource {
 
 describe("native shell services", () => {
   it("contributes exactly one Keystone Activity Bar dashboard", () => {
-    const manifest = JSON.parse(
-      readFileSync(join(process.cwd(), "package.json"), "utf8"),
-    ) as {
+    const manifest = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf8")) as {
       contributes: {
         viewsContainers: { activitybar: Array<{ id: string }> };
         views: Record<string, Array<{ id: string }>>;
@@ -59,21 +57,17 @@ describe("native shell services", () => {
   });
 
   it("projects bounded stable dashboard sections for empty and missing workspaces", () => {
-    const unavailable = new KeystoneDashboardViewModelService(
-      source(false),
-    ).project();
+    const unavailable = new KeystoneDashboardViewModelService(source(false)).project();
     expect(unavailable.status).toBe("no-workspace");
-    expect(
-      unavailable.sections
-        .flatMap((entry) => entry.items)
-        .map((entry) => entry.id),
-    ).toEqual(["repository:no-workspace", "action:open-folder", "action:open"]);
+    expect(unavailable.sections.flatMap((entry) => entry.items).map((entry) => entry.id)).toEqual([
+      "repository:no-workspace",
+      "action:open-folder",
+      "action:open",
+    ]);
     const available = new KeystoneDashboardViewModelService(source()).project();
     expect(available.status).toBe("intelligence-unavailable");
     expect(available.sections).toHaveLength(4);
-    expect(
-      available.sections.flatMap((entry) => entry.items).length,
-    ).toBeLessThanOrEqual(30);
+    expect(available.sections.flatMap((entry) => entry.items).length).toBeLessThanOrEqual(30);
     expect(available.refreshDurationMs).toBeLessThan(20);
     expect(
       available.sections

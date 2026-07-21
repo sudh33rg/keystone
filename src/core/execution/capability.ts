@@ -9,24 +9,24 @@
  * Available capability types that can be discovered in the VS Code environment
  */
 export type CapabilityType =
-  | 'agent'
-  | 'skill'
-  | 'instruction'
-  | 'languageModelProvider'
-  | 'command'
-  | 'prompt'
-  | 'extensionContribution';
+  | "agent"
+  | "skill"
+  | "instruction"
+  | "languageModelProvider"
+  | "command"
+  | "prompt"
+  | "extensionContribution";
 
 /**
  * State of a discovered capability
  */
 export type CapabilityState =
-  | 'available'
-  | 'partially-available'
-  | 'unavailable'
-  | 'unsupported'
-  | 'invalid'
-  | 'permission-required';
+  | "available"
+  | "partially-available"
+  | "unavailable"
+  | "unsupported"
+  | "invalid"
+  | "permission-required";
 
 /**
  * Base interface for all capabilities
@@ -102,7 +102,7 @@ export interface Capability {
  * Agent capability interface
  */
 export interface AgentCapability extends Capability {
-  type: 'agent';
+  type: "agent";
 
   /**
    * Stage types this agent can handle
@@ -122,14 +122,16 @@ export interface AgentCapability extends Capability {
   /**
    * Available invocation modes
    */
-  invocationModes?: ('direct' | 'chat-handoff' | 'clipboard-handoff' | 'manual' | 'deterministic')[];
+  invocationModes?: (
+    "direct" | "chat-handoff" | "clipboard-handoff" | "manual" | "deterministic"
+  )[];
 }
 
 /**
  * Skill capability interface
  */
 export interface SkillCapability extends Capability {
-  type: 'skill';
+  type: "skill";
 
   /**
    * Applicable SDLC stage types
@@ -161,7 +163,7 @@ export interface SkillCapability extends Capability {
  * Instruction capability interface
  */
 export interface InstructionCapability extends Capability {
-  type: 'instruction';
+  type: "instruction";
 
   /**
    * File path when applicable
@@ -171,7 +173,7 @@ export interface InstructionCapability extends Capability {
   /**
    * Scope of the instruction (repository, workspace, user, etc.)
    */
-  scope: 'repository' | 'workspace' | 'user' | 'system' | 'agent-specific' | 'stage-specific';
+  scope: "repository" | "workspace" | "user" | "system" | "agent-specific" | "stage-specific";
 
   /**
    * Precedence order (lower numbers have higher precedence)
@@ -198,7 +200,7 @@ export interface InstructionCapability extends Capability {
  * Language model provider capability
  */
 export interface LanguageModelProviderCapability extends Capability {
-  type: 'languageModelProvider';
+  type: "languageModelProvider";
 
   /**
    * Provider name (e.g., "openai", "anthropic", "copilot")
@@ -220,7 +222,7 @@ export interface LanguageModelProviderCapability extends Capability {
  * Command capability
  */
 export interface CommandCapability extends Capability {
-  type: 'command';
+  type: "command";
 
   /**
    * Command name (e.g., "keystone.startWorkflow")
@@ -237,7 +239,7 @@ export interface CommandCapability extends Capability {
  * Prompt capability
  */
 export interface PromptCapability extends Capability {
-  type: 'prompt';
+  type: "prompt";
 
   /**
    * File path or identifier for the prompt
@@ -259,7 +261,7 @@ export interface PromptCapability extends Capability {
  * Extension contribution capability
  */
 export interface ExtensionContributionCapability extends Capability {
-  type: 'extensionContribution';
+  type: "extensionContribution";
 
   /**
    * Extension ID that contributed this capability

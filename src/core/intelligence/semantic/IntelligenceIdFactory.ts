@@ -6,11 +6,40 @@ export class IntelligenceIdFactory {
     return `${prefix}:${createHash("sha256").update(canonical).digest("hex").slice(0, 32)}`;
   }
 
-  entity(repositoryId: string, fileId: string, type: string, qualifiedName: string, signature?: string): string {
-    return this.create("entity", repositoryId, fileId, "typescript", type, qualifiedName, signature);
+  entity(
+    repositoryId: string,
+    fileId: string,
+    type: string,
+    qualifiedName: string,
+    signature?: string,
+  ): string {
+    return this.create(
+      "entity",
+      repositoryId,
+      fileId,
+      "typescript",
+      type,
+      qualifiedName,
+      signature,
+    );
   }
 
-  relationship(repositoryId: string, sourceId: string, targetId: string, type: string, ownerFileId: string, discriminator?: string): string {
-    return this.create("relationship", repositoryId, sourceId, targetId, type, ownerFileId, discriminator);
+  relationship(
+    repositoryId: string,
+    sourceId: string,
+    targetId: string,
+    type: string,
+    ownerFileId: string,
+    discriminator?: string,
+  ): string {
+    return this.create(
+      "relationship",
+      repositoryId,
+      sourceId,
+      targetId,
+      type,
+      ownerFileId,
+      discriminator,
+    );
   }
 }

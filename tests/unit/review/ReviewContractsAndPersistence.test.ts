@@ -8,10 +8,7 @@ import { DeliveryPersistenceStore } from "../../../src/core/persistence/Delivery
 import { DevelopmentWorkflowSnapshotSchema } from "../../../src/shared/contracts/delegation";
 import { SCHEMA_VERSION } from "../../../src/shared/contracts/domain";
 import { WebviewRequestSchema } from "../../../src/shared/contracts/messages";
-import {
-  ReviewDecisionSchema,
-  ReviewNoteSchema,
-} from "../../../src/shared/contracts/review";
+import { ReviewDecisionSchema, ReviewNoteSchema } from "../../../src/shared/contracts/review";
 
 const workflowId = "00000000-0000-4000-8000-000000000001";
 
@@ -125,9 +122,7 @@ describe("Review and optional completion contracts", () => {
       await restored.initialize();
       expect(restored.snapshot.notes[0]?.text).toContain("rollback");
       expect(restored.snapshot.decisions[0]?.status).toBe("changes-requested");
-      expect(JSON.stringify(restored.snapshot)).not.toMatch(
-        /credential|token|password/i,
-      );
+      expect(JSON.stringify(restored.snapshot)).not.toMatch(/credential|token|password/i);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -168,20 +163,11 @@ describe("Review and optional completion contracts", () => {
     expect(service.getState(workflowId).readinessBlockers).toEqual(
       expect.arrayContaining([expect.stringMatching(/incomplete/i)]),
     );
-    await expect(service.approve(workflowId, "approve")).rejects.toThrow(
-      /blocked/i,
-    );
+    await expect(service.approve(workflowId, "approve")).rejects.toThrow(/blocked/i);
     workflow = workflowFixture(true, "completed");
-    const decision = await service.approve(
-      workflowId,
-      "Optional evidence reviewed.",
-    );
+    const decision = await service.approve(workflowId, "Optional evidence reviewed.");
     expect(decision.status).toBe("approved");
-    const completion = await service.complete(
-      workflowId,
-      "local",
-      "No delivery requested.",
-    );
+    const completion = await service.complete(workflowId, "local", "No delivery requested.");
     expect(completion.mode).toBe("local");
     expect(completion.commitHashes).toEqual([]);
     expect(completion.prUrl).toBeUndefined();
@@ -237,9 +223,7 @@ function workflowFixture(optional: boolean, status: "ready" | "completed") {
         expectedFiles: [],
         entityIds: [],
       },
-      requirements: [
-        { id: "REQ-1", description: "Complete reviewed work locally" },
-      ],
+      requirements: [{ id: "REQ-1", description: "Complete reviewed work locally" }],
       constraints: [],
       acceptanceCriteria: [
         {

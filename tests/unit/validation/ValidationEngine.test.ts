@@ -15,7 +15,7 @@ describe("ValidationEngine", () => {
       onDidDelete: vi.fn(),
       onDidRename: vi.fn(),
       onDidChange: vi.fn(),
-      getConfiguration: vi.fn()
+      getConfiguration: vi.fn(),
     } as unknown as WorkspaceAdapter;
 
     const git = {
@@ -27,7 +27,7 @@ describe("ValidationEngine", () => {
       getStagedFiles: () => [],
       getUntrackedFiles: () => [],
       onDidCommit: vi.fn(),
-      onDidChangeState: vi.fn()
+      onDidChangeState: vi.fn(),
     } as unknown as GitAdapter;
 
     engine = new ValidationEngine(workspace, git);
@@ -41,7 +41,13 @@ describe("ValidationEngine", () => {
   });
 
   it("should create an override record", () => {
-    const override = engine.createOverride("wf-1", "criterion-1", "Reason", "Acknowledged", "passed");
+    const override = engine.createOverride(
+      "wf-1",
+      "criterion-1",
+      "Reason",
+      "Acknowledged",
+      "passed",
+    );
 
     expect(override.criterionId).toBe("criterion-1");
     expect(override.resultingStatus).toBe("overridden");

@@ -30,10 +30,7 @@ export interface RelationshipInfo {
 export class KnowledgeGraphContextService {
   constructor(private readonly store: IntelligenceSnapshotReader) {}
 
-  async getFullContext(
-    nodeId: string,
-    signal?: AbortSignal,
-  ): Promise<GraphContext | undefined> {
+  async getFullContext(nodeId: string, signal?: AbortSignal): Promise<GraphContext | undefined> {
     const snapshot = this.store.getSnapshot();
     if (!snapshot) {
       throw new Error("Intelligence snapshot unavailable.");
@@ -96,7 +93,13 @@ export class KnowledgeGraphContextService {
       if (visited.has(e.sourceId)) continue;
       visited.add(e.sourceId);
       result.push(this.toRelationshipInfo(e, snapshot));
-      const moreAncestors = await this.collectAncestors(e.sourceId, edges, snapshot, signal, visited);
+      const moreAncestors = await this.collectAncestors(
+        e.sourceId,
+        edges,
+        snapshot,
+        signal,
+        visited,
+      );
       result.push(...moreAncestors);
     }
 
@@ -154,7 +157,9 @@ export class KnowledgeGraphContextService {
   private findEntity(
     snapshot: ReturnType<IntelligenceSnapshotReader["getSnapshot"]>,
     id: string,
-  ): { id: string; type: string; name: string; qualifiedName: string; relativePath: string } | undefined {
+  ):
+    | { id: string; type: string; name: string; qualifiedName: string; relativePath: string }
+    | undefined {
     if (!snapshot) return undefined;
     const symbol = snapshot.symbols.find((s) => s.id === id);
     if (symbol) {

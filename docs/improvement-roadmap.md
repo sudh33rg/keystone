@@ -1,6 +1,6 @@
 # Keystone Improvement Roadmap
 
-> **Version:** 0.2.0 | **Date:** 2026-07-20 | **Based on:** Gap Analysis of 52+ source files
+> **Version:** 0.1.0 | **Date:** 2026-07-20 | **Based on:** Gap Analysis of 52+ source files
 
 ## Overview
 

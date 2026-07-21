@@ -12,7 +12,13 @@ export default defineConfig({
     ],
     testTimeout: 15_000,
     coverage: {
-      reporter: ["text", "html"]
+      reporter: ["text", "html"],
+      thresholds: {
+        statements: 70,
+        branches: 70,
+        functions: 70,
+        lines: 70
+      }
     }
   }
 });

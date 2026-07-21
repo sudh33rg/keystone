@@ -26,7 +26,10 @@ export async function sha256Text(value: string): Promise<string> {
   return sha256Bytes(encoder.encode(value));
 }
 
-export async function stableId(prefix: string, ...parts: Array<string | number | undefined>): Promise<string> {
+export async function stableId(
+  prefix: string,
+  ...parts: Array<string | number | undefined>
+): Promise<string> {
   const canonical = parts.map((part) => String(part ?? "").normalize("NFC")).join("\u001f");
   const digest = await sha256Text(canonical);
   return `${prefix}:${digest.slice("sha256:".length, "sha256:".length + 32)}`;

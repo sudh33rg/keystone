@@ -3,7 +3,7 @@ import {
   SCHEMA_VERSION,
   type AppRoute,
   type NavigationSection,
-  type PersistedFoundationState
+  type PersistedFoundationState,
 } from "../../shared/contracts/domain";
 import { compatibilityRoute, sectionForRoute } from "../../shared/navigation";
 import { KeystoneError } from "../../shared/errors/KeystoneError";
@@ -20,13 +20,17 @@ export class FileMemento implements MementoLike {
   private values: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
   private writeChain = Promise.resolve();
 
-  private constructor(private readonly path: string, private readonly writer = new AtomicFileWriter()) {}
+  private constructor(
+    private readonly path: string,
+    private readonly writer = new AtomicFileWriter(),
+  ) {}
 
   static async open(path: string): Promise<FileMemento> {
     const memento = new FileMemento(path);
     try {
       const parsed = JSON.parse(await readFile(path, "utf8")) as unknown;
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) memento.values = parsed as Record<string, unknown>;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed))
+        memento.values = parsed as Record<string, unknown>;
     } catch (cause) {
       if (!(cause instanceof Error && "code" in cause && cause.code === "ENOENT")) {
         await rename(path, `${path}.invalid-${Date.now()}`).catch(() => undefined);
@@ -42,7 +46,9 @@ export class FileMemento implements MementoLike {
   update(key: string, value: unknown): PromiseLike<void> {
     this.values = { ...this.values, [key]: value };
     const snapshot = structuredClone(this.values);
-    this.writeChain = this.writeChain.catch(() => undefined).then(() => this.writer.writeJson(this.path, snapshot));
+    this.writeChain = this.writeChain
+      .catch(() => undefined)
+      .then(() => this.writer.writeJson(this.path, snapshot));
     return this.writeChain;
   }
 }
@@ -91,7 +97,7 @@ export class WorkspaceStateStore {
         operation: "persistence.initialize",
         recoverable: false,
         recommendedAction: "Open the Keystone logs and reload the VS Code window.",
-        cause: error
+        cause: error,
       });
     }
   }
@@ -106,7 +112,7 @@ export class WorkspaceStateStore {
       activeSection: sectionForRoute(route),
       activeRoute: route,
       revision: this.state.revision + 1,
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
     };
     await this.persist(next);
     return this.snapshot;
@@ -127,7 +133,7 @@ export class WorkspaceStateStore {
         recoverable: true,
         recommendedAction: "Check that VS Code can write extension workspace storage, then retry.",
         retryable: true,
-        cause: error
+        cause: error,
       });
     }
   }
@@ -140,31 +146,51 @@ export function createDefaultState(): PersistedFoundationState {
     activeSection: "home",
     activeRoute: "/",
     workflowCount: 0,
-    updatedAt: new Date().toISOString()
+    updatedAt: new Date().toISOString(),
   };
 }
 
 function migrateLegacyState(raw: unknown): PersistedFoundationState | undefined {
   if (!raw || typeof raw !== "object") return undefined;
   const candidate = raw as Record<string, unknown>;
-  if (candidate.schemaVersion === SCHEMA_VERSION && (candidate.activeSection === "hub" || candidate.activeSection === "models")) {
-    const result = PersistedFoundationStateSchema.safeParse({ ...candidate, activeSection: "intelligence", activeRoute: "/intelligence", revision: typeof candidate.revision === "number" ? candidate.revision + 1 : 1, updatedAt: new Date().toISOString() });
+  if (
+    candidate.schemaVersion === SCHEMA_VERSION &&
+    (candidate.activeSection === "hub" || candidate.activeSection === "models")
+  ) {
+    const result = PersistedFoundationStateSchema.safeParse({
+      ...candidate,
+      activeSection: "intelligence",
+      activeRoute: "/intelligence",
+      revision: typeof candidate.revision === "number" ? candidate.revision + 1 : 1,
+      updatedAt: new Date().toISOString(),
+    });
     return result.success ? result.data : undefined;
   }
-  if (candidate.schemaVersion === SCHEMA_VERSION && typeof candidate.activeSection === "string" && candidate.activeRoute === undefined) {
+  if (
+    candidate.schemaVersion === SCHEMA_VERSION &&
+    typeof candidate.activeSection === "string" &&
+    candidate.activeRoute === undefined
+  ) {
     const section = candidate.activeSection as NavigationSection;
     const activeRoute = compatibilityRoute(section);
-    const result = PersistedFoundationStateSchema.safeParse({ ...candidate, activeSection: sectionForRoute(activeRoute), activeRoute, revision: typeof candidate.revision === "number" ? candidate.revision + 1 : 1, updatedAt: new Date().toISOString() });
+    const result = PersistedFoundationStateSchema.safeParse({
+      ...candidate,
+      activeSection: sectionForRoute(activeRoute),
+      activeRoute,
+      revision: typeof candidate.revision === "number" ? candidate.revision + 1 : 1,
+      updatedAt: new Date().toISOString(),
+    });
     return result.success ? result.data : undefined;
   }
   if (candidate.schemaVersion !== 0) return undefined;
-  const activeSection = typeof candidate.activeSection === "string" ? candidate.activeSection : "home";
+  const activeSection =
+    typeof candidate.activeSection === "string" ? candidate.activeSection : "home";
   const route = compatibilityRoute(activeSection as NavigationSection);
   const result = PersistedFoundationStateSchema.safeParse({
     ...createDefaultState(),
     activeSection: sectionForRoute(route),
     activeRoute: route,
-    workflowCount: typeof candidate.workflowCount === "number" ? candidate.workflowCount : 0
+    workflowCount: typeof candidate.workflowCount === "number" ? candidate.workflowCount : 0,
   });
   return result.success ? result.data : undefined;
 }

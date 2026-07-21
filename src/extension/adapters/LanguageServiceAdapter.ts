@@ -24,21 +24,22 @@ export interface LanguageServiceAdapter {
 export class VsCodeLanguageServiceAdapter implements LanguageServiceAdapter {
   async extractSymbols(uri: string): Promise<SymbolExtractionResult> {
     const document = await vscode.workspace.openTextDocument(vscode.Uri.parse(uri));
-    const raw = await vscode.commands.executeCommand<Array<vscode.DocumentSymbol | vscode.SymbolInformation> | undefined>(
-      "vscode.executeDocumentSymbolProvider",
-      document.uri
-    );
+    const raw = await vscode.commands.executeCommand<
+      Array<vscode.DocumentSymbol | vscode.SymbolInformation> | undefined
+    >("vscode.executeDocumentSymbolProvider", document.uri);
     return {
       language: document.languageId || "unknown",
       extractorId: "vscode.document-symbol-provider",
       extractorVersion: vscode.version,
       available: raw !== undefined,
-      symbols: await normalizeSymbols(raw ?? [])
+      symbols: await normalizeSymbols(raw ?? []),
     };
   }
 }
 
-async function normalizeSymbols(raw: Array<vscode.DocumentSymbol | vscode.SymbolInformation>): Promise<ExtractedSymbolFact[]> {
+async function normalizeSymbols(
+  raw: Array<vscode.DocumentSymbol | vscode.SymbolInformation>,
+): Promise<ExtractedSymbolFact[]> {
   const output: ExtractedSymbolFact[] = [];
   const pending = raw.map((symbol) => ({ symbol, parents: [] as string[] }));
   let visited = 0;
@@ -49,19 +50,24 @@ async function normalizeSymbols(raw: Array<vscode.DocumentSymbol | vscode.Symbol
     if (isDocumentSymbol(symbol)) {
       const qualifiedName = [...parents, symbol.name].join(".");
       const signature = symbol.detail.trim() || undefined;
-      output.push({ name: symbol.name, qualifiedName, type: mapSymbolKind(symbol.kind), ...(signature ? { signature } : {}), range: toRange(symbol.selectionRange) });
+      output.push({
+        name: symbol.name,
+        qualifiedName,
+        type: mapSymbolKind(symbol.kind),
+        ...(signature ? { signature } : {}),
+        range: toRange(symbol.selectionRange),
+      });
       for (let index = symbol.children.length - 1; index >= 0; index--) {
         const child = symbol.children[index];
         if (child) pending.push({ symbol: child, parents: [...parents, symbol.name] });
       }
-    }
-    else {
+    } else {
       const parent = symbol.containerName.trim();
       output.push({
         name: symbol.name,
         qualifiedName: parent ? `${parent}.${symbol.name}` : symbol.name,
         type: mapSymbolKind(symbol.kind),
-        range: toRange(symbol.location.range)
+        range: toRange(symbol.location.range),
       });
     }
     visited += 1;
@@ -70,7 +76,9 @@ async function normalizeSymbols(raw: Array<vscode.DocumentSymbol | vscode.Symbol
   return output;
 }
 
-function isDocumentSymbol(symbol: vscode.DocumentSymbol | vscode.SymbolInformation): symbol is vscode.DocumentSymbol {
+function isDocumentSymbol(
+  symbol: vscode.DocumentSymbol | vscode.SymbolInformation,
+): symbol is vscode.DocumentSymbol {
   return "children" in symbol && "selectionRange" in symbol;
 }
 
@@ -79,7 +87,7 @@ function toRange(range: vscode.Range): SourceRange {
     startLine: range.start.line,
     startColumn: range.start.character,
     endLine: range.end.line,
-    endColumn: range.end.character
+    endColumn: range.end.character,
   };
 }
 
@@ -110,7 +118,7 @@ function mapSymbolKind(kind: vscode.SymbolKind): string {
     [vscode.SymbolKind.Struct]: "keystone.core.Struct",
     [vscode.SymbolKind.Event]: "keystone.core.Event",
     [vscode.SymbolKind.Operator]: "keystone.core.Operator",
-    [vscode.SymbolKind.TypeParameter]: "keystone.core.TypeParameter"
+    [vscode.SymbolKind.TypeParameter]: "keystone.core.TypeParameter",
   };
   return names[kind] ?? "keystone.core.Symbol";
 }

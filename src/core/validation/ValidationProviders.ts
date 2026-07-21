@@ -43,17 +43,9 @@ export class TestImpactService {
     const candidates = new Map<string, TestImpactSelection>();
     for (const relation of snapshot.relationships) {
       if (!TEST_RELATIONSHIPS.has(relation.type)) continue;
-      const source = snapshot.symbols.find(
-        (item) => item.id === relation.sourceId,
-      );
-      const target = snapshot.symbols.find(
-        (item) => item.id === relation.targetId,
-      );
-      const test = isTest(source)
-        ? source
-        : isTest(target)
-          ? target
-          : undefined;
+      const source = snapshot.symbols.find((item) => item.id === relation.sourceId);
+      const target = snapshot.symbols.find((item) => item.id === relation.targetId);
+      const test = isTest(source) ? source : isTest(target) ? target : undefined;
       const production = test === source ? target : source;
       if (!test || !production || !changed.has(production.id)) continue;
       const file = snapshot.files.find((item) => item.id === test.fileId);
@@ -73,8 +65,7 @@ export class TestImpactService {
         selected: !excluded.has(test.id) && tier !== "naming-candidate",
       });
       const existing = candidates.get(test.id);
-      if (!existing || rank(value.tier) > rank(existing.tier))
-        candidates.set(test.id, value);
+      if (!existing || rank(value.tier) > rank(existing.tier)) candidates.set(test.id, value);
     }
     return [...candidates.values()]
       .sort(
@@ -123,9 +114,7 @@ export class TestValidationProvider extends RepositoryCommandValidationProvider 
 }
 
 export class ValidationEvidenceService {
-  create(
-    input: Omit<ValidationEvidence, "id" | "createdAt">,
-  ): ValidationEvidence {
+  create(input: Omit<ValidationEvidence, "id" | "createdAt">): ValidationEvidence {
     return ValidationEvidenceSchema.parse({
       ...input,
       id: crypto.randomUUID(),
@@ -160,8 +149,7 @@ export class SpecificationConformanceService {
   ): ProviderResult {
     const unexpected = session.observedChanges.filter(
       (item) =>
-        ["unexpected", "ambiguous", "excluded"].includes(item.classification) &&
-        !item.userOverride,
+        ["unexpected", "ambiguous", "excluded"].includes(item.classification) && !item.userOverride,
     );
     const missingExpected = session.expectedFiles.filter(
       (path) =>
@@ -208,14 +196,9 @@ export class StaticValidationProvider {
     private readonly findings = new ValidationFindingService(),
   ) {}
 
-  validate(
-    session: TaskExecutionSession,
-    step: ValidationStep,
-  ): ProviderResult {
+  validate(session: TaskExecutionSession, step: ValidationStep): ProviderResult {
     const snapshot = this.snapshots.getSnapshot();
-    const paths = new Set(
-      session.observedChanges.map((item) => item.relativePath),
-    );
+    const paths = new Set(session.observedChanges.map((item) => item.relativePath));
     const diagnostics = (snapshot?.diagnostics ?? []).filter(
       (item) => !item.relativePath || paths.has(item.relativePath),
     );
@@ -266,15 +249,10 @@ export class SecurityValidationProvider {
     private readonly findings = new ValidationFindingService(),
   ) {}
 
-  async validate(
-    session: TaskExecutionSession,
-    step: ValidationStep,
-  ): Promise<ProviderResult> {
+  async validate(session: TaskExecutionSession, step: ValidationStep): Promise<ProviderResult> {
     const manifest = this.snapshots.getCpgManifest?.();
     if (!manifest || !this.snapshots.readCpgScope) return unsupportedSecurity();
-    const changed = new Set(
-      session.changedEntities.map((item) => item.entityId),
-    );
+    const changed = new Set(session.changedEntities.map((item) => item.entityId));
     const scopes = manifest.scopes
       .filter((item) => changed.has(item.semanticSymbolId))
       .slice(0, 100);
@@ -341,17 +319,11 @@ export class PerformanceValidationProvider {
     private readonly findings = new ValidationFindingService(),
   ) {}
 
-  validate(
-    session: TaskExecutionSession,
-    step: ValidationStep,
-  ): ProviderResult {
+  validate(session: TaskExecutionSession, step: ValidationStep): ProviderResult {
     const snapshot = this.snapshots.getSnapshot();
-    const changed = new Set(
-      session.changedEntities.map((item) => item.entityId),
-    );
+    const changed = new Set(session.changedEntities.map((item) => item.entityId));
     const candidates = (snapshot?.symbols ?? []).filter(
-      (item) =>
-        changed.has(item.id) && (item.codeAnalysis?.branches ?? 0) >= 20,
+      (item) => changed.has(item.id) && (item.codeAnalysis?.branches ?? 0) >= 20,
     );
     const evidence = candidates.map((item) =>
       this.evidence.create({
@@ -376,9 +348,7 @@ export class PerformanceValidationProvider {
         details: {
           rule: "keystone.performance.changed-high-branch-count",
           confidence: item.codeAnalysis?.confidence ?? item.confidence,
-          limitations: [
-            "No runtime performance claim is made without measurement.",
-          ],
+          limitations: ["No runtime performance claim is made without measurement."],
         },
       }),
     );
@@ -405,9 +375,7 @@ function unsupportedSecurity(): ProviderResult {
 
 function securityPaths(artifact: CpgScopeArtifact): string[][] {
   const sources = artifact.nodes.filter(isUntrustedSource);
-  const sinks = new Set(
-    artifact.nodes.filter(isDangerousSink).map((item) => item.id),
-  );
+  const sinks = new Set(artifact.nodes.filter(isDangerousSink).map((item) => item.id));
   const adjacency = new Map<string, string[]>();
   for (const edge of artifact.edges) {
     if (
@@ -420,10 +388,7 @@ function securityPaths(artifact: CpgScopeArtifact): string[][] {
       ].includes(edge.type)
     )
       continue;
-    adjacency.set(edge.sourceId, [
-      ...(adjacency.get(edge.sourceId) ?? []),
-      edge.targetId,
-    ]);
+    adjacency.set(edge.sourceId, [...(adjacency.get(edge.sourceId) ?? []), edge.targetId]);
   }
   const paths: string[][] = [];
   for (const source of sources) {
@@ -469,18 +434,14 @@ function pathConfidence(artifact: CpgScopeArtifact, path: string[]): number {
   return edges.length ? Math.min(...edges.map((item) => item.confidence)) : 0;
 }
 
-function mappingTier(
-  relationship: IntelligenceRelationshipRecord,
-): TestImpactSelection["tier"] {
+function mappingTier(relationship: IntelligenceRelationshipRecord): TestImpactSelection["tier"] {
   if (relationship.type === "keystone.core.COVERS") return "coverage-confirmed";
   if (
     relationship.type === "keystone.core.CALLS" &&
     ["exact", "compiler"].includes(relationship.resolution ?? "")
   )
     return "exact-resolved-call";
-  if (
-    ["exact", "compiler", "syntactic"].includes(relationship.resolution ?? "")
-  )
+  if (["exact", "compiler", "syntactic"].includes(relationship.resolution ?? ""))
     return "exact-reference-import";
   if (relationship.resolution === "framework") return "framework-binding";
   return "naming-candidate";

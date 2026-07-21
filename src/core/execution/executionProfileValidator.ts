@@ -5,9 +5,9 @@
  * and that all referenced capabilities are available or can be resolved.
  */
 
-import type { ExecutionProfile } from './executionProfile';
-import type { CapabilityDiscoveryService } from './capabilityDiscoveryService';
-import type { KeystoneLogger } from '../../shared/logging/KeystoneLogger';
+import type { ExecutionProfile } from "./executionProfile";
+import type { CapabilityDiscoveryService } from "./capabilityDiscoveryService";
+import type { KeystoneLogger } from "../../shared/logging/KeystoneLogger";
 
 /**
  * Validation result for an execution profile
@@ -21,7 +21,7 @@ export interface ValidationIssue {
   /**
    * Severity of the issue (warning, error, info)
    */
-  severity: 'info' | 'warning' | 'error';
+  severity: "info" | "warning" | "error";
 
   /**
    * The capability or component that has the issue
@@ -65,28 +65,31 @@ export class ExecutionProfileValidator {
   validateProfile(profile: ExecutionProfile): ValidationIssue[] {
     const issues: ValidationIssue[] = [];
 
-    this.logger.info('executionProfileValidator.validateProfile', `Validating execution profile: ${profile.name}`);
+    this.logger.info(
+      "executionProfileValidator.validateProfile",
+      `Validating execution profile: ${profile.name}`,
+    );
 
     // Validate basic profile structure
     if (!profile.id) {
       issues.push({
-        code: 'PROFILE_ID_MISSING',
-        severity: 'error',
-        affectedCapability: 'profile',
-        message: 'Execution profile must have an ID',
-        suggestedResolution: 'Assign a unique ID to the profile',
-        blocking: true
+        code: "PROFILE_ID_MISSING",
+        severity: "error",
+        affectedCapability: "profile",
+        message: "Execution profile must have an ID",
+        suggestedResolution: "Assign a unique ID to the profile",
+        blocking: true,
       });
     }
 
     if (!profile.name) {
       issues.push({
-        code: 'PROFILE_NAME_MISSING',
-        severity: 'error',
-        affectedCapability: 'profile',
-        message: 'Execution profile must have a name',
-        suggestedResolution: 'Provide a descriptive name for the profile',
-        blocking: true
+        code: "PROFILE_NAME_MISSING",
+        severity: "error",
+        affectedCapability: "profile",
+        message: "Execution profile must have a name",
+        suggestedResolution: "Provide a descriptive name for the profile",
+        blocking: true,
       });
     }
 
@@ -118,7 +121,10 @@ export class ExecutionProfileValidator {
     const capabilityIssues = this.validateCapabilityAvailability(profile);
     issues.push(...capabilityIssues);
 
-    this.logger.info('executionProfileValidator.validateProfile', `Validation complete. Found ${issues.length} issues`);
+    this.logger.info(
+      "executionProfileValidator.validateProfile",
+      `Validation complete. Found ${issues.length} issues`,
+    );
 
     return issues;
   }
@@ -135,70 +141,75 @@ export class ExecutionProfileValidator {
     // Check that agent is specified
     if (!profile.executor.agentId) {
       issues.push({
-        code: 'EXECUTOR_AGENT_ID_MISSING',
-        severity: 'error',
-        affectedCapability: 'executor',
-        message: 'Executor must specify an agent ID',
-        suggestedResolution: 'Specify the ID of the agent to use for execution',
-        blocking: true
+        code: "EXECUTOR_AGENT_ID_MISSING",
+        severity: "error",
+        affectedCapability: "executor",
+        message: "Executor must specify an agent ID",
+        suggestedResolution: "Specify the ID of the agent to use for execution",
+        blocking: true,
       });
     } else {
       // Check if the agent exists and is available
       const agent = this.capabilityService.getCapabilityById(profile.executor.agentId);
       if (!agent) {
         issues.push({
-          code: 'EXECUTOR_AGENT_NOT_FOUND',
-          severity: 'warning',
+          code: "EXECUTOR_AGENT_NOT_FOUND",
+          severity: "warning",
           affectedCapability: profile.executor.agentId,
           message: `Selected agent ${profile.executor.agentId} is not found in capability registry`,
-          suggestedResolution: 'Select a valid agent from the available capabilities or update the agent ID',
-          blocking: false
+          suggestedResolution:
+            "Select a valid agent from the available capabilities or update the agent ID",
+          blocking: false,
         });
-      } else if (agent.state !== 'available') {
+      } else if (agent.state !== "available") {
         issues.push({
-          code: 'EXECUTOR_AGENT_UNAVAILABLE',
-          severity: 'warning',
+          code: "EXECUTOR_AGENT_UNAVAILABLE",
+          severity: "warning",
           affectedCapability: profile.executor.agentId,
           message: `Selected agent ${profile.executor.agentId} is not currently available`,
-          suggestedResolution: 'Select a different agent or wait for the agent to become available',
-          blocking: false
+          suggestedResolution: "Select a different agent or wait for the agent to become available",
+          blocking: false,
         });
       }
     }
 
     // Validate invocation mode
-    const validModes = ['direct', 'chat-handoff', 'clipboard-handoff', 'manual', 'deterministic'];
+    const validModes = ["direct", "chat-handoff", "clipboard-handoff", "manual", "deterministic"];
     if (!validModes.includes(profile.executor.invocationMode)) {
       issues.push({
-        code: 'EXECUTOR_INVALID_INVOCATION_MODE',
-        severity: 'error',
-        affectedCapability: 'executor',
+        code: "EXECUTOR_INVALID_INVOCATION_MODE",
+        severity: "error",
+        affectedCapability: "executor",
         message: `Invalid invocation mode: ${profile.executor.invocationMode}`,
-        suggestedResolution: 'Use one of: direct, chat-handoff, clipboard-handoff, manual, deterministic',
-        blocking: true
+        suggestedResolution:
+          "Use one of: direct, chat-handoff, clipboard-handoff, manual, deterministic",
+        blocking: true,
       });
     }
 
     // Validate fallback configuration if provided
     if (profile.executor.fallbackAgentId) {
-      const fallbackAgent = this.capabilityService.getCapabilityById(profile.executor.fallbackAgentId);
+      const fallbackAgent = this.capabilityService.getCapabilityById(
+        profile.executor.fallbackAgentId,
+      );
       if (!fallbackAgent) {
         issues.push({
-          code: 'EXECUTOR_FALLBACK_AGENT_NOT_FOUND',
-          severity: 'warning',
+          code: "EXECUTOR_FALLBACK_AGENT_NOT_FOUND",
+          severity: "warning",
           affectedCapability: profile.executor.fallbackAgentId,
           message: `Fallback agent ${profile.executor.fallbackAgentId} is not found in capability registry`,
-          suggestedResolution: 'Select a valid fallback agent or remove the fallback configuration',
-          blocking: false
+          suggestedResolution: "Select a valid fallback agent or remove the fallback configuration",
+          blocking: false,
         });
-      } else if (fallbackAgent.state !== 'available') {
+      } else if (fallbackAgent.state !== "available") {
         issues.push({
-          code: 'EXECUTOR_FALLBACK_AGENT_UNAVAILABLE',
-          severity: 'warning',
+          code: "EXECUTOR_FALLBACK_AGENT_UNAVAILABLE",
+          severity: "warning",
           affectedCapability: profile.executor.fallbackAgentId,
           message: `Fallback agent ${profile.executor.fallbackAgentId} is not currently available`,
-          suggestedResolution: 'Select a different fallback agent or wait for the agent to become available',
-          blocking: false
+          suggestedResolution:
+            "Select a different fallback agent or wait for the agent to become available",
+          blocking: false,
         });
       }
     }
@@ -219,12 +230,12 @@ export class ExecutionProfileValidator {
     for (const skillRef of profile.skills) {
       if (!skillRef.skillId) {
         issues.push({
-          code: 'SKILL_ID_MISSING',
-          severity: 'error',
-          affectedCapability: 'skills',
-          message: 'Skill reference must specify a skill ID',
-          suggestedResolution: 'Provide a valid skill ID',
-          blocking: true
+          code: "SKILL_ID_MISSING",
+          severity: "error",
+          affectedCapability: "skills",
+          message: "Skill reference must specify a skill ID",
+          suggestedResolution: "Provide a valid skill ID",
+          blocking: true,
         });
         continue;
       }
@@ -233,21 +244,21 @@ export class ExecutionProfileValidator {
       const skill = this.capabilityService.getCapabilityById(skillRef.skillId);
       if (!skill) {
         issues.push({
-          code: 'SKILL_NOT_FOUND',
-          severity: 'warning',
+          code: "SKILL_NOT_FOUND",
+          severity: "warning",
           affectedCapability: skillRef.skillId,
           message: `Skill ${skillRef.skillId} is not found in capability registry`,
-          suggestedResolution: 'Ensure the skill exists or remove this reference',
-          blocking: false
+          suggestedResolution: "Ensure the skill exists or remove this reference",
+          blocking: false,
         });
-      } else if (skill.type !== 'skill') {
+      } else if (skill.type !== "skill") {
         issues.push({
-          code: 'SKILL_INVALID_TYPE',
-          severity: 'error',
+          code: "SKILL_INVALID_TYPE",
+          severity: "error",
           affectedCapability: skillRef.skillId,
           message: `Capability ${skillRef.skillId} is not a skill`,
-          suggestedResolution: 'Use a valid skill capability ID',
-          blocking: true
+          suggestedResolution: "Use a valid skill capability ID",
+          blocking: true,
         });
       }
     }
@@ -268,12 +279,12 @@ export class ExecutionProfileValidator {
     for (const instructionRef of profile.instructions) {
       if (!instructionRef.instructionId) {
         issues.push({
-          code: 'INSTRUCTION_ID_MISSING',
-          severity: 'error',
-          affectedCapability: 'instructions',
-          message: 'Instruction reference must specify an instruction ID',
-          suggestedResolution: 'Provide a valid instruction ID',
-          blocking: true
+          code: "INSTRUCTION_ID_MISSING",
+          severity: "error",
+          affectedCapability: "instructions",
+          message: "Instruction reference must specify an instruction ID",
+          suggestedResolution: "Provide a valid instruction ID",
+          blocking: true,
         });
         continue;
       }
@@ -282,21 +293,21 @@ export class ExecutionProfileValidator {
       const instruction = this.capabilityService.getCapabilityById(instructionRef.instructionId);
       if (!instruction) {
         issues.push({
-          code: 'INSTRUCTION_NOT_FOUND',
-          severity: 'warning',
+          code: "INSTRUCTION_NOT_FOUND",
+          severity: "warning",
           affectedCapability: instructionRef.instructionId,
           message: `Instruction ${instructionRef.instructionId} is not found in capability registry`,
-          suggestedResolution: 'Ensure the instruction exists or remove this reference',
-          blocking: false
+          suggestedResolution: "Ensure the instruction exists or remove this reference",
+          blocking: false,
         });
-      } else if (instruction.type !== 'instruction') {
+      } else if (instruction.type !== "instruction") {
         issues.push({
-          code: 'INSTRUCTION_INVALID_TYPE',
-          severity: 'error',
+          code: "INSTRUCTION_INVALID_TYPE",
+          severity: "error",
           affectedCapability: instructionRef.instructionId,
           message: `Capability ${instructionRef.instructionId} is not an instruction`,
-          suggestedResolution: 'Use a valid instruction capability ID',
-          blocking: true
+          suggestedResolution: "Use a valid instruction capability ID",
+          blocking: true,
         });
       }
     }
@@ -316,12 +327,12 @@ export class ExecutionProfileValidator {
     // Validate token budget
     if (profile.context.tokenBudget <= 0) {
       issues.push({
-        code: 'CONTEXT_INVALID_TOKEN_BUDGET',
-        severity: 'error',
-        affectedCapability: 'context',
-        message: 'Token budget must be positive',
-        suggestedResolution: 'Set token budget to a positive value',
-        blocking: true
+        code: "CONTEXT_INVALID_TOKEN_BUDGET",
+        severity: "error",
+        affectedCapability: "context",
+        message: "Token budget must be positive",
+        suggestedResolution: "Set token budget to a positive value",
+        blocking: true,
       });
     }
 
@@ -340,24 +351,24 @@ export class ExecutionProfileValidator {
     // Validate retry limit
     if (profile.control.retryLimit < 0) {
       issues.push({
-        code: 'CONTROL_INVALID_RETRY_LIMIT',
-        severity: 'error',
-        affectedCapability: 'control',
-        message: 'Retry limit must be non-negative',
-        suggestedResolution: 'Set retry limit to zero or a positive integer',
-        blocking: true
+        code: "CONTROL_INVALID_RETRY_LIMIT",
+        severity: "error",
+        affectedCapability: "control",
+        message: "Retry limit must be non-negative",
+        suggestedResolution: "Set retry limit to zero or a positive integer",
+        blocking: true,
       });
     }
 
     // Validate timeout seconds if provided
     if (profile.control.timeoutSeconds !== undefined && profile.control.timeoutSeconds < 0) {
       issues.push({
-        code: 'CONTROL_INVALID_TIMEOUT',
-        severity: 'error',
-        affectedCapability: 'control',
-        message: 'Timeout seconds must be non-negative',
-        suggestedResolution: 'Set timeout to zero or a positive integer',
-        blocking: true
+        code: "CONTROL_INVALID_TIMEOUT",
+        severity: "error",
+        affectedCapability: "control",
+        message: "Timeout seconds must be non-negative",
+        suggestedResolution: "Set timeout to zero or a positive integer",
+        blocking: true,
       });
     }
 
@@ -381,29 +392,30 @@ export class ExecutionProfileValidator {
       "test-changes",
       "review-findings",
       "documentation",
-      "custom"
+      "custom",
     ];
 
     if (!validContractTypes.includes(profile.output.contractType)) {
       issues.push({
-        code: 'OUTPUT_INVALID_CONTRACT_TYPE',
-        severity: 'error',
-        affectedCapability: 'output',
+        code: "OUTPUT_INVALID_CONTRACT_TYPE",
+        severity: "error",
+        affectedCapability: "output",
         message: `Invalid output contract type: ${profile.output.contractType}`,
-        suggestedResolution: 'Use one of: implementation, analysis, test-plan, test-changes, review-findings, documentation, custom',
-        blocking: true
+        suggestedResolution:
+          "Use one of: implementation, analysis, test-plan, test-changes, review-findings, documentation, custom",
+        blocking: true,
       });
     }
 
     // Validate custom schema ID when contract type is custom
-    if (profile.output.contractType === 'custom' && !profile.output.customSchemaId) {
+    if (profile.output.contractType === "custom" && !profile.output.customSchemaId) {
       issues.push({
-        code: 'OUTPUT_CUSTOM_SCHEMA_MISSING',
-        severity: 'warning',
-        affectedCapability: 'output',
-        message: 'Custom output contract requires a schema ID',
-        suggestedResolution: 'Provide a custom schema ID or change contract type',
-        blocking: false
+        code: "OUTPUT_CUSTOM_SCHEMA_MISSING",
+        severity: "warning",
+        affectedCapability: "output",
+        message: "Custom output contract requires a schema ID",
+        suggestedResolution: "Provide a custom schema ID or change contract type",
+        blocking: false,
       });
     }
 
@@ -451,21 +463,21 @@ export class ExecutionProfileValidator {
       const capability = this.capabilityService.getCapabilityById(capabilityId);
       if (!capability) {
         issues.push({
-          code: 'CAPABILITY_NOT_FOUND',
-          severity: 'warning',
+          code: "CAPABILITY_NOT_FOUND",
+          severity: "warning",
           affectedCapability: capabilityId,
           message: `Referenced capability ${capabilityId} is not found`,
-          suggestedResolution: 'Check that capability exists or update the reference',
-          blocking: false
+          suggestedResolution: "Check that capability exists or update the reference",
+          blocking: false,
         });
-      } else if (capability.state === 'unavailable') {
+      } else if (capability.state === "unavailable") {
         issues.push({
-          code: 'CAPABILITY_UNAVAILABLE',
-          severity: 'warning',
+          code: "CAPABILITY_UNAVAILABLE",
+          severity: "warning",
           affectedCapability: capabilityId,
           message: `Referenced capability ${capabilityId} is not available`,
-          suggestedResolution: 'Ensure capability is available or select a different option',
-          blocking: false
+          suggestedResolution: "Ensure capability is available or select a different option",
+          blocking: false,
         });
       }
     }

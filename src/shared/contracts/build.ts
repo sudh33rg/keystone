@@ -26,14 +26,7 @@ export const BuildSelectTaskPayloadSchema = Scope.extend({
 }).strict();
 export const BuildBlockTaskPayloadSchema = Scope.extend({
   reason: z.string().min(1).max(2000),
-  category: z.enum([
-    "decision",
-    "dependency",
-    "external",
-    "repository",
-    "validation",
-    "other",
-  ]),
+  category: z.enum(["decision", "dependency", "external", "repository", "validation", "other"]),
   requiredDecision: z.string().max(2000).optional(),
   suggestedAction: z.string().max(2000),
 }).strict();
@@ -55,13 +48,7 @@ export const BuildSelectAgentPayloadSchema = Scope.extend({
 export const CopilotCustomizationItemSchema = z
   .object({
     id: z.string().min(1).max(500),
-    kind: z.enum([
-      "instruction",
-      "path-instruction",
-      "agent",
-      "skill",
-      "prompt",
-    ]),
+    kind: z.enum(["instruction", "path-instruction", "agent", "skill", "prompt"]),
     name: z.string().min(1).max(500),
     description: z.string().max(2000).optional(),
     sourcePath: z.string().max(1024).optional(),
@@ -74,9 +61,7 @@ export const CopilotCustomizationItemSchema = z
     fingerprint: z.string().max(256),
   })
   .strict();
-export type CopilotCustomizationItem = z.infer<
-  typeof CopilotCustomizationItemSchema
->;
+export type CopilotCustomizationItem = z.infer<typeof CopilotCustomizationItemSchema>;
 
 export const BuildReadinessCheckSchema = z
   .object({

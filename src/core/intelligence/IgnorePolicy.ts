@@ -1,4 +1,7 @@
-import type { ClassificationDecision, IntelligenceFileCategory } from "../../shared/contracts/intelligence";
+import type {
+  ClassificationDecision,
+  IntelligenceFileCategory,
+} from "../../shared/contracts/intelligence";
 import { normalizeRelativePath } from "./StableId";
 
 export type FileCategory = IntelligenceFileCategory;
@@ -13,16 +16,84 @@ export interface IgnorePolicy {
 }
 
 const SOURCE_EXTENSIONS = new Set([
-  ".c", ".cc", ".cpp", ".cs", ".go", ".h", ".hpp", ".java", ".js", ".jsx", ".kt", ".kts",
-  ".php", ".py", ".rb", ".rs", ".scala", ".swift", ".ts", ".tsx", ".vue", ".svelte"
+  ".c",
+  ".cc",
+  ".cpp",
+  ".cs",
+  ".go",
+  ".h",
+  ".hpp",
+  ".java",
+  ".js",
+  ".jsx",
+  ".kt",
+  ".kts",
+  ".php",
+  ".py",
+  ".rb",
+  ".rs",
+  ".scala",
+  ".swift",
+  ".ts",
+  ".tsx",
+  ".vue",
+  ".svelte",
 ]);
 
 const BINARY_EXTENSIONS = new Set([
-  ".7z", ".a", ".avi", ".bin", ".bmp", ".bz2", ".class", ".dat", ".db", ".deb", ".dll",
-  ".dmg", ".doc", ".docx", ".eot", ".exe", ".flv", ".gif", ".gz", ".ico", ".iso", ".jar",
-  ".jpeg", ".jpg", ".lib", ".mov", ".mp3", ".mp4", ".o", ".obj", ".pdf", ".pkg", ".png",
-  ".ppt", ".pptx", ".pyd", ".pyc", ".pyo", ".rar", ".rpm", ".so", ".sqlite", ".sqlite3",
-  ".tar", ".ttf", ".war", ".webp", ".woff", ".woff2", ".wmv", ".xls", ".xlsx", ".zip"
+  ".7z",
+  ".a",
+  ".avi",
+  ".bin",
+  ".bmp",
+  ".bz2",
+  ".class",
+  ".dat",
+  ".db",
+  ".deb",
+  ".dll",
+  ".dmg",
+  ".doc",
+  ".docx",
+  ".eot",
+  ".exe",
+  ".flv",
+  ".gif",
+  ".gz",
+  ".ico",
+  ".iso",
+  ".jar",
+  ".jpeg",
+  ".jpg",
+  ".lib",
+  ".mov",
+  ".mp3",
+  ".mp4",
+  ".o",
+  ".obj",
+  ".pdf",
+  ".pkg",
+  ".png",
+  ".ppt",
+  ".pptx",
+  ".pyd",
+  ".pyc",
+  ".pyo",
+  ".rar",
+  ".rpm",
+  ".so",
+  ".sqlite",
+  ".sqlite3",
+  ".tar",
+  ".ttf",
+  ".war",
+  ".webp",
+  ".woff",
+  ".woff2",
+  ".wmv",
+  ".xls",
+  ".xlsx",
+  ".zip",
 ]);
 
 const ASSET_EXTENSIONS = new Set([".css", ".less", ".sass", ".scss", ".svg"]);
@@ -36,24 +107,182 @@ export class DefaultIgnorePolicy implements IgnorePolicy {
     const name = lower.split("/").at(-1) ?? lower;
     const extension = extensionOf(name);
 
-    if (lower === ".keystone" || lower.startsWith(".keystone/")) return decision("other", "excluded", false, true, false, false, "exclude.keystone-intelligence", "Keystone-generated intelligence is monitored separately and never ingested as repository source.");
-    if (isDependencyOrOutputPath(lower)) return decision("other", "excluded", false, true, false, false, "exclude.directory", "Dependency, cache, temporary, or generated output directory.");
-    if (isTestPath(lower)) return decision("test", "deep", true, false, false, false, "include.test", "Tests are first-class source intelligence.");
-    if (isSensitivePath(lower)) return decision("configuration", "metadata-only", true, false, false, true, "sensitive.metadata", "Sensitive file content is not read or persisted.");
-    if (isMinifiedOrGenerated(lower)) return decision("asset", "excluded", false, true, false, false, "exclude.generated", "Generated or minified file.");
+    if (lower === ".keystone" || lower.startsWith(".keystone/"))
+      return decision(
+        "other",
+        "excluded",
+        false,
+        true,
+        false,
+        false,
+        "exclude.keystone-intelligence",
+        "Keystone-generated intelligence is monitored separately and never ingested as repository source.",
+      );
+    if (isDependencyOrOutputPath(lower))
+      return decision(
+        "other",
+        "excluded",
+        false,
+        true,
+        false,
+        false,
+        "exclude.directory",
+        "Dependency, cache, temporary, or generated output directory.",
+      );
+    if (isTestPath(lower))
+      return decision(
+        "test",
+        "deep",
+        true,
+        false,
+        false,
+        false,
+        "include.test",
+        "Tests are first-class source intelligence.",
+      );
+    if (isSensitivePath(lower))
+      return decision(
+        "configuration",
+        "metadata-only",
+        true,
+        false,
+        false,
+        true,
+        "sensitive.metadata",
+        "Sensitive file content is not read or persisted.",
+      );
+    if (isMinifiedOrGenerated(lower))
+      return decision(
+        "asset",
+        "excluded",
+        false,
+        true,
+        false,
+        false,
+        "exclude.generated",
+        "Generated or minified file.",
+      );
     if (BINARY_EXTENSIONS.has(extension) || (content !== undefined && this.isBinary(content))) {
-      return decision("asset", "excluded", false, false, true, false, "exclude.binary", "Binary, archive, media, or office artifact.");
+      return decision(
+        "asset",
+        "excluded",
+        false,
+        false,
+        true,
+        false,
+        "exclude.binary",
+        "Binary, archive, media, or office artifact.",
+      );
     }
-    if (isCiPath(lower)) return decision("ci", "structural", true, false, false, false, "include.ci", "Continuous-integration configuration is included.");
-    if (isInfrastructurePath(lower, name, extension)) return decision("infrastructure", "structural", true, false, false, false, "include.infrastructure", "Infrastructure definition is included.");
-    if (isMigrationPath(lower)) return decision("migration", "structural", true, false, false, false, "include.migration", "Database migration is included.");
-    if (isSchemaPath(lower, name, extension)) return decision("schema", "structural", true, false, false, false, "include.schema", "API, ORM, or data schema is included.");
-    if (isManifest(name, lower)) return decision("manifest", "structural", true, false, false, false, "include.manifest", "Build or package manifest is included.");
-    if (DOCUMENTATION_EXTENSIONS.has(extension)) return decision("documentation", "structural", true, false, false, false, "include.documentation", "Documentation is included.");
-    if (SOURCE_EXTENSIONS.has(extension)) return decision("source", "deep", true, false, false, false, "include.source", "Supported source file.");
-    if (ASSET_EXTENSIONS.has(extension)) return decision("asset", "metadata-only", true, false, false, false, "include.asset-metadata", "Ordinary static asset is metadata-only.");
-    if (CONFIG_EXTENSIONS.has(extension) || isSourceConfiguration(name)) return decision("configuration", "structural", true, false, false, false, "include.configuration", "Source configuration is included.");
-    return decision("other", "metadata-only", true, false, false, false, "include.metadata", "Unsupported file retained as metadata.");
+    if (isCiPath(lower))
+      return decision(
+        "ci",
+        "structural",
+        true,
+        false,
+        false,
+        false,
+        "include.ci",
+        "Continuous-integration configuration is included.",
+      );
+    if (isInfrastructurePath(lower, name, extension))
+      return decision(
+        "infrastructure",
+        "structural",
+        true,
+        false,
+        false,
+        false,
+        "include.infrastructure",
+        "Infrastructure definition is included.",
+      );
+    if (isMigrationPath(lower))
+      return decision(
+        "migration",
+        "structural",
+        true,
+        false,
+        false,
+        false,
+        "include.migration",
+        "Database migration is included.",
+      );
+    if (isSchemaPath(lower, name, extension))
+      return decision(
+        "schema",
+        "structural",
+        true,
+        false,
+        false,
+        false,
+        "include.schema",
+        "API, ORM, or data schema is included.",
+      );
+    if (isManifest(name, lower))
+      return decision(
+        "manifest",
+        "structural",
+        true,
+        false,
+        false,
+        false,
+        "include.manifest",
+        "Build or package manifest is included.",
+      );
+    if (DOCUMENTATION_EXTENSIONS.has(extension))
+      return decision(
+        "documentation",
+        "structural",
+        true,
+        false,
+        false,
+        false,
+        "include.documentation",
+        "Documentation is included.",
+      );
+    if (SOURCE_EXTENSIONS.has(extension))
+      return decision(
+        "source",
+        "deep",
+        true,
+        false,
+        false,
+        false,
+        "include.source",
+        "Supported source file.",
+      );
+    if (ASSET_EXTENSIONS.has(extension))
+      return decision(
+        "asset",
+        "metadata-only",
+        true,
+        false,
+        false,
+        false,
+        "include.asset-metadata",
+        "Ordinary static asset is metadata-only.",
+      );
+    if (CONFIG_EXTENSIONS.has(extension) || isSourceConfiguration(name))
+      return decision(
+        "configuration",
+        "structural",
+        true,
+        false,
+        false,
+        false,
+        "include.configuration",
+        "Source configuration is included.",
+      );
+    return decision(
+      "other",
+      "metadata-only",
+      true,
+      false,
+      false,
+      false,
+      "include.metadata",
+      "Unsupported file retained as metadata.",
+    );
   }
 
   isExcluded(path: string): boolean {
@@ -92,7 +321,7 @@ function decision(
   binary: boolean,
   sensitive: boolean,
   ruleId: string,
-  reason: string
+  reason: string,
 ): ClassificationDecision {
   return { category, analysisLevel, included, generated, binary, sensitive, ruleId, reason };
 }
@@ -108,27 +337,47 @@ function isTestPath(path: string): boolean {
 
 function isSensitivePath(path: string): boolean {
   const name = path.split("/").at(-1) ?? path;
-  return /^\.env(?:\..+)?$/.test(name) || /\.(pem|key|p12|pfx|jks)$/.test(name) ||
+  return (
+    /^\.env(?:\..+)?$/.test(name) ||
+    /\.(pem|key|p12|pfx|jks)$/.test(name) ||
     /^(id_rsa|id_ed25519|credentials(?:\..+)?|secrets?(?:\..+)?|tokens?(?:\..+)?)$/.test(name) ||
-    /(^|\/)(\.aws\/credentials|\.ssh\/(?:authorized_keys|known_hosts)|\.netrc|\.npmrc|\.pypirc|\.pgpass|\.htpasswd)$/.test(path);
+    /(^|\/)(\.aws\/credentials|\.ssh\/(?:authorized_keys|known_hosts)|\.netrc|\.npmrc|\.pypirc|\.pgpass|\.htpasswd)$/.test(
+      path,
+    )
+  );
 }
 
 function isDependencyOrOutputPath(path: string): boolean {
-  return /(^|\/)(\.git|\.hg|\.svn|\.vscode-test|node_modules|vendor|bower_components|site-packages|\.pnpm-store|\.yarn|dist|build|out|bin|obj|target|coverage|\.coverage|\.nyc_output|test-results|__pycache__|\.pytest_cache|\.mypy_cache|\.ruff_cache|\.tox|\.nox|\.cache|\.turbo|\.next|\.nuxt|\.svelte-kit|\.astro|\.gradle|\.idea|\.venv|venv|env|tmp|temp)(\/|$)/.test(path);
+  return /(^|\/)(\.git|\.hg|\.svn|\.vscode-test|node_modules|vendor|bower_components|site-packages|\.pnpm-store|\.yarn|dist|build|out|bin|obj|target|coverage|\.coverage|\.nyc_output|test-results|__pycache__|\.pytest_cache|\.mypy_cache|\.ruff_cache|\.tox|\.nox|\.cache|\.turbo|\.next|\.nuxt|\.svelte-kit|\.astro|\.gradle|\.idea|\.venv|venv|env|tmp|temp)(\/|$)/.test(
+    path,
+  );
 }
 
 function isMinifiedOrGenerated(path: string): boolean {
-  return /\.min\.(?:js|css)$/.test(path) || /\.map$/.test(path) || /(^|\/)generated(\/|$)/.test(path) || /\.g\.[^.]+$/.test(path);
+  return (
+    /\.min\.(?:js|css)$/.test(path) ||
+    /\.map$/.test(path) ||
+    /(^|\/)generated(\/|$)/.test(path) ||
+    /\.g\.[^.]+$/.test(path)
+  );
 }
 
 function isCiPath(path: string): boolean {
-  return /(^|\/)\.github\/workflows\//.test(path) || /(^|\/)\.circleci\//.test(path) ||
-    /(^|\/)(\.gitlab-ci\.ya?ml|\.travis\.ya?ml|azure-pipelines\.ya?ml|jenkinsfile)$/.test(path);
+  return (
+    /(^|\/)\.github\/workflows\//.test(path) ||
+    /(^|\/)\.circleci\//.test(path) ||
+    /(^|\/)(\.gitlab-ci\.ya?ml|\.travis\.ya?ml|azure-pipelines\.ya?ml|jenkinsfile)$/.test(path)
+  );
 }
 
 function isInfrastructurePath(path: string, name: string, extension: string): boolean {
-  return extension === ".tf" || extension === ".tfvars" || /^dockerfile(?:\..+)?$/.test(name) ||
-    /^compose(?:\..+)?\.ya?ml$/.test(name) || /(^|\/)(k8s|kubernetes|helm|terraform)(\/|$)/.test(path);
+  return (
+    extension === ".tf" ||
+    extension === ".tfvars" ||
+    /^dockerfile(?:\..+)?$/.test(name) ||
+    /^compose(?:\..+)?\.ya?ml$/.test(name) ||
+    /(^|\/)(k8s|kubernetes|helm|terraform)(\/|$)/.test(path)
+  );
 }
 
 function isMigrationPath(path: string): boolean {
@@ -136,20 +385,50 @@ function isMigrationPath(path: string): boolean {
 }
 
 function isSchemaPath(path: string, name: string, extension: string): boolean {
-  return extension === ".graphql" || extension === ".gql" || extension === ".sql" || extension === ".prisma" ||
-    /(^|\/)(openapi|swagger)(?:\.[^/]+)?$/.test(path) || /(^|\/)(schema|schemas)(\/|$)/.test(path) ||
-    /^(openapi|swagger)\.ya?ml$/.test(name);
+  return (
+    extension === ".graphql" ||
+    extension === ".gql" ||
+    extension === ".sql" ||
+    extension === ".prisma" ||
+    /(^|\/)(openapi|swagger)(?:\.[^/]+)?$/.test(path) ||
+    /(^|\/)(schema|schemas)(\/|$)/.test(path) ||
+    /^(openapi|swagger)\.ya?ml$/.test(name)
+  );
 }
 
 function isManifest(name: string, path: string): boolean {
-  return new Set([
-    "package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "pnpm-workspace.yaml", "cargo.toml",
-    "cargo.lock", "go.mod", "go.sum", "pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle",
-    "requirements.txt", "setup.py", "pyproject.toml", "poetry.lock", "composer.json", "gemfile", "gemfile.lock",
-    "makefile", "cmakelists.txt", "meson.build"
-  ]).has(name) || /(^|\/)gradle\/.*\.toml$/.test(path);
+  return (
+    new Set([
+      "package.json",
+      "package-lock.json",
+      "yarn.lock",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "cargo.toml",
+      "cargo.lock",
+      "go.mod",
+      "go.sum",
+      "pom.xml",
+      "build.gradle",
+      "build.gradle.kts",
+      "settings.gradle",
+      "requirements.txt",
+      "setup.py",
+      "pyproject.toml",
+      "poetry.lock",
+      "composer.json",
+      "gemfile",
+      "gemfile.lock",
+      "makefile",
+      "cmakelists.txt",
+      "meson.build",
+    ]).has(name) || /(^|\/)gradle\/.*\.toml$/.test(path)
+  );
 }
 
 function isSourceConfiguration(name: string): boolean {
-  return /^(tsconfig|jsconfig)(?:\..+)?\.json$/.test(name) || /^\.(editorconfig|prettierrc|eslintrc|babelrc)(?:\..+)?$/.test(name);
+  return (
+    /^(tsconfig|jsconfig)(?:\..+)?\.json$/.test(name) ||
+    /^\.(editorconfig|prettierrc|eslintrc|babelrc)(?:\..+)?$/.test(name)
+  );
 }

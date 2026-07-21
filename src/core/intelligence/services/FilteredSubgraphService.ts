@@ -3,7 +3,10 @@
 // filters on relationship types, entity types, depth, and direction.
 
 import type { IntelligenceSnapshotReader } from "../../persistence/IntelligenceStore";
-import type { IntelligenceSymbolRecord, IntelligenceFileRecord } from "../../../shared/contracts/intelligence";
+import type {
+  IntelligenceSymbolRecord,
+  IntelligenceFileRecord,
+} from "../../../shared/contracts/intelligence";
 
 export interface SubgraphOptions {
   /** Seed node IDs to start from. */
@@ -55,10 +58,7 @@ export interface FilteredSubgraphResult {
 export class FilteredSubgraphService {
   constructor(private readonly store: IntelligenceSnapshotReader) {}
 
-  async extract(
-    options: SubgraphOptions,
-    signal?: AbortSignal,
-  ): Promise<FilteredSubgraphResult> {
+  async extract(options: SubgraphOptions, signal?: AbortSignal): Promise<FilteredSubgraphResult> {
     const snapshot = this.store.getSnapshot();
     if (!snapshot) {
       throw new Error("Intelligence snapshot unavailable.");
@@ -158,30 +158,37 @@ export class FilteredSubgraphService {
       truncationReason = "depth limit reached";
     }
 
-    const nodes: SubgraphNode[] = [...selectedNodes].map((id) => {
-      const entity = entityById.get(id);
-      if (!entity) return undefined;
-      return {
-        id,
-        type: "type" in entity ? entity.type : "keystone.core.File",
-        name: "name" in entity ? entity.name : entity.relativePath.split("/").at(-1) ?? entity.relativePath,
-        qualifiedName: "qualifiedName" in entity ? entity.qualifiedName : entity.relativePath,
-        relativePath: "relativePath" in entity ? entity.relativePath : "",
-        distance: distances.get(id) ?? 0,
-      };
-    }).filter((n): n is SubgraphNode => n !== undefined);
+    const nodes: SubgraphNode[] = [...selectedNodes]
+      .map((id) => {
+        const entity = entityById.get(id);
+        if (!entity) return undefined;
+        return {
+          id,
+          type: "type" in entity ? entity.type : "keystone.core.File",
+          name:
+            "name" in entity
+              ? entity.name
+              : (entity.relativePath.split("/").at(-1) ?? entity.relativePath),
+          qualifiedName: "qualifiedName" in entity ? entity.qualifiedName : entity.relativePath,
+          relativePath: "relativePath" in entity ? entity.relativePath : "",
+          distance: distances.get(id) ?? 0,
+        };
+      })
+      .filter((n): n is SubgraphNode => n !== undefined);
 
-    const edges: SubgraphEdge[] = [...selectedEdges].map((id) => {
-      const rel = snapshot.relationships.find((r) => r.id === id);
-      if (!rel) return undefined;
-      return {
-        id: rel.id,
-        sourceId: rel.sourceId,
-        targetId: rel.targetId,
-        type: rel.type,
-        confidence: rel.confidence,
-      };
-    }).filter((e): e is SubgraphEdge => e !== undefined);
+    const edges: SubgraphEdge[] = [...selectedEdges]
+      .map((id) => {
+        const rel = snapshot.relationships.find((r) => r.id === id);
+        if (!rel) return undefined;
+        return {
+          id: rel.id,
+          sourceId: rel.sourceId,
+          targetId: rel.targetId,
+          type: rel.type,
+          confidence: rel.confidence,
+        };
+      })
+      .filter((e): e is SubgraphEdge => e !== undefined);
 
     return {
       generation: snapshot.manifest.generation,

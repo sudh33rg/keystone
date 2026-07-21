@@ -41,9 +41,7 @@ export class ValidationEngine {
     try {
       const value = JSON.parse(
         (
-          await this.workspace.readTextFile(
-            this.workspace.fileReference(root, "package.json").uri,
-          )
+          await this.workspace.readTextFile(this.workspace.fileReference(root, "package.json").uri)
         ).slice(0, 1_000_000),
       ) as { scripts?: Record<string, unknown> };
       const commands: ValidationCommand[] = [];

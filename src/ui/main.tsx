@@ -6,4 +6,4 @@ import "./styles/global.css";
 const root = document.getElementById("root");
 if (!root) throw new Error("Keystone Webview root element was not found.");
 
-createRoot(root).render(<App bridge={createHostBridge()}/>);
+createRoot(root).render(<App bridge={createHostBridge()} />);

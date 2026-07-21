@@ -38,11 +38,7 @@ import { intelligenceSnapshot } from "../intelligence/fixtures";
 
 const temporary: string[] = [];
 afterEach(async () => {
-  await Promise.all(
-    temporary
-      .splice(0)
-      .map((path) => rm(path, { recursive: true, force: true })),
-  );
+  await Promise.all(temporary.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
 
 const IDS = {
@@ -54,9 +50,7 @@ const IDS = {
   step: "20000000-0000-4000-8000-000000000006",
 } as const;
 
-function executionSession(
-  patch: Partial<TaskExecutionSession> = {},
-): TaskExecutionSession {
+function executionSession(patch: Partial<TaskExecutionSession> = {}): TaskExecutionSession {
   const agent = CopilotAgentDescriptorSchema.parse({
     id: "fixture-agent",
     displayName: "Fixture agent",
@@ -67,9 +61,7 @@ function executionSession(
     invocationMethod: "direct",
     restrictions: [],
     confidence: 1,
-    evidence: [
-      { kind: "runtime", source: "fixture", statement: "Observed agent." },
-    ],
+    evidence: [{ kind: "runtime", source: "fixture", statement: "Observed agent." }],
   });
   return TaskExecutionSessionSchema.parse({
     schemaVersion: 1,
@@ -120,9 +112,7 @@ function executionSession(
   });
 }
 
-function validationStep(
-  type: "static-analysis" | "security-check" | "performance-check",
-) {
+function validationStep(type: "static-analysis" | "security-check" | "performance-check") {
   return ValidationStepSchema.parse({
     id: IDS.step,
     type,
@@ -244,11 +234,7 @@ describe("baseline and semantic change analysis", () => {
       getRetainedSnapshots: () => Promise.resolve([previous]),
     } as never).resolve(executionSession());
     expect(changes.map((item) => item.changeKind)).toEqual(
-      expect.arrayContaining([
-        "signature-change",
-        "route-change",
-        "schema-change",
-      ]),
+      expect.arrayContaining(["signature-change", "route-change", "schema-change"]),
     );
   });
 });
@@ -295,9 +281,9 @@ describe("safe command hardening", () => {
       approved: true,
       timeoutMs: 1000,
     });
-    await expect(
-      new CommandExecutionService([cwd]).execute("prohibited", command),
-    ).rejects.toThrow("prohibited");
+    await expect(new CommandExecutionService([cwd]).execute("prohibited", command)).rejects.toThrow(
+      "prohibited",
+    );
   });
 
   it("rejects a working directory outside the workspace boundary", async () => {
@@ -376,13 +362,8 @@ describe("evidence-backed validation providers", () => {
     );
     const selected = new TestImpactService({
       getSnapshot: () => snapshot,
-    } as never).select(
-      executionSession({ expectedEntityIds: [production.id] }),
-    );
-    expect(selected.map((item) => item.tier)).toEqual([
-      "exact-resolved-call",
-      "naming-candidate",
-    ]);
+    } as never).select(executionSession({ expectedEntityIds: [production.id] }));
+    expect(selected.map((item) => item.tier)).toEqual(["exact-resolved-call", "naming-candidate"]);
     expect(selected.map((item) => item.selected)).toEqual([true, false]);
   });
 
@@ -469,9 +450,7 @@ describe("evidence-backed validation providers", () => {
       sink: "exec(req.body.value)",
       confidence: 0.9,
     });
-    expect(result.findings[0]?.details?.limitations?.join(" ")).toContain(
-      "not repository-wide",
-    );
+    expect(result.findings[0]?.details?.limitations?.join(" ")).toContain("not repository-wide");
   });
 
   it("labels structural performance observations as candidates, not runtime regressions", () => {
@@ -515,9 +494,7 @@ describe("evidence-backed validation providers", () => {
     );
     expect(result.status).toBe("passed");
     expect(result.findings[0]?.severity).toBe("warning");
-    expect(result.findings[0]?.description).toContain(
-      "not a measured runtime regression",
-    );
+    expect(result.findings[0]?.description).toContain("not a measured runtime regression");
   });
 });
 
@@ -532,9 +509,7 @@ describe("bounded persistence and contracts", () => {
     const second = new ExecutionPersistenceStore(root);
     await second.initialize();
     expect(second.snapshot.sessions).toEqual([value]);
-    expect(JSON.stringify(second.snapshot)).not.toMatch(
-      /ghp_|api[_-]?key|password/i,
-    );
+    expect(JSON.stringify(second.snapshot)).not.toMatch(/ghp_|api[_-]?key|password/i);
   });
 
   it("rejects unbounded Webview validation inputs", () => {
@@ -542,10 +517,7 @@ describe("bounded persistence and contracts", () => {
       ValidationPlanPayloadSchema.parse({
         sessionId: IDS.session,
         testMode: "impacted",
-        excludedTestEntityIds: Array.from(
-          { length: 501 },
-          (_, index) => `test:${index}`,
-        ),
+        excludedTestEntityIds: Array.from({ length: 501 }, (_, index) => `test:${index}`),
       }),
     ).toThrow();
   });
@@ -603,11 +575,7 @@ describe("bounded persistence and contracts", () => {
       store,
       {} as never,
       {
-        setTaskStatus: (
-          _workflowId: string,
-          _taskId: string,
-          status: string,
-        ) => {
+        setTaskStatus: (_workflowId: string, _taskId: string, status: string) => {
           statuses.push(status);
           return Promise.resolve(undefined);
         },
@@ -684,12 +652,10 @@ describe("bounded persistence and contracts", () => {
       ...state,
       runs: state.runs.map((run) => ({
         ...run,
-        acceptanceCriteriaResults: run.acceptanceCriteriaResults.map(
-          (item) => ({
-            ...item,
-            status: "failed" as const,
-          }),
-        ),
+        acceptanceCriteriaResults: run.acceptanceCriteriaResults.map((item) => ({
+          ...item,
+          status: "failed" as const,
+        })),
       })),
     }));
     await expect(

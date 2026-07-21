@@ -1,6 +1,6 @@
 # Keystone Executive Summary
 
-> **Version:** 0.2.0 | **Date:** 2026-07-20 | **Author:** Deep-dive analysis of 52+ source files
+> **Version:** 0.1.0 | **Date:** 2026-07-20 | **Author:** Deep-dive analysis of 52+ source files
 
 ## What is Keystone?
 
@@ -105,7 +105,7 @@ The webview is the user's primary interface. A design system, accessibility, loa
 
 ## Verdict
 
-Keystone v0.2.0 is a **remarkably ambitious and well-architected project** that addresses a real need in the AI-assisted development space. The core architecture — layered domains, comprehensive state machines, intelligence graph, bounded context construction, and capability-driven Copilot integration — is sophisticated and well-executed.
+Keystone v0.1.0 is a **remarkably ambitious and well-architected project** that addresses a real need in the AI-assisted development space. The core architecture — layered domains, comprehensive state machines, intelligence graph, bounded context construction, and capability-driven Copilot integration — is sophisticated and well-executed.
 
 The primary areas for improvement are **infrastructure and process**, not core design. The project needs:
 - Better **developer experience** (DI, testing infrastructure, CI/CD)

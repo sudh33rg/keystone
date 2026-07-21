@@ -2,7 +2,11 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
-import { FileMemento, WorkspaceStateStore, type MementoLike } from "../../src/core/persistence/WorkspaceStateStore";
+import {
+  FileMemento,
+  WorkspaceStateStore,
+  type MementoLike,
+} from "../../src/core/persistence/WorkspaceStateStore";
 
 class MemoryMemento implements MementoLike {
   readonly values = new Map<string, unknown>();
@@ -28,7 +32,10 @@ describe("WorkspaceStateStore", () => {
     const restored = new WorkspaceStateStore(await FileMemento.open(path));
 
     expect((await restored.initialize()).activeSection).toBe("intelligence");
-    expect(JSON.parse(await readFile(path, "utf8"))).toHaveProperty(["keystone.workspaceState", "activeSection"], "intelligence");
+    expect(JSON.parse(await readFile(path, "utf8"))).toHaveProperty(
+      ["keystone.workspaceState", "activeSection"],
+      "intelligence",
+    );
   });
 
   it("initializes and persists a default state", async () => {
@@ -51,7 +58,10 @@ describe("WorkspaceStateStore", () => {
     const restored = new WorkspaceStateStore(memento);
 
     expect(state.revision).toBe(1);
-    expect(await restored.initialize()).toMatchObject({ activeSection: "active-work", activeRoute: "/workbench/new" });
+    expect(await restored.initialize()).toMatchObject({
+      activeSection: "active-work",
+      activeRoute: "/workbench/new",
+    });
   });
 
   it("persists a workflow route as the canonical navigation state", async () => {
@@ -62,43 +72,82 @@ describe("WorkspaceStateStore", () => {
 
     const state = await store.setActiveRoute(`/workbench/${workflowId}/review`);
 
-    expect(state).toMatchObject({ activeSection: "active-work", activeRoute: `/workbench/${workflowId}/review` });
+    expect(state).toMatchObject({
+      activeSection: "active-work",
+      activeRoute: `/workbench/${workflowId}/review`,
+    });
   });
 
   it("migrates the supported legacy state", async () => {
     const memento = new MemoryMemento();
-    memento.values.set("keystone.workspaceState", { schemaVersion: 0, activeSection: "tasks", workflowCount: 3 });
+    memento.values.set("keystone.workspaceState", {
+      schemaVersion: 0,
+      activeSection: "tasks",
+      workflowCount: 3,
+    });
 
     const state = await new WorkspaceStateStore(memento).initialize();
 
-    expect(state).toMatchObject({ schemaVersion: 1, activeSection: "active-work", activeRoute: "/workbench/new", workflowCount: 3 });
+    expect(state).toMatchObject({
+      schemaVersion: 1,
+      activeSection: "active-work",
+      activeRoute: "/workbench/new",
+      workflowCount: 3,
+    });
   });
 
   it("migrates removed roadmap navigation without discarding valid state", async () => {
     const memento = new MemoryMemento();
-    memento.values.set("keystone.workspaceState", { schemaVersion: 1, revision: 7, activeSection: "hub", workflowCount: 4, updatedAt: "2026-07-16T00:00:00.000Z" });
+    memento.values.set("keystone.workspaceState", {
+      schemaVersion: 1,
+      revision: 7,
+      activeSection: "hub",
+      workflowCount: 4,
+      updatedAt: "2026-07-16T00:00:00.000Z",
+    });
 
     const state = await new WorkspaceStateStore(memento).initialize();
 
-    expect(state).toMatchObject({ schemaVersion: 1, revision: 8, activeSection: "intelligence", activeRoute: "/intelligence", workflowCount: 4 });
+    expect(state).toMatchObject({
+      schemaVersion: 1,
+      revision: 8,
+      activeSection: "intelligence",
+      activeRoute: "/intelligence",
+      workflowCount: 4,
+    });
   });
 
   it("migrates a persisted legacy section into a canonical route", async () => {
     const memento = new MemoryMemento();
-    memento.values.set("keystone.workspaceState", { schemaVersion: 1, revision: 2, activeSection: "delivery", workflowCount: 1, updatedAt: "2026-07-16T00:00:00.000Z" });
+    memento.values.set("keystone.workspaceState", {
+      schemaVersion: 1,
+      revision: 2,
+      activeSection: "delivery",
+      workflowCount: 1,
+      updatedAt: "2026-07-16T00:00:00.000Z",
+    });
 
     const state = await new WorkspaceStateStore(memento).initialize();
 
-    expect(state).toMatchObject({ revision: 3, activeSection: "active-work", activeRoute: "/workbench/new" });
+    expect(state).toMatchObject({
+      revision: 3,
+      activeSection: "active-work",
+      activeRoute: "/workbench/new",
+    });
   });
 
   it("preserves invalid data under a recovery key before resetting", async () => {
     const memento = new MemoryMemento();
-    memento.values.set("keystone.workspaceState", { schemaVersion: 99, credential: "must-not-be-lost" });
+    memento.values.set("keystone.workspaceState", {
+      schemaVersion: 99,
+      credential: "must-not-be-lost",
+    });
 
     const state = await new WorkspaceStateStore(memento).initialize();
 
     expect(state.activeSection).toBe("home");
-    expect([...memento.values.keys()].some((key) => key.startsWith("keystone.recovery.corruptState."))).toBe(true);
+    expect(
+      [...memento.values.keys()].some((key) => key.startsWith("keystone.recovery.corruptState.")),
+    ).toBe(true);
   });
 });

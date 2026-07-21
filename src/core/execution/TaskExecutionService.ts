@@ -1,7 +1,4 @@
-import type {
-  GitAdapter,
-  GitFileChange,
-} from "../../extension/adapters/GitAdapter";
+import type { GitAdapter, GitFileChange } from "../../extension/adapters/GitAdapter";
 import type { WorkspaceAdapter } from "../../extension/adapters/WorkspaceAdapter";
 import type { DelegationService } from "../copilot/DelegationService";
 import type { CopilotAgentRegistry } from "../copilot/AgentRegistry";
@@ -29,77 +26,60 @@ import {
 } from "./ExecutionAnalysisServices";
 import { RepositoryStateService } from "../integration/ProductIntegrationService";
 
-const TRANSITIONS: Record<TaskExecutionStatus, readonly TaskExecutionStatus[]> =
-  {
-    prepared: ["awaiting-start", "cancelled", "stale"],
-    "awaiting-start": ["executing", "cancelled", "stale", "failed"],
-    executing: [
-      "repository-changed",
-      "awaiting-result-capture",
-      "cancelled",
-      "failed",
-      "stale",
-    ],
-    "repository-changed": [
-      "executing",
-      "awaiting-result-capture",
-      "cancelled",
-      "stale",
-    ],
-    "awaiting-result-capture": ["result-captured", "cancelled", "stale"],
-    "result-captured": [
-      "planning-validation",
-      "retry-planned",
-      "cancelled",
-      "stale",
-    ],
-    "planning-validation": ["validating", "blocked", "stale"],
-    validating: [
-      "validation-passed",
-      "validation-failed",
-      "awaiting-user-review",
-      "cancelled",
-      "stale",
-      "failed",
-    ],
-    "validation-passed": [
-      "validating",
-      "awaiting-user-review",
-      "completed",
-      "accepted-with-override",
-      "stale",
-    ],
-    "validation-failed": [
-      "validating",
-      "awaiting-user-review",
-      "retry-planned",
-      "accepted-with-override",
-      "stale",
-    ],
-    "awaiting-user-review": [
-      "validating",
-      "retry-planned",
-      "completed",
-      "accepted-with-override",
-      "cancelled",
-      "stale",
-    ],
-    "retry-planned": ["retrying", "cancelled", "stale"],
-    retrying: [
-      "executing",
-      "repository-changed",
-      "awaiting-result-capture",
-      "failed",
-      "cancelled",
-      "stale",
-    ],
-    "accepted-with-override": ["completed", "stale"],
-    completed: [],
-    blocked: ["retry-planned", "cancelled", "stale"],
-    failed: ["retry-planned", "cancelled", "stale"],
-    cancelled: [],
-    stale: [],
-  };
+const TRANSITIONS: Record<TaskExecutionStatus, readonly TaskExecutionStatus[]> = {
+  prepared: ["awaiting-start", "cancelled", "stale"],
+  "awaiting-start": ["executing", "cancelled", "stale", "failed"],
+  executing: ["repository-changed", "awaiting-result-capture", "cancelled", "failed", "stale"],
+  "repository-changed": ["executing", "awaiting-result-capture", "cancelled", "stale"],
+  "awaiting-result-capture": ["result-captured", "cancelled", "stale"],
+  "result-captured": ["planning-validation", "retry-planned", "cancelled", "stale"],
+  "planning-validation": ["validating", "blocked", "stale"],
+  validating: [
+    "validation-passed",
+    "validation-failed",
+    "awaiting-user-review",
+    "cancelled",
+    "stale",
+    "failed",
+  ],
+  "validation-passed": [
+    "validating",
+    "awaiting-user-review",
+    "completed",
+    "accepted-with-override",
+    "stale",
+  ],
+  "validation-failed": [
+    "validating",
+    "awaiting-user-review",
+    "retry-planned",
+    "accepted-with-override",
+    "stale",
+  ],
+  "awaiting-user-review": [
+    "validating",
+    "retry-planned",
+    "completed",
+    "accepted-with-override",
+    "cancelled",
+    "stale",
+  ],
+  "retry-planned": ["retrying", "cancelled", "stale"],
+  retrying: [
+    "executing",
+    "repository-changed",
+    "awaiting-result-capture",
+    "failed",
+    "cancelled",
+    "stale",
+  ],
+  "accepted-with-override": ["completed", "stale"],
+  completed: [],
+  blocked: ["retry-planned", "cancelled", "stale"],
+  failed: ["retry-planned", "cancelled", "stale"],
+  cancelled: [],
+  stale: [],
+};
 
 export class ExecutionStateMachine {
   transition(current: TaskExecutionStatus, next: TaskExecutionStatus): void {
@@ -116,17 +96,13 @@ export class ChangeAttributionService {
     snapshot: ReturnType<IntelligenceSnapshotReader["getSnapshot"]>,
   ): AttributedChange {
     const relativePath = normalize(change.uri);
-    const originalPath = change.originalUri
-      ? normalize(change.originalUri)
-      : undefined;
+    const originalPath = change.originalUri ? normalize(change.originalUri) : undefined;
     const preExisting = new Set([
       ...baseline.dirtyFiles,
       ...baseline.stagedFiles,
       ...baseline.untrackedFiles,
     ]);
-    const file = snapshot?.files.find(
-      (item) => item.relativePath === relativePath,
-    );
+    const file = snapshot?.files.find((item) => item.relativePath === relativePath);
     let classification: AttributedChange["classification"];
     let confidence: number;
     let reasons: string[];
@@ -137,13 +113,8 @@ export class ChangeAttributionService {
     } else if (file?.classification.generated) {
       classification = "generated-output";
       confidence = 1;
-      reasons = [
-        "Canonical inventory classifies the path as generated output.",
-      ];
-    } else if (
-      file &&
-      (!file.classification.included || file.classification.sensitive)
-    ) {
+      reasons = ["Canonical inventory classifies the path as generated output."];
+    } else if (file && (!file.classification.included || file.classification.sensitive)) {
       classification = "excluded";
       confidence = 1;
       reasons = [file.classification.reason];
@@ -151,14 +122,10 @@ export class ChangeAttributionService {
       classification = "expected";
       confidence = 1;
       reasons = ["The approved task explicitly lists this path as expected."];
-    } else if (
-      expectedFiles.some((expected) => sameArea(expected, relativePath))
-    ) {
+    } else if (expectedFiles.some((expected) => sameArea(expected, relativePath))) {
       classification = "related";
       confidence = 0.7;
-      reasons = [
-        "The path shares an approved repository area; ownership is not proven.",
-      ];
+      reasons = ["The path shares an approved repository area; ownership is not proven."];
     } else if (!file && change.kind === "added") {
       classification = "ambiguous";
       confidence = 0.35;
@@ -168,9 +135,7 @@ export class ChangeAttributionService {
     } else {
       classification = "unexpected";
       confidence = 0.9;
-      reasons = [
-        "The path is outside the approved expected files and repository areas.",
-      ];
+      reasons = ["The path is outside the approved expected files and repository areas."];
     }
     return AttributedChangeSchema.parse({
       relativePath,
@@ -200,13 +165,12 @@ export class RepositoryChangeDetector {
       this.attribution.classify(
         {
           ...change,
-          uri:
-            this.workspace.resolveFile(change.uri)?.relativePath ?? change.uri,
+          uri: this.workspace.resolveFile(change.uri)?.relativePath ?? change.uri,
           ...(change.originalUri
             ? {
                 originalUri:
-                  this.workspace.resolveFile(change.originalUri)
-                    ?.relativePath ?? change.originalUri,
+                  this.workspace.resolveFile(change.originalUri)?.relativePath ??
+                  change.originalUri,
               }
             : {}),
         },
@@ -228,10 +192,7 @@ export class ResultCaptureService {
     },
     supportedDirect = false,
   ): ExecutionResultCapture {
-    if (
-      input.mode === "direct" &&
-      (!supportedDirect || session.delegationMode !== "direct")
-    )
+    if (input.mode === "direct" && (!supportedDirect || session.delegationMode !== "direct"))
       throw new Error(
         "Direct result capture requires a supported integration completion/result event.",
       );
@@ -241,17 +202,11 @@ export class ResultCaptureService {
             "No Copilot result was available; validation relies on repository evidence and user confirmation.",
           ]
         : input.mode === "assisted"
-          ? [
-              "Agent claims are untrusted and remain distinct from repository/command evidence.",
-            ]
-          : [
-              "Captured through a supported result contract; claims still require validation.",
-            ];
+          ? ["Agent claims are untrusted and remain distinct from repository/command evidence."]
+          : ["Captured through a supported result contract; claims still require validation."];
     return ExecutionResultCaptureSchema.parse({
       ...input,
-      agentClaims: input.agentClaims
-        ? sanitizeClaims(input.agentClaims)
-        : undefined,
+      agentClaims: input.agentClaims ? sanitizeClaims(input.agentClaims) : undefined,
       attributedChanges: session.observedChanges,
       capturedAt: new Date().toISOString(),
       diagnostics,
@@ -271,10 +226,7 @@ export class ExecutionSessionService {
   async save(session: TaskExecutionSession): Promise<TaskExecutionSession> {
     await this.persistence.update((state) => ({
       ...state,
-      sessions: [
-        ...state.sessions.filter((item) => item.id !== session.id),
-        session,
-      ].slice(-500),
+      sessions: [...state.sessions.filter((item) => item.id !== session.id), session].slice(-500),
     }));
     return session;
   }
@@ -294,10 +246,7 @@ export class ExecutionSessionService {
     });
     return this.save(next);
   }
-  async replace(
-    id: string,
-    patch: Partial<TaskExecutionSession>,
-  ): Promise<TaskExecutionSession> {
+  async replace(id: string, patch: Partial<TaskExecutionSession>): Promise<TaskExecutionSession> {
     const current = this.get(id);
     if (!current) throw new Error(`Execution session ${id} was not found.`);
     return this.save(
@@ -337,17 +286,14 @@ export class TaskExecutionService {
     const interrupted = this.sessions
       .list()
       .filter((item) =>
-        ["executing", "repository-changed", "validating", "retrying"].includes(
-          item.status,
-        ),
+        ["executing", "repository-changed", "validating", "retrying"].includes(item.status),
       );
     for (const session of interrupted) {
       await this.sessions.replace(session.id, {
         status: "blocked",
-        diagnostics: [
-          ...session.diagnostics,
-          this.diagnostics.interrupted(session.status),
-        ].slice(-100),
+        diagnostics: [...session.diagnostics, this.diagnostics.interrupted(session.status)].slice(
+          -100,
+        ),
       });
       try {
         await this.workflows.setTaskStatus(
@@ -370,9 +316,7 @@ export class TaskExecutionService {
         });
       }
     }
-    const running = this.persistence.snapshot.runs.filter(
-      (item) => item.status === "running",
-    );
+    const running = this.persistence.snapshot.runs.filter((item) => item.status === "running");
     if (running.length) {
       const interruptedIds = new Set(running.map((item) => item.id));
       await this.persistence.update((state) => ({
@@ -384,9 +328,7 @@ export class TaskExecutionService {
                 status: "cancelled",
                 completedAt: new Date().toISOString(),
                 stepResults: run.stepResults.map((item) =>
-                  item.status === "passed"
-                    ? item
-                    : { ...item, status: "stale" },
+                  item.status === "passed" ? item : { ...item, status: "stale" },
                 ),
                 diagnostics: [
                   ...run.diagnostics,
@@ -408,12 +350,9 @@ export class TaskExecutionService {
       throw new Error("A persisted matching delegation session is required.");
     if (["failed", "cancelled", "stale"].includes(delegation.status))
       throw new Error(`Delegation session is ${delegation.status}.`);
-    const delegationBlockers =
-      this.delegation.validateExecutionStart(delegation);
+    const delegationBlockers = this.delegation.validateExecutionStart(delegation);
     if (delegationBlockers.length)
-      throw new Error(
-        `Execution start blocked: ${delegationBlockers.join(" ")}`,
-      );
+      throw new Error(`Execution start blocked: ${delegationBlockers.join(" ")}`);
     const workflow = this.workflows.get(workflowId);
     const task = workflow?.tasks.find((item) => item.id === taskId);
     const specification = workflow?.specification;
@@ -427,9 +366,7 @@ export class TaskExecutionService {
       throw new Error("Task/specification is not current and approved.");
     if (
       task.dependencies.some(
-        (id) =>
-          workflow.tasks.find((candidate) => candidate.id === id)?.status !==
-          "completed",
+        (id) => workflow.tasks.find((candidate) => candidate.id === id)?.status !== "completed",
       )
     )
       throw new Error("Task dependencies are no longer complete.");
@@ -438,23 +375,14 @@ export class TaskExecutionService {
       .filter(
         (item) =>
           item.taskId !== task.id &&
-          !["completed", "cancelled", "failed", "stale"].includes(
-            item.status,
-          ) &&
+          !["completed", "cancelled", "failed", "stale"].includes(item.status) &&
           item.expectedFiles.some((file) => task.expectedFiles.includes(file)),
       );
     if (overlaps.length)
-      throw new Error(
-        `Execution overlaps ${overlaps.length} active task session(s).`,
-      );
+      throw new Error(`Execution overlaps ${overlaps.length} active task session(s).`);
     const current = this.snapshots.getSnapshot();
-    if (
-      current?.repository.branch &&
-      specification.branch !== current.repository.branch
-    )
-      throw new Error(
-        "Repository branch differs from the approved specification baseline.",
-      );
+    if (current?.repository.branch && specification.branch !== current.repository.branch)
+      throw new Error("Repository branch differs from the approved specification baseline.");
     const existing = this.sessions
       .list()
       .find((item) => item.delegationSessionId === delegationSessionId);
@@ -466,7 +394,8 @@ export class TaskExecutionService {
     const now = new Date().toISOString();
     const session = TaskExecutionSessionSchema.parse({
       schemaVersion: 1,
-      repositoryState: delegation.repositoryState ?? new RepositoryStateService().fromBaseline(repositoryBaseline),
+      repositoryState:
+        delegation.repositoryState ?? new RepositoryStateService().fromBaseline(repositoryBaseline),
       id: crypto.randomUUID(),
       taskId,
       workflowId,
@@ -510,11 +439,7 @@ export class TaskExecutionService {
     const session = await this.sessions.transition(id, "executing", {
       startedAt: new Date().toISOString(),
     });
-    await this.workflows.setTaskStatus(
-      session.workflowId,
-      session.taskId,
-      "executing",
-    );
+    await this.workflows.setTaskStatus(session.workflowId, session.taskId, "executing");
     return session;
   }
   async confirmStopped(id: string): Promise<TaskExecutionSession> {
@@ -525,14 +450,10 @@ export class TaskExecutionService {
     const executionDurationMs = refreshed.startedAt
       ? Math.max(0, Date.parse(stoppedAt) - Date.parse(refreshed.startedAt))
       : 0;
-    const session = await this.sessions.transition(
-      id,
-      "awaiting-result-capture",
-      {
-        stoppedAt,
-        metrics: { ...refreshed.metrics, executionDurationMs },
-      },
-    );
+    const session = await this.sessions.transition(id, "awaiting-result-capture", {
+      stoppedAt,
+      metrics: { ...refreshed.metrics, executionDurationMs },
+    });
     await this.workflows.setTaskStatus(
       session.workflowId,
       session.taskId,
@@ -549,8 +470,7 @@ export class TaskExecutionService {
       observedChanges,
     });
     const averageAttributionConfidence = observedChanges.length
-      ? observedChanges.reduce((sum, item) => sum + item.confidence, 0) /
-        observedChanges.length
+      ? observedChanges.reduce((sum, item) => sum + item.confidence, 0) / observedChanges.length
       : 0;
     const next = await this.sessions.replace(id, {
       observedChanges,
@@ -582,10 +502,7 @@ export class TaskExecutionService {
               reason,
               at: new Date().toISOString(),
             },
-            reasons: [
-              ...item.reasons,
-              `User attribution override: ${reason}`,
-            ].slice(-20),
+            reasons: [...item.reasons, `User attribution override: ${reason}`].slice(-20),
           })
         : item,
     );
@@ -602,9 +519,7 @@ export class TaskExecutionService {
   ): Promise<TaskExecutionSession> {
     const session = this.require(id);
     if (session.status !== "awaiting-result-capture")
-      throw new Error(
-        "Execution must be explicitly stopped before result capture.",
-      );
+      throw new Error("Execution must be explicitly stopped before result capture.");
     const resultCapture = this.results.capture(session, input, supportedDirect);
     const changedEntities = await this.changedEntities.resolve(session);
     return this.sessions.transition(id, "result-captured", {
@@ -614,11 +529,7 @@ export class TaskExecutionService {
   }
   async cancel(id: string): Promise<TaskExecutionSession> {
     const session = await this.sessions.transition(id, "cancelled");
-    await this.workflows.setTaskStatus(
-      session.workflowId,
-      session.taskId,
-      "cancelled",
-    );
+    await this.workflows.setTaskStatus(session.workflowId, session.taskId, "cancelled");
     return session;
   }
   async planRetry(
@@ -629,23 +540,13 @@ export class TaskExecutionService {
   ): Promise<RetryPlan> {
     const session = this.require(id);
     if (mode === "different-agent" && !selectedAgentId)
-      throw new Error(
-        "A different-agent retry requires an explicit agent selection.",
-      );
+      throw new Error("A different-agent retry requires an explicit agent selection.");
     if (mode === "different-agent" && selectedAgentId === session.agentId)
-      throw new Error(
-        "The selected retry agent must differ from the prior agent.",
-      );
-    if (
-      mode === "same-agent" &&
-      selectedAgentId &&
-      selectedAgentId !== session.agentId
-    )
+      throw new Error("The selected retry agent must differ from the prior agent.");
+    if (mode === "same-agent" && selectedAgentId && selectedAgentId !== session.agentId)
       throw new Error("A same-agent retry cannot silently change the agent.");
     if (!session.validationRunIds.length)
-      throw new Error(
-        "A validation attempt is required before retry planning.",
-      );
+      throw new Error("A validation attempt is required before retry planning.");
     const run = this.persistence.snapshot.runs.find(
       (item) => item.id === session.validationRunIds.at(-1),
     );
@@ -653,23 +554,14 @@ export class TaskExecutionService {
     const validationPlan = this.persistence.snapshot.plans.find(
       (item) => item.id === session.validationPlanId,
     );
-    let plan = this.retries.create(
-      session,
-      run,
-      mode,
-      reason,
-      selectedAgentId,
-      validationPlan,
-    );
+    let plan = this.retries.create(session, run, mode, reason, selectedAgentId, validationPlan);
     if (mode === "partial-repair") {
       const workflow = await this.workflows.createRepairTask(
         session.workflowId,
         session.taskId,
         plan.failedCriterionIds,
         session.observedChanges
-          .filter((item) =>
-            ["expected", "related"].includes(item.classification),
-          )
+          .filter((item) => ["expected", "related"].includes(item.classification))
           .map((item) => item.relativePath),
         reason,
       );
@@ -689,8 +581,7 @@ export class TaskExecutionService {
   async startRetry(id: string): Promise<TaskExecutionSession> {
     const original = this.require(id);
     const plan = this.getRetry(id);
-    if (!plan || plan.status !== "planned")
-      throw new Error("A reviewed retry plan is required.");
+    if (!plan || plan.status !== "planned") throw new Error("A reviewed retry plan is required.");
     if (plan.mode === "partial-repair")
       throw new Error(
         "The focused repair task must be reviewed and delegated separately; it cannot silently reuse the original execution session.",
@@ -757,23 +648,19 @@ export class TaskExecutionService {
       TaskExecutionSession["repositoryBaseline"]["knownValidationOutcomes"][number]
     >();
     for (const run of this.persistence.snapshot.runs) {
-      if (!["passed", "failed", "awaiting-user-review"].includes(run.status))
-        continue;
+      if (!["passed", "failed", "awaiting-user-review"].includes(run.status)) continue;
       const priorSession = this.sessions.get(run.executionSessionId);
       if (
         !priorSession ||
         priorSession.repositoryBaseline.branch !== current?.repository.branch ||
-        priorSession.repositoryBaseline.headCommit !==
-          current?.repository.headCommit
+        priorSession.repositoryBaseline.headCommit !== current?.repository.headCommit
       )
         continue;
       const plan = this.persistence.snapshot.plans.find(
         (item) => item.executionSessionId === run.executionSessionId,
       );
       for (const result of run.stepResults) {
-        const command = plan?.steps.find(
-          (item) => item.id === result.stepId,
-        )?.command;
+        const command = plan?.steps.find((item) => item.id === result.stepId)?.command;
         if (!command || !["passed", "failed"].includes(result.status)) continue;
         const key = commandFingerprint(command);
         values.set(key, {
@@ -781,10 +668,7 @@ export class TaskExecutionService {
           status: result.status as "passed" | "failed",
           ...(result.status === "failed"
             ? {
-                failureFingerprint: failureFingerprint(
-                  result.outputTail,
-                  result.errorTail,
-                ),
+                failureFingerprint: failureFingerprint(result.outputTail, result.errorTail),
               }
             : {}),
         });
@@ -815,9 +699,7 @@ function sanitize(value: string): string {
   const printable = [...value]
     .filter((character) => {
       const code = character.charCodeAt(0);
-      return (
-        character === "\n" || character === "\t" || (code >= 32 && code !== 127)
-      );
+      return character === "\n" || character === "\t" || (code >= 32 && code !== 127);
     })
     .join("");
   return printable
@@ -832,18 +714,10 @@ function sanitizeClaims(
 ): NonNullable<ExecutionResultCapture["agentClaims"]> {
   return {
     ...(claims.summary ? { summary: sanitize(claims.summary) } : {}),
-    ...(claims.filesChanged
-      ? { filesChanged: claims.filesChanged.slice(0, 500) }
-      : {}),
-    ...(claims.commandsRun
-      ? { commandsRun: claims.commandsRun.map(sanitize).slice(0, 100) }
-      : {}),
-    ...(claims.testsRun
-      ? { testsRun: claims.testsRun.map(sanitize).slice(0, 100) }
-      : {}),
-    ...(claims.blockers
-      ? { blockers: claims.blockers.map(sanitize).slice(0, 100) }
-      : {}),
+    ...(claims.filesChanged ? { filesChanged: claims.filesChanged.slice(0, 500) } : {}),
+    ...(claims.commandsRun ? { commandsRun: claims.commandsRun.map(sanitize).slice(0, 100) } : {}),
+    ...(claims.testsRun ? { testsRun: claims.testsRun.map(sanitize).slice(0, 100) } : {}),
+    ...(claims.blockers ? { blockers: claims.blockers.map(sanitize).slice(0, 100) } : {}),
     ...(claims.unresolvedIssues
       ? {
           unresolvedIssues: claims.unresolvedIssues.map(sanitize).slice(0, 100),

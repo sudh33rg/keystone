@@ -44,18 +44,24 @@ export class IngestionScheduler {
 
   constructor(
     private readonly onError: (cause: unknown, job: IngestionJob) => void = () => undefined,
-    private readonly timeBudgetMs = DEFAULT_INGESTION_TIME_BUDGET_MS
+    private readonly timeBudgetMs = DEFAULT_INGESTION_TIME_BUDGET_MS,
   ) {}
 
   enqueue(job: IngestionJob): number {
     if (this.disposed) throw new Error("The intelligence ingestion scheduler is disposed.");
     const revision = ++this.revision;
-    if (this.active && !this.active.controller.signal.aborted && job.priority < this.active.job.priority) {
+    if (
+      this.active &&
+      !this.active.controller.signal.aborted &&
+      job.priority < this.active.job.priority
+    ) {
       this.queue.push({ ...this.active.job, sequence: ++this.sequence });
       this.active.controller.abort();
     }
     this.queue.push({ ...job, sequence: ++this.sequence, revision });
-    this.queue.sort((left, right) => left.priority - right.priority || left.sequence - right.sequence);
+    this.queue.sort(
+      (left, right) => left.priority - right.priority || left.sequence - right.sequence,
+    );
     this.emit();
     void this.drain();
     return revision;
@@ -72,7 +78,9 @@ export class IngestionScheduler {
     this.paused = true;
     if (this.active && !this.active.controller.signal.aborted) {
       this.queue.push({ ...this.active.job, sequence: ++this.sequence });
-      this.queue.sort((left, right) => left.priority - right.priority || left.sequence - right.sequence);
+      this.queue.sort(
+        (left, right) => left.priority - right.priority || left.sequence - right.sequence,
+      );
       this.active.controller.abort();
     }
     this.emit();
@@ -92,7 +100,15 @@ export class IngestionScheduler {
       completedJobs: this.completedJobs,
       failedJobs: this.failedJobs,
       currentFiles: this.active?.job.paths.slice(0, 20) ?? [],
-      ...(this.active ? { activeJob: { key: this.active.job.key, reason: this.active.job.reason, revision: this.active.job.revision } } : {})
+      ...(this.active
+        ? {
+            activeJob: {
+              key: this.active.job.key,
+              reason: this.active.job.reason,
+              revision: this.active.job.revision,
+            },
+          }
+        : {}),
     };
   }
 
@@ -110,7 +126,10 @@ export class IngestionScheduler {
   private async drain(): Promise<void> {
     if (this.active || this.disposed || this.paused) return;
     const job = this.queue.shift();
-    if (!job) { this.emit(); return; }
+    if (!job) {
+      this.emit();
+      return;
+    }
     const controller = new AbortController();
     this.active = { job, controller };
     this.emit();
@@ -121,19 +140,25 @@ export class IngestionScheduler {
         timer = setTimeout(() => {
           timedOut = true;
           controller.abort();
-          reject(new KeystoneError({
-            code: "INTELLIGENCE_INGESTION_TIMEOUT",
-            category: "INDEXING",
-            message: "Repository ingestion exceeded its bounded time budget.",
-            technicalDetails: `The ${job.reason} ingestion job exceeded ${this.timeBudgetMs} ms.`,
-            operation: "intelligence.scheduler.run",
-            recoverable: true,
-            recommendedAction: "Review the Keystone logs for the stalled phase, reduce repository scope if necessary, and retry.",
-            retryable: true
-          }));
+          reject(
+            new KeystoneError({
+              code: "INTELLIGENCE_INGESTION_TIMEOUT",
+              category: "INDEXING",
+              message: "Repository ingestion exceeded its bounded time budget.",
+              technicalDetails: `The ${job.reason} ingestion job exceeded ${this.timeBudgetMs} ms.`,
+              operation: "intelligence.scheduler.run",
+              recoverable: true,
+              recommendedAction:
+                "Review the Keystone logs for the stalled phase, reduce repository scope if necessary, and retry.",
+              retryable: true,
+            }),
+          );
         }, this.timeBudgetMs);
       });
-      await Promise.race([job.run({ revision: job.revision, signal: controller.signal }), timeBudget]);
+      await Promise.race([
+        job.run({ revision: job.revision, signal: controller.signal }),
+        timeBudget,
+      ]);
       if (!controller.signal.aborted) this.completedJobs += 1;
     } catch (cause) {
       if (timedOut || !controller.signal.aborted) {
@@ -156,12 +181,19 @@ export class IngestionScheduler {
 
 export const ingestionPriority = (reason: IngestionJob["reason"]): number => {
   switch (reason) {
-    case "manual": return 0;
-    case "active-editor": return 1;
-    case "git": return 2;
-    case "file": return 3;
-    case "workspace": return 4;
-    case "startup": return 5;
-    case "storage-recovery": return 1;
+    case "manual":
+      return 0;
+    case "active-editor":
+      return 1;
+    case "git":
+      return 2;
+    case "file":
+      return 3;
+    case "workspace":
+      return 4;
+    case "startup":
+      return 5;
+    case "storage-recovery":
+      return 1;
   }
 };

@@ -1,6 +1,15 @@
 import type ts from "typescript";
-import type { CpgDelta, CpgScopeArtifact, CpgSliceQuery, CpgSliceResult } from "../../../shared/contracts/cpg";
-import type { IntelligenceEvidenceRecord, IntelligenceRelationshipRecord, IntelligenceSymbolRecord } from "../../../shared/contracts/intelligence";
+import type {
+  CpgDelta,
+  CpgScopeArtifact,
+  CpgSliceQuery,
+  CpgSliceResult,
+} from "../../../shared/contracts/cpg";
+import type {
+  IntelligenceEvidenceRecord,
+  IntelligenceRelationshipRecord,
+  IntelligenceSymbolRecord,
+} from "../../../shared/contracts/intelligence";
 import type { SemanticSourceFileInput } from "../semantic/SemanticModel";
 
 export interface BuildAnalysisRequest {
@@ -35,7 +44,8 @@ export class CpgProviderRegistry {
   private readonly providers: CodeAnalysisProvider[] = [];
 
   register(provider: CodeAnalysisProvider): void {
-    if (this.providers.some((item) => item.id === provider.id)) throw new Error(`CPG provider ${provider.id} is already registered.`);
+    if (this.providers.some((item) => item.id === provider.id))
+      throw new Error(`CPG provider ${provider.id} is already registered.`);
     this.providers.push(provider);
   }
 
@@ -43,5 +53,7 @@ export class CpgProviderRegistry {
     return this.providers.find((provider) => provider.supports(language));
   }
 
-  all(): readonly CodeAnalysisProvider[] { return this.providers; }
+  all(): readonly CodeAnalysisProvider[] {
+    return this.providers;
+  }
 }

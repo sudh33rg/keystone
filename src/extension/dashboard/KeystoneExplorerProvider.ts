@@ -22,13 +22,12 @@ interface IntelligenceItem {
   };
 }
 
-export class KeystoneExplorerProvider
-  implements vscode.TreeDataProvider<Node>, vscode.Disposable
-{
+export class KeystoneExplorerProvider implements vscode.TreeDataProvider<Node>, vscode.Disposable {
   private readonly changed = new vscode.EventEmitter<Node | undefined | null>();
   readonly onDidChangeTreeData = this.changed.event;
 
-  private sections: Array<{ id: string; label: string; icon: string; items: IntelligenceItem[] }> = [];
+  private sections: Array<{ id: string; label: string; icon: string; items: IntelligenceItem[] }> =
+    [];
 
   constructor(private readonly store: IntelligenceSnapshotReader) {
     this.buildDefaultSections();
@@ -40,20 +39,14 @@ export class KeystoneExplorerProvider
 
   getTreeItem(node: Node): vscode.TreeItem {
     if (node.kind === "section") {
-      const item = new vscode.TreeItem(
-        node.label,
-        vscode.TreeItemCollapsibleState.Expanded,
-      );
+      const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.Expanded);
       item.id = `section:${node.id}`;
       item.contextValue = `keystone.explorer.section.${node.id}`;
       item.iconPath = new vscode.ThemeIcon(node.icon);
       return item;
     }
     if (node.kind === "service") {
-      const item = new vscode.TreeItem(
-        node.label,
-        vscode.TreeItemCollapsibleState.None,
-      );
+      const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.None);
       item.id = `service:${node.id}`;
       item.contextValue = `keystone.explorer.service.${node.id}`;
       item.iconPath = new vscode.ThemeIcon(node.icon);
@@ -64,10 +57,7 @@ export class KeystoneExplorerProvider
       return item;
     }
     const value = node.value;
-    const item = new vscode.TreeItem(
-      value.label,
-      vscode.TreeItemCollapsibleState.None,
-    );
+    const item = new vscode.TreeItem(value.label, vscode.TreeItemCollapsibleState.None);
     item.id = value.id;
     item.description = value.description;
     item.tooltip = new vscode.MarkdownString(value.description);

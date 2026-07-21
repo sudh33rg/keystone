@@ -6,7 +6,7 @@ import {
   type AgentAssignment,
   type TaskAttempt,
   TaskSchema,
-  TaskAttemptSchema
+  TaskAttemptSchema,
 } from "../../shared/contracts/domain";
 import { KeystoneError } from "../../shared/errors/KeystoneError";
 
@@ -15,14 +15,12 @@ export class TaskGraphService {
   private tasks = new Map<string, Task>();
   private attempts = new Map<string, TaskAttempt>();
 
-  constructor(
-    private readonly store: WorkspaceStateStore
-  ) {}
+  constructor(private readonly store: WorkspaceStateStore) {}
 
   generateFromSpecification(
     specificationId: string,
     specificationRevision: number,
-    criteria: AcceptanceCriterion[]
+    criteria: AcceptanceCriterion[],
   ): TaskGraph {
     const graphId = crypto.randomUUID();
     const tasks: Task[] = [];
@@ -53,22 +51,24 @@ export class TaskGraphService {
             selectionSeeds: [],
             budget: 12000,
             mandatoryItems: [],
-            excludedItems: []
+            excludedItems: [],
           },
           expectedFiles: [],
           expectedOutput: criterion.description,
           acceptanceCriterionIds: [criterion.id],
-          validationSteps: [{
-            command: undefined,
-            manualCheck: criterion.description,
-            policyClass: "manual"
-          }],
+          validationSteps: [
+            {
+              command: undefined,
+              manualCheck: criterion.description,
+              policyClass: "manual",
+            },
+          ],
           retryHistory: [],
           executionNotes: [],
           baseFingerprint: {
             specRevision: specificationRevision,
-            indexVersion: 0
-          }
+            indexVersion: 0,
+          },
         };
 
         const validated = TaskSchema.safeParse(task);
@@ -93,7 +93,7 @@ export class TaskGraphService {
       generatedAt: new Date().toISOString(),
       generationProvenance: "specification-generated",
       validationStatus: "pending",
-      topologicalOrder
+      topologicalOrder,
     };
 
     this.taskGraphs.set(graphId, graph);
@@ -121,7 +121,7 @@ export class TaskGraphService {
         message: `Task ${taskId} not found.`,
         operation: "task.update",
         recoverable: false,
-        recommendedAction: "Generate a task graph first."
+        recommendedAction: "Generate a task graph first.",
       });
     }
 
@@ -134,7 +134,7 @@ export class TaskGraphService {
         message: "Task update failed validation.",
         operation: "task.update",
         recoverable: false,
-        recommendedAction: "Review the task fields and retry."
+        recommendedAction: "Review the task fields and retry.",
       });
     }
 
@@ -154,7 +154,7 @@ export class TaskGraphService {
     taskId: string,
     agentAssignment: AgentAssignment,
     contextPackageId: string,
-    delegationMethod: "direct" | "assisted"
+    delegationMethod: "direct" | "assisted",
   ): TaskAttempt {
     const task = this.tasks.get(taskId);
     if (!task) {
@@ -164,7 +164,7 @@ export class TaskGraphService {
         message: `Task ${taskId} not found.`,
         operation: "task.createAttempt",
         recoverable: false,
-        recommendedAction: "Generate a task graph first."
+        recommendedAction: "Generate a task graph first.",
       });
     }
 
@@ -177,13 +177,13 @@ export class TaskGraphService {
       agentAssignmentSnapshot: {
         agentId: agentAssignment.agentId,
         selectionMode: agentAssignment.selectionMode,
-        capabilityFingerprint: agentAssignment.capabilityFingerprint
+        capabilityFingerprint: agentAssignment.capabilityFingerprint,
       },
       contextPackageId,
       delegationMethod,
       startedAt: new Date().toISOString(),
       state: "delegating",
-      userConfirmations: []
+      userConfirmations: [],
     };
 
     const validated = TaskAttemptSchema.safeParse(attempt);
@@ -194,7 +194,7 @@ export class TaskGraphService {
         message: "Task attempt failed validation.",
         operation: "task.createAttempt",
         recoverable: false,
-        recommendedAction: "Review the attempt fields and retry."
+        recommendedAction: "Review the attempt fields and retry.",
       });
     }
 
@@ -203,7 +203,13 @@ export class TaskGraphService {
     return validated.data;
   }
 
-  transitionTask(taskId: string, from: Task["status"], to: Task["status"], agentAssignment?: AgentAssignment, contextPackageId?: string): Task {
+  transitionTask(
+    taskId: string,
+    from: Task["status"],
+    to: Task["status"],
+    agentAssignment?: AgentAssignment,
+    contextPackageId?: string,
+  ): Task {
     const task = this.tasks.get(taskId);
     if (!task) {
       throw new KeystoneError({
@@ -212,7 +218,7 @@ export class TaskGraphService {
         message: `Task ${taskId} not found.`,
         operation: "task.transition",
         recoverable: false,
-        recommendedAction: "Generate a task graph first."
+        recommendedAction: "Generate a task graph first.",
       });
     }
 
@@ -228,7 +234,7 @@ export class TaskGraphService {
       failed: ["ready"],
       skipped: [],
       cancelled: [],
-      blocked: ["ready"]
+      blocked: ["ready"],
     };
 
     const allowed = validTransitions[from];
@@ -239,7 +245,7 @@ export class TaskGraphService {
         message: `Cannot transition task ${taskId} from ${from} to ${to}.`,
         operation: "task.transition",
         recoverable: false,
-        recommendedAction: "Review the task state machine and retry."
+        recommendedAction: "Review the task state machine and retry.",
       });
     }
 

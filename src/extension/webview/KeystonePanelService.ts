@@ -2,10 +2,7 @@ import * as vscode from "vscode";
 import type { ConfigurationService } from "../../core/configuration/ConfigurationService";
 import type { WorkspaceStateStore } from "../../core/persistence/WorkspaceStateStore";
 import type { WorkspaceSummary } from "../../shared/contracts/domain";
-import {
-  hostMessage,
-  WebviewRequestSchema,
-} from "../../shared/contracts/messages";
+import { hostMessage, WebviewRequestSchema } from "../../shared/contracts/messages";
 import {
   KeystoneInitializationSchema,
   OpenKeystoneRequestSchema,
@@ -18,10 +15,7 @@ import type {
   KeystoneLaunchValidationService,
   KeystonePanelStateService,
 } from "../../core/integration/NativeShellServices";
-import {
-  WebviewMessageRouter,
-  type IntelligenceServiceRegistry,
-} from "./WebviewMessageRouter";
+import { WebviewMessageRouter, type IntelligenceServiceRegistry } from "./WebviewMessageRouter";
 
 export class KeystonePanelService implements vscode.Disposable {
   static readonly viewType = "keystone.controlCenter";
@@ -68,15 +62,11 @@ export class KeystonePanelService implements vscode.Disposable {
       this.panel.reveal(column, true);
       await this.panelState.revealed(column);
       if (this.readyInstanceId) await this.sendNavigation(navigation);
-      this.logger.info(
-        "panel.revealed",
-        "Reused the singleton Keystone panel.",
-        {
-          source: request.source,
-          durationMs: performance.now() - started,
-          duplicatePreventionCount: this.duplicatePreventionCount,
-        },
-      );
+      this.logger.info("panel.revealed", "Reused the singleton Keystone panel.", {
+        source: request.source,
+        durationMs: performance.now() - started,
+        duplicatePreventionCount: this.duplicatePreventionCount,
+      });
       return navigation;
     }
     this.createdAt = performance.now();
@@ -88,16 +78,10 @@ export class KeystonePanelService implements vscode.Disposable {
         enableScripts: true,
         enableCommandUris: false,
         retainContextWhenHidden: true,
-        localResourceRoots: [
-          vscode.Uri.joinPath(this.extensionUri, "dist", "webview"),
-        ],
+        localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, "dist", "webview")],
       },
     );
-    panel.iconPath = vscode.Uri.joinPath(
-      this.extensionUri,
-      "resources",
-      "keystone.svg",
-    );
+    panel.iconPath = vscode.Uri.joinPath(this.extensionUri, "resources", "keystone.svg");
     await this.panelState.opened(column);
     await this.attach(panel);
     this.logger.info("panel.created", "Created the singleton Keystone panel.", {
@@ -116,9 +100,7 @@ export class KeystonePanelService implements vscode.Disposable {
   }
   async restore(panel: vscode.WebviewPanel): Promise<void> {
     this.disposePanel(false);
-    await this.panelState.opened(
-      panel.viewColumn ?? this.panelState.snapshot.column,
-    );
+    await this.panelState.opened(panel.viewColumn ?? this.panelState.snapshot.column);
     await this.attach(panel);
   }
   dispose(): void {
@@ -129,11 +111,7 @@ export class KeystonePanelService implements vscode.Disposable {
   private async attach(panel: vscode.WebviewPanel): Promise<void> {
     this.panel = panel;
     this.readyInstanceId = undefined;
-    const assetsRoot = vscode.Uri.joinPath(
-      this.extensionUri,
-      "dist",
-      "webview",
-    );
+    const assetsRoot = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
     panel.webview.options = {
       enableScripts: true,
       enableCommandUris: false,
@@ -165,10 +143,7 @@ export class KeystonePanelService implements vscode.Disposable {
       }),
     ];
   }
-  private async receive(
-    raw: unknown,
-    panel: vscode.WebviewPanel,
-  ): Promise<void> {
+  private async receive(raw: unknown, panel: vscode.WebviewPanel): Promise<void> {
     const parsed = WebviewRequestSchema.safeParse(raw);
     if (!parsed.success) {
       await this.router?.handle(raw);
@@ -190,9 +165,7 @@ export class KeystonePanelService implements vscode.Disposable {
       }
       this.readyInstanceId = request.payload.instanceId;
       await this.panelState.ready();
-      await panel.webview.postMessage(
-        hostMessage("keystone/initialize", initialization),
-      );
+      await panel.webview.postMessage(hostMessage("keystone/initialize", initialization));
       await panel.webview.postMessage(
         hostMessage("response/success", {
           requestId: request.requestId,
@@ -230,16 +203,10 @@ export class KeystonePanelService implements vscode.Disposable {
     }
     if (request.type === "keystone/webviewStateChanged") {
       const state = await this.panelState.route(request.payload.route, {
-        ...(request.payload.workflowId
-          ? { workflowId: request.payload.workflowId }
-          : {}),
+        ...(request.payload.workflowId ? { workflowId: request.payload.workflowId } : {}),
         ...(request.payload.taskId ? { taskId: request.payload.taskId } : {}),
-        ...(request.payload.intelligenceQuery
-          ? { query: request.payload.intelligenceQuery }
-          : {}),
-        ...(request.payload.entityId
-          ? { entityId: request.payload.entityId }
-          : {}),
+        ...(request.payload.intelligenceQuery ? { query: request.payload.intelligenceQuery } : {}),
+        ...(request.payload.entityId ? { entityId: request.payload.entityId } : {}),
         ...(request.payload.drawer ? { drawer: request.payload.drawer } : {}),
       });
       await panel.webview.postMessage(
@@ -296,22 +263,13 @@ export class KeystonePanelService implements vscode.Disposable {
       indexStatus: this.services.intelligenceRuntime.getState().status,
     };
   }
-  private async createHtml(
-    webview: vscode.Webview,
-    assetsRoot: vscode.Uri,
-  ): Promise<string> {
+  private async createHtml(webview: vscode.Webview, assetsRoot: vscode.Uri): Promise<string> {
     const indexUri = vscode.Uri.joinPath(assetsRoot, "index.html");
     let html: string;
     try {
-      html = new TextDecoder().decode(
-        await vscode.workspace.fs.readFile(indexUri),
-      );
+      html = new TextDecoder().decode(await vscode.workspace.fs.readFile(indexUri));
     } catch (error) {
-      this.logger.warning(
-        "webview.assets",
-        "Built Webview assets were not found.",
-        error,
-      );
+      this.logger.warning("webview.assets", "Built Webview assets were not found.", error);
       return fallbackHtml();
     }
     const nonce = createNonce();
@@ -336,9 +294,7 @@ export class KeystonePanelService implements vscode.Disposable {
 }
 function createNonce(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(18));
-  return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join(
-    "",
-  );
+  return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
 }
 function fallbackHtml(): string {
   return "<!doctype html><html><body><h1>Keystone</h1><p>Build the extension with <code>npm run build</code>, then reload this window.</p></body></html>";

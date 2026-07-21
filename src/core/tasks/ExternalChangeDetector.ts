@@ -3,11 +3,14 @@ import type { WorkspaceAdapter } from "../../extension/adapters/WorkspaceAdapter
 import { type ExternalChange } from "../../shared/contracts/domain";
 
 export class ExternalChangeDetector {
-  private baselines = new Map<string, { timestamp: string; commitHash: string; branch: string; files: Set<string> }>();
+  private baselines = new Map<
+    string,
+    { timestamp: string; commitHash: string; branch: string; files: Set<string> }
+  >();
 
   constructor(
     private readonly git: GitAdapter,
-    private readonly workspace: WorkspaceAdapter
+    private readonly workspace: WorkspaceAdapter,
   ) {}
 
   setBaseline(taskId: string, commitHash: string, branch: string, files: string[]): void {
@@ -15,7 +18,7 @@ export class ExternalChangeDetector {
       timestamp: new Date().toISOString(),
       commitHash,
       branch,
-      files: new Set(files)
+      files: new Set(files),
     });
   }
 
@@ -34,7 +37,7 @@ export class ExternalChangeDetector {
         type: "branch-switch",
         severity: "high",
         details: `Switched from ${baseline.branch} to ${currentBranch}`,
-        stale: true
+        stale: true,
       };
     }
 
@@ -47,14 +50,14 @@ export class ExternalChangeDetector {
         type: "external-commit",
         severity: "high",
         details: `New commit detected on ${currentBranch}: ${currentHead.slice(0, 8)}`,
-        stale: true
+        stale: true,
       };
     }
 
     // Check for file changes
     const changedFiles = await this.git.getChangedFiles(rootUri);
     const changedSet = new Set(changedFiles);
-    const impactedFiles = Array.from(baseline.files).filter(f => changedSet.has(f));
+    const impactedFiles = Array.from(baseline.files).filter((f) => changedSet.has(f));
 
     if (impactedFiles.length > 0) {
       return {
@@ -64,7 +67,7 @@ export class ExternalChangeDetector {
         severity: impactedFiles.length > 3 ? "high" : "medium",
         details: `${impactedFiles.length} tracked files changed`,
         impactedFiles,
-        stale: true
+        stale: true,
       };
     }
 
@@ -78,7 +81,12 @@ export class ExternalChangeDetector {
       if (!rootUri) return;
       const currentBranch = this.git.getCurrentBranch(rootUri);
       const currentHead = this.git.getHeadCommit(rootUri);
-      this.setBaseline(taskId, currentHead ?? baseline.commitHash, currentBranch ?? baseline.branch, Array.from(baseline.files));
+      this.setBaseline(
+        taskId,
+        currentHead ?? baseline.commitHash,
+        currentBranch ?? baseline.branch,
+        Array.from(baseline.files),
+      );
     }
   }
 

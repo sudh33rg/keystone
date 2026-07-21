@@ -10,12 +10,8 @@ import type {
   OpenKeystoneRequest,
 } from "../../shared/contracts/nativeShell";
 
-type Node =
-  | { kind: "section"; id: string; label: string }
-  | { kind: "item"; value: DashboardItem };
-export class KeystoneDashboardProvider
-  implements vscode.TreeDataProvider<Node>, vscode.Disposable
-{
+type Node = { kind: "section"; id: string; label: string } | { kind: "item"; value: DashboardItem };
+export class KeystoneDashboardProvider implements vscode.TreeDataProvider<Node>, vscode.Disposable {
   private readonly changed = new vscode.EventEmitter<Node | undefined | null>();
   private state: KeystoneDashboardState;
   private items = new Map<string, DashboardItem>();
@@ -37,9 +33,7 @@ export class KeystoneDashboardProvider
   }
   async openItem(id: string): Promise<void> {
     if (!this.items.has(id))
-      throw new Error(
-        "Dashboard action is no longer available; refresh the Keystone dashboard.",
-      );
+      throw new Error("Dashboard action is no longer available; refresh the Keystone dashboard.");
     await this.open(id);
   }
   destination(id: string): DashboardItem["destination"] {
@@ -47,10 +41,7 @@ export class KeystoneDashboardProvider
   }
   getTreeItem(node: Node): vscode.TreeItem {
     if (node.kind === "section") {
-      const item = new vscode.TreeItem(
-        node.label,
-        vscode.TreeItemCollapsibleState.Expanded,
-      );
+      const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.Expanded);
       item.id = `section:${node.id}`;
       item.contextValue = `keystone.dashboard.section.${node.id}`;
       item.iconPath = new vscode.ThemeIcon(sectionIcon(node.id));
@@ -61,10 +52,7 @@ export class KeystoneDashboardProvider
       return item;
     }
     const value = node.value;
-    const item = new vscode.TreeItem(
-      value.label,
-      vscode.TreeItemCollapsibleState.None,
-    );
+    const item = new vscode.TreeItem(value.label, vscode.TreeItemCollapsibleState.None);
     item.id = value.id;
     item.description = value.description;
     item.tooltip = new vscode.MarkdownString(escapeMarkdown(value.tooltip));
@@ -90,10 +78,9 @@ export class KeystoneDashboardProvider
         label: section.label,
       }));
     if (node.kind === "section")
-      return (
-        this.state.sections.find((section) => section.id === node.id)?.items ??
-        []
-      ).map((value) => ({ kind: "item", value }));
+      return (this.state.sections.find((section) => section.id === node.id)?.items ?? []).map(
+        (value) => ({ kind: "item", value }),
+      );
     return [];
   }
   dispose(): void {
@@ -109,10 +96,7 @@ export class KeystoneDashboardProvider
 }
 
 export class KeystoneStatusBarService implements vscode.Disposable {
-  private readonly item = vscode.window.createStatusBarItem(
-    vscode.StatusBarAlignment.Left,
-    50,
-  );
+  private readonly item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
   constructor(private readonly visible: () => boolean) {
     this.item.command = "keystone.open";
     this.item.name = "Keystone";
@@ -124,9 +108,7 @@ export class KeystoneStatusBarService implements vscode.Disposable {
     }
     const validation = state.sections
       .find((section) => section.id === "attention")
-      ?.items.find(
-        (item) => item.contextValue === "keystone.attention.validation",
-      );
+      ?.items.find((item) => item.contextValue === "keystone.attention.validation");
     const attention = state.sections
       .find((section) => section.id === "attention")
       ?.items.some((item) => item.severity !== "info");
@@ -166,14 +148,11 @@ export class KeystoneContextKeyService implements vscode.Disposable {
     copilotAvailable: boolean,
   ): Promise<void> {
     if (this.disposed) return;
-    const attention =
-      state.sections.find((section) => section.id === "attention")?.items ?? [];
+    const attention = state.sections.find((section) => section.id === "attention")?.items ?? [];
     const values: Record<string, boolean> = {
       "keystone.workspaceAvailable": state.status !== "no-workspace",
       "keystone.repositoryAvailable": Boolean(state.repositoryId),
-      "keystone.intelligenceReady": ["ready", "no-workflow"].includes(
-        state.status,
-      ),
+      "keystone.intelligenceReady": ["ready", "no-workflow"].includes(state.status),
       "keystone.workflowActive": state.sections.some((section) =>
         section.items.some((item) => item.contextValue === "keystone.workflow"),
       ),
@@ -208,9 +187,7 @@ export class KeystoneNotificationService implements vscode.Disposable {
       return;
     }
     const previousIds = new Set(
-      this.previous.sections
-        .flatMap((section) => section.items)
-        .map((item) => item.id),
+      this.previous.sections.flatMap((section) => section.items).map((item) => item.id),
     );
     const attention = next.sections
       .flatMap((section) => section.items)
@@ -235,11 +212,7 @@ export class KeystoneNotificationService implements vscode.Disposable {
       attention.severity === "error"
         ? await vscode.window.showErrorMessage(attention.label, label)
         : await vscode.window.showWarningMessage(attention.label, label);
-    if (action)
-      await vscode.commands.executeCommand(
-        "keystone.dashboard.openAction",
-        attention.id,
-      );
+    if (action) await vscode.commands.executeCommand("keystone.dashboard.openAction", attention.id);
   }
   dispose(): void {
     this.disposed = true;
@@ -277,8 +250,7 @@ export class KeystoneCommandService implements vscode.Disposable {
     };
     const entity = (repositoryId?: unknown, entityId?: unknown) => {
       const value = this.current();
-      const repository =
-        typeof repositoryId === "string" ? repositoryId : value.repositoryId;
+      const repository = typeof repositoryId === "string" ? repositoryId : value.repositoryId;
       const selected = typeof entityId === "string" ? entityId : value.entityId;
       if (!repository || !selected)
         throw new Error(
@@ -286,9 +258,7 @@ export class KeystoneCommandService implements vscode.Disposable {
         );
       return { repository, selected };
     };
-    command("keystone.dashboard.openAction", async (id) =>
-      this.dashboard.openItem(String(id)),
-    );
+    command("keystone.dashboard.openAction", async (id) => this.dashboard.openItem(String(id)));
     command("keystone.open", () => open({ type: "home" }));
     command("keystone.startWorkflow", () => open({ type: "new-workflow" }));
     command("keystone.resumeWorkflow", () => {
@@ -310,9 +280,7 @@ export class KeystoneCommandService implements vscode.Disposable {
           )
         : open({ type: "home" });
     });
-    command("keystone.askRepository", () =>
-      open({ type: "intelligence-query" }),
-    );
+    command("keystone.askRepository", () => open({ type: "intelligence-query" }));
     command("keystone.openEntity", (repositoryId, entityId) => {
       const value = entity(repositoryId, entityId);
       return open(
@@ -356,17 +324,11 @@ export class KeystoneCommandService implements vscode.Disposable {
         "editor-context",
       );
     });
-    command("keystone.importHandoff", () =>
-      open({ type: "import-handoff" }, "handoff-import"),
-    );
-    command("keystone.openDiagnostics", () =>
-      open({ type: "diagnostics" }, "diagnostics"),
-    );
+    command("keystone.importHandoff", () => open({ type: "import-handoff" }, "handoff-import"));
+    command("keystone.openDiagnostics", () => open({ type: "diagnostics" }, "diagnostics"));
     command("keystone.openSettings", () => open({ type: "settings" }));
     command("keystone.dashboard.refresh", () => this.refresh.request());
-    command("keystone.openFolder", () =>
-      vscode.commands.executeCommand("vscode.openFolder"),
-    );
+    command("keystone.openFolder", () => vscode.commands.executeCommand("vscode.openFolder"));
     return this.disposables;
   }
   dispose(): void {
@@ -385,9 +347,7 @@ export class KeystoneCodeLensProvider implements vscode.CodeLensProvider {
   provideCodeLenses(document: vscode.TextDocument): vscode.CodeLens[] {
     if (
       !vscode.workspace.isTrusted ||
-      !vscode.workspace
-        .getConfiguration("keystone.shell")
-        .get<boolean>("enableCodeLens", false)
+      !vscode.workspace.getConfiguration("keystone.shell").get<boolean>("enableCodeLens", false)
     )
       return [];
     return this.resolve(document.uri)
@@ -426,13 +386,12 @@ function escapeMarkdown(value: string): string {
 function tooltip(state: KeystoneDashboardState): vscode.MarkdownString {
   const repository = state.repositoryName ?? "No repository";
   const workflow =
-    state.sections.find((section) => section.id === "workflow")?.items[0]
-      ?.label ?? "No active workflow";
+    state.sections.find((section) => section.id === "workflow")?.items[0]?.label ??
+    "No active workflow";
   const task =
     state.sections
       .find((section) => section.id === "workflow")
-      ?.items.find((item) => item.contextValue === "keystone.task")?.label ??
-    "No current task";
+      ?.items.find((item) => item.contextValue === "keystone.task")?.label ?? "No current task";
   return new vscode.MarkdownString(
     `**${repository}**\n\n${state.status}\n\nWorkflow: ${workflow}\n\nTask: ${task}`,
   );

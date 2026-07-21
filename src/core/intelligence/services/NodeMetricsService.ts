@@ -2,7 +2,10 @@
 // Provides node metrics: centrality, degree, betweenness approximation, and influence scoring.
 
 import type { IntelligenceSnapshotReader } from "../../persistence/IntelligenceStore";
-import type { IntelligenceSymbolRecord, IntelligenceFileRecord } from "../../../shared/contracts/intelligence";
+import type {
+  IntelligenceSymbolRecord,
+  IntelligenceFileRecord,
+} from "../../../shared/contracts/intelligence";
 
 export interface NodeMetrics {
   id: string;
@@ -56,7 +59,11 @@ export class NodeMetricsService {
     }
 
     // Compute metrics for all entities
-    const allEntities: Array<{ id: string; symbol: IntelligenceSymbolRecord | undefined; file: IntelligenceFileRecord | undefined }> = [];
+    const allEntities: Array<{
+      id: string;
+      symbol: IntelligenceSymbolRecord | undefined;
+      file: IntelligenceFileRecord | undefined;
+    }> = [];
 
     for (const symbol of snapshot.symbols) {
       allEntities.push({ id: symbol.id, symbol, file: undefined });
@@ -65,10 +72,7 @@ export class NodeMetricsService {
       allEntities.push({ id: file.id, symbol: undefined, file });
     }
 
-    const maxDegree = Math.max(
-      ...[...inDegree.values(), ...outDegree.values()],
-      0,
-    );
+    const maxDegree = Math.max(...[...inDegree.values(), ...outDegree.values()], 0);
     const totalNodes = allEntities.length;
 
     const nodes: NodeMetrics[] = allEntities.map(({ id, symbol, file }) => {
@@ -79,14 +83,13 @@ export class NodeMetricsService {
 
       // Influence score: weighted combination of in-degree, out-degree, and confidence
       const confidence = symbol?.confidence ?? 1;
-      const influenceScore =
-        (inDeg * 0.4 + outDeg * 0.3 + normalizedCentrality * 0.3) * confidence;
+      const influenceScore = (inDeg * 0.4 + outDeg * 0.3 + normalizedCentrality * 0.3) * confidence;
 
       return {
         id,
         type: symbol?.type ?? "keystone.core.File",
-        name: symbol?.name ?? (file?.relativePath.split("/").at(-1) ?? file?.relativePath ?? id),
-        qualifiedName: symbol?.qualifiedName ?? (file?.relativePath ?? id),
+        name: symbol?.name ?? file?.relativePath.split("/").at(-1) ?? file?.relativePath ?? id,
+        qualifiedName: symbol?.qualifiedName ?? file?.relativePath ?? id,
         relativePath: file?.relativePath ?? "",
         inDegree: inDeg,
         outDegree: outDeg,
@@ -109,9 +112,7 @@ export class NodeMetricsService {
     });
 
     const averageDegree =
-      totalNodes > 0
-        ? nodes.reduce((sum, n) => sum + n.totalDegree, 0) / totalNodes
-        : 0;
+      totalNodes > 0 ? nodes.reduce((sum, n) => sum + n.totalDegree, 0) / totalNodes : 0;
 
     const highCentralityNodes = nodes.filter((n) => n.centrality > 0.5).length;
 
@@ -125,18 +126,12 @@ export class NodeMetricsService {
     };
   }
 
-  async getNodeMetrics(
-    nodeId: string,
-    signal?: AbortSignal,
-  ): Promise<NodeMetrics | undefined> {
+  async getNodeMetrics(nodeId: string, signal?: AbortSignal): Promise<NodeMetrics | undefined> {
     const result = await this.computeAll(signal);
     return result.nodes.find((n) => n.id === nodeId);
   }
 
-  async getTopNodes(
-    limit = 20,
-    signal?: AbortSignal,
-  ): Promise<NodeMetrics[]> {
+  async getTopNodes(limit = 20, signal?: AbortSignal): Promise<NodeMetrics[]> {
     const result = await this.computeAll(signal);
     return result.nodes.slice(0, limit);
   }

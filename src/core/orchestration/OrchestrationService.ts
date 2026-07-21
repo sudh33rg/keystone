@@ -1,166 +1,1269 @@
 import { createHash } from "node:crypto";
-import type { DevelopmentWorkflowSnapshot, DevelopmentTask } from "../../shared/contracts/delegation";
-import { OrchestrationReviewPlanSchema, WorkflowDefinitionSchema, WorkflowInstanceSchema, WorkflowPolicySchema, type OrchestrationReviewPlan, type WorkflowDefinition, type WorkflowInstance, type WorkflowPolicy, type WorkflowStatus } from "../../shared/contracts/orchestration";
+import type {
+  DevelopmentWorkflowSnapshot,
+  DevelopmentTask,
+} from "../../shared/contracts/delegation";
+import {
+  OrchestrationReviewPlanSchema,
+  WorkflowDefinitionSchema,
+  WorkflowInstanceSchema,
+  WorkflowPolicySchema,
+  type OrchestrationReviewPlan,
+  type WorkflowDefinition,
+  type WorkflowInstance,
+  type WorkflowPolicy,
+  type WorkflowStatus,
+} from "../../shared/contracts/orchestration";
 import type { OrchestrationPersistenceStore } from "../persistence/OrchestrationPersistenceStore";
 import type { DevelopmentWorkflowService } from "../workflows/DevelopmentWorkflowService";
 import type { ExecutionRoutingService } from "../workflows/ExecutionRoutingService";
 import { RepositoryStateService } from "../integration/ProductIntegrationService";
 
 const TRANSITIONS: Readonly<Record<WorkflowStatus, readonly WorkflowStatus[]>> = {
-  draft: ["awaiting-review", "cancelled"], "awaiting-review": ["awaiting-approval", "draft", "cancelled"], "awaiting-approval": ["ready", "draft", "cancelled"], ready: ["running", "cancelled", "stale"], running: ["paused", "blocked", "awaiting-user-action", "validation-failed", "cancelling", "delivery-ready", "failed", "stale"], paused: ["recovering", "cancelling", "cancelled", "stale"], blocked: ["recovering", "paused", "cancelling", "failed", "stale"], "awaiting-user-action": ["running", "paused", "cancelling", "stale"], "validation-failed": ["running", "paused", "cancelling", "failed", "stale"], cancelling: ["cancelled"], cancelled: [], recovering: ["ready", "running", "paused", "blocked", "stale", "cancelled"], "delivery-ready": ["completed", "completed-with-warnings", "running", "cancelled", "stale"], completed: ["superseded"], "completed-with-warnings": ["superseded"], failed: ["recovering", "superseded"], stale: ["recovering", "cancelled", "superseded"], superseded: [],
+  draft: ["awaiting-review", "cancelled"],
+  "awaiting-review": ["awaiting-approval", "draft", "cancelled"],
+  "awaiting-approval": ["ready", "draft", "cancelled"],
+  ready: ["running", "cancelled", "stale"],
+  running: [
+    "paused",
+    "blocked",
+    "awaiting-user-action",
+    "validation-failed",
+    "cancelling",
+    "delivery-ready",
+    "failed",
+    "stale",
+  ],
+  paused: ["recovering", "cancelling", "cancelled", "stale"],
+  blocked: ["recovering", "paused", "cancelling", "failed", "stale"],
+  "awaiting-user-action": ["running", "paused", "cancelling", "stale"],
+  "validation-failed": ["running", "paused", "cancelling", "failed", "stale"],
+  cancelling: ["cancelled"],
+  cancelled: [],
+  recovering: ["ready", "running", "paused", "blocked", "stale", "cancelled"],
+  "delivery-ready": ["completed", "completed-with-warnings", "running", "cancelled", "stale"],
+  completed: ["superseded"],
+  "completed-with-warnings": ["superseded"],
+  failed: ["recovering", "superseded"],
+  stale: ["recovering", "cancelled", "superseded"],
+  superseded: [],
 };
 
 export class WorkflowStateMachine {
   transition(current: WorkflowStatus, target: WorkflowStatus): void {
-    if (!TRANSITIONS[current].includes(target)) throw new Error(`Invalid orchestration transition: ${current} -> ${target}.`);
+    if (!TRANSITIONS[current].includes(target))
+      throw new Error(`Invalid orchestration transition: ${current} -> ${target}.`);
   }
 }
 
 export class WorkflowDefinitionRegistry {
-  private readonly definitions = new Map(DEFINITIONS.map((definition) => [definition.id, WorkflowDefinitionSchema.parse(definition)]));
-  list(): WorkflowDefinition[] { return structuredClone([...this.definitions.values()]); }
-  get(id: WorkflowDefinition["id"]): WorkflowDefinition { const value = this.definitions.get(id); if (!value) throw new Error(`Unknown workflow definition: ${id}.`); return structuredClone(value); }
-  select(workflow: DevelopmentWorkflowSnapshot): WorkflowDefinition { const category = workflow.intent.category; const id = category === "bug-fix" ? "bug-fix" : category === "refactoring" ? "refactoring" : category === "modernization" || category === "migration" ? "modernization" : category === "security" ? "security-remediation" : workflow.intent.mode === "quick" ? "quick-fix" : "feature-development"; return this.get(id); }
+  private readonly definitions = new Map(
+    DEFINITIONS.map((definition) => [definition.id, WorkflowDefinitionSchema.parse(definition)]),
+  );
+  list(): WorkflowDefinition[] {
+    return structuredClone([...this.definitions.values()]);
+  }
+  get(id: WorkflowDefinition["id"]): WorkflowDefinition {
+    const value = this.definitions.get(id);
+    if (!value) throw new Error(`Unknown workflow definition: ${id}.`);
+    return structuredClone(value);
+  }
+  select(workflow: DevelopmentWorkflowSnapshot): WorkflowDefinition {
+    const category = workflow.intent.category;
+    const id =
+      category === "bug-fix"
+        ? "bug-fix"
+        : category === "refactoring"
+          ? "refactoring"
+          : category === "modernization" || category === "migration"
+            ? "modernization"
+            : category === "security"
+              ? "security-remediation"
+              : workflow.intent.mode === "quick"
+                ? "quick-fix"
+                : "feature-development";
+    return this.get(id);
+  }
 }
 
 export class WorkflowPolicyService {
-  private readonly profiles = new Map<string, WorkflowPolicy>(POLICIES.map((policy) => [policy.id, WorkflowPolicySchema.parse(policy)]));
-  list(): WorkflowPolicy[] { return structuredClone([...this.profiles.values()]); }
-  get(id: string): WorkflowPolicy { const value = this.profiles.get(id); if (!value) throw new Error(`Unknown orchestration policy: ${id}.`); return structuredClone(value); }
+  private readonly profiles = new Map<string, WorkflowPolicy>(
+    POLICIES.map((policy) => [policy.id, WorkflowPolicySchema.parse(policy)]),
+  );
+  list(): WorkflowPolicy[] {
+    return structuredClone([...this.profiles.values()]);
+  }
+  get(id: string): WorkflowPolicy {
+    const value = this.profiles.get(id);
+    if (!value) throw new Error(`Unknown orchestration policy: ${id}.`);
+    return structuredClone(value);
+  }
 }
 
 export class TaskConflictService {
-  classify(left: WorkflowInstance["taskStates"][number], right: WorkflowInstance["taskStates"][number]): { classification: "safe-read-only" | "independent" | "shared-contract" | "shared-file" | "conflicting" | "unknown"; reasons: string[] } {
-    if (left.readOnly && right.readOnly) return { classification: "safe-read-only", reasons: ["Both tasks are read-only."] };
+  classify(
+    left: WorkflowInstance["taskStates"][number],
+    right: WorkflowInstance["taskStates"][number],
+  ): {
+    classification:
+      | "safe-read-only"
+      | "independent"
+      | "shared-contract"
+      | "shared-file"
+      | "conflicting"
+      | "unknown";
+    reasons: string[];
+  } {
+    if (left.readOnly && right.readOnly)
+      return { classification: "safe-read-only", reasons: ["Both tasks are read-only."] };
     const files = left.expectedFiles.filter((path) => right.expectedFiles.includes(path));
     const entities = left.expectedEntityIds.filter((id) => right.expectedEntityIds.includes(id));
-    if (files.length) return { classification: "shared-file", reasons: [`Expected file overlap: ${files.slice(0, 5).join(", ")}.`] };
-    if (entities.length) return { classification: "shared-contract", reasons: [`Expected entity overlap: ${entities.slice(0, 5).join(", ")}.`] };
-    if (!left.expectedFiles.length || !right.expectedFiles.length) return { classification: "unknown", reasons: ["One or both tasks have no concrete expected-file evidence."] };
-    return { classification: "independent", reasons: ["No expected file or entity overlap was found."] };
+    if (files.length)
+      return {
+        classification: "shared-file",
+        reasons: [`Expected file overlap: ${files.slice(0, 5).join(", ")}.`],
+      };
+    if (entities.length)
+      return {
+        classification: "shared-contract",
+        reasons: [`Expected entity overlap: ${entities.slice(0, 5).join(", ")}.`],
+      };
+    if (!left.expectedFiles.length || !right.expectedFiles.length)
+      return {
+        classification: "unknown",
+        reasons: ["One or both tasks have no concrete expected-file evidence."],
+      };
+    return {
+      classification: "independent",
+      reasons: ["No expected file or entity overlap was found."],
+    };
   }
 }
 
 export class TaskReadinessService {
-  check(instance: WorkflowInstance, taskId: string, source: DevelopmentWorkflowSnapshot): { ready: boolean; blockers: string[]; warnings: string[] } {
-    const task = instance.taskStates.find((candidate) => candidate.taskId === taskId); if (!task) throw new Error(`Unknown orchestration task: ${taskId}.`);
+  check(
+    instance: WorkflowInstance,
+    taskId: string,
+    source: DevelopmentWorkflowSnapshot,
+  ): { ready: boolean; blockers: string[]; warnings: string[] } {
+    const task = instance.taskStates.find((candidate) => candidate.taskId === taskId);
+    if (!task) throw new Error(`Unknown orchestration task: ${taskId}.`);
     const blockers: string[] = [];
     const sourceTask = source.tasks.find((candidate) => candidate.id === taskId);
-    if (!source.specification || source.specification.status !== "approved") blockers.push("Specification revision is not approved.");
+    if (!source.specification || source.specification.status !== "approved")
+      blockers.push("Specification revision is not approved.");
     if (!source.taskGraph?.ready) blockers.push("Task plan is not approved and cycle-free.");
-    if (!sourceTask || sourceTask.status === "stale" || task.status === "stale") blockers.push("Task state is stale.");
-    if (source.branch !== instance.branch) blockers.push("Workflow branch no longer matches the orchestration branch.");
-    if (source.intelligenceGeneration < instance.intelligenceGeneration) blockers.push("Canonical Intelligence is older than the orchestration baseline.");
-    for (const dependency of task.dependencies) if (instance.taskStates.find((item) => item.taskId === dependency)?.status !== "completed") blockers.push(`Dependency ${dependency} is not complete.`);
+    if (!sourceTask || sourceTask.status === "stale" || task.status === "stale")
+      blockers.push("Task state is stale.");
+    if (source.branch !== instance.branch)
+      blockers.push("Workflow branch no longer matches the orchestration branch.");
+    if (source.intelligenceGeneration < instance.intelligenceGeneration)
+      blockers.push("Canonical Intelligence is older than the orchestration baseline.");
+    for (const dependency of task.dependencies)
+      if (instance.taskStates.find((item) => item.taskId === dependency)?.status !== "completed")
+        blockers.push(`Dependency ${dependency} is not complete.`);
     if (task.route === "unsupported") blockers.push("No supported execution route is available.");
-    if (!sourceTask?.acceptanceCriterionIds.length || !sourceTask.validationSteps.length) blockers.push("Acceptance criteria or validation steps are missing.");
-    if (task.route === "github-copilot" && !task.selectedAgentId) blockers.push("A capability-proven Copilot agent has not been selected.");
-    if (instance.approvalGates.some((gate) => gate.taskId === taskId && gate.status === "pending")) blockers.push("Required task approval is pending.");
-    return { ready: blockers.length === 0, blockers, warnings: task.expectedFiles.length ? [] : ["Expected files are not concrete; conflict analysis fails closed."] };
+    if (!sourceTask?.acceptanceCriterionIds.length || !sourceTask.validationSteps.length)
+      blockers.push("Acceptance criteria or validation steps are missing.");
+    if (task.route === "github-copilot" && !task.selectedAgentId)
+      blockers.push("A capability-proven Copilot agent has not been selected.");
+    if (instance.approvalGates.some((gate) => gate.taskId === taskId && gate.status === "pending"))
+      blockers.push("Required task approval is pending.");
+    return {
+      ready: blockers.length === 0,
+      blockers,
+      warnings: task.expectedFiles.length
+        ? []
+        : ["Expected files are not concrete; conflict analysis fails closed."],
+    };
   }
 }
 
 export class WorkflowScheduler {
   constructor(private readonly conflicts = new TaskConflictService()) {}
-  schedule(instance: WorkflowInstance): { order: string[]; blockedPairs: Array<{ left: string; right: string; classification: string }> } {
+  schedule(instance: WorkflowInstance): {
+    order: string[];
+    blockedPairs: Array<{ left: string; right: string; classification: string }>;
+  } {
     const rank = { critical: 4, high: 3, medium: 2, low: 1 } as const;
-    const order = [...instance.taskStates].sort((a, b) => a.dependencies.length - b.dependencies.length || b.priority - a.priority || rank[b.risk] - rank[a.risk] || a.taskId.localeCompare(b.taskId)).map((task) => task.taskId);
+    const order = [...instance.taskStates]
+      .sort(
+        (a, b) =>
+          a.dependencies.length - b.dependencies.length ||
+          b.priority - a.priority ||
+          rank[b.risk] - rank[a.risk] ||
+          a.taskId.localeCompare(b.taskId),
+      )
+      .map((task) => task.taskId);
     const blockedPairs: Array<{ left: string; right: string; classification: string }> = [];
-    for (let i = 0; i < instance.taskStates.length; i++) for (let j = i + 1; j < instance.taskStates.length; j++) { const left = instance.taskStates[i]!; const right = instance.taskStates[j]!; const result = this.conflicts.classify(left, right); if (["shared-contract", "shared-file", "conflicting", "unknown"].includes(result.classification)) blockedPairs.push({ left: left.taskId, right: right.taskId, classification: result.classification }); }
+    for (let i = 0; i < instance.taskStates.length; i++)
+      for (let j = i + 1; j < instance.taskStates.length; j++) {
+        const left = instance.taskStates[i]!;
+        const right = instance.taskStates[j]!;
+        const result = this.conflicts.classify(left, right);
+        if (
+          ["shared-contract", "shared-file", "conflicting", "unknown"].includes(
+            result.classification,
+          )
+        )
+          blockedPairs.push({
+            left: left.taskId,
+            right: right.taskId,
+            classification: result.classification,
+          });
+      }
     return { order, blockedPairs };
   }
 }
 
 export class OrchestrationService {
-  readonly definitions = new WorkflowDefinitionRegistry(); readonly policies = new WorkflowPolicyService(); readonly readiness = new TaskReadinessService(); readonly scheduler = new WorkflowScheduler(); private readonly machine = new WorkflowStateMachine();
-  constructor(private readonly persistence: OrchestrationPersistenceStore, private readonly workflows: DevelopmentWorkflowService, private readonly routing: ExecutionRoutingService) {}
-  async initialize(): Promise<void> { await this.persistence.initialize(); await this.recoverInterrupted(); }
-  list(): WorkflowInstance[] { return this.persistence.snapshot.instances.map((instance) => this.projectAuthoritativeTaskState(instance)); }
-  get(id: string): WorkflowInstance | undefined { return this.list().find((item) => item.id === id); }
+  readonly definitions = new WorkflowDefinitionRegistry();
+  readonly policies = new WorkflowPolicyService();
+  readonly readiness = new TaskReadinessService();
+  readonly scheduler = new WorkflowScheduler();
+  private readonly machine = new WorkflowStateMachine();
+  constructor(
+    private readonly persistence: OrchestrationPersistenceStore,
+    private readonly workflows: DevelopmentWorkflowService,
+    private readonly routing: ExecutionRoutingService,
+  ) {}
+  async initialize(): Promise<void> {
+    await this.persistence.initialize();
+    await this.recoverInterrupted();
+  }
+  list(): WorkflowInstance[] {
+    return this.persistence.snapshot.instances.map((instance) =>
+      this.projectAuthoritativeTaskState(instance),
+    );
+  }
+  get(id: string): WorkflowInstance | undefined {
+    return this.list().find((item) => item.id === id);
+  }
 
-  async create(workflowId: string, policyId = "guided", definitionId?: WorkflowDefinition["id"]): Promise<WorkflowInstance> {
-    const source = this.requireSource(workflowId); if (!source.specification || !source.taskGraph) throw new Error("An approved specification and generated task plan are required."); if (source.specification.status !== "approved" || !source.taskGraph.ready) throw new Error("The specification and task plan must be approved before orchestration planning.");
-    const policy = this.policies.get(policyId); const definition = definitionId ? this.definitions.get(definitionId) : this.definitions.select(source); if (source.tasks.length > policy.maxTasks) throw new Error(`Workflow exceeds the ${policy.maxTasks}-task policy limit.`);
-    const now = new Date().toISOString(); const instanceId = crypto.randomUUID();
+  async create(
+    workflowId: string,
+    policyId = "guided",
+    definitionId?: WorkflowDefinition["id"],
+  ): Promise<WorkflowInstance> {
+    const source = this.requireSource(workflowId);
+    if (!source.specification || !source.taskGraph)
+      throw new Error("An approved specification and generated task plan are required.");
+    if (source.specification.status !== "approved" || !source.taskGraph.ready)
+      throw new Error(
+        "The specification and task plan must be approved before orchestration planning.",
+      );
+    const policy = this.policies.get(policyId);
+    const definition = definitionId
+      ? this.definitions.get(definitionId)
+      : this.definitions.select(source);
+    if (source.tasks.length > policy.maxTasks)
+      throw new Error(`Workflow exceeds the ${policy.maxTasks}-task policy limit.`);
+    const now = new Date().toISOString();
+    const instanceId = crypto.randomUUID();
     const taskStates = source.tasks.map((task) => this.toTaskState(task, source, now));
-    const instance = WorkflowInstanceSchema.parse({ schemaVersion: 1, id: instanceId, intentId: source.intent.id, specificationId: source.specification.id, specificationRevision: source.specification.revision, taskPlanId: source.taskGraph.id, repositoryId: source.repositoryId, branch: source.branch ?? "unknown", baseCommit: source.headCommit ?? "unknown", intelligenceGeneration: source.intelligenceGeneration, repositoryState: new RepositoryStateService().fromWorkflow(source), definitionId: definition.id, policyProfileId: policy.id, status: "draft", currentStage: "intent-review", taskStates, approvalGates: [], activeExecutionIds: [], validationRunIds: [], findings: [], diagnostics: [], audit: [audit("created", "draft", "Orchestration instance created from approved source aggregates.")], progress: progress(taskStates, [], []), metrics: emptyMetrics(), createdAt: now, updatedAt: now });
-    await this.replace(instance); return instance;
+    const instance = WorkflowInstanceSchema.parse({
+      schemaVersion: 1,
+      id: instanceId,
+      intentId: source.intent.id,
+      specificationId: source.specification.id,
+      specificationRevision: source.specification.revision,
+      taskPlanId: source.taskGraph.id,
+      repositoryId: source.repositoryId,
+      branch: source.branch ?? "unknown",
+      baseCommit: source.headCommit ?? "unknown",
+      intelligenceGeneration: source.intelligenceGeneration,
+      repositoryState: new RepositoryStateService().fromWorkflow(source),
+      definitionId: definition.id,
+      policyProfileId: policy.id,
+      status: "draft",
+      currentStage: "intent-review",
+      taskStates,
+      approvalGates: [],
+      activeExecutionIds: [],
+      validationRunIds: [],
+      findings: [],
+      diagnostics: [],
+      audit: [
+        audit(
+          "created",
+          "draft",
+          "Orchestration instance created from approved source aggregates.",
+        ),
+      ],
+      progress: progress(taskStates, [], []),
+      metrics: emptyMetrics(),
+      createdAt: now,
+      updatedAt: now,
+    });
+    await this.replace(instance);
+    return instance;
   }
 
   async plan(id: string): Promise<WorkflowInstance> {
-    await yieldTurn(); const instance = this.require(id); const source = this.requireSourceByInstance(instance); const definition = this.definitions.get(instance.definitionId); const policy = this.policies.get(instance.policyProfileId); const scheduled = this.scheduler.schedule(instance); const now = new Date().toISOString();
-    const gates = [...new Set([...definition.requiredGates, ...policy.requiredApprovals])].map((kind) => ({ id: crypto.randomUUID(), kind, status: "pending" as const, requestedAction: `Approve ${kind.replaceAll("-", " ")}.`, evidence: [`specification:${instance.specificationId}:${instance.specificationRevision}`, `task-plan:${instance.taskPlanId}`], risks: ["Execution remains blocked until this decision is recorded."], alternatives: ["Reject", "Request changes"], createdAt: now }));
-    const stages = definition.stages.map((item) => { const relevant = stageRelevant(item.stage, source); return { stage: item.stage, optional: item.optional, omitted: item.optional && !relevant, ...item.optional && !relevant ? { omissionReason: "No deterministic relevance trigger was found in the approved scope." } : {}, taskIds: stageTasks(item.stage, instance.taskStates), gates: gates.filter((gate) => gate.kind.includes(item.stage.split("-")[0] ?? "")).map((gate) => gate.kind) }; });
-    const updated = { ...instance, status: "awaiting-approval" as const, currentStage: "task-plan-review" as const, approvalGates: gates, plan: { id: crypto.randomUUID(), workflowId: instance.id, definitionId: definition.id, specificationRevision: instance.specificationRevision, approved: false, stages, schedule: scheduled.order, conflictFingerprint: fingerprint(scheduled.blockedPairs), createdAt: now }, diagnostics: [...instance.diagnostics, ...scheduled.blockedPairs.map((pair) => ({ code: "TASK_CONFLICT", severity: "warning" as const, message: `${pair.left} and ${pair.right}: ${pair.classification}.` }))].slice(-200), audit: boundedAudit(instance, audit("planned", "awaiting-approval", "Executable workflow plan generated.")), updatedAt: now };
-    this.machine.transition(instance.status, "awaiting-review"); this.machine.transition("awaiting-review", "awaiting-approval"); await this.replace(WorkflowInstanceSchema.parse({ ...updated, progress: progress(updated.taskStates, updated.approvalGates, updated.findings) })); return this.require(id);
+    await yieldTurn();
+    const instance = this.require(id);
+    const source = this.requireSourceByInstance(instance);
+    const definition = this.definitions.get(instance.definitionId);
+    const policy = this.policies.get(instance.policyProfileId);
+    const scheduled = this.scheduler.schedule(instance);
+    const now = new Date().toISOString();
+    const gates = [...new Set([...definition.requiredGates, ...policy.requiredApprovals])].map(
+      (kind) => ({
+        id: crypto.randomUUID(),
+        kind,
+        status: "pending" as const,
+        requestedAction: `Approve ${kind.replaceAll("-", " ")}.`,
+        evidence: [
+          `specification:${instance.specificationId}:${instance.specificationRevision}`,
+          `task-plan:${instance.taskPlanId}`,
+        ],
+        risks: ["Execution remains blocked until this decision is recorded."],
+        alternatives: ["Reject", "Request changes"],
+        createdAt: now,
+      }),
+    );
+    const stages = definition.stages.map((item) => {
+      const relevant = stageRelevant(item.stage, source);
+      return {
+        stage: item.stage,
+        optional: item.optional,
+        omitted: item.optional && !relevant,
+        ...(item.optional && !relevant
+          ? {
+              omissionReason: "No deterministic relevance trigger was found in the approved scope.",
+            }
+          : {}),
+        taskIds: stageTasks(item.stage, instance.taskStates),
+        gates: gates
+          .filter((gate) => gate.kind.includes(item.stage.split("-")[0] ?? ""))
+          .map((gate) => gate.kind),
+      };
+    });
+    const updated = {
+      ...instance,
+      status: "awaiting-approval" as const,
+      currentStage: "task-plan-review" as const,
+      approvalGates: gates,
+      plan: {
+        id: crypto.randomUUID(),
+        workflowId: instance.id,
+        definitionId: definition.id,
+        specificationRevision: instance.specificationRevision,
+        approved: false,
+        stages,
+        schedule: scheduled.order,
+        conflictFingerprint: fingerprint(scheduled.blockedPairs),
+        createdAt: now,
+      },
+      diagnostics: [
+        ...instance.diagnostics,
+        ...scheduled.blockedPairs.map((pair) => ({
+          code: "TASK_CONFLICT",
+          severity: "warning" as const,
+          message: `${pair.left} and ${pair.right}: ${pair.classification}.`,
+        })),
+      ].slice(-200),
+      audit: boundedAudit(
+        instance,
+        audit("planned", "awaiting-approval", "Executable workflow plan generated."),
+      ),
+      updatedAt: now,
+    };
+    this.machine.transition(instance.status, "awaiting-review");
+    this.machine.transition("awaiting-review", "awaiting-approval");
+    await this.replace(
+      WorkflowInstanceSchema.parse({
+        ...updated,
+        progress: progress(updated.taskStates, updated.approvalGates, updated.findings),
+      }),
+    );
+    return this.require(id);
   }
 
-  async decide(id: string, gateId: string, decision: "approved" | "rejected" | "changes-requested" | "overridden", reason: string, riskAcknowledged = false): Promise<WorkflowInstance> {
-    const instance = this.require(id); const gate = instance.approvalGates.find((item) => item.id === gateId); if (!gate || gate.status !== "pending") throw new Error("Approval gate is not pending."); if (decision === "overridden" && !riskAcknowledged) throw new Error("An override requires explicit risk acknowledgement."); if (["git-staging", "commit", "push", "pr-creation"].includes(gate.kind) && decision === "overridden") throw new Error("Git approval gates cannot be overridden by orchestration.");
-    const now = new Date().toISOString(); const gates = instance.approvalGates.map((item) => item.id === gateId ? { ...item, status: decision, actor: "user" as const, reason, decidedAt: now } : item); const allApproved = gates.every((item) => ["approved", "overridden"].includes(item.status)); const status = decision === "rejected" || decision === "changes-requested" ? "draft" : allApproved ? "ready" : instance.status; if (status !== instance.status) this.machine.transition(instance.status, status);
-    const next = WorkflowInstanceSchema.parse({ ...instance, status, plan: instance.plan ? { ...instance.plan, approved: allApproved, ...(allApproved ? { approvedAt: now } : {}) } : undefined, approvalGates: gates, audit: boundedAudit(instance, audit(`approval-${decision}`, status, reason)), metrics: { ...instance.metrics, approvalCount: instance.metrics.approvalCount + 1 }, updatedAt: now, progress: progress(instance.taskStates, gates, instance.findings) }); await this.replace(next); return next;
+  async decide(
+    id: string,
+    gateId: string,
+    decision: "approved" | "rejected" | "changes-requested" | "overridden",
+    reason: string,
+    riskAcknowledged = false,
+  ): Promise<WorkflowInstance> {
+    const instance = this.require(id);
+    const gate = instance.approvalGates.find((item) => item.id === gateId);
+    if (!gate || gate.status !== "pending") throw new Error("Approval gate is not pending.");
+    if (decision === "overridden" && !riskAcknowledged)
+      throw new Error("An override requires explicit risk acknowledgement.");
+    if (
+      ["git-staging", "commit", "push", "pr-creation"].includes(gate.kind) &&
+      decision === "overridden"
+    )
+      throw new Error("Git approval gates cannot be overridden by orchestration.");
+    const now = new Date().toISOString();
+    const gates = instance.approvalGates.map((item) =>
+      item.id === gateId
+        ? { ...item, status: decision, actor: "user" as const, reason, decidedAt: now }
+        : item,
+    );
+    const allApproved = gates.every((item) => ["approved", "overridden"].includes(item.status));
+    const status =
+      decision === "rejected" || decision === "changes-requested"
+        ? "draft"
+        : allApproved
+          ? "ready"
+          : instance.status;
+    if (status !== instance.status) this.machine.transition(instance.status, status);
+    const next = WorkflowInstanceSchema.parse({
+      ...instance,
+      status,
+      plan: instance.plan
+        ? { ...instance.plan, approved: allApproved, ...(allApproved ? { approvedAt: now } : {}) }
+        : undefined,
+      approvalGates: gates,
+      audit: boundedAudit(instance, audit(`approval-${decision}`, status, reason)),
+      metrics: { ...instance.metrics, approvalCount: instance.metrics.approvalCount + 1 },
+      updatedAt: now,
+      progress: progress(instance.taskStates, gates, instance.findings),
+    });
+    await this.replace(next);
+    return next;
   }
 
-  async start(id: string): Promise<WorkflowInstance> { return this.changeStatus(id, "running", "implementation", "Workflow started after plan approval.", (instance) => { if (!instance.plan?.approved) throw new Error("Workflow plan approval is required before execution."); }); }
-  async pause(id: string): Promise<WorkflowInstance> { return this.changeStatus(id, "paused", undefined, "Workflow paused; active evidence and pending actions were preserved."); }
-  async resume(id: string, state: { repositoryId: string; branch: string; headCommit: string; intelligenceGeneration: number }): Promise<WorkflowInstance> { const current = this.require(id); await this.changeStatus(id, "recovering", current.currentStage, "Resume reconciliation started."); return this.reconcile(id, state, "resume"); }
-  async cancel(id: string): Promise<WorkflowInstance> { const current = this.require(id); if (TRANSITIONS[current.status].includes("cancelling")) await this.changeStatus(id, "cancelling", undefined, "Cancellation requested; Git operations are untouched."); return this.changeStatus(id, "cancelled", undefined, "Eligible orchestration work cancelled; completed evidence preserved."); }
-  async recover(id: string, state: { repositoryId: string; branch: string; headCommit: string; intelligenceGeneration: number }): Promise<WorkflowInstance> { const current = this.require(id); if (current.status !== "recovering") await this.changeStatus(id, "recovering", current.currentStage, "Recovery reconciliation started."); return this.reconcile(id, state, "recovery"); }
-  taskReadiness(id: string, taskId: string): ReturnType<TaskReadinessService["check"]> { const instance = this.require(id); return this.readiness.check(instance, taskId, this.requireSourceByInstance(instance)); }
-  schedule(id: string): ReturnType<WorkflowScheduler["schedule"]> { return this.scheduler.schedule(this.require(id)); }
-  async startTask(id: string, taskId: string): Promise<WorkflowInstance> { const instance = this.require(id); if (instance.status !== "running") throw new Error("The workflow must be running before a task can start."); const readiness = this.taskReadiness(id, taskId); if (!readiness.ready) throw new Error(`Task is not ready: ${readiness.blockers.join(" ")}`); const task = instance.taskStates.find((item) => item.taskId === taskId)!; if (!task.readOnly && instance.taskStates.some((item) => item.taskId !== taskId && item.status === "active" && !item.readOnly)) throw new Error("Code-writing tasks are serialized in the current working tree."); return this.updateTask(instance, taskId, { status: "active", readinessBlockers: [], warnings: readiness.warnings.map((message) => ({ code: "READINESS_WARNING", severity: "warning", message, taskId })) }, "task-started", "Task started after readiness revalidation."); }
-  async cancelTask(id: string, taskId: string, reason: string): Promise<WorkflowInstance> { return this.updateTask(this.require(id), taskId, { status: "cancelled" }, "task-cancelled", reason); }
-  async pauseTask(id: string, taskId: string, reason: string): Promise<WorkflowInstance> { return this.updateTask(this.require(id), taskId, { status: "blocked" }, "task-paused", reason); }
-  skipOptionalTask(): never { throw new Error("The authoritative task graph does not currently mark implementation tasks optional; required criteria cannot be skipped."); }
-  async retryTask(id: string, taskId: string, reason: string, agentId?: string): Promise<WorkflowInstance> { const instance = this.require(id); const policy = this.policies.get(instance.policyProfileId); const task = instance.taskStates.find((item) => item.taskId === taskId); if (!task) throw new Error("Task not found."); if (!["failed", "blocked"].includes(task.status)) throw new Error("Only a failed or blocked task can be retried."); if (task.retryCount >= policy.maximumRetries) throw new Error(`Retry limit ${policy.maximumRetries} reached.`); return this.updateTask(instance, taskId, { status: "pending", retryCount: task.retryCount + 1, ...(agentId ? { selectedAgentId: agentId, contextFingerprint: undefined } : {}) }, "task-retry-planned", reason, { retryCount: instance.metrics.retryCount + 1 }); }
-  async changeAgent(id: string, taskId: string, agentId: string, reason: string): Promise<WorkflowInstance> { return this.updateTask(this.require(id), taskId, { selectedAgentId: agentId, contextFingerprint: undefined, status: "pending" }, "agent-changed", reason); }
-  async recordTaskFailure(id: string, taskId: string, reason: string, validationRunIds: string[] = []): Promise<WorkflowInstance> { return this.updateTask(this.require(id), taskId, { status: "failed", validationRunIds }, "task-failed", reason); }
-  async recordTaskCompletion(id: string, taskId: string, validationRunIds: string[], reason: string): Promise<WorkflowInstance> { if (!validationRunIds.length) throw new Error("Evidence-backed validation is required before task completion."); const instance = this.require(id); if (instance.findings.some((finding) => finding.taskId === taskId && finding.blocking && finding.status === "open")) throw new Error("Blocking findings prevent task completion."); const completed = await this.updateTask(instance, taskId, { status: "completed", validationRunIds }, "task-completed", reason); const tasks = completed.taskStates.map((task) => task.status === "pending" && task.dependencies.every((dependency) => completed.taskStates.find((candidate) => candidate.taskId === dependency)?.status === "completed") ? { ...task, status: "ready" as const, updatedAt: new Date().toISOString() } : task); const next = WorkflowInstanceSchema.parse({ ...completed, taskStates: tasks, progress: progress(tasks, completed.approvalGates, completed.findings), updatedAt: new Date().toISOString() }); await this.replace(next); return this.require(id); }
-  async evaluateDeliveryReadiness(id: string): Promise<WorkflowInstance> { const instance = this.require(id); if (instance.taskStates.some((task) => !["completed", "skipped"].includes(task.status))) throw new Error("All required tasks must be complete before delivery readiness."); if (instance.findings.some((finding) => finding.blocking && finding.status === "open")) throw new Error("Blocking findings prevent delivery readiness."); if (instance.approvalGates.some((gate) => gate.kind !== "delivery-readiness" && gate.status === "pending")) throw new Error("Required approvals remain pending."); return this.changeStatus(id, "delivery-ready", "delivery-readiness", "Deterministic completion evidence is ready for the separate Git delivery approval boundary."); }
-  reviewPlan(id: string, category: OrchestrationReviewPlan["category"]): OrchestrationReviewPlan { const instance = this.require(id); const source = this.requireSourceByInstance(instance); const text = `${source.intent.originalText} ${source.specification?.requirements.map((item) => item.description).join(" ") ?? ""}`.toLowerCase(); const triggers: Record<OrchestrationReviewPlan["category"], RegExp> = { qa: /./, security: /(auth|security|endpoint|input|secret|database|filesystem|command|dependency|infrastructure)/, performance: /(performance|latency|query|loop|network|cache|concurr|bundle|benchmark)/, documentation: /(api|contract|config|architecture|migration|workflow|documentation|readme)/, validation: /./ }; const triggered = triggers[category].test(text); const checks = category === "qa" ? ["acceptance criteria", "impacted tests", "negative and boundary tests"] : category === "security" ? ["changed-scope deterministic security checks", "finding disposition"] : category === "performance" ? ["bundle size", "query and complexity candidates", "measurement where configured"] : category === "documentation" ? ["canonical Intelligence consistency", "public workflow and configuration changes"] : ["typecheck", "lint", "build", "tests", "criteria evidence"]; return OrchestrationReviewPlanSchema.parse({ category, triggered, reasons: [triggered ? `Approved scope matched deterministic ${category} triggers.` : `No deterministic ${category} relevance trigger was found.`], taskIds: instance.taskStates.map((task) => task.taskId), requiredChecks: triggered ? checks : [], limitations: category === "security" ? ["Changed-scope deterministic checks do not provide full security assurance."] : category === "performance" ? ["Improvement is not claimed without measurement."] : [] }); }
-  async resolveFinding(id: string, findingId: string, status: "accepted" | "resolved" | "rejected", reason: string): Promise<WorkflowInstance> { const instance = this.require(id); const finding = instance.findings.find((item) => item.id === findingId); if (!finding) throw new Error("Finding not found."); if (finding.blocking && status === "accepted" && ["security", "performance"].includes(finding.category)) throw new Error("Blocking security or performance findings require their explicit approval gate before acceptance."); const next = WorkflowInstanceSchema.parse({ ...instance, findings: instance.findings.map((item) => item.id === findingId ? { ...item, status } : item), audit: boundedAudit(instance, audit(`finding-${status}`, instance.status, reason)), updatedAt: new Date().toISOString() }); await this.replace(next); return next; }
+  async start(id: string): Promise<WorkflowInstance> {
+    return this.changeStatus(
+      id,
+      "running",
+      "implementation",
+      "Workflow started after plan approval.",
+      (instance) => {
+        if (!instance.plan?.approved)
+          throw new Error("Workflow plan approval is required before execution.");
+      },
+    );
+  }
+  async pause(id: string): Promise<WorkflowInstance> {
+    return this.changeStatus(
+      id,
+      "paused",
+      undefined,
+      "Workflow paused; active evidence and pending actions were preserved.",
+    );
+  }
+  async resume(
+    id: string,
+    state: {
+      repositoryId: string;
+      branch: string;
+      headCommit: string;
+      intelligenceGeneration: number;
+    },
+  ): Promise<WorkflowInstance> {
+    const current = this.require(id);
+    await this.changeStatus(
+      id,
+      "recovering",
+      current.currentStage,
+      "Resume reconciliation started.",
+    );
+    return this.reconcile(id, state, "resume");
+  }
+  async cancel(id: string): Promise<WorkflowInstance> {
+    const current = this.require(id);
+    if (TRANSITIONS[current.status].includes("cancelling"))
+      await this.changeStatus(
+        id,
+        "cancelling",
+        undefined,
+        "Cancellation requested; Git operations are untouched.",
+      );
+    return this.changeStatus(
+      id,
+      "cancelled",
+      undefined,
+      "Eligible orchestration work cancelled; completed evidence preserved.",
+    );
+  }
+  async recover(
+    id: string,
+    state: {
+      repositoryId: string;
+      branch: string;
+      headCommit: string;
+      intelligenceGeneration: number;
+    },
+  ): Promise<WorkflowInstance> {
+    const current = this.require(id);
+    if (current.status !== "recovering")
+      await this.changeStatus(
+        id,
+        "recovering",
+        current.currentStage,
+        "Recovery reconciliation started.",
+      );
+    return this.reconcile(id, state, "recovery");
+  }
+  taskReadiness(id: string, taskId: string): ReturnType<TaskReadinessService["check"]> {
+    const instance = this.require(id);
+    return this.readiness.check(instance, taskId, this.requireSourceByInstance(instance));
+  }
+  schedule(id: string): ReturnType<WorkflowScheduler["schedule"]> {
+    return this.scheduler.schedule(this.require(id));
+  }
+  async startTask(id: string, taskId: string): Promise<WorkflowInstance> {
+    const instance = this.require(id);
+    if (instance.status !== "running")
+      throw new Error("The workflow must be running before a task can start.");
+    const readiness = this.taskReadiness(id, taskId);
+    if (!readiness.ready) throw new Error(`Task is not ready: ${readiness.blockers.join(" ")}`);
+    const task = instance.taskStates.find((item) => item.taskId === taskId)!;
+    if (
+      !task.readOnly &&
+      instance.taskStates.some(
+        (item) => item.taskId !== taskId && item.status === "active" && !item.readOnly,
+      )
+    )
+      throw new Error("Code-writing tasks are serialized in the current working tree.");
+    return this.updateTask(
+      instance,
+      taskId,
+      {
+        status: "active",
+        readinessBlockers: [],
+        warnings: readiness.warnings.map((message) => ({
+          code: "READINESS_WARNING",
+          severity: "warning",
+          message,
+          taskId,
+        })),
+      },
+      "task-started",
+      "Task started after readiness revalidation.",
+    );
+  }
+  async cancelTask(id: string, taskId: string, reason: string): Promise<WorkflowInstance> {
+    return this.updateTask(
+      this.require(id),
+      taskId,
+      { status: "cancelled" },
+      "task-cancelled",
+      reason,
+    );
+  }
+  async pauseTask(id: string, taskId: string, reason: string): Promise<WorkflowInstance> {
+    return this.updateTask(this.require(id), taskId, { status: "blocked" }, "task-paused", reason);
+  }
+  skipOptionalTask(): never {
+    throw new Error(
+      "The authoritative task graph does not currently mark implementation tasks optional; required criteria cannot be skipped.",
+    );
+  }
+  async retryTask(
+    id: string,
+    taskId: string,
+    reason: string,
+    agentId?: string,
+  ): Promise<WorkflowInstance> {
+    const instance = this.require(id);
+    const policy = this.policies.get(instance.policyProfileId);
+    const task = instance.taskStates.find((item) => item.taskId === taskId);
+    if (!task) throw new Error("Task not found.");
+    if (!["failed", "blocked"].includes(task.status))
+      throw new Error("Only a failed or blocked task can be retried.");
+    if (task.retryCount >= policy.maximumRetries)
+      throw new Error(`Retry limit ${policy.maximumRetries} reached.`);
+    return this.updateTask(
+      instance,
+      taskId,
+      {
+        status: "pending",
+        retryCount: task.retryCount + 1,
+        ...(agentId ? { selectedAgentId: agentId, contextFingerprint: undefined } : {}),
+      },
+      "task-retry-planned",
+      reason,
+      { retryCount: instance.metrics.retryCount + 1 },
+    );
+  }
+  async changeAgent(
+    id: string,
+    taskId: string,
+    agentId: string,
+    reason: string,
+  ): Promise<WorkflowInstance> {
+    return this.updateTask(
+      this.require(id),
+      taskId,
+      { selectedAgentId: agentId, contextFingerprint: undefined, status: "pending" },
+      "agent-changed",
+      reason,
+    );
+  }
+  async recordTaskFailure(
+    id: string,
+    taskId: string,
+    reason: string,
+    validationRunIds: string[] = [],
+  ): Promise<WorkflowInstance> {
+    return this.updateTask(
+      this.require(id),
+      taskId,
+      { status: "failed", validationRunIds },
+      "task-failed",
+      reason,
+    );
+  }
+  async recordTaskCompletion(
+    id: string,
+    taskId: string,
+    validationRunIds: string[],
+    reason: string,
+  ): Promise<WorkflowInstance> {
+    if (!validationRunIds.length)
+      throw new Error("Evidence-backed validation is required before task completion.");
+    const instance = this.require(id);
+    if (
+      instance.findings.some(
+        (finding) => finding.taskId === taskId && finding.blocking && finding.status === "open",
+      )
+    )
+      throw new Error("Blocking findings prevent task completion.");
+    const completed = await this.updateTask(
+      instance,
+      taskId,
+      { status: "completed", validationRunIds },
+      "task-completed",
+      reason,
+    );
+    const tasks = completed.taskStates.map((task) =>
+      task.status === "pending" &&
+      task.dependencies.every(
+        (dependency) =>
+          completed.taskStates.find((candidate) => candidate.taskId === dependency)?.status ===
+          "completed",
+      )
+        ? { ...task, status: "ready" as const, updatedAt: new Date().toISOString() }
+        : task,
+    );
+    const next = WorkflowInstanceSchema.parse({
+      ...completed,
+      taskStates: tasks,
+      progress: progress(tasks, completed.approvalGates, completed.findings),
+      updatedAt: new Date().toISOString(),
+    });
+    await this.replace(next);
+    return this.require(id);
+  }
+  async evaluateDeliveryReadiness(id: string): Promise<WorkflowInstance> {
+    const instance = this.require(id);
+    if (instance.taskStates.some((task) => !["completed", "skipped"].includes(task.status)))
+      throw new Error("All required tasks must be complete before delivery readiness.");
+    if (instance.findings.some((finding) => finding.blocking && finding.status === "open"))
+      throw new Error("Blocking findings prevent delivery readiness.");
+    if (
+      instance.approvalGates.some(
+        (gate) => gate.kind !== "delivery-readiness" && gate.status === "pending",
+      )
+    )
+      throw new Error("Required approvals remain pending.");
+    return this.changeStatus(
+      id,
+      "delivery-ready",
+      "delivery-readiness",
+      "Deterministic completion evidence is ready for the separate Git delivery approval boundary.",
+    );
+  }
+  reviewPlan(id: string, category: OrchestrationReviewPlan["category"]): OrchestrationReviewPlan {
+    const instance = this.require(id);
+    const source = this.requireSourceByInstance(instance);
+    const text =
+      `${source.intent.originalText} ${source.specification?.requirements.map((item) => item.description).join(" ") ?? ""}`.toLowerCase();
+    const triggers: Record<OrchestrationReviewPlan["category"], RegExp> = {
+      qa: /./,
+      security:
+        /(auth|security|endpoint|input|secret|database|filesystem|command|dependency|infrastructure)/,
+      performance: /(performance|latency|query|loop|network|cache|concurr|bundle|benchmark)/,
+      documentation: /(api|contract|config|architecture|migration|workflow|documentation|readme)/,
+      validation: /./,
+    };
+    const triggered = triggers[category].test(text);
+    const checks =
+      category === "qa"
+        ? ["acceptance criteria", "impacted tests", "negative and boundary tests"]
+        : category === "security"
+          ? ["changed-scope deterministic security checks", "finding disposition"]
+          : category === "performance"
+            ? ["bundle size", "query and complexity candidates", "measurement where configured"]
+            : category === "documentation"
+              ? ["canonical Intelligence consistency", "public workflow and configuration changes"]
+              : ["typecheck", "lint", "build", "tests", "criteria evidence"];
+    return OrchestrationReviewPlanSchema.parse({
+      category,
+      triggered,
+      reasons: [
+        triggered
+          ? `Approved scope matched deterministic ${category} triggers.`
+          : `No deterministic ${category} relevance trigger was found.`,
+      ],
+      taskIds: instance.taskStates.map((task) => task.taskId),
+      requiredChecks: triggered ? checks : [],
+      limitations:
+        category === "security"
+          ? ["Changed-scope deterministic checks do not provide full security assurance."]
+          : category === "performance"
+            ? ["Improvement is not claimed without measurement."]
+            : [],
+    });
+  }
+  async resolveFinding(
+    id: string,
+    findingId: string,
+    status: "accepted" | "resolved" | "rejected",
+    reason: string,
+  ): Promise<WorkflowInstance> {
+    const instance = this.require(id);
+    const finding = instance.findings.find((item) => item.id === findingId);
+    if (!finding) throw new Error("Finding not found.");
+    if (
+      finding.blocking &&
+      status === "accepted" &&
+      ["security", "performance"].includes(finding.category)
+    )
+      throw new Error(
+        "Blocking security or performance findings require their explicit approval gate before acceptance.",
+      );
+    const next = WorkflowInstanceSchema.parse({
+      ...instance,
+      findings: instance.findings.map((item) =>
+        item.id === findingId ? { ...item, status } : item,
+      ),
+      audit: boundedAudit(instance, audit(`finding-${status}`, instance.status, reason)),
+      updatedAt: new Date().toISOString(),
+    });
+    await this.replace(next);
+    return next;
+  }
 
-  private async reconcile(id: string, state: { repositoryId: string; branch: string; headCommit: string; intelligenceGeneration: number }, action: string): Promise<WorkflowInstance> { const instance = this.require(id); const stale = instance.repositoryId !== state.repositoryId || instance.branch !== state.branch || instance.baseCommit !== state.headCommit || instance.intelligenceGeneration !== state.intelligenceGeneration; return this.changeStatus(id, stale ? "stale" : instance.startedAt ? "running" : "ready", instance.currentStage, stale ? `${action} found repository, branch, HEAD, or Intelligence drift; context and validation require review.` : `${action} reconciled persisted and repository state.`); }
-  private async changeStatus(id: string, status: WorkflowStatus, stage: WorkflowInstance["currentStage"], reason: string, guard?: (instance: WorkflowInstance) => void): Promise<WorkflowInstance> { const instance = this.require(id); guard?.(instance); this.machine.transition(instance.status, status); const now = new Date().toISOString(); const next = WorkflowInstanceSchema.parse({ ...instance, status, ...(stage ? { currentStage: stage } : {}), ...(status === "running" && !instance.startedAt ? { startedAt: now, metrics: { ...instance.metrics, startedAtMs: Date.now() } } : {}), ...(status === "completed" || status === "completed-with-warnings" ? { completedAt: now } : {}), audit: boundedAudit(instance, audit(`status-${status}`, status, reason)), updatedAt: now }); await this.replace(next); return next; }
-  private async recoverInterrupted(): Promise<void> { const interrupted = this.list().filter((item) => ["running", "cancelling", "recovering"].includes(item.status)); for (const item of interrupted) { const next = WorkflowInstanceSchema.parse({ ...item, status: "paused", diagnostics: [...item.diagnostics, { code: "INTERRUPTED_RELOAD", severity: "warning", message: "An interrupted operation was recovered as paused; completion was not inferred." }].slice(-200), audit: boundedAudit(item, audit("restart-recovery", "paused", "Interrupted work recovered as paused without fabricating completion.")), updatedAt: new Date().toISOString() }); await this.replace(next); } }
-  private toTaskState(task: DevelopmentTask, source: DevelopmentWorkflowSnapshot, now: string): WorkflowInstance["taskStates"][number] { const readOnly = ["investigation", "review"].includes(task.category); const operation = readOnly ? "query-execution" : task.category === "documentation" ? "code-implementation" : "complex-code-change"; const route = this.routing.decide({ operation, copilotAvailable: Boolean(task.assignedAgentId), ...(task.assignedAgentId ? { copilotAgentId: task.assignedAgentId } : {}) }).route; return { taskId: task.id, title: task.title, status: task.status === "stale" ? "stale" : "pending", dependencies: task.dependencies, priority: 50, risk: source.intent.risk, readOnly, expectedFiles: task.expectedFiles, expectedEntityIds: task.expectedEntityIds, route, requiredCapabilities: task.requiredCapabilities, readinessBlockers: [], warnings: [], validationRunIds: [], retryCount: 0, ...(task.assignedAgentId ? { selectedAgentId: task.assignedAgentId } : {}), updatedAt: now }; }
-  private require(id: string): WorkflowInstance { const value = this.get(id); if (!value) throw new Error(`Orchestration instance ${id} was not found.`); return value; }
-  private requireSource(id: string): DevelopmentWorkflowSnapshot { const value = this.workflows.get(id); if (!value) throw new Error(`Development workflow ${id} was not found.`); return value; }
-  private requireSourceByInstance(instance: WorkflowInstance): DevelopmentWorkflowSnapshot { const source = this.workflows.list().find((item) => item.intent.id === instance.intentId); if (!source) throw new Error("The authoritative development workflow is unavailable."); return source; }
+  private async reconcile(
+    id: string,
+    state: {
+      repositoryId: string;
+      branch: string;
+      headCommit: string;
+      intelligenceGeneration: number;
+    },
+    action: string,
+  ): Promise<WorkflowInstance> {
+    const instance = this.require(id);
+    const stale =
+      instance.repositoryId !== state.repositoryId ||
+      instance.branch !== state.branch ||
+      instance.baseCommit !== state.headCommit ||
+      instance.intelligenceGeneration !== state.intelligenceGeneration;
+    return this.changeStatus(
+      id,
+      stale ? "stale" : instance.startedAt ? "running" : "ready",
+      instance.currentStage,
+      stale
+        ? `${action} found repository, branch, HEAD, or Intelligence drift; context and validation require review.`
+        : `${action} reconciled persisted and repository state.`,
+    );
+  }
+  private async changeStatus(
+    id: string,
+    status: WorkflowStatus,
+    stage: WorkflowInstance["currentStage"],
+    reason: string,
+    guard?: (instance: WorkflowInstance) => void,
+  ): Promise<WorkflowInstance> {
+    const instance = this.require(id);
+    guard?.(instance);
+    this.machine.transition(instance.status, status);
+    const now = new Date().toISOString();
+    const next = WorkflowInstanceSchema.parse({
+      ...instance,
+      status,
+      ...(stage ? { currentStage: stage } : {}),
+      ...(status === "running" && !instance.startedAt
+        ? { startedAt: now, metrics: { ...instance.metrics, startedAtMs: Date.now() } }
+        : {}),
+      ...(status === "completed" || status === "completed-with-warnings"
+        ? { completedAt: now }
+        : {}),
+      audit: boundedAudit(instance, audit(`status-${status}`, status, reason)),
+      updatedAt: now,
+    });
+    await this.replace(next);
+    return next;
+  }
+  private async recoverInterrupted(): Promise<void> {
+    const interrupted = this.list().filter((item) =>
+      ["running", "cancelling", "recovering"].includes(item.status),
+    );
+    for (const item of interrupted) {
+      const next = WorkflowInstanceSchema.parse({
+        ...item,
+        status: "paused",
+        diagnostics: [
+          ...item.diagnostics,
+          {
+            code: "INTERRUPTED_RELOAD",
+            severity: "warning",
+            message:
+              "An interrupted operation was recovered as paused; completion was not inferred.",
+          },
+        ].slice(-200),
+        audit: boundedAudit(
+          item,
+          audit(
+            "restart-recovery",
+            "paused",
+            "Interrupted work recovered as paused without fabricating completion.",
+          ),
+        ),
+        updatedAt: new Date().toISOString(),
+      });
+      await this.replace(next);
+    }
+  }
+  private toTaskState(
+    task: DevelopmentTask,
+    source: DevelopmentWorkflowSnapshot,
+    now: string,
+  ): WorkflowInstance["taskStates"][number] {
+    const readOnly = ["investigation", "review"].includes(task.category);
+    const operation = readOnly
+      ? "query-execution"
+      : task.category === "documentation"
+        ? "code-implementation"
+        : "complex-code-change";
+    const route = this.routing.decide({
+      operation,
+      copilotAvailable: Boolean(task.assignedAgentId),
+      ...(task.assignedAgentId ? { copilotAgentId: task.assignedAgentId } : {}),
+    }).route;
+    return {
+      taskId: task.id,
+      title: task.title,
+      status: task.status === "stale" ? "stale" : "pending",
+      dependencies: task.dependencies,
+      priority: 50,
+      risk: source.intent.risk,
+      readOnly,
+      expectedFiles: task.expectedFiles,
+      expectedEntityIds: task.expectedEntityIds,
+      route,
+      requiredCapabilities: task.requiredCapabilities,
+      readinessBlockers: [],
+      warnings: [],
+      validationRunIds: [],
+      retryCount: 0,
+      ...(task.assignedAgentId ? { selectedAgentId: task.assignedAgentId } : {}),
+      updatedAt: now,
+    };
+  }
+  private require(id: string): WorkflowInstance {
+    const value = this.get(id);
+    if (!value) throw new Error(`Orchestration instance ${id} was not found.`);
+    return value;
+  }
+  private requireSource(id: string): DevelopmentWorkflowSnapshot {
+    const value = this.workflows.get(id);
+    if (!value) throw new Error(`Development workflow ${id} was not found.`);
+    return value;
+  }
+  private requireSourceByInstance(instance: WorkflowInstance): DevelopmentWorkflowSnapshot {
+    const source = this.workflows.list().find((item) => item.intent.id === instance.intentId);
+    if (!source) throw new Error("The authoritative development workflow is unavailable.");
+    return source;
+  }
   private projectAuthoritativeTaskState(instance: WorkflowInstance): WorkflowInstance {
     const source = this.workflows.list().find((item) => item.intent.id === instance.intentId);
     if (!source) return instance;
     const taskStates = instance.taskStates.map((task) => {
       const canonical = source.tasks.find((item) => item.id === task.taskId);
-      if (!canonical) return { ...task, status: "stale" as const, readinessBlockers: [...task.readinessBlockers, { code: "SOURCE_TASK_MISSING", severity: "error" as const, message: "The authoritative task no longer exists.", taskId: task.taskId }].slice(-100) };
-      if (canonical.status === "stale" || canonical.status === "cancelled" || canonical.status === "completed") return { ...task, status: canonical.status };
+      if (!canonical)
+        return {
+          ...task,
+          status: "stale" as const,
+          readinessBlockers: [
+            ...task.readinessBlockers,
+            {
+              code: "SOURCE_TASK_MISSING",
+              severity: "error" as const,
+              message: "The authoritative task no longer exists.",
+              taskId: task.taskId,
+            },
+          ].slice(-100),
+        };
+      if (
+        canonical.status === "stale" ||
+        canonical.status === "cancelled" ||
+        canonical.status === "completed"
+      )
+        return { ...task, status: canonical.status };
       // Orchestration cannot independently claim completion. Completion is owned
       // by CompletionDecisionService and the canonical development task.
-      if (task.status === "completed") return { ...task, status: canonical.status === "ready" ? "ready" as const : "pending" as const, readinessBlockers: [...task.readinessBlockers, { code: "AUTHORITATIVE_COMPLETION_MISSING", severity: "error" as const, message: "Validation references exist, but the authoritative task has not recorded completion.", taskId: task.taskId }].slice(-100) };
+      if (task.status === "completed")
+        return {
+          ...task,
+          status: canonical.status === "ready" ? ("ready" as const) : ("pending" as const),
+          readinessBlockers: [
+            ...task.readinessBlockers,
+            {
+              code: "AUTHORITATIVE_COMPLETION_MISSING",
+              severity: "error" as const,
+              message:
+                "Validation references exist, but the authoritative task has not recorded completion.",
+              taskId: task.taskId,
+            },
+          ].slice(-100),
+        };
       return task;
     });
-    return WorkflowInstanceSchema.parse({ ...instance, taskStates, progress: progress(taskStates, instance.approvalGates, instance.findings) });
+    return WorkflowInstanceSchema.parse({
+      ...instance,
+      taskStates,
+      progress: progress(taskStates, instance.approvalGates, instance.findings),
+    });
   }
-  private async replace(instance: WorkflowInstance): Promise<void> { await this.persistence.update((state) => ({ ...state, instances: [...state.instances.filter((item) => item.id !== instance.id), instance].slice(-100) })); }
-  private async updateTask(instance: WorkflowInstance, taskId: string, patch: Partial<WorkflowInstance["taskStates"][number]>, action: string, reason: string, metrics?: Partial<WorkflowInstance["metrics"]>): Promise<WorkflowInstance> { if (!instance.taskStates.some((task) => task.taskId === taskId)) throw new Error("Task not found."); const tasks = instance.taskStates.map((task) => task.taskId === taskId ? { ...task, ...patch, updatedAt: new Date().toISOString() } : task); const next = WorkflowInstanceSchema.parse({ ...instance, taskStates: tasks, audit: boundedAudit(instance, { ...audit(action, instance.status, reason), taskId }), metrics: { ...instance.metrics, ...metrics }, progress: progress(tasks, instance.approvalGates, instance.findings), updatedAt: new Date().toISOString() }); await this.replace(next); return next; }
+  private async replace(instance: WorkflowInstance): Promise<void> {
+    await this.persistence.update((state) => ({
+      ...state,
+      instances: [...state.instances.filter((item) => item.id !== instance.id), instance].slice(
+        -100,
+      ),
+    }));
+  }
+  private async updateTask(
+    instance: WorkflowInstance,
+    taskId: string,
+    patch: Partial<WorkflowInstance["taskStates"][number]>,
+    action: string,
+    reason: string,
+    metrics?: Partial<WorkflowInstance["metrics"]>,
+  ): Promise<WorkflowInstance> {
+    if (!instance.taskStates.some((task) => task.taskId === taskId))
+      throw new Error("Task not found.");
+    const tasks = instance.taskStates.map((task) =>
+      task.taskId === taskId ? { ...task, ...patch, updatedAt: new Date().toISOString() } : task,
+    );
+    const next = WorkflowInstanceSchema.parse({
+      ...instance,
+      taskStates: tasks,
+      audit: boundedAudit(instance, { ...audit(action, instance.status, reason), taskId }),
+      metrics: { ...instance.metrics, ...metrics },
+      progress: progress(tasks, instance.approvalGates, instance.findings),
+      updatedAt: new Date().toISOString(),
+    });
+    await this.replace(next);
+    return next;
+  }
 }
 
-const commonStages = [{ stage: "intent-review", optional: false }, { stage: "specification-review", optional: false }, { stage: "task-plan-review", optional: false }, { stage: "readiness-analysis", optional: false }, { stage: "implementation", optional: false }, { stage: "unit-validation", optional: false }, { stage: "integration-validation", optional: true }, { stage: "qa-review", optional: false }, { stage: "security-review", optional: true, condition: "Security-relevant scope or findings" }, { stage: "performance-review", optional: true, condition: "Performance-relevant scope or requirements" }, { stage: "documentation", optional: true, condition: "Public surface, configuration, architecture, migration, or user workflow changes" }, { stage: "final-validation", optional: false }, { stage: "delivery-readiness", optional: false }, { stage: "completed", optional: false }] as const;
-const DEFINITIONS = [
-  { id: "quick-fix", name: "Quick fix", description: "Lightweight implementation with impacted validation and completion review.", stages: commonStages.map((item) => ({ ...item, optional: ["specification-review", "integration-validation", "qa-review", "security-review", "performance-review", "documentation"].includes(item.stage) })), requiredGates: ["workflow-plan", "delegation", "task-completion", "delivery-readiness"] },
-  { id: "feature-development", name: "Feature development", description: "Approved specification, task graph, implementation, tests, conditional reviews, final validation, and delivery readiness.", stages: commonStages, requiredGates: ["workflow-plan", "specification", "task-plan", "context", "delegation", "task-completion", "workflow-completion", "delivery-readiness"] },
-  { id: "bug-fix", name: "Bug fix", description: "Investigation, reproduction evidence, fix, regression test, validation, and delivery readiness.", stages: commonStages, requiredGates: ["workflow-plan", "delegation", "task-completion", "delivery-readiness"] },
-  { id: "refactoring", name: "Refactoring", description: "Impact analysis, behavior-preserving implementation, architecture validation, regression tests, and delivery readiness.", stages: commonStages, requiredGates: ["workflow-plan", "context", "delegation", "task-completion", "delivery-readiness"] },
-  { id: "modernization", name: "Modernization", description: "Current state, approved target architecture, incremental migration, compatibility and regression validation.", stages: commonStages, requiredGates: ["workflow-plan", "specification", "task-plan", "context", "delegation", "workflow-completion", "delivery-readiness"] },
-  { id: "security-remediation", name: "Security remediation", description: "Finding evidence, repair specification, implementation, security and regression validation.", stages: commonStages.map((item) => item.stage === "security-review" ? { ...item, optional: false } : item), requiredGates: ["workflow-plan", "specification", "security-finding", "delegation", "task-completion", "delivery-readiness"] },
+const commonStages = [
+  { stage: "intent-review", optional: false },
+  { stage: "specification-review", optional: false },
+  { stage: "task-plan-review", optional: false },
+  { stage: "readiness-analysis", optional: false },
+  { stage: "implementation", optional: false },
+  { stage: "unit-validation", optional: false },
+  { stage: "integration-validation", optional: true },
+  { stage: "qa-review", optional: false },
+  { stage: "security-review", optional: true, condition: "Security-relevant scope or findings" },
+  {
+    stage: "performance-review",
+    optional: true,
+    condition: "Performance-relevant scope or requirements",
+  },
+  {
+    stage: "documentation",
+    optional: true,
+    condition: "Public surface, configuration, architecture, migration, or user workflow changes",
+  },
+  { stage: "final-validation", optional: false },
+  { stage: "delivery-readiness", optional: false },
+  { stage: "completed", optional: false },
 ] as const;
-const basePolicy = { maximumRetries: 2, parallelReadOperations: 3, serializeWrites: true as const, allowedCopilotCapabilities: ["implementation", "refactoring", "testing", "debugging", "security-review", "performance-review", "documentation"], contextApproval: true, validationRequired: true, qaRequired: true, securityTriggers: ["authentication", "authorization", "endpoint", "input", "database-write", "filesystem", "command", "secret", "dependency", "infrastructure"], performanceTriggers: ["hot-path", "database-query", "external-loop", "network", "serialization", "cache", "concurrency", "bundle", "dependency"], documentationRequired: true, completionApproval: true, deliveryBoundary: "delivery-ready" as const, stalenessToleranceGenerations: 0, maxTasks: 500, maxAudit: 2000 };
-const POLICIES = [{ ...basePolicy, id: "manual", name: "Manual", executionMode: "manual", requiredApprovals: ["workflow-plan", "context", "delegation", "mutating-command", "retry", "task-completion", "workflow-completion", "delivery-readiness"] }, { ...basePolicy, id: "guided", name: "Guided", executionMode: "guided", requiredApprovals: ["workflow-plan", "context", "delegation", "retry", "task-completion", "workflow-completion", "delivery-readiness"] }, { ...basePolicy, id: "approval-gated", name: "Approval-gated", executionMode: "approval-gated", requiredApprovals: ["workflow-plan", "delegation", "retry", "workflow-completion", "delivery-readiness"] }] as const;
-function stageRelevant(stage: string, source: DevelopmentWorkflowSnapshot): boolean { const text = `${source.intent.originalText} ${source.specification?.requirements.map((item) => item.description).join(" ") ?? ""}`.toLowerCase(); if (stage === "security-review") return /(auth|security|endpoint|input|secret|database|filesystem|command|dependency|infrastructure)/.test(text); if (stage === "performance-review") return /(performance|latency|query|loop|network|cache|concurr|bundle|benchmark)/.test(text); if (stage === "documentation") return /(api|contract|config|architecture|migration|workflow|documentation|readme)/.test(text); return true; }
-function stageTasks(stage: string, tasks: WorkflowInstance["taskStates"]): string[] { return ["implementation", "unit-validation", "integration-validation", "qa-review", "security-review", "performance-review", "documentation", "final-validation"].includes(stage) ? tasks.map((task) => task.taskId) : []; }
-function progress(tasks: WorkflowInstance["taskStates"], gates: WorkflowInstance["approvalGates"], findings: WorkflowInstance["findings"]): WorkflowInstance["progress"] { const count = (status: string) => tasks.filter((task) => task.status === status).length; const completed = count("completed") + count("skipped"); const percentage = tasks.length ? Math.round((completed / tasks.length) * 85 + (gates.filter((gate) => ["approved", "overridden"].includes(gate.status)).length / Math.max(1, gates.length)) * 15) : 0; return { totalTasks: tasks.length, readyTasks: count("ready"), activeTasks: count("active"), blockedTasks: count("blocked"), validatingTasks: count("validating"), completedTasks: count("completed"), staleTasks: count("stale"), failedTasks: count("failed"), pendingApprovals: gates.filter((gate) => gate.status === "pending").length, blockingFindings: findings.filter((finding) => finding.blocking && finding.status === "open").length, deliveryReady: completed === tasks.length && !gates.some((gate) => gate.status === "pending") && !findings.some((finding) => finding.blocking && finding.status === "open"), percentage, calculation: "85% task completion plus 15% resolved approval gates; omitted optional stages do not add progress." }; }
-function audit(action: string, status: WorkflowStatus, reason: string): WorkflowInstance["audit"][number] { return { id: crypto.randomUUID(), action, actor: "keystone", workflowStatus: status, reason, evidence: [], at: new Date().toISOString() }; }
-function boundedAudit(instance: WorkflowInstance, entry: WorkflowInstance["audit"][number]): WorkflowInstance["audit"] { return [...instance.audit, entry].slice(-2000); }
-function emptyMetrics(): WorkflowInstance["metrics"] { return { workflowDurationMs: 0, waitingForUserMs: 0, delegationCount: 0, validationDurationMs: 0, retryCount: 0, staleCount: 0, cancellationCount: 0, approvalCount: 0 }; }
-function fingerprint(value: unknown): string { return createHash("sha256").update(JSON.stringify(value)).digest("hex"); }
-function yieldTurn(): Promise<void> { return new Promise((resolve) => setImmediate(resolve)); }
+const DEFINITIONS = [
+  {
+    id: "quick-fix",
+    name: "Quick fix",
+    description: "Lightweight implementation with impacted validation and completion review.",
+    stages: commonStages.map((item) => ({
+      ...item,
+      optional: [
+        "specification-review",
+        "integration-validation",
+        "qa-review",
+        "security-review",
+        "performance-review",
+        "documentation",
+      ].includes(item.stage),
+    })),
+    requiredGates: ["workflow-plan", "delegation", "task-completion", "delivery-readiness"],
+  },
+  {
+    id: "feature-development",
+    name: "Feature development",
+    description:
+      "Approved specification, task graph, implementation, tests, conditional reviews, final validation, and delivery readiness.",
+    stages: commonStages,
+    requiredGates: [
+      "workflow-plan",
+      "specification",
+      "task-plan",
+      "context",
+      "delegation",
+      "task-completion",
+      "workflow-completion",
+      "delivery-readiness",
+    ],
+  },
+  {
+    id: "bug-fix",
+    name: "Bug fix",
+    description:
+      "Investigation, reproduction evidence, fix, regression test, validation, and delivery readiness.",
+    stages: commonStages,
+    requiredGates: ["workflow-plan", "delegation", "task-completion", "delivery-readiness"],
+  },
+  {
+    id: "refactoring",
+    name: "Refactoring",
+    description:
+      "Impact analysis, behavior-preserving implementation, architecture validation, regression tests, and delivery readiness.",
+    stages: commonStages,
+    requiredGates: [
+      "workflow-plan",
+      "context",
+      "delegation",
+      "task-completion",
+      "delivery-readiness",
+    ],
+  },
+  {
+    id: "modernization",
+    name: "Modernization",
+    description:
+      "Current state, approved target architecture, incremental migration, compatibility and regression validation.",
+    stages: commonStages,
+    requiredGates: [
+      "workflow-plan",
+      "specification",
+      "task-plan",
+      "context",
+      "delegation",
+      "workflow-completion",
+      "delivery-readiness",
+    ],
+  },
+  {
+    id: "security-remediation",
+    name: "Security remediation",
+    description:
+      "Finding evidence, repair specification, implementation, security and regression validation.",
+    stages: commonStages.map((item) =>
+      item.stage === "security-review" ? { ...item, optional: false } : item,
+    ),
+    requiredGates: [
+      "workflow-plan",
+      "specification",
+      "security-finding",
+      "delegation",
+      "task-completion",
+      "delivery-readiness",
+    ],
+  },
+] as const;
+const basePolicy = {
+  maximumRetries: 2,
+  parallelReadOperations: 3,
+  serializeWrites: true as const,
+  allowedCopilotCapabilities: [
+    "implementation",
+    "refactoring",
+    "testing",
+    "debugging",
+    "security-review",
+    "performance-review",
+    "documentation",
+  ],
+  contextApproval: true,
+  validationRequired: true,
+  qaRequired: true,
+  securityTriggers: [
+    "authentication",
+    "authorization",
+    "endpoint",
+    "input",
+    "database-write",
+    "filesystem",
+    "command",
+    "secret",
+    "dependency",
+    "infrastructure",
+  ],
+  performanceTriggers: [
+    "hot-path",
+    "database-query",
+    "external-loop",
+    "network",
+    "serialization",
+    "cache",
+    "concurrency",
+    "bundle",
+    "dependency",
+  ],
+  documentationRequired: true,
+  completionApproval: true,
+  deliveryBoundary: "delivery-ready" as const,
+  stalenessToleranceGenerations: 0,
+  maxTasks: 500,
+  maxAudit: 2000,
+};
+const POLICIES = [
+  {
+    ...basePolicy,
+    id: "manual",
+    name: "Manual",
+    executionMode: "manual",
+    requiredApprovals: [
+      "workflow-plan",
+      "context",
+      "delegation",
+      "mutating-command",
+      "retry",
+      "task-completion",
+      "workflow-completion",
+      "delivery-readiness",
+    ],
+  },
+  {
+    ...basePolicy,
+    id: "guided",
+    name: "Guided",
+    executionMode: "guided",
+    requiredApprovals: [
+      "workflow-plan",
+      "context",
+      "delegation",
+      "retry",
+      "task-completion",
+      "workflow-completion",
+      "delivery-readiness",
+    ],
+  },
+  {
+    ...basePolicy,
+    id: "approval-gated",
+    name: "Approval-gated",
+    executionMode: "approval-gated",
+    requiredApprovals: [
+      "workflow-plan",
+      "delegation",
+      "retry",
+      "workflow-completion",
+      "delivery-readiness",
+    ],
+  },
+] as const;
+function stageRelevant(stage: string, source: DevelopmentWorkflowSnapshot): boolean {
+  const text =
+    `${source.intent.originalText} ${source.specification?.requirements.map((item) => item.description).join(" ") ?? ""}`.toLowerCase();
+  if (stage === "security-review")
+    return /(auth|security|endpoint|input|secret|database|filesystem|command|dependency|infrastructure)/.test(
+      text,
+    );
+  if (stage === "performance-review")
+    return /(performance|latency|query|loop|network|cache|concurr|bundle|benchmark)/.test(text);
+  if (stage === "documentation")
+    return /(api|contract|config|architecture|migration|workflow|documentation|readme)/.test(text);
+  return true;
+}
+function stageTasks(stage: string, tasks: WorkflowInstance["taskStates"]): string[] {
+  return [
+    "implementation",
+    "unit-validation",
+    "integration-validation",
+    "qa-review",
+    "security-review",
+    "performance-review",
+    "documentation",
+    "final-validation",
+  ].includes(stage)
+    ? tasks.map((task) => task.taskId)
+    : [];
+}
+function progress(
+  tasks: WorkflowInstance["taskStates"],
+  gates: WorkflowInstance["approvalGates"],
+  findings: WorkflowInstance["findings"],
+): WorkflowInstance["progress"] {
+  const count = (status: string) => tasks.filter((task) => task.status === status).length;
+  const completed = count("completed") + count("skipped");
+  const percentage = tasks.length
+    ? Math.round(
+        (completed / tasks.length) * 85 +
+          (gates.filter((gate) => ["approved", "overridden"].includes(gate.status)).length /
+            Math.max(1, gates.length)) *
+            15,
+      )
+    : 0;
+  return {
+    totalTasks: tasks.length,
+    readyTasks: count("ready"),
+    activeTasks: count("active"),
+    blockedTasks: count("blocked"),
+    validatingTasks: count("validating"),
+    completedTasks: count("completed"),
+    staleTasks: count("stale"),
+    failedTasks: count("failed"),
+    pendingApprovals: gates.filter((gate) => gate.status === "pending").length,
+    blockingFindings: findings.filter((finding) => finding.blocking && finding.status === "open")
+      .length,
+    deliveryReady:
+      completed === tasks.length &&
+      !gates.some((gate) => gate.status === "pending") &&
+      !findings.some((finding) => finding.blocking && finding.status === "open"),
+    percentage,
+    calculation:
+      "85% task completion plus 15% resolved approval gates; omitted optional stages do not add progress.",
+  };
+}
+function audit(
+  action: string,
+  status: WorkflowStatus,
+  reason: string,
+): WorkflowInstance["audit"][number] {
+  return {
+    id: crypto.randomUUID(),
+    action,
+    actor: "keystone",
+    workflowStatus: status,
+    reason,
+    evidence: [],
+    at: new Date().toISOString(),
+  };
+}
+function boundedAudit(
+  instance: WorkflowInstance,
+  entry: WorkflowInstance["audit"][number],
+): WorkflowInstance["audit"] {
+  return [...instance.audit, entry].slice(-2000);
+}
+function emptyMetrics(): WorkflowInstance["metrics"] {
+  return {
+    workflowDurationMs: 0,
+    waitingForUserMs: 0,
+    delegationCount: 0,
+    validationDurationMs: 0,
+    retryCount: 0,
+    staleCount: 0,
+    cancellationCount: 0,
+    approvalCount: 0,
+  };
+}
+function fingerprint(value: unknown): string {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+function yieldTurn(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}

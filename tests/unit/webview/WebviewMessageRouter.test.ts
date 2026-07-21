@@ -47,9 +47,7 @@ describe("WebviewMessageRouter", () => {
     for (let index = 0; index < 200; index++) runtimeListener?.(state);
     expect(overview).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(100);
-    expect(
-      posted.filter((message) => message.type === "intelligence/runtime"),
-    ).toHaveLength(1);
+    expect(posted.filter((message) => message.type === "intelligence/runtime")).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(250);
     expect(overview).toHaveBeenCalledOnce();
     router.dispose();
@@ -153,8 +151,7 @@ describe("WebviewMessageRouter", () => {
           onDidChange: () => ({ dispose: vi.fn() }),
         } as never,
         intelligenceQuery: {
-          overview: () =>
-            Promise.resolve(emptyIntelligenceOverview("not-indexed")),
+          overview: () => Promise.resolve(emptyIntelligenceOverview("not-indexed")),
         } as IntelligenceQueryService,
         cpgQuery: { scope: vi.fn(), slice: vi.fn() } as never,
         openSource: vi.fn(),
@@ -231,14 +228,9 @@ describe("WebviewMessageRouter", () => {
       payload: { targetRequestId },
     });
     await active;
-    expect(search).toHaveBeenCalledWith(
-      { query: "target", limit: 10 },
-      expect.any(AbortSignal),
-    );
+    expect(search).toHaveBeenCalledWith({ query: "target", limit: 10 }, expect.any(AbortSignal));
     expect(observedSignal?.aborted).toBe(true);
-    expect(posted.some((message) => message.type === "response/error")).toBe(
-      true,
-    );
+    expect(posted.some((message) => message.type === "response/error")).toBe(true);
     router.dispose();
   });
 
@@ -247,9 +239,7 @@ describe("WebviewMessageRouter", () => {
     const technologies = vi.fn(() =>
       Promise.resolve({ generation: 4, items: [], detections: [], total: 0 }),
     );
-    const adapterDiagnostics = vi.fn(() =>
-      Promise.resolve({ generation: 4, items: [], total: 0 }),
-    );
+    const adapterDiagnostics = vi.fn(() => Promise.resolve({ generation: 4, items: [], total: 0 }));
     const router = new WebviewMessageRouter(
       {} as WorkspaceStateStore,
       {} as ConfigurationService,
@@ -291,25 +281,15 @@ describe("WebviewMessageRouter", () => {
       schemaVersion: 1,
       payload: { limit: 10 },
     });
-    expect(technologies).toHaveBeenCalledWith(
-      { limit: 10 },
-      expect.any(AbortSignal),
-    );
-    expect(adapterDiagnostics).toHaveBeenCalledWith(
-      { limit: 10 },
-      expect.any(AbortSignal),
-    );
-    expect(
-      posted.filter((message) => message.type === "response/success"),
-    ).toHaveLength(2);
+    expect(technologies).toHaveBeenCalledWith({ limit: 10 }, expect.any(AbortSignal));
+    expect(adapterDiagnostics).toHaveBeenCalledWith({ limit: 10 }, expect.any(AbortSignal));
+    expect(posted.filter((message) => message.type === "response/success")).toHaveLength(2);
     router.dispose();
   });
 
   it("routes bounded repository diagnostics", async () => {
     const posted: HostMessage[] = [];
-    const diagnostics = vi.fn(() =>
-      Promise.resolve({ generation: 4, items: [], total: 0 }),
-    );
+    const diagnostics = vi.fn(() => Promise.resolve({ generation: 4, items: [], total: 0 }));
     const router = new WebviewMessageRouter(
       {} as WorkspaceStateStore,
       {} as ConfigurationService,
@@ -354,15 +334,14 @@ describe("WebviewMessageRouter", () => {
   it("routes the unified query contract and emits lifecycle events", async () => {
     const posted: HostMessage[] = [];
     const queryId = crypto.randomUUID();
-    const unified = vi.fn(
-      (_payload: unknown, _signal: AbortSignal, id: string) =>
-        Promise.resolve({
-          queryId: id,
-          operation: "SEARCH",
-          generation: 7,
-          executionTimeMs: 3,
-          data: { kind: "search" },
-        }),
+    const unified = vi.fn((_payload: unknown, _signal: AbortSignal, id: string) =>
+      Promise.resolve({
+        queryId: id,
+        operation: "SEARCH",
+        generation: 7,
+        executionTimeMs: 3,
+        data: { kind: "search" },
+      }),
     );
     const router = new WebviewMessageRouter(
       {} as WorkspaceStateStore,

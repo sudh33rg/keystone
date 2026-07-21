@@ -11,10 +11,7 @@ import { Icon } from "./components/Icon";
 import type { HostBridge } from "./services/HostBridge";
 import { HomeDashboard } from "./components/home/HomeDashboard";
 import { toUiError, UiErrorState, type KeystoneUiError } from "./components/UiState";
-import type {
-  KeystoneInitialization,
-  LaunchRecovery,
-} from "../shared/contracts/nativeShell";
+import type { KeystoneInitialization, LaunchRecovery } from "../shared/contracts/nativeShell";
 
 interface AppProps {
   bridge: HostBridge;
@@ -48,9 +45,7 @@ export function App({ bridge }: AppProps): React.JSX.Element {
   const [intelligenceEntityId, setIntelligenceEntityId] = useState<string>();
   const instanceId = useMemo(() => crypto.randomUUID(), []);
   const mainRef = useRef<HTMLElement>(null);
-  const initializationRef = useRef<KeystoneInitialization | undefined>(
-    undefined,
-  );
+  const initializationRef = useRef<KeystoneInitialization | undefined>(undefined);
 
   useEffect(() => {
     const unsubscribe = bridge.subscribe((message) => {
@@ -89,12 +84,9 @@ export function App({ bridge }: AppProps): React.JSX.Element {
             message.payload.restoredContext?.intelligenceQuery,
         );
         setIntelligenceEntityId(
-          message.payload.pendingNavigation?.entityId ??
-            message.payload.restoredContext?.entityId,
+          message.payload.pendingNavigation?.entityId ?? message.payload.restoredContext?.entityId,
         );
-        const route =
-          message.payload.pendingNavigation?.route ??
-          message.payload.restoredRoute;
+        const route = message.payload.pendingNavigation?.route ?? message.payload.restoredRoute;
         setState((current) =>
           current
             ? {
@@ -130,9 +122,7 @@ export function App({ bridge }: AppProps): React.JSX.Element {
           })
           .catch(showError(setError));
         if (message.payload.request.destination.type === "import-handoff")
-          void bridge
-            .request("handoff/import", { source: "file" })
-            .catch(showError(setError));
+          void bridge.request("handoff/import", { source: "file" }).catch(showError(setError));
         window.setTimeout(() => mainRef.current?.focus(), 0);
       }
     });
@@ -142,8 +132,7 @@ export function App({ bridge }: AppProps): React.JSX.Element {
         initializationRef.current = value;
         setRecovery(value.recovery);
         setIntelligenceQuery(
-          value.pendingNavigation?.query ??
-            value.restoredContext?.intelligenceQuery,
+          value.pendingNavigation?.query ?? value.restoredContext?.intelligenceQuery,
         );
         setIntelligenceEntityId(
           value.pendingNavigation?.entityId ?? value.restoredContext?.entityId,
@@ -163,9 +152,7 @@ export function App({ bridge }: AppProps): React.JSX.Element {
           .catch(showError(setError));
       })
       .catch(showError(setError));
-    void bridge
-      .request("app/bootstrap", {})
-      .catch(showError(setError));
+    void bridge.request("app/bootstrap", {}).catch(showError(setError));
     return unsubscribe;
   }, [bridge, instanceId]);
 
@@ -188,9 +175,7 @@ export function App({ bridge }: AppProps): React.JSX.Element {
             }
           : current,
       );
-      void bridge
-        .request("keystone/webviewStateChanged", { route })
-        .catch(showError(setError));
+      void bridge.request("keystone/webviewStateChanged", { route }).catch(showError(setError));
     };
     window.addEventListener("popstate", pop);
     return () => window.removeEventListener("popstate", pop);
@@ -228,12 +213,8 @@ export function App({ bridge }: AppProps): React.JSX.Element {
         activeSection: sectionForRoute(route),
       });
     window.history.pushState({ route }, "", "");
-    void bridge
-      .request("navigation/set", { route })
-      .catch(showError(setError));
-    void bridge
-      .request("keystone/webviewStateChanged", { route })
-      .catch(showError(setError));
+    void bridge.request("navigation/set", { route }).catch(showError(setError));
+    void bridge.request("keystone/webviewStateChanged", { route }).catch(showError(setError));
     window.setTimeout(() => mainRef.current?.focus(), 0);
   };
 
@@ -250,23 +231,15 @@ export function App({ bridge }: AppProps): React.JSX.Element {
           <span>Engineering control center</span>
         </div>
         <div className="header-actions">
-          <button
-            className="ghost-button"
-            onClick={() => navigate("/support/diagnostics")}
-          >
+          <button className="ghost-button" onClick={() => navigate("/support/diagnostics")}>
             <Icon name="pulse" size={15} />
             <span>Workspace health</span>
           </button>
-          <button
-            className="ghost-button"
-            onClick={() => navigate("/settings")}
-          >
+          <button className="ghost-button" onClick={() => navigate("/settings")}>
             <Icon name="settings" size={15} />
             <span>Settings</span>
           </button>
-          <span className="version-pill">
-            v{bootstrap?.extensionVersion ?? "—"}
-          </span>
+          <span className="version-pill">v{bootstrap?.extensionVersion ?? "—"}</span>
         </div>
       </header>
 
@@ -291,9 +264,7 @@ export function App({ bridge }: AppProps): React.JSX.Element {
       </nav>
 
       <main className="main-content" ref={mainRef} tabIndex={-1}>
-        {error && (
-          <UiErrorState error={error} />
-        )}
+        {error && <UiErrorState error={error} />}
         {recovery && (
           <div className="error-banner recovery-banner" role="status">
             <span>
@@ -322,65 +293,45 @@ export function App({ bridge }: AppProps): React.JSX.Element {
           <Settings bridge={bridge} />
         ) : activeRoute === "/intelligence" ? (
           <Suspense fallback={<RouteLoadingView label="Repository Intelligence" />}>
-          <IntelligenceOverviewRoute
-            bridge={bridge}
-            overview={overview}
-            initialQuery={intelligenceQuery}
-            initialEntityId={intelligenceEntityId}
-            onStart={() => {
-              void bridge
-                .request("intelligence/scan/start", {})
-                .catch(showError(setError));
-            }}
-            onCancel={() => {
-              void bridge
-                .request("intelligence/scan/cancel", {})
-                .catch(showError(setError));
-            }}
-            onPause={() => {
-              void bridge
-                .request("intelligence/runtime/pause", {})
-                .catch(showError(setError));
-            }}
-            onResume={() => {
-              void bridge
-                .request("intelligence/runtime/resume", {})
-                .catch(showError(setError));
-            }}
-            onRefresh={() => {
-              void bridge
-                .request("intelligence/overview", {})
-                .then(setOverview)
-                .catch(showError(setError));
-            }}
-          />
+            <IntelligenceOverviewRoute
+              bridge={bridge}
+              overview={overview}
+              initialQuery={intelligenceQuery}
+              initialEntityId={intelligenceEntityId}
+              onStart={() => {
+                void bridge.request("intelligence/scan/start", {}).catch(showError(setError));
+              }}
+              onCancel={() => {
+                void bridge.request("intelligence/scan/cancel", {}).catch(showError(setError));
+              }}
+              onPause={() => {
+                void bridge.request("intelligence/runtime/pause", {}).catch(showError(setError));
+              }}
+              onResume={() => {
+                void bridge.request("intelligence/runtime/resume", {}).catch(showError(setError));
+              }}
+              onRefresh={() => {
+                void bridge
+                  .request("intelligence/overview", {})
+                  .then(setOverview)
+                  .catch(showError(setError));
+              }}
+            />
           </Suspense>
         ) : activeRoute === "/active-work" ? (
           <Suspense fallback={<RouteLoadingView label="Active Work" />}>
-          <ActiveWorkRoute
-            bridge={bridge}
-            workflowId={undefined}
-            navigate={navigate}
-          />
+            <ActiveWorkRoute bridge={bridge} workflowId={undefined} navigate={navigate} />
           </Suspense>
         ) : activeRoute.startsWith("/workbench/") ? (
           <Suspense fallback={<RouteLoadingView label="SDLC Workbench" />}>
-          <WorkbenchRoute
-            bridge={bridge}
-            route={activeRoute}
-            navigate={navigate}
-          />
+            <WorkbenchRoute bridge={bridge} route={activeRoute} navigate={navigate} />
           </Suspense>
         ) : activeRoute === "/history" ? (
           <Suspense fallback={<RouteLoadingView label="History" />}>
             <HistoryRoute bridge={bridge} navigate={navigate} />
           </Suspense>
         ) : activeRoute === "/support/diagnostics" ? (
-          <Diagnostics
-            bootstrap={bootstrap}
-            overview={overview}
-            activity={activity}
-          />
+          <Diagnostics bootstrap={bootstrap} overview={overview} activity={activity} />
         ) : (
           <HomeDashboard
             bootstrap={bootstrap}
@@ -422,16 +373,14 @@ function Diagnostics({
       <div className="eyebrow">Bounded product health</div>
       <h1>Diagnostics</h1>
       <p>
-        Current Extension Host, repository, Intelligence, and operation state.
-        No credentials or repository source are included.
+        Current Extension Host, repository, Intelligence, and operation state. No credentials or
+        repository source are included.
       </p>
       <div className="settings-list">
         <div>
           <span>
             <strong>Workspace trust</strong>
-            <small>
-              Executable and mutating actions require a trusted workspace
-            </small>
+            <small>Executable and mutating actions require a trusted workspace</small>
           </span>
           <span className="setting-value">{bootstrap.workspace.trust}</span>
         </div>
@@ -455,9 +404,7 @@ function Diagnostics({
         <div>
           <span>
             <strong>Persistence</strong>
-            <small>
-              Extension-managed files; no external database or backend
-            </small>
+            <small>Extension-managed files; no external database or backend</small>
           </span>
           <span className="setting-value">Local</span>
         </div>
@@ -484,16 +431,16 @@ function RouteLoadingView({ label }: { label: string }): React.JSX.Element {
   );
 }
 
-function showError(
-  setError: (error: KeystoneUiError) => void,
-): (cause: unknown) => void {
+function showError(setError: (error: KeystoneUiError) => void): (cause: unknown) => void {
   return (cause) =>
-    setError(toUiError(cause, {
-      category: "host-request",
-      title: "Keystone could not complete that action",
-      fallbackMessage: "The Extension Host did not complete the request.",
-      preservedState: true,
-    }));
+    setError(
+      toUiError(cause, {
+        category: "host-request",
+        title: "Keystone could not complete that action",
+        fallbackMessage: "The Extension Host did not complete the request.",
+        preservedState: true,
+      }),
+    );
 }
 
 function Settings({ bridge }: { bridge: HostBridge }): React.JSX.Element {
@@ -501,10 +448,7 @@ function Settings({ bridge }: { bridge: HostBridge }): React.JSX.Element {
     <section className="page settings-page">
       <div className="eyebrow">Extension preferences</div>
       <h1>Settings</h1>
-      <p>
-        Keystone settings live in VS Code so workspace and user scopes remain
-        explicit.
-      </p>
+      <p>Keystone settings live in VS Code so workspace and user scopes remain explicit.</p>
       <div className="settings-list">
         <div>
           <span>
@@ -516,9 +460,7 @@ function Settings({ bridge }: { bridge: HostBridge }): React.JSX.Element {
         <div>
           <span>
             <strong>Agent selection</strong>
-            <small>
-              Recommend an available agent and wait for confirmation
-            </small>
+            <small>Recommend an available agent and wait for confirmation</small>
           </span>
           <span className="setting-value">Recommended</span>
         </div>

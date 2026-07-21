@@ -39,14 +39,11 @@ export class CompletionDecisionService {
       if (["running", "cancelled", "stale"].includes(run.status))
         blockers.push(`Validation run is ${run.status}.`);
       const required = new Set(
-        plan?.steps.filter((item) => item.required).map((item) => item.id) ??
-          [],
+        plan?.steps.filter((item) => item.required).map((item) => item.id) ?? [],
       );
       for (const criterion of run.acceptanceCriteriaResults)
         if (!["passed", "overridden"].includes(criterion.status))
-          blockers.push(
-            `Criterion ${criterion.criterionId} is ${criterion.status}.`,
-          );
+          blockers.push(`Criterion ${criterion.criterionId} is ${criterion.status}.`);
       if (
         run.stepResults.some(
           (item) =>
@@ -55,17 +52,11 @@ export class CompletionDecisionService {
         )
       )
         blockers.push("A required validation step is not currently passed.");
-      if (
-        run.findings.some(
-          (item) => item.severity === "blocking" && !item.override,
-        )
-      )
+      if (run.findings.some((item) => item.severity === "blocking" && !item.override))
         blockers.push("Blocking validation findings remain.");
       warnings.push(
         ...run.findings
-          .filter((item) =>
-            ["warning", "informational", "error"].includes(item.severity),
-          )
+          .filter((item) => ["warning", "informational", "error"].includes(item.severity))
           .filter((item) => item.severity !== "error" || Boolean(item.override))
           .map((item) => item.title),
       );
@@ -80,8 +71,7 @@ export class CompletionDecisionService {
     if (
       snapshot &&
       (snapshot.repository.branch !== specification?.branch ||
-        snapshot.manifest.generation <
-          (specification?.intelligenceGeneration ?? 0))
+        snapshot.manifest.generation < (specification?.intelligenceGeneration ?? 0))
     )
       blockers.push("Repository state is stale or on another branch.");
     if (
@@ -89,8 +79,7 @@ export class CompletionDecisionService {
       plan?.steps.some(
         (step) =>
           step.required &&
-          validationFingerprint(snapshot, step.scopePaths) !==
-            step.inputFingerprint,
+          validationFingerprint(snapshot, step.scopePaths) !== step.inputFingerprint,
       )
     )
       blockers.push(
@@ -98,14 +87,10 @@ export class CompletionDecisionService {
       );
     if (
       session.observedChanges.some(
-        (item) =>
-          ["unexpected", "ambiguous"].includes(item.classification) &&
-          !item.userOverride,
+        (item) => ["unexpected", "ambiguous"].includes(item.classification) && !item.userOverride,
       )
     )
-      blockers.push(
-        "Unexpected or ambiguous repository changes remain unresolved.",
-      );
+      blockers.push("Unexpected or ambiguous repository changes remain unresolved.");
     return CompletionDecisionSchema.parse({
       id: crypto.randomUUID(),
       taskId: session.taskId,
@@ -126,8 +111,7 @@ export class CompletionDecisionService {
     unlockedTaskIds: string[];
     report?: WorkflowCompletionReport;
   }> {
-    if (!confirm)
-      throw new Error("Task completion requires explicit user confirmation.");
+    if (!confirm) throw new Error("Task completion requires explicit user confirmation.");
     const evaluated = this.evaluate(sessionId);
     const nonOverridable = evaluated.blockers.filter(
       (item) =>
@@ -137,8 +121,7 @@ export class CompletionDecisionService {
         item.startsWith("Repository state") ||
         item.startsWith("Repository changed after validation"),
     );
-    if (nonOverridable.length)
-      throw new Error(`Completion blocked: ${nonOverridable.join(" ")}`);
+    if (nonOverridable.length) throw new Error(`Completion blocked: ${nonOverridable.join(" ")}`);
     if (evaluated.blockers.length && !overrideReason?.trim())
       throw new Error(`Completion blocked: ${evaluated.blockers.join(" ")}`);
     const session = this.executions.get(sessionId)!;
@@ -182,28 +165,19 @@ export class CompletionDecisionService {
     }));
     if (session.status !== "completed") {
       if (overrideReason && session.status !== "accepted-with-override")
-        await this.executions.sessions.transition(
-          sessionId,
-          "accepted-with-override",
-        );
+        await this.executions.sessions.transition(sessionId, "accepted-with-override");
       await this.executions.sessions.transition(sessionId, "completed", {
         completedAt: now,
       });
     }
-    await this.workflows.setTaskStatus(
-      session.workflowId,
-      session.taskId,
-      "completed",
-    );
+    await this.workflows.setTaskStatus(session.workflowId, session.taskId, "completed");
     const workflow = this.workflows.get(session.workflowId)!;
     const unlockedTaskIds: string[] = [];
     for (const task of workflow.tasks.filter(
       (item) =>
         item.status === "pending" &&
         item.dependencies.every(
-          (id) =>
-            workflow.tasks.find((candidate) => candidate.id === id)?.status ===
-            "completed",
+          (id) => workflow.tasks.find((candidate) => candidate.id === id)?.status === "completed",
         ),
     )) {
       if (!task.staleReasons.length) {
@@ -242,19 +216,13 @@ export class WorkflowCompletionService {
   ) {}
 
   get(workflowId: string): WorkflowCompletionReport | undefined {
-    return this.persistence.snapshot.reports.find(
-      (item) => item.workflowId === workflowId,
-    );
+    return this.persistence.snapshot.reports.find((item) => item.workflowId === workflowId);
   }
 
   async create(workflowId: string): Promise<WorkflowCompletionReport> {
     const workflow = this.workflows.get(workflowId);
     const specification = workflow?.specification;
-    if (
-      !workflow ||
-      !specification ||
-      workflow.tasks.some((item) => item.status !== "completed")
-    )
+    if (!workflow || !specification || workflow.tasks.some((item) => item.status !== "completed"))
       throw new Error(
         "All workflow tasks must be explicitly completed before reporting completion.",
       );
@@ -275,24 +243,18 @@ export class WorkflowCompletionService {
       completedTaskIds: workflow.tasks.map((item) => item.id),
       attempts: sessions.length,
       filesChanged: unique(
-        sessions.flatMap((item) =>
-          item.observedChanges.map((change) => change.relativePath),
-        ),
+        sessions.flatMap((item) => item.observedChanges.map((change) => change.relativePath)),
       ),
       symbolsChanged: unique(
         changed
           .filter(
-            (item) =>
-              item.changeKind.includes("symbol") ||
-              item.changeKind === "signature-change",
+            (item) => item.changeKind.includes("symbol") || item.changeKind === "signature-change",
           )
           .map((item) => `${item.changeKind}: ${item.qualifiedName}`),
       ),
       apiChanges: unique(
         changed
-          .filter((item) =>
-            ["route-change", "contract-change"].includes(item.changeKind),
-          )
+          .filter((item) => ["route-change", "contract-change"].includes(item.changeKind))
           .map((item) => `${item.changeKind}: ${item.qualifiedName}`),
       ),
       dataChanges: unique(
@@ -306,9 +268,7 @@ export class WorkflowCompletionService {
           .map((item) => item.qualifiedName),
       ),
       validationOutcomes: runs.flatMap((run) =>
-        run.acceptanceCriteriaResults.map(
-          (item) => `${item.criterionId}: ${item.status}`,
-        ),
+        run.acceptanceCriteriaResults.map((item) => `${item.criterionId}: ${item.status}`),
       ),
       contextFingerprints: unique(
         sessions.flatMap((session) =>
@@ -322,28 +282,21 @@ export class WorkflowCompletionService {
       ),
       validationRunIds: runs.map((item) => item.id),
       overrides: this.persistence.snapshot.overrides
-        .filter((item) =>
-          sessions.some((session) => session.id === item.executionSessionId),
-        )
+        .filter((item) => sessions.some((session) => session.id === item.executionSessionId))
         .map((item) => `${item.targetType}:${item.targetId}: ${item.reason}`),
       warnings: this.persistence.snapshot.decisions
-        .filter((item) =>
-          workflow.tasks.some((task) => task.id === item.taskId),
-        )
+        .filter((item) => workflow.tasks.some((task) => task.id === item.taskId))
         .flatMap((item) => item.warnings),
       branch: snapshot?.repository.branch ?? workflow.branch ?? "unknown",
-      headCommit:
-        snapshot?.repository.headCommit ?? workflow.headCommit ?? "unknown",
-      intelligenceGeneration:
-        snapshot?.manifest.generation ?? workflow.intelligenceGeneration,
+      headCommit: snapshot?.repository.headCommit ?? workflow.headCommit ?? "unknown",
+      intelligenceGeneration: snapshot?.manifest.generation ?? workflow.intelligenceGeneration,
       createdAt: new Date().toISOString(),
     });
     await this.persistence.update((state) => ({
       ...state,
-      reports: [
-        ...state.reports.filter((item) => item.workflowId !== workflowId),
-        report,
-      ].slice(-100),
+      reports: [...state.reports.filter((item) => item.workflowId !== workflowId), report].slice(
+        -100,
+      ),
     }));
     return report;
   }

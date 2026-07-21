@@ -49,25 +49,15 @@ export async function run(): Promise<void> {
   await extension.activate();
   const activationDurationMs = performance.now() - startedAt;
 
-  assert.equal(
-    extension.isActive,
-    true,
-    "Keystone extension should activate successfully",
-  );
+  assert.equal(extension.isActive, true, "Keystone extension should activate successfully");
   assert.ok(
     activationDurationMs < 500,
     `Keystone activation should remain under 500 ms; measured ${activationDurationMs.toFixed(1)} ms`,
   );
 
   const commands = await vscode.commands.getCommands(true);
-  assert.ok(
-    commands.includes("keystone.open"),
-    "Keystone open command should be registered",
-  );
-  assert.ok(
-    commands.includes("keystone.showLogs"),
-    "Keystone logs command should be registered",
-  );
+  assert.ok(commands.includes("keystone.open"), "Keystone open command should be registered");
+  assert.ok(commands.includes("keystone.showLogs"), "Keystone logs command should be registered");
   assert.ok(
     commands.includes("keystone.intelligence.overview"),
     "Keystone overview command should be registered",
@@ -109,41 +99,25 @@ export async function run(): Promise<void> {
     panelOpen: boolean;
     duplicatePreventionCount: number;
   }>("keystone.panel.metrics");
-  assert.equal(
-    panelMetrics?.panelOpen,
-    true,
-    "Keystone open should create the Webview panel",
-  );
+  assert.equal(panelMetrics?.panelOpen, true, "Keystone open should create the Webview panel");
   assert.ok(
     (panelMetrics?.duplicatePreventionCount ?? 0) >= 1,
     "Repeated Keystone open commands must reuse the existing panel",
   );
-  const keystoneTools = vscode.lm.tools.filter((tool) =>
-    tool.name.startsWith("keystone_"),
-  );
+  const keystoneTools = vscode.lm.tools.filter((tool) => tool.name.startsWith("keystone_"));
   assert.equal(
     keystoneTools.length,
     17,
     "All approved Keystone read-only tools should be contributed and registered",
   );
   assert.ok(
-    !keystoneTools.some((tool) =>
-      /git|shell|write|commit|push|handoff/i.test(tool.name),
-    ),
+    !keystoneTools.some((tool) => /git|shell|write|commit|push|handoff/i.test(tool.name)),
     "Keystone must not contribute mutating model tools",
   );
-  const overview = await waitForOverview(
-    (value) => value.generation > 0 && !value.pendingUpdate,
-  );
+  const overview = await waitForOverview((value) => value.generation > 0 && !value.pendingUpdate);
   assert.ok(overview, "Keystone overview command should return a typed result");
   assert.ok(
-    [
-      "not-indexed",
-      "ready",
-      "partial",
-      "failed",
-      "storage-unavailable",
-    ].includes(overview.status),
+    ["not-indexed", "ready", "partial", "failed", "storage-unavailable"].includes(overview.status),
   );
   assert.equal(typeof overview.counts.files, "number");
   assert.ok(
@@ -159,10 +133,7 @@ export async function run(): Promise<void> {
     { query: "initial", limit: 10 },
   );
   assert.ok(
-    search?.items.some(
-      (item) =>
-        item.name === "initial" && item.type === "keystone.core.Constant",
-    ),
+    search?.items.some((item) => item.name === "initial" && item.type === "keystone.core.Constant"),
     "Compiler-backed semantic search should find the fixture declaration",
   );
   const initialEntity = search.items.find((item) => item.name === "initial");
@@ -172,15 +143,11 @@ export async function run(): Promise<void> {
     evidence: unknown[];
   }>("keystone.intelligence.entity", initialEntity.id);
   assert.equal(details?.entity.id, initialEntity.id);
-  assert.ok(
-    (details?.evidence.length ?? 0) > 0,
-    "Semantic entity details should include evidence",
+  assert.ok((details?.evidence.length ?? 0) > 0, "Semantic entity details should include evidence");
+  const unifiedSearch = await vscode.commands.executeCommand<UnifiedQueryResult>(
+    "keystone.intelligence.query",
+    { text: "find initial" },
   );
-  const unifiedSearch =
-    await vscode.commands.executeCommand<UnifiedQueryResult>(
-      "keystone.intelligence.query",
-      { text: "find initial" },
-    );
   assert.equal(unifiedSearch?.operation, "SEARCH");
   assert.equal(unifiedSearch?.generation, overview.generation);
   assert.ok(
@@ -197,10 +164,7 @@ export async function run(): Promise<void> {
     { query: "analyze", limit: 10 },
   );
   const analyze = functionSearch?.items.find((item) => item.name === "analyze");
-  assert.ok(
-    analyze,
-    "Compiler-backed semantic search should find the executable fixture scope",
-  );
+  assert.ok(analyze, "Compiler-backed semantic search should find the executable fixture scope");
   const cpg = await vscode.commands.executeCommand<{
     generation: number;
     nodes: Array<{ kind: string }>;
@@ -258,9 +222,7 @@ export async function run(): Promise<void> {
   assert.ok(technologies?.generation === overview.generation);
   assert.ok(
     technologies?.items.some(
-      (item) =>
-        item.technologyId === "openapi" &&
-        item.capabilityLevel === "structural",
+      (item) => item.technologyId === "openapi" && item.capabilityLevel === "structural",
     ),
     "Worker-produced OpenAPI coverage should persist and be queryable",
   );
@@ -292,9 +254,7 @@ export async function run(): Promise<void> {
       value.counts.files > modified.counts.files &&
       !value.pendingUpdate,
   );
-  assert.ok(
-    created.categories.some((item) => item.key === "test" && item.count >= 2),
-  );
+  assert.ok(created.categories.some((item) => item.key === "test" && item.count >= 2));
 
   const beforeBurst = created.generation;
   for (const value of [1, 2, 3]) {
@@ -346,11 +306,9 @@ export async function run(): Promise<void> {
   );
   assert.equal(branch.repository?.branch, "feature");
 
-  await execGit(
-    "git",
-    ["commit", "--allow-empty", "-m", "simulated pull head"],
-    { cwd: root.fsPath },
-  );
+  await execGit("git", ["commit", "--allow-empty", "-m", "simulated pull head"], {
+    cwd: root.fsPath,
+  });
   const pulled = await waitForOverview(
     (value) =>
       value.generation > branch.generation &&

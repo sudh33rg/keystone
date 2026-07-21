@@ -1,4 +1,8 @@
-import type { WorkflowState, WorkflowStage, WorkflowStageType } from "../../shared/contracts/workflow";
+import type {
+  WorkflowState,
+  WorkflowStage,
+  WorkflowStageType,
+} from "../../shared/contracts/workflow";
 
 /**
  * Transition error types for invalid state changes.
@@ -13,18 +17,18 @@ export type WorkflowTransitionError =
  */
 const TRANSITIONS: Record<WorkflowState, WorkflowState[]> = {
   "not-ready": ["ready"],
-  "ready": ["preparing-context"],
+  ready: ["preparing-context"],
   "preparing-context": ["awaiting-approval", "delegating"],
   "awaiting-approval": ["delegating", "ready"],
-  "delegating": ["running", "skipped"],
-  "running": ["awaiting-result-review"],
+  delegating: ["running", "skipped"],
+  running: ["awaiting-result-review"],
   "awaiting-result-review": ["validating"],
-  "validating": ["passed", "failed", "blocked"],
-  "passed": ["ready"],
-  "failed": ["ready"],
-  "blocked": ["ready"],
-  "skipped": ["ready"],
-  "cancelled": [],
+  validating: ["passed", "failed", "blocked"],
+  passed: ["ready"],
+  failed: ["ready"],
+  blocked: ["ready"],
+  skipped: ["ready"],
+  cancelled: [],
 };
 
 /**
@@ -62,9 +66,20 @@ export function isStageReady(
 /**
  * Check if a transition from one state to another is valid.
  */
-export function canTransition(stage: WorkflowStage, from: WorkflowState, to: WorkflowState): boolean {
+export function canTransition(
+  stage: WorkflowStage,
+  from: WorkflowState,
+  to: WorkflowState,
+): boolean {
   if (!TRANSITIONS[from].includes(to)) return false;
-  if (to === "ready" && from !== "passed" && from !== "failed" && from !== "blocked" && from !== "skipped") return false;
+  if (
+    to === "ready" &&
+    from !== "passed" &&
+    from !== "failed" &&
+    from !== "blocked" &&
+    from !== "skipped"
+  )
+    return false;
   return true;
 }
 
@@ -91,18 +106,30 @@ export function validateTransition(
  */
 function getPredecessorStageIds(stageType: WorkflowStageType): WorkflowStageType[] {
   switch (stageType) {
-    case "understand": return [];
-    case "plan": return ["understand"];
-    case "development": return ["understand", "plan"];
-    case "impact-analysis": return ["understand"];
-    case "test-generation": return ["impact-analysis"];
-    case "test-execution": return ["test-generation"];
-    case "failure-analysis": return ["test-execution"];
-    case "test-healing": return ["failure-analysis"];
-    case "security-analysis": return ["test-execution"];
-    case "performance-analysis": return ["test-execution"];
-    case "pr-review": return ["security-analysis", "performance-analysis"];
-    case "complete": return ["pr-review"];
+    case "understand":
+      return [];
+    case "plan":
+      return ["understand"];
+    case "development":
+      return ["understand", "plan"];
+    case "impact-analysis":
+      return ["understand"];
+    case "test-generation":
+      return ["impact-analysis"];
+    case "test-execution":
+      return ["test-generation"];
+    case "failure-analysis":
+      return ["test-execution"];
+    case "test-healing":
+      return ["failure-analysis"];
+    case "security-analysis":
+      return ["test-execution"];
+    case "performance-analysis":
+      return ["test-execution"];
+    case "pr-review":
+      return ["security-analysis", "performance-analysis"];
+    case "complete":
+      return ["pr-review"];
   }
 }
 
@@ -111,18 +138,30 @@ function getPredecessorStageIds(stageType: WorkflowStageType): WorkflowStageType
  */
 export function getSuccessorStageIds(stageType: WorkflowStageType): WorkflowStageType[] {
   switch (stageType) {
-    case "understand": return ["plan", "impact-analysis"];
-    case "plan": return ["development", "impact-analysis"];
-    case "development": return ["impact-analysis", "test-generation"];
-    case "impact-analysis": return ["plan", "development", "test-generation"];
-    case "test-generation": return ["test-execution"];
-    case "test-execution": return ["failure-analysis", "security-analysis", "performance-analysis"];
-    case "failure-analysis": return ["test-healing"];
-    case "test-healing": return [];
-    case "security-analysis": return ["pr-review"];
-    case "performance-analysis": return ["pr-review"];
-    case "pr-review": return ["complete"];
-    case "complete": return [];
+    case "understand":
+      return ["plan", "impact-analysis"];
+    case "plan":
+      return ["development", "impact-analysis"];
+    case "development":
+      return ["impact-analysis", "test-generation"];
+    case "impact-analysis":
+      return ["plan", "development", "test-generation"];
+    case "test-generation":
+      return ["test-execution"];
+    case "test-execution":
+      return ["failure-analysis", "security-analysis", "performance-analysis"];
+    case "failure-analysis":
+      return ["test-healing"];
+    case "test-healing":
+      return [];
+    case "security-analysis":
+      return ["pr-review"];
+    case "performance-analysis":
+      return ["pr-review"];
+    case "pr-review":
+      return ["complete"];
+    case "complete":
+      return [];
   }
 }
 
@@ -138,7 +177,9 @@ export function getNextReadyStageType(
   for (const type of getSuccessorStageIds(currentStageType)) {
     if (!enabledStages.includes(type)) continue;
     const preds = getPredecessorStageIds(type);
-    if (preds.every((p) => predecessorStates[p] === "passed" || predecessorStates[p] === "skipped")) {
+    if (
+      preds.every((p) => predecessorStates[p] === "passed" || predecessorStates[p] === "skipped")
+    ) {
       return type;
     }
   }

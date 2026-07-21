@@ -53,12 +53,7 @@ export class GitHistoryParser {
       // Get commit log with stats
       const logOutput = await execFileAsync(
         "git",
-        [
-          "log",
-          `--max-count=${this.maxCommits}`,
-          "--pretty=format:%H|%h|%an|%ae|%ad|%s",
-          "--stat",
-        ],
+        ["log", `--max-count=${this.maxCommits}`, "--pretty=format:%H|%h|%an|%ae|%ad|%s", "--stat"],
         { cwd: this.repoPath, maxBuffer: 10 * 1024 * 1024 },
       );
 
@@ -123,17 +118,15 @@ export class GitHistoryParser {
     return allCommits.slice(0, limit);
   }
 
-  async getCommitsForFile(filePath: string, limit: number = 50, signal?: AbortSignal): Promise<GitCommit[]> {
+  async getCommitsForFile(
+    filePath: string,
+    limit: number = 50,
+    signal?: AbortSignal,
+  ): Promise<GitCommit[]> {
     try {
       const logOutput = await execFileAsync(
         "git",
-        [
-          "log",
-          `--max-count=${limit}`,
-          "--pretty=format:%H|%h|%an|%ae|%ad|%s",
-          "--",
-          filePath,
-        ],
+        ["log", `--max-count=${limit}`, "--pretty=format:%H|%h|%an|%ae|%ad|%s", "--", filePath],
         { cwd: this.repoPath, maxBuffer: 10 * 1024 * 1024 },
       );
 
@@ -165,13 +158,15 @@ export class GitHistoryParser {
     }
   }
 
-  async getBlame(filePath: string, signal?: AbortSignal): Promise<Array<{ line: number; commit: string; author: string; content: string }>> {
+  async getBlame(
+    filePath: string,
+    signal?: AbortSignal,
+  ): Promise<Array<{ line: number; commit: string; author: string; content: string }>> {
     try {
-      const blameOutput = await execFileAsync(
-        "git",
-        ["blame", "--line-porcelain", filePath],
-        { cwd: this.repoPath, maxBuffer: 10 * 1024 * 1024 },
-      );
+      const blameOutput = await execFileAsync("git", ["blame", "--line-porcelain", filePath], {
+        cwd: this.repoPath,
+        maxBuffer: 10 * 1024 * 1024,
+      });
 
       const lines = blameOutput.stdout.split("\n");
       const result: Array<{ line: number; commit: string; author: string; content: string }> = [];

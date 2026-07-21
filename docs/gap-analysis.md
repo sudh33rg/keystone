@@ -1,6 +1,6 @@
 # Keystone Gap Analysis
 
-> **Version:** 0.2.0 | **Date:** 2026-07-20 | **Scope:** Full codebase analysis across 52+ source files
+> **Version:** 0.1.0 | **Date:** 2026-07-20 | **Scope:** Full codebase analysis across 52+ source files
 
 ## Overview
 

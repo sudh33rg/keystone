@@ -7,13 +7,13 @@ export const SCHEMA_VERSION = 1 as const;
 export const envelopeFields = {
   requestId: z.string().uuid(),
   timestamp: z.string().datetime(),
-  schemaVersion: z.literal(SCHEMA_VERSION)
+  schemaVersion: z.literal(SCHEMA_VERSION),
 };
 
 export const hostEnvelopeFields = {
   eventId: z.string().uuid(),
   timestamp: z.string().datetime(),
-  schemaVersion: z.literal(SCHEMA_VERSION)
+  schemaVersion: z.literal(SCHEMA_VERSION),
 };
 
 export const NavigationSectionSchema = z.enum([
@@ -37,12 +37,31 @@ export const NavigationSectionSchema = z.enum([
 
 export type NavigationSection = z.infer<typeof NavigationSectionSchema>;
 
-export const WorkbenchStageSchema = z.enum(["define", "plan", "build", "validate", "review", "complete"]);
+export const WorkbenchStageSchema = z.enum([
+  "define",
+  "plan",
+  "build",
+  "validate",
+  "review",
+  "complete",
+]);
 export type WorkbenchStage = z.infer<typeof WorkbenchStageSchema>;
 
-export const AppRouteSchema = z.string().min(1).max(1024).refine((value) =>
-  value === "/" || value === "/intelligence" || value === "/history" || value === "/workbench/new" || value === "/support/diagnostics" || value === "/settings" || /^\/workbench\/[0-9a-f-]+\/(define|plan|build|validate|review|complete)$/.test(value),
-"Unsupported Keystone route.");
+export const AppRouteSchema = z
+  .string()
+  .min(1)
+  .max(1024)
+  .refine(
+    (value) =>
+      value === "/" ||
+      value === "/intelligence" ||
+      value === "/history" ||
+      value === "/workbench/new" ||
+      value === "/support/diagnostics" ||
+      value === "/settings" ||
+      /^\/workbench\/[0-9a-f-]+\/(define|plan|build|validate|review|complete)$/.test(value),
+    "Unsupported Keystone route.",
+  );
 export type AppRoute = z.infer<typeof AppRouteSchema>;
 
 export const NAVIGATION_SECTIONS: readonly NavigationSection[] = NavigationSectionSchema.options;
@@ -53,7 +72,7 @@ export const ActivitySchema = z.object({
   status: z.enum(["idle", "running", "waiting", "completed", "warning", "failed"]),
   progress: z.number().min(0).max(100).optional(),
   cancellable: z.boolean(),
-  updatedAt: z.string().datetime()
+  updatedAt: z.string().datetime(),
 });
 
 export type Activity = z.infer<typeof ActivitySchema>;
@@ -62,7 +81,7 @@ export const WorkspaceSummarySchema = z.object({
   name: z.string().min(1),
   rootCount: z.number().int().nonnegative(),
   trust: z.enum(["trusted", "restricted"]),
-  indexStatus: IntelligenceStatusSchema
+  indexStatus: IntelligenceStatusSchema,
 });
 
 export type WorkspaceSummary = z.infer<typeof WorkspaceSummarySchema>;
@@ -73,7 +92,7 @@ export const PersistedFoundationStateSchema = z.object({
   activeSection: NavigationSectionSchema,
   activeRoute: AppRouteSchema,
   workflowCount: z.number().int().nonnegative(),
-  updatedAt: z.string().datetime()
+  updatedAt: z.string().datetime(),
 });
 
 export type PersistedFoundationState = z.infer<typeof PersistedFoundationStateSchema>;
@@ -87,8 +106,8 @@ export const BootstrapSnapshotSchema = z.object({
     phase: z.number().int().nonnegative(),
     phaseName: z.string(),
     completedTasks: z.array(z.string()),
-    nextTask: z.string()
-  })
+    nextTask: z.string(),
+  }),
 });
 
 export type BootstrapSnapshot = z.infer<typeof BootstrapSnapshotSchema>;
@@ -108,13 +127,7 @@ export type IndexStatus =
   | "failed"
   | "stale";
 
-export type FileCategory =
-  | "source"
-  | "test"
-  | "config"
-  | "manifest"
-  | "documentation"
-  | "other";
+export type FileCategory = "source" | "test" | "config" | "manifest" | "documentation" | "other";
 
 export type SymbolKind =
   | "function"
@@ -207,18 +220,10 @@ export type SpecificationStatus =
   | "superseded";
 
 export type CriterionResult =
-  | "unverified"
-  | "passed"
-  | "failed"
-  | "requires-user-review"
-  | "overridden";
+  "unverified" | "passed" | "failed" | "requires-user-review" | "overridden";
 
 export type ValidationCheckStatus =
-  | "passed"
-  | "warning"
-  | "failed"
-  | "not-executed"
-  | "requires-user-review";
+  "passed" | "warning" | "failed" | "not-executed" | "requires-user-review";
 
 export type DelegationMethod = "direct" | "assisted";
 
@@ -647,22 +652,52 @@ export interface Workflow {
 // ============================================================================
 
 export const IndexStatusSchema = z.enum([
-  "idle", "scanning", "extracting-symbols", "building-relationships",
-  "ready", "partial", "cancelled", "failed", "stale"
+  "idle",
+  "scanning",
+  "extracting-symbols",
+  "building-relationships",
+  "ready",
+  "partial",
+  "cancelled",
+  "failed",
+  "stale",
 ]);
 
 export const FileCategorySchema = z.enum([
-  "source", "test", "config", "manifest", "documentation", "other"
+  "source",
+  "test",
+  "config",
+  "manifest",
+  "documentation",
+  "other",
 ]);
 
 export const SymbolKindSchema = z.enum([
-  "function", "method", "class", "interface", "variable", "constant",
-  "enum", "type", "module", "namespace", "property", "parameter"
+  "function",
+  "method",
+  "class",
+  "interface",
+  "variable",
+  "constant",
+  "enum",
+  "type",
+  "module",
+  "namespace",
+  "property",
+  "parameter",
 ]);
 
 export const RelationshipKindSchema = z.enum([
-  "imports", "exports", "references", "calls", "inherits", "implements",
-  "routes-to", "tests", "configures", "depends-on"
+  "imports",
+  "exports",
+  "references",
+  "calls",
+  "inherits",
+  "implements",
+  "routes-to",
+  "tests",
+  "configures",
+  "depends-on",
 ]);
 
 export const RelationshipSchema = z.object({
@@ -674,7 +709,7 @@ export const RelationshipSchema = z.object({
   kind: RelationshipKindSchema,
   confidence: z.number().min(0).max(1),
   evidenceLocation: z.string(),
-  extractionMethod: z.string()
+  extractionMethod: z.string(),
 });
 
 export const SymbolRecordSchema = z.object({
@@ -686,14 +721,14 @@ export const SymbolRecordSchema = z.object({
     startLine: z.number().int().min(0),
     startColumn: z.number().int().min(0),
     endLine: z.number().int().min(0),
-    endColumn: z.number().int().min(0)
+    endColumn: z.number().int().min(0),
   }),
   isExported: z.boolean(),
   containerId: z.string().optional(),
   signature: z.string().optional(),
   documentationSummary: z.string().optional(),
   parserSource: z.string(),
-  confidence: z.number().min(0).max(1)
+  confidence: z.number().min(0).max(1),
 });
 
 export const FileRecordSchema = z.object({
@@ -714,21 +749,21 @@ export const FileRecordSchema = z.object({
   importTargets: z.array(z.string()),
   exportTargets: z.array(z.string()),
   testMappingIds: z.array(z.string()),
-  lastIndexedAt: z.string().datetime()
+  lastIndexedAt: z.string().datetime(),
 });
 
 export const ProjectCommandSchema = z.object({
   label: z.string(),
   command: z.string(),
   provenance: z.string(),
-  riskLevel: z.enum(["safe", "moderate", "dangerous"])
+  riskLevel: z.enum(["safe", "moderate", "dangerous"]),
 });
 
 export const FrameworkSignalSchema = z.object({
   name: z.string(),
   version: z.string().optional(),
   confidence: z.number().min(0).max(1),
-  evidence: z.string()
+  evidence: z.string(),
 });
 
 export const RepositoryIndexSchema = z.object({
@@ -743,7 +778,7 @@ export const RepositoryIndexSchema = z.object({
   relationshipIds: z.array(z.string()),
   commands: z.array(ProjectCommandSchema),
   frameworks: z.array(FrameworkSignalSchema),
-  errors: z.array(z.object({ message: z.string(), category: z.string() }))
+  errors: z.array(z.object({ message: z.string(), category: z.string() })),
 });
 
 export const RepositoryIdentitySchema = z.object({
@@ -752,7 +787,7 @@ export const RepositoryIdentitySchema = z.object({
   workspaceRoots: z.array(z.string()),
   gitRoot: z.string().optional(),
   branch: z.string().optional(),
-  headCommit: z.string().optional()
+  headCommit: z.string().optional(),
 });
 
 export const WorkflowSchema = z.object({
@@ -767,11 +802,18 @@ export const WorkflowSchema = z.object({
   uiResumeRoute: z.string(),
   activitySummary: z.string(),
   status: z.enum([
-    "drafting", "awaiting-spec-approval", "planned", "executing",
-    "awaiting-user", "blocked", "validating", "completed", "cancelled"
+    "drafting",
+    "awaiting-spec-approval",
+    "planned",
+    "executing",
+    "awaiting-user",
+    "blocked",
+    "validating",
+    "completed",
+    "cancelled",
   ]),
   createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime()
+  updatedAt: z.string().datetime(),
 });
 
 export const AgentProfileSchema = z.object({
@@ -780,20 +822,29 @@ export const AgentProfileSchema = z.object({
   description: z.string(),
   source: z.string(),
   availability: z.enum(["available", "configured", "unavailable", "unknown"]),
-  supportedTaskCategories: z.array(z.enum([
-    "implementation", "testing", "review", "refactoring",
-    "documentation", "debugging", "architecture", "security", "performance"
-  ])),
+  supportedTaskCategories: z.array(
+    z.enum([
+      "implementation",
+      "testing",
+      "review",
+      "refactoring",
+      "documentation",
+      "debugging",
+      "architecture",
+      "security",
+      "performance",
+    ]),
+  ),
   toolsAndActions: z.array(z.string()),
   repositoryAccessExpectations: z.array(z.string()),
   strengths: z.array(z.string()),
   restrictions: z.array(z.string()),
   defaultContextPolicy: z.object({
     maxEstimatedTokens: z.number(),
-    includeTests: z.boolean()
+    includeTests: z.boolean(),
   }),
   discoveredAt: z.string(),
-  capabilityFingerprint: z.string()
+  capabilityFingerprint: z.string(),
 });
 
 export const TaskSchema = z.object({
@@ -802,8 +853,18 @@ export const TaskSchema = z.object({
   objective: z.string(),
   description: z.string(),
   status: z.enum([
-    "pending", "ready", "awaiting_approval", "delegating", "executing",
-    "awaiting_user", "validating", "passed", "failed", "skipped", "cancelled", "blocked"
+    "pending",
+    "ready",
+    "awaiting_approval",
+    "delegating",
+    "executing",
+    "awaiting_user",
+    "validating",
+    "passed",
+    "failed",
+    "skipped",
+    "cancelled",
+    "blocked",
   ]),
   dependencies: z.array(z.string()),
   assignedAgentId: z.string().optional(),
@@ -811,29 +872,33 @@ export const TaskSchema = z.object({
     selectionSeeds: z.array(z.string()),
     budget: z.number(),
     mandatoryItems: z.array(z.string()),
-    excludedItems: z.array(z.string())
+    excludedItems: z.array(z.string()),
   }),
   expectedFiles: z.array(z.string()),
   expectedOutput: z.string(),
   acceptanceCriterionIds: z.array(z.string()),
-  validationSteps: z.array(z.object({
-    command: z.string().optional(),
-    manualCheck: z.string().optional(),
-    policyClass: z.string()
-  })),
+  validationSteps: z.array(
+    z.object({
+      command: z.string().optional(),
+      manualCheck: z.string().optional(),
+      policyClass: z.string(),
+    }),
+  ),
   retryHistory: z.array(z.string()),
-  executionNotes: z.array(z.object({
-    timestamp: z.string(),
-    author: z.string(),
-    entry: z.string()
-  })),
+  executionNotes: z.array(
+    z.object({
+      timestamp: z.string(),
+      author: z.string(),
+      entry: z.string(),
+    }),
+  ),
   baseFingerprint: z.object({
     specRevision: z.number(),
     indexVersion: z.number(),
     gitBase: z.string().optional(),
-    contextFingerprint: z.string().optional()
+    contextFingerprint: z.string().optional(),
   }),
-  attemptNumber: z.number().int().nonnegative().optional()
+  attemptNumber: z.number().int().nonnegative().optional(),
 });
 
 export const TaskAttemptSchema = z.object({
@@ -843,7 +908,7 @@ export const TaskAttemptSchema = z.object({
   agentAssignmentSnapshot: z.object({
     agentId: z.string(),
     selectionMode: z.string(),
-    capabilityFingerprint: z.string()
+    capabilityFingerprint: z.string(),
   }),
   contextPackageId: z.string(),
   delegationMethod: z.enum(["direct", "assisted"]),
@@ -852,18 +917,24 @@ export const TaskAttemptSchema = z.object({
   externalHandle: z.string().optional(),
   state: z.string(),
   result: z.string().optional(),
-  observedChanges: z.object({
-    files: z.array(z.string()),
-    commits: z.array(z.string())
-  }).optional(),
-  userConfirmations: z.array(z.object({
-    action: z.string(),
-    timestamp: z.string()
-  })),
-  failure: z.object({
-    error: z.string(),
-    recoverable: z.boolean()
-  }).optional()
+  observedChanges: z
+    .object({
+      files: z.array(z.string()),
+      commits: z.array(z.string()),
+    })
+    .optional(),
+  userConfirmations: z.array(
+    z.object({
+      action: z.string(),
+      timestamp: z.string(),
+    }),
+  ),
+  failure: z
+    .object({
+      error: z.string(),
+      recoverable: z.boolean(),
+    })
+    .optional(),
 });
 
 export const AcceptanceCriterionSchema = z.object({
@@ -876,15 +947,22 @@ export const AcceptanceCriterionSchema = z.object({
   coveringTaskIds: z.array(z.string()),
   result: z.enum(["unverified", "passed", "failed", "requires-user-review", "overridden"]),
   evidenceReferences: z.array(z.string()),
-  overrideDecisionId: z.string().optional()
+  overrideDecisionId: z.string().optional(),
 });
 
 export const KeystoneSpecificationSchema = z.object({
   id: z.string(),
   title: z.string(),
   status: z.enum([
-    "draft", "awaiting_review", "approved", "in_progress",
-    "blocked", "validation", "completed", "cancelled", "superseded"
+    "draft",
+    "awaiting_review",
+    "approved",
+    "in_progress",
+    "blocked",
+    "validation",
+    "completed",
+    "cancelled",
+    "superseded",
   ]),
   revision: z.number().int().nonnegative(),
   workflowId: z.string(),
@@ -896,21 +974,21 @@ export const KeystoneSpecificationSchema = z.object({
     originalRequest: z.string(),
     normalizedIntent: z.string(),
     businessObjective: z.string(),
-    outcome: z.string()
+    outcome: z.string(),
   }),
   scope: z.object({
     includedFunctionality: z.array(z.string()),
     excludedFunctionality: z.array(z.string()),
     modules: z.array(z.string()),
     expectedFiles: z.array(z.string()),
-    dependencies: z.array(z.string())
+    dependencies: z.array(z.string()),
   }),
   existingBehavior: z.object({
     implementationSummary: z.string(),
     architecture: z.string(),
     constraints: z.array(z.string()),
     knownLimitations: z.array(z.string()),
-    evidenceReferences: z.array(z.string())
+    evidenceReferences: z.array(z.string()),
   }),
   proposedBehavior: z.object({
     functionalRequirements: z.array(z.string()),
@@ -918,7 +996,7 @@ export const KeystoneSpecificationSchema = z.object({
     userFlows: z.string(),
     interfaces: z.string(),
     models: z.string(),
-    errors: z.string()
+    errors: z.string(),
   }),
   engineeringConstraints: z.object({
     conventions: z.array(z.string()),
@@ -927,7 +1005,7 @@ export const KeystoneSpecificationSchema = z.object({
     security: z.array(z.string()),
     performance: z.array(z.string()),
     compatibility: z.array(z.string()),
-    protectedAreas: z.array(z.string())
+    protectedAreas: z.array(z.string()),
   }),
   criteria: z.array(AcceptanceCriterionSchema),
   testStrategy: z.object({
@@ -936,35 +1014,43 @@ export const KeystoneSpecificationSchema = z.object({
     impactedSuites: z.array(z.string()),
     manualScenarios: z.array(z.string()),
     negativeScenarios: z.array(z.string()),
-    regressionRisks: z.array(z.string())
+    regressionRisks: z.array(z.string()),
   }),
   implementationPlan: z.object({
     taskGraphId: z.string().optional(),
-    planRevision: z.number().int().nonnegative()
+    planRevision: z.number().int().nonnegative(),
   }),
   decisionLog: z.object({
-    questions: z.array(z.object({
-      id: z.string(),
-      question: z.string(),
-      status: z.string()
-    })),
-    decisions: z.array(z.object({
-      id: z.string(),
-      decision: z.string(),
-      rationale: z.string()
-    })),
+    questions: z.array(
+      z.object({
+        id: z.string(),
+        question: z.string(),
+        status: z.string(),
+      }),
+    ),
+    decisions: z.array(
+      z.object({
+        id: z.string(),
+        decision: z.string(),
+        rationale: z.string(),
+      }),
+    ),
     assumptions: z.array(z.string()),
-    rejectedApproaches: z.array(z.object({
-      id: z.string(),
-      approach: z.string(),
-      reason: z.string()
-    })),
-    revisions: z.array(z.object({
-      id: z.string(),
-      revision: z.string(),
-      summary: z.string()
-    }))
-  })
+    rejectedApproaches: z.array(
+      z.object({
+        id: z.string(),
+        approach: z.string(),
+        reason: z.string(),
+      }),
+    ),
+    revisions: z.array(
+      z.object({
+        id: z.string(),
+        revision: z.string(),
+        summary: z.string(),
+      }),
+    ),
+  }),
 });
 
 export const TaskGraphSchema = z.object({
@@ -977,7 +1063,7 @@ export const TaskGraphSchema = z.object({
   generatedAt: z.string(),
   generationProvenance: z.string(),
   validationStatus: z.string(),
-  topologicalOrder: z.array(z.string())
+  topologicalOrder: z.array(z.string()),
 });
 
 export const ContextPackageSchema = z.object({
@@ -991,28 +1077,32 @@ export const ContextPackageSchema = z.object({
   budget: z.number(),
   estimatedTokens: z.number(),
   estimatedBytes: z.number(),
-  items: z.array(z.object({
-    kind: z.string(),
-    sourceReference: z.string(),
-    sourceFingerprint: z.string(),
-    selectionReason: z.string(),
-    rankScoreComponents: z.record(z.string(), z.number()),
-    compressionForm: z.string(),
-    estimatedTokens: z.number(),
-    estimatedBytes: z.number(),
-    isMandatory: z.boolean(),
-    isPinned: z.boolean(),
-    included: z.boolean(),
-    exclusionReason: z.string().optional()
-  })),
-  excludedCandidates: z.array(z.object({
-    id: z.string(),
-    reason: z.string()
-  })),
+  items: z.array(
+    z.object({
+      kind: z.string(),
+      sourceReference: z.string(),
+      sourceFingerprint: z.string(),
+      selectionReason: z.string(),
+      rankScoreComponents: z.record(z.string(), z.number()),
+      compressionForm: z.string(),
+      estimatedTokens: z.number(),
+      estimatedBytes: z.number(),
+      isMandatory: z.boolean(),
+      isPinned: z.boolean(),
+      included: z.boolean(),
+      exclusionReason: z.string().optional(),
+    }),
+  ),
+  excludedCandidates: z.array(
+    z.object({
+      id: z.string(),
+      reason: z.string(),
+    }),
+  ),
   fingerprint: z.string(),
   reviewStatus: z.enum(["unreviewed", "reviewed", "stale"]),
   reviewedAt: z.string().optional(),
-  delegationAttemptId: z.string().optional()
+  delegationAttemptId: z.string().optional(),
 });
 
 export const ExternalChangeSchema = z.object({
@@ -1022,7 +1112,7 @@ export const ExternalChangeSchema = z.object({
   severity: z.enum(["low", "medium", "high", "critical"]),
   details: z.string(),
   impactedFiles: z.array(z.string()).optional(),
-  stale: z.boolean()
+  stale: z.boolean(),
 });
 
 export type ExternalChange = z.infer<typeof ExternalChangeSchema>;
@@ -1036,31 +1126,37 @@ export const ValidationRunSchema = z.object({
   status: z.string(),
   startedAt: z.string(),
   completedAt: z.string().optional(),
-  checks: z.array(z.object({
-    id: z.string(),
-    type: z.string(),
-    status: z.enum(["passed", "warning", "failed", "not-executed", "requires-user-review"]),
-    command: z.string().optional(),
-    reviewMethod: z.string().optional(),
-    startedAt: z.string(),
-    completedAt: z.string().optional(),
-    exitCode: z.number().int().optional(),
-    outputReference: z.string().optional(),
-    evidenceReferences: z.array(z.string()),
-    affectedCriteria: z.array(z.string()),
-    retryable: z.boolean(),
-    error: z.string().optional()
-  })),
+  checks: z.array(
+    z.object({
+      id: z.string(),
+      type: z.string(),
+      status: z.enum(["passed", "warning", "failed", "not-executed", "requires-user-review"]),
+      command: z.string().optional(),
+      reviewMethod: z.string().optional(),
+      startedAt: z.string(),
+      completedAt: z.string().optional(),
+      exitCode: z.number().int().optional(),
+      outputReference: z.string().optional(),
+      evidenceReferences: z.array(z.string()),
+      affectedCriteria: z.array(z.string()),
+      retryable: z.boolean(),
+      error: z.string().optional(),
+    }),
+  ),
   changedFiles: z.array(z.string()),
-  criterionResults: z.array(z.object({
-    criterionId: z.string(),
-    result: z.enum(["unverified", "passed", "failed", "requires-user-review", "overridden"])
-  })),
-  driftFindings: z.array(z.object({
-    description: z.string(),
-    affectedCriteria: z.array(z.string())
-  })),
-  overrideRecords: z.array(z.string())
+  criterionResults: z.array(
+    z.object({
+      criterionId: z.string(),
+      result: z.enum(["unverified", "passed", "failed", "requires-user-review", "overridden"]),
+    }),
+  ),
+  driftFindings: z.array(
+    z.object({
+      description: z.string(),
+      affectedCriteria: z.array(z.string()),
+    }),
+  ),
+  overrideRecords: z.array(z.string()),
 });
 
 export const IntentRecordSchema = z.object({
@@ -1071,33 +1167,43 @@ export const IntentRecordSchema = z.object({
   normalizedObjective: z.string(),
   category: z.string(),
   developmentMode: z.enum(["quick", "guided", "spec-driven"]),
-  affectedAreas: z.array(z.object({
-    reference: z.string(),
-    reason: z.string()
-  })),
+  affectedAreas: z.array(
+    z.object({
+      reference: z.string(),
+      reason: z.string(),
+    }),
+  ),
   expectedOutcome: z.string(),
-  constraints: z.array(z.object({
-    description: z.string(),
-    provenance: z.string()
-  })),
-  ambiguities: z.array(z.object({
-    question: z.string(),
-    impact: z.string()
-  })),
+  constraints: z.array(
+    z.object({
+      description: z.string(),
+      provenance: z.string(),
+    }),
+  ),
+  ambiguities: z.array(
+    z.object({
+      question: z.string(),
+      impact: z.string(),
+    }),
+  ),
   riskLevel: z.enum(["low", "medium", "high", "critical"]),
   recommendedWorkflow: z.object({
     mode: z.string(),
-    approvalPolicy: z.boolean()
+    approvalPolicy: z.boolean(),
   }),
-  recommendedAgents: z.array(z.object({
-    agentId: z.string(),
-    reason: z.string()
-  })),
-  requiredDecisions: z.array(z.object({
-    id: z.string(),
-    question: z.string(),
-    blocking: z.boolean()
-  }))
+  recommendedAgents: z.array(
+    z.object({
+      agentId: z.string(),
+      reason: z.string(),
+    }),
+  ),
+  requiredDecisions: z.array(
+    z.object({
+      id: z.string(),
+      question: z.string(),
+      blocking: z.boolean(),
+    }),
+  ),
 });
 
 // ============================================================================
@@ -1107,229 +1213,282 @@ export const IntentRecordSchema = z.object({
 export const IndexStartRequestSchema = z.object({
   ...envelopeFields,
   type: z.literal("index/start"),
-  payload: z.object({
-    branch: z.string().optional()
-  }).strict()
+  payload: z
+    .object({
+      branch: z.string().optional(),
+    })
+    .strict(),
 });
 
 export const IndexCancelRequestSchema = z.object({
   ...envelopeFields,
   type: z.literal("index/cancel"),
-  payload: z.object({}).strict()
+  payload: z.object({}).strict(),
 });
 
 export const IndexSearchRequestSchema = z.object({
   ...envelopeFields,
   type: z.literal("index/search"),
-  payload: z.object({
-    query: z.string().min(1).max(200),
-    category: z.enum(["file", "symbol"]).optional(),
-    language: z.string().optional(),
-    page: z.number().int().min(0).optional()
-  }).strict()
+  payload: z
+    .object({
+      query: z.string().min(1).max(200),
+      category: z.enum(["file", "symbol"]).optional(),
+      language: z.string().optional(),
+      page: z.number().int().min(0).optional(),
+    })
+    .strict(),
 });
 
 export const IntentAnalyzeRequestSchema = z.object({
   ...envelopeFields,
   type: z.literal("intent/analyze"),
-  payload: z.object({
-    text: z.string().min(1).max(2000),
-    mode: z.enum(["quick", "guided", "spec-driven"]),
-    workspaceRoot: z.string().optional()
-  }).strict()
+  payload: z
+    .object({
+      text: z.string().min(1).max(2000),
+      mode: z.enum(["quick", "guided", "spec-driven"]),
+      workspaceRoot: z.string().optional(),
+    })
+    .strict(),
 });
 
 export const SpecCreateRequestSchema = z.object({
   ...envelopeFields,
   type: z.literal("spec/create"),
-  payload: z.object({
-    workflowId: z.string(),
-    title: z.string().min(1).max(200),
-    intentId: z.string()
-  }).strict()
+  payload: z
+    .object({
+      workflowId: z.string(),
+      title: z.string().min(1).max(200),
+      intentId: z.string(),
+    })
+    .strict(),
 });
 
 export const SpecUpdateRequestSchema = z.object({
   ...envelopeFields,
   type: z.literal("spec/update"),
-  payload: z.object({
-    specificationId: z.string(),
-    revision: z.number().int().nonnegative(),
-    patch: z.record(z.string(), z.unknown())
-  }).strict()
+  payload: z
+    .object({
+      specificationId: z.string(),
+      revision: z.number().int().nonnegative(),
+      patch: z.record(z.string(), z.unknown()),
+    })
+    .strict(),
 });
 
 export const SpecApproveRequestSchema = z.object({
   ...envelopeFields,
   type: z.literal("spec/approve"),
-  payload: z.object({
-    specificationId: z.string(),
-    expectedRevision: z.number().int().nonnegative(),
-    rationale: z.string().max(500).optional()
-  }).strict()
+  payload: z
+    .object({
+      specificationId: z.string(),
+      expectedRevision: z.number().int().nonnegative(),
+      rationale: z.string().max(500).optional(),
+    })
+    .strict(),
 });
 
 export const SpecReviseRequestSchema = z.object({
   ...envelopeFields,
   type: z.literal("spec/revise"),
-  payload: z.object({
-    specificationId: z.string(),
-    reason: z.string()
-  }).strict()
+  payload: z
+    .object({
+      specificationId: z.string(),
+      reason: z.string(),
+    })
+    .strict(),
 });
 
 export const AgentListRequestSchema = z.object({
   ...envelopeFields,
   type: z.literal("agent/list"),
-  payload: z.object({}).strict()
+  payload: z.object({}).strict(),
 });
 
 export const AgentAssignRequestSchema = z.object({
   ...envelopeFields,
   type: z.literal("agent/assign"),
-  payload: z.object({
-    taskId: z.string(),
-    workflowId: z.string(),
-    agentId: z.string()
-  }).strict()
+  payload: z
+    .object({
+      taskId: z.string(),
+      workflowId: z.string(),
+      agentId: z.string(),
+    })
+    .strict(),
 });
 
 export const TaskGenerateRequestSchema = z.object({
   ...envelopeFields,
   type: z.literal("task/generate"),
-  payload: z.object({
-    specificationId: z.string(),
-    specificationRevision: z.number().int().nonnegative()
-  }).strict()
+  payload: z
+    .object({
+      specificationId: z.string(),
+      specificationRevision: z.number().int().nonnegative(),
+    })
+    .strict(),
 });
 
 export const TaskDelegateRequestSchema = z.object({
   ...envelopeFields,
   type: z.literal("task/delegate"),
-  payload: z.object({
-    taskId: z.string(),
-    workflowId: z.string(),
-    contextFingerprint: z.string()
-  }).strict()
+  payload: z
+    .object({
+      taskId: z.string(),
+      workflowId: z.string(),
+      contextFingerprint: z.string(),
+    })
+    .strict(),
 });
 
 export const TaskControlRequestSchema = z.object({
   ...envelopeFields,
   type: z.literal("task/control"),
-  payload: z.object({
-    taskId: z.string(),
-    workflowId: z.string(),
-    action: z.enum(["approve", "reject", "retry", "pause", "resume", "skip", "cancel", "reorder"])
-  }).strict()
+  payload: z
+    .object({
+      taskId: z.string(),
+      workflowId: z.string(),
+      action: z.enum([
+        "approve",
+        "reject",
+        "retry",
+        "pause",
+        "resume",
+        "skip",
+        "cancel",
+        "reorder",
+      ]),
+    })
+    .strict(),
 });
 
 export const ContextPreviewRequestSchema = z.object({
   ...envelopeFields,
   type: z.literal("context/preview"),
-  payload: z.object({
-    taskId: z.string(),
-    workflowId: z.string(),
-    package: z.unknown()
-  }).strict()
+  payload: z
+    .object({
+      taskId: z.string(),
+      workflowId: z.string(),
+      package: z.unknown(),
+    })
+    .strict(),
 });
 
 export const ContextPinRequestSchema = z.object({
   ...envelopeFields,
   type: z.literal("context/pin"),
-  payload: z.object({
-    taskId: z.string(),
-    workflowId: z.string(),
-    itemId: z.string()
-  }).strict()
+  payload: z
+    .object({
+      taskId: z.string(),
+      workflowId: z.string(),
+      itemId: z.string(),
+    })
+    .strict(),
 });
 
 export const ContextExcludeRequestSchema = z.object({
   ...envelopeFields,
   type: z.literal("context/exclude"),
-  payload: z.object({
-    taskId: z.string(),
-    workflowId: z.string(),
-    itemId: z.string()
-  }).strict()
+  payload: z
+    .object({
+      taskId: z.string(),
+      workflowId: z.string(),
+      itemId: z.string(),
+    })
+    .strict(),
 });
 
 export const ValidationPlanRequestSchema = z.object({
   ...envelopeFields,
   type: z.literal("validation/plan"),
-  payload: z.object({
-    workflowId: z.string(),
-    specificationId: z.string(),
-    specificationRevision: z.number().int().nonnegative()
-  }).strict()
+  payload: z
+    .object({
+      workflowId: z.string(),
+      specificationId: z.string(),
+      specificationRevision: z.number().int().nonnegative(),
+    })
+    .strict(),
 });
 
 export const ValidationRunRequestSchema = z.object({
   ...envelopeFields,
   type: z.literal("validation/run"),
-  payload: z.object({
-    validationRunId: z.string()
-  }).strict()
+  payload: z
+    .object({
+      validationRunId: z.string(),
+    })
+    .strict(),
 });
 
 export const ValidationOverrideRequestSchema = z.object({
   ...envelopeFields,
   type: z.literal("validation/override"),
-  payload: z.object({
-    workflowId: z.string(),
-    criterionId: z.string(),
-    reason: z.string().max(500),
-    riskAcknowledgement: z.string().max(500)
-  }).strict()
+  payload: z
+    .object({
+      workflowId: z.string(),
+      criterionId: z.string(),
+      reason: z.string().max(500),
+      riskAcknowledgement: z.string().max(500),
+    })
+    .strict(),
 });
 
 export const DelegationRequestSchema = z.object({
   ...envelopeFields,
   type: z.literal("delegation/delegate"),
-  payload: z.object({
-    taskId: z.string(),
-    workflowId: z.string(),
-    task: z.unknown(),
-    specificationRevision: z.number().int().nonnegative()
-  }).strict()
+  payload: z
+    .object({
+      taskId: z.string(),
+      workflowId: z.string(),
+      task: z.unknown(),
+      specificationRevision: z.number().int().nonnegative(),
+    })
+    .strict(),
 });
 
 export const ChangeDetectRequestSchema = z.object({
   ...envelopeFields,
   type: z.literal("change/detect"),
-  payload: z.object({
-    taskId: z.string(),
-    branch: z.string().optional()
-  }).strict()
+  payload: z
+    .object({
+      taskId: z.string(),
+      branch: z.string().optional(),
+    })
+    .strict(),
 });
 
 export const WorkflowStartRequestSchema = z.object({
   ...envelopeFields,
   type: z.literal("workflow/start"),
-  payload: z.object({
-    workflow: z.unknown()
-  }).strict()
+  payload: z
+    .object({
+      workflow: z.unknown(),
+    })
+    .strict(),
 });
 
 export const WorkflowPauseRequestSchema = z.object({
   ...envelopeFields,
   type: z.literal("workflow/pause"),
-  payload: z.object({
-    workflowId: z.string()
-  }).strict()
+  payload: z
+    .object({
+      workflowId: z.string(),
+    })
+    .strict(),
 });
 
 export const WorkflowCancelRequestSchema = z.object({
   ...envelopeFields,
   type: z.literal("workflow/cancel"),
-  payload: z.object({
-    workflowId: z.string()
-  }).strict()
+  payload: z
+    .object({
+      workflowId: z.string(),
+    })
+    .strict(),
 });
 
 export const WorkflowUpdatedEventSchema = z.object({
   ...hostEnvelopeFields,
   type: z.literal("workflow/updated"),
-  payload: z.unknown()
+  payload: z.unknown(),
 });
 
 // ============================================================================
@@ -1339,117 +1498,154 @@ export const WorkflowUpdatedEventSchema = z.object({
 export const IndexProgressEventSchema = z.object({
   ...hostEnvelopeFields,
   type: z.literal("index/progress"),
-  payload: z.object({
-    stage: z.string(),
-    fileCount: z.number().int().nonnegative().optional(),
-    totalFiles: z.number().int().nonnegative().optional(),
-    estimatedRemainingMs: z.number().int().nonnegative().optional()
-  }).strict()
+  payload: z
+    .object({
+      stage: z.string(),
+      fileCount: z.number().int().nonnegative().optional(),
+      totalFiles: z.number().int().nonnegative().optional(),
+      estimatedRemainingMs: z.number().int().nonnegative().optional(),
+    })
+    .strict(),
 });
 
 export const IndexUpdatedEventSchema = z.object({
   ...hostEnvelopeFields,
   type: z.literal("index/updated"),
-  payload: z.object({
-    status: IndexStatusSchema,
-    indexVersion: z.number().int().nonnegative(),
-    fileCount: z.number().int().nonnegative()
-  }).strict()
+  payload: z
+    .object({
+      status: IndexStatusSchema,
+      indexVersion: z.number().int().nonnegative(),
+      fileCount: z.number().int().nonnegative(),
+    })
+    .strict(),
 });
 
 export const IndexErrorEventSchema = z.object({
   ...hostEnvelopeFields,
   type: z.literal("index/error"),
-  payload: z.object({
-    message: z.string(),
-    category: z.string(),
-    recoverable: z.boolean()
-  }).strict()
+  payload: z
+    .object({
+      message: z.string(),
+      category: z.string(),
+      recoverable: z.boolean(),
+    })
+    .strict(),
 });
 
 export const IntentUpdatedEventSchema = z.object({
   ...hostEnvelopeFields,
   type: z.literal("intent/updated"),
-  payload: z.object({
-    intentId: z.string(),
-    revision: z.number().int().nonnegative()
-  }).strict()
+  payload: z
+    .object({
+      intentId: z.string(),
+      revision: z.number().int().nonnegative(),
+    })
+    .strict(),
 });
 
 export const SpecUpdatedEventSchema = z.object({
   ...hostEnvelopeFields,
   type: z.literal("spec/updated"),
-  payload: z.object({
-    specificationId: z.string(),
-    revision: z.number().int().nonnegative(),
-    status: z.enum(["draft", "awaiting_review", "approved", "in_progress", "cancelled"])
-  }).strict()
+  payload: z
+    .object({
+      specificationId: z.string(),
+      revision: z.number().int().nonnegative(),
+      status: z.enum(["draft", "awaiting_review", "approved", "in_progress", "cancelled"]),
+    })
+    .strict(),
 });
 
 export const SpecApprovalRequiredEventSchema = z.object({
   ...hostEnvelopeFields,
   type: z.literal("spec/approvalRequired"),
-  payload: z.object({
-    specificationId: z.string(),
-    reason: z.string()
-  }).strict()
+  payload: z
+    .object({
+      specificationId: z.string(),
+      reason: z.string(),
+    })
+    .strict(),
 });
 
 export const AgentAvailabilityChangedEventSchema = z.object({
   ...hostEnvelopeFields,
   type: z.literal("agent/availabilityChanged"),
-  payload: z.object({
-    agentId: z.string(),
-    availability: z.enum(["available", "configured", "unavailable", "unknown"])
-  }).strict()
+  payload: z
+    .object({
+      agentId: z.string(),
+      availability: z.enum(["available", "configured", "unavailable", "unknown"]),
+    })
+    .strict(),
 });
 
 export const TaskUpdatedEventSchema = z.object({
   ...hostEnvelopeFields,
   type: z.literal("task/updated"),
-  payload: z.object({
-    taskId: z.string(),
-    status: z.enum(["pending", "ready", "awaiting_approval", "delegating", "executing", "awaiting_user", "validating", "passed", "failed", "skipped", "cancelled", "blocked"]),
-    attemptNumber: z.number().int().nonnegative().optional()
-  }).strict()
+  payload: z
+    .object({
+      taskId: z.string(),
+      status: z.enum([
+        "pending",
+        "ready",
+        "awaiting_approval",
+        "delegating",
+        "executing",
+        "awaiting_user",
+        "validating",
+        "passed",
+        "failed",
+        "skipped",
+        "cancelled",
+        "blocked",
+      ]),
+      attemptNumber: z.number().int().nonnegative().optional(),
+    })
+    .strict(),
 });
 
 export const TaskStaleEventSchema = z.object({
   ...hostEnvelopeFields,
   type: z.literal("task/stale"),
-  payload: z.object({
-    taskId: z.string(),
-    reason: z.string()
-  }).strict()
+  payload: z
+    .object({
+      taskId: z.string(),
+      reason: z.string(),
+    })
+    .strict(),
 });
 
 export const ContextUpdatedEventSchema = z.object({
   ...hostEnvelopeFields,
   type: z.literal("context/updated"),
-  payload: z.object({
-    taskId: z.string(),
-    fingerprint: z.string(),
-    reviewStatus: z.enum(["unreviewed", "reviewed", "stale"])
-  }).strict()
+  payload: z
+    .object({
+      taskId: z.string(),
+      fingerprint: z.string(),
+      reviewStatus: z.enum(["unreviewed", "reviewed", "stale"]),
+    })
+    .strict(),
 });
 
 export const ValidationProgressEventSchema = z.object({
   ...hostEnvelopeFields,
   type: z.literal("validation/progress"),
-  payload: z.object({
-    validationRunId: z.string(),
-    checkId: z.string(),
-    status: z.enum(["passed", "warning", "failed", "not-executed", "requires-user-review"])
-  }).strict()
+  payload: z
+    .object({
+      validationRunId: z.string(),
+      checkId: z.string(),
+      status: z.enum(["passed", "warning", "failed", "not-executed", "requires-user-review"]),
+    })
+    .strict(),
 });
 
 export const ValidationUpdatedEventSchema = z.object({
   ...hostEnvelopeFields,
   type: z.literal("validation/updated"),
-  payload: z.object({
-    validationRunId: z.string(),
-    status: z.string(),
-    completedChecks: z.number().int().nonnegative(),
-    totalChecks: z.number().int().nonnegative()
-  }).strict()
+  payload: z
+    .object({
+      validationRunId: z.string(),
+      status: z.string(),
+      completedChecks: z.number().int().nonnegative(),
+      totalChecks: z.number().int().nonnegative(),
+    })
+    .strict(),
 });

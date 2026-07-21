@@ -22,5 +22,5 @@ export const UNIVERSAL_ADAPTER_VERSIONS: Readonly<Record<string, string>> = {
   "keystone.adapter.infrastructure": "1.0.0",
   "keystone.adapter.configuration": "1.0.0",
   "keystone.adapter.fallback": "1.0.0",
-  "keystone.adapter.cross-technology": "1.0.0"
+  "keystone.adapter.cross-technology": "1.0.0",
 };

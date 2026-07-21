@@ -1,7 +1,15 @@
 import { useEffect, useState } from "react";
 import type { HostBridge } from "../../services/HostBridge";
 import type { DevelopmentWorkflowSnapshot } from "../../../shared/contracts/delegation";
-import type { CommitPlan, DeliveryChangeSet, DeliveryReadiness, GitCapabilities, GitRepositoryState, PullRequestDraft, PullRequestProviderCapability } from "../../../shared/contracts/delivery";
+import type {
+  CommitPlan,
+  DeliveryChangeSet,
+  DeliveryReadiness,
+  GitCapabilities,
+  GitRepositoryState,
+  PullRequestDraft,
+  PullRequestProviderCapability,
+} from "../../../shared/contracts/delivery";
 
 export function DeliveryWorkspace({ bridge }: { bridge: HostBridge }): React.JSX.Element {
   const [workflows, setWorkflows] = useState<DevelopmentWorkflowSnapshot[]>([]);
@@ -19,34 +27,528 @@ export function DeliveryWorkspace({ bridge }: { bridge: HostBridge }): React.JSX
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    void Promise.all([bridge.request("workflow/list", {}), bridge.request("git/capabilities", {}), bridge.request("git/repositoryState", {}), bridge.request("pullRequest/capabilities", {})]).then(([items, git, state, pr]) => {
-      setWorkflows(items); setWorkflowId(items[0]?.id ?? ""); setCapabilities(git); setRepository(state); setProvider(pr); setBranch(state.branch ?? "");
-    }).catch(show(setNotice));
+    void Promise.all([
+      bridge.request("workflow/list", {}),
+      bridge.request("git/capabilities", {}),
+      bridge.request("git/repositoryState", {}),
+      bridge.request("pullRequest/capabilities", {}),
+    ])
+      .then(([items, git, state, pr]) => {
+        setWorkflows(items);
+        setWorkflowId(items[0]?.id ?? "");
+        setCapabilities(git);
+        setRepository(state);
+        setProvider(pr);
+        setBranch(state.branch ?? "");
+      })
+      .catch(show(setNotice));
   }, [bridge]);
 
-  const run = async (operation: () => Promise<void>): Promise<void> => { setBusy(true); setNotice(""); try { await operation(); } catch (cause) { setNotice(cause instanceof Error ? cause.message : String(cause)); } finally { setBusy(false); } };
-  const refresh = (): Promise<void> => run(async () => { const [git, state] = await Promise.all([bridge.request("git/refresh", {}), bridge.request("git/repositoryState", {})]); setCapabilities(git); setRepository(state); if (workflowId) setReadiness(await bridge.request("git/readiness", { workflowId })); });
+  const run = async (operation: () => Promise<void>): Promise<void> => {
+    setBusy(true);
+    setNotice("");
+    try {
+      await operation();
+    } catch (cause) {
+      setNotice(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const refresh = (): Promise<void> =>
+    run(async () => {
+      const [git, state] = await Promise.all([
+        bridge.request("git/refresh", {}),
+        bridge.request("git/repositoryState", {}),
+      ]);
+      setCapabilities(git);
+      setRepository(state);
+      if (workflowId) setReadiness(await bridge.request("git/readiness", { workflowId }));
+    });
 
-  return <section className="page delivery-workspace">
-    <header className="delivery-header"><div><div className="eyebrow">User-approved source control</div><h1>Delivery</h1><p>Review repository facts, select changes, plan commits, and prepare a pull request. Keystone never commits, pushes, or creates a PR without the action you confirm.</p></div><button className="ghost-button" disabled={busy} onClick={() => void refresh()}>Refresh Git state</button></header>
-    {notice && <div className="error-banner" role="status">{notice}</div>}
+  return (
+    <section className="page delivery-workspace">
+      <header className="delivery-header">
+        <div>
+          <div className="eyebrow">User-approved source control</div>
+          <h1>Delivery</h1>
+          <p>
+            Review repository facts, select changes, plan commits, and prepare a pull request.
+            Keystone never commits, pushes, or creates a PR without the action you confirm.
+          </p>
+        </div>
+        <button className="ghost-button" disabled={busy} onClick={() => void refresh()}>
+          Refresh Git state
+        </button>
+      </header>
+      {notice && (
+        <div className="error-banner" role="status">
+          {notice}
+        </div>
+      )}
 
-    <div className="delivery-grid">
-      <article className="status-card"><small>REPOSITORY</small><h2>{repository?.branch ?? "Detached or unavailable"}</h2><p>{repository?.headCommit?.slice(0, 12) ?? "No HEAD"} · {repository?.dirty ? "working tree changed" : "clean"}</p><dl><div><dt>Ahead / behind</dt><dd>{repository?.ahead ?? 0} / {repository?.behind ?? 0}</dd></div><div><dt>Conflicts</dt><dd>{repository?.conflictedFiles.length ?? 0}</dd></div><div><dt>Git mutations</dt><dd>{capabilities?.commitAvailable ? "available" : "unavailable"}</dd></div></dl></article>
-      <article className="status-card"><small>WORKFLOW READINESS</small><select value={workflowId} onChange={(event) => setWorkflowId(event.target.value)}><option value="">Select a workflow</option>{workflows.map((item) => <option key={item.id} value={item.id}>{item.specification?.title ?? item.intent.normalizedObjective}</option>)}</select><button className="primary-button" disabled={!workflowId || busy} onClick={() => void run(async () => setReadiness(await bridge.request("git/readiness", { workflowId })))}>Evaluate readiness</button><p className={readiness?.ready ? "good" : "warning"}>{readiness ? readiness.ready ? "Ready for reviewed delivery" : `${readiness.blockers.length} blocker(s)` : "Not evaluated"}</p></article>
-      <article className="status-card"><small>PULL REQUEST PROVIDER</small><h2>{provider?.provider ?? "Detecting"}</h2><p>{provider?.detected ? provider.integrationMethod ?? "detected" : "No supported provider detected"}</p><p>Direct creation: {provider?.directCreationAvailable ? "proven" : "unavailable; assisted preparation only"}</p></article>
-    </div>
+      <div className="delivery-grid">
+        <article className="status-card">
+          <small>REPOSITORY</small>
+          <h2>{repository?.branch ?? "Detached or unavailable"}</h2>
+          <p>
+            {repository?.headCommit?.slice(0, 12) ?? "No HEAD"} ·{" "}
+            {repository?.dirty ? "working tree changed" : "clean"}
+          </p>
+          <dl>
+            <div>
+              <dt>Ahead / behind</dt>
+              <dd>
+                {repository?.ahead ?? 0} / {repository?.behind ?? 0}
+              </dd>
+            </div>
+            <div>
+              <dt>Conflicts</dt>
+              <dd>{repository?.conflictedFiles.length ?? 0}</dd>
+            </div>
+            <div>
+              <dt>Git mutations</dt>
+              <dd>{capabilities?.commitAvailable ? "available" : "unavailable"}</dd>
+            </div>
+          </dl>
+        </article>
+        <article className="status-card">
+          <small>WORKFLOW READINESS</small>
+          <select value={workflowId} onChange={(event) => setWorkflowId(event.target.value)}>
+            <option value="">Select a workflow</option>
+            {workflows.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.specification?.title ?? item.intent.normalizedObjective}
+              </option>
+            ))}
+          </select>
+          <button
+            className="primary-button"
+            disabled={!workflowId || busy}
+            onClick={() =>
+              void run(async () =>
+                setReadiness(await bridge.request("git/readiness", { workflowId })),
+              )
+            }
+          >
+            Evaluate readiness
+          </button>
+          <p className={readiness?.ready ? "good" : "warning"}>
+            {readiness
+              ? readiness.ready
+                ? "Ready for reviewed delivery"
+                : `${readiness.blockers.length} blocker(s)`
+              : "Not evaluated"}
+          </p>
+        </article>
+        <article className="status-card">
+          <small>PULL REQUEST PROVIDER</small>
+          <h2>{provider?.provider ?? "Detecting"}</h2>
+          <p>
+            {provider?.detected
+              ? (provider.integrationMethod ?? "detected")
+              : "No supported provider detected"}
+          </p>
+          <p>
+            Direct creation:{" "}
+            {provider?.directCreationAvailable
+              ? "proven"
+              : "unavailable; assisted preparation only"}
+          </p>
+        </article>
+      </div>
 
-    {readiness && <section className="delivery-panel"><h2>Readiness evidence</h2>{readiness.blockers.map((item) => <p className="delivery-blocker" key={item}>Blocker · {item}</p>)}{readiness.warnings.map((item) => <p className="delivery-warning" key={item}>Warning · {item}</p>)}{!readiness.blockers.length && <p className="good">No deterministic readiness blockers.</p>}<button className="primary-button" disabled={!workflowId || busy} onClick={() => void run(async () => { const next = await bridge.request("delivery/createChangeSet", { workflowId }); setChangeSet(next); setPlan(undefined); setDraft(undefined); })}>Build change set</button></section>}
+      {readiness && (
+        <section className="delivery-panel">
+          <h2>Readiness evidence</h2>
+          {readiness.blockers.map((item) => (
+            <p className="delivery-blocker" key={item}>
+              Blocker · {item}
+            </p>
+          ))}
+          {readiness.warnings.map((item) => (
+            <p className="delivery-warning" key={item}>
+              Warning · {item}
+            </p>
+          ))}
+          {!readiness.blockers.length && (
+            <p className="good">No deterministic readiness blockers.</p>
+          )}
+          <button
+            className="primary-button"
+            disabled={!workflowId || busy}
+            onClick={() =>
+              void run(async () => {
+                const next = await bridge.request("delivery/createChangeSet", { workflowId });
+                setChangeSet(next);
+                setPlan(undefined);
+                setDraft(undefined);
+              })
+            }
+          >
+            Build change set
+          </button>
+        </section>
+      )}
 
-    {changeSet && <section className="delivery-panel"><div className="delivery-panel-heading"><div><small>CHANGE SET</small><h2>{changeSet.files.length} repository change(s)</h2></div><span>{changeSet.includedFileIds.length} included</span></div><p>Unexpected, ambiguous, generated, binary, and sensitive changes are excluded by default. Each inclusion below is explicit.</p><div className="delivery-files">{changeSet.files.map((file) => <label key={file.id} className={file.sensitive ? "sensitive" : ""}><input type="checkbox" checked={file.included} disabled={file.sensitive || busy} onChange={(event) => void run(async () => setChangeSet(await bridge.request(event.target.checked ? "delivery/includeFile" : "delivery/excludeFile", { changeSetId: changeSet.id, fileId: file.id, explanation: "Reviewed in Delivery workspace." })))} /><span><strong>{file.path}</strong><small>{file.status} · {file.attribution}{file.exclusionReason ? ` · ${file.exclusionReason}` : ""}</small></span><button type="button" className="ghost-button" onClick={(event) => { event.preventDefault(); void run(async () => setDiff(await bridge.request("git/diff", { path: file.path, mode: file.staged ? "index-head" : "working-head", maxBytes: 50_000 }))); }}>Review diff</button>{diff?.path === file.path && <pre className="delivery-diff">{diff.text}{diff.truncated ? "\n…diff truncated at the bounded payload limit" : ""}</pre>}</label>)}</div><div className="delivery-actions"><button className="ghost-button" disabled={busy || !changeSet.includedFileIds.length} onClick={() => void run(async () => { const paths = changeSet.files.filter((item) => item.included).map((item) => item.path); const result = await bridge.request("git/stage", { changeSetId: changeSet.id, paths, confirm: true }); setNotice(result.status === "succeeded" ? "Approved files staged and verified." : result.sanitizedOutput); })}>Stage selected files…</button><button className="primary-button" disabled={busy || !changeSet.includedFileIds.length} onClick={() => void run(async () => setPlan(await bridge.request("commitPlan/create", { changeSetId: changeSet.id })))}>Create commit plan</button></div></section>}
+      {changeSet && (
+        <section className="delivery-panel">
+          <div className="delivery-panel-heading">
+            <div>
+              <small>CHANGE SET</small>
+              <h2>{changeSet.files.length} repository change(s)</h2>
+            </div>
+            <span>{changeSet.includedFileIds.length} included</span>
+          </div>
+          <p>
+            Unexpected, ambiguous, generated, binary, and sensitive changes are excluded by default.
+            Each inclusion below is explicit.
+          </p>
+          <div className="delivery-files">
+            {changeSet.files.map((file) => (
+              <label key={file.id} className={file.sensitive ? "sensitive" : ""}>
+                <input
+                  type="checkbox"
+                  checked={file.included}
+                  disabled={file.sensitive || busy}
+                  onChange={(event) =>
+                    void run(async () =>
+                      setChangeSet(
+                        await bridge.request(
+                          event.target.checked ? "delivery/includeFile" : "delivery/excludeFile",
+                          {
+                            changeSetId: changeSet.id,
+                            fileId: file.id,
+                            explanation: "Reviewed in Delivery workspace.",
+                          },
+                        ),
+                      ),
+                    )
+                  }
+                />
+                <span>
+                  <strong>{file.path}</strong>
+                  <small>
+                    {file.status} · {file.attribution}
+                    {file.exclusionReason ? ` · ${file.exclusionReason}` : ""}
+                  </small>
+                </span>
+                <button
+                  type="button"
+                  className="ghost-button"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    void run(async () =>
+                      setDiff(
+                        await bridge.request("git/diff", {
+                          path: file.path,
+                          mode: file.staged ? "index-head" : "working-head",
+                          maxBytes: 50_000,
+                        }),
+                      ),
+                    );
+                  }}
+                >
+                  Review diff
+                </button>
+                {diff?.path === file.path && (
+                  <pre className="delivery-diff">
+                    {diff.text}
+                    {diff.truncated ? "\n…diff truncated at the bounded payload limit" : ""}
+                  </pre>
+                )}
+              </label>
+            ))}
+          </div>
+          <div className="delivery-actions">
+            <button
+              className="ghost-button"
+              disabled={busy || !changeSet.includedFileIds.length}
+              onClick={() =>
+                void run(async () => {
+                  const paths = changeSet.files
+                    .filter((item) => item.included)
+                    .map((item) => item.path);
+                  const result = await bridge.request("git/stage", {
+                    changeSetId: changeSet.id,
+                    paths,
+                    confirm: true,
+                  });
+                  setNotice(
+                    result.status === "succeeded"
+                      ? "Approved files staged and verified."
+                      : result.sanitizedOutput,
+                  );
+                })
+              }
+            >
+              Stage selected files…
+            </button>
+            <button
+              className="primary-button"
+              disabled={busy || !changeSet.includedFileIds.length}
+              onClick={() =>
+                void run(async () =>
+                  setPlan(await bridge.request("commitPlan/create", { changeSetId: changeSet.id })),
+                )
+              }
+            >
+              Create commit plan
+            </button>
+          </div>
+        </section>
+      )}
 
-    {plan && <section className="delivery-panel"><div className="delivery-panel-heading"><div><small>COMMIT PLAN · {plan.status}</small><h2>Review proposed commits</h2></div><button className="ghost-button" disabled={busy || plan.commits.length < 2} onClick={() => void run(async () => setPlan(await bridge.request("commitPlan/merge", { commitPlanId: plan.id, commitIds: plan.commits.map((item) => item.id) })))}>Merge into one</button></div>{plan.commits.map((commit) => <article className="commit-proposal" key={commit.id}><input value={commit.title} aria-label="Commit title" onChange={(event) => setPlan({ ...plan, commits: plan.commits.map((item) => item.id === commit.id ? { ...item, title: event.target.value } : item) })}/><p>{commit.includedFileIds.length} file(s) · {commit.commitType}</p><pre>{commit.description}</pre>{plan.status === "approved" && <div className="delivery-actions"><button className="ghost-button" disabled={busy || Boolean(commit.createdCommitHash)} onClick={() => void run(async () => { const paths = commit.includedFileIds.map((id) => changeSet!.files.find((item) => item.id === id)?.path).filter((item): item is string => Boolean(item)); const result = await bridge.request("git/stage", { changeSetId: changeSet!.id, paths, confirm: true }); setNotice(result.sanitizedOutput); })}>Stage this commit…</button><button className="danger-button" disabled={busy || Boolean(commit.createdCommitHash)} onClick={() => void run(async () => { const result = await bridge.request("git/commit", { changeSetId: changeSet!.id, commitPlanId: plan.id, proposedCommitId: commit.id, message: `${commit.title}\n\n${commit.description}`, confirm: true }); setNotice(result.status === "succeeded" ? `Commit verified: ${result.commitHash}` : result.sanitizedOutput); if (result.status === "succeeded") setPlan(await bridge.request("commitPlan/get", { commitPlanId: plan.id })); })}>Create this commit…</button></div>}</article>)}<div className="delivery-actions"><button className="ghost-button" disabled={busy} onClick={() => void run(async () => setPlan(await bridge.request("commitPlan/update", { plan })))}>Save edits</button><button className="primary-button" disabled={busy || plan.status === "approved"} onClick={() => void run(async () => setPlan(await bridge.request("commitPlan/approve", { commitPlanId: plan.id, confirm: true })))}>Approve commit plan</button></div></section>}
+      {plan && (
+        <section className="delivery-panel">
+          <div className="delivery-panel-heading">
+            <div>
+              <small>COMMIT PLAN · {plan.status}</small>
+              <h2>Review proposed commits</h2>
+            </div>
+            <button
+              className="ghost-button"
+              disabled={busy || plan.commits.length < 2}
+              onClick={() =>
+                void run(async () =>
+                  setPlan(
+                    await bridge.request("commitPlan/merge", {
+                      commitPlanId: plan.id,
+                      commitIds: plan.commits.map((item) => item.id),
+                    }),
+                  ),
+                )
+              }
+            >
+              Merge into one
+            </button>
+          </div>
+          {plan.commits.map((commit) => (
+            <article className="commit-proposal" key={commit.id}>
+              <input
+                value={commit.title}
+                aria-label="Commit title"
+                onChange={(event) =>
+                  setPlan({
+                    ...plan,
+                    commits: plan.commits.map((item) =>
+                      item.id === commit.id ? { ...item, title: event.target.value } : item,
+                    ),
+                  })
+                }
+              />
+              <p>
+                {commit.includedFileIds.length} file(s) · {commit.commitType}
+              </p>
+              <pre>{commit.description}</pre>
+              {plan.status === "approved" && (
+                <div className="delivery-actions">
+                  <button
+                    className="ghost-button"
+                    disabled={busy || Boolean(commit.createdCommitHash)}
+                    onClick={() =>
+                      void run(async () => {
+                        const paths = commit.includedFileIds
+                          .map((id) => changeSet!.files.find((item) => item.id === id)?.path)
+                          .filter((item): item is string => Boolean(item));
+                        const result = await bridge.request("git/stage", {
+                          changeSetId: changeSet!.id,
+                          paths,
+                          confirm: true,
+                        });
+                        setNotice(result.sanitizedOutput);
+                      })
+                    }
+                  >
+                    Stage this commit…
+                  </button>
+                  <button
+                    className="danger-button"
+                    disabled={busy || Boolean(commit.createdCommitHash)}
+                    onClick={() =>
+                      void run(async () => {
+                        const result = await bridge.request("git/commit", {
+                          changeSetId: changeSet!.id,
+                          commitPlanId: plan.id,
+                          proposedCommitId: commit.id,
+                          message: `${commit.title}\n\n${commit.description}`,
+                          confirm: true,
+                        });
+                        setNotice(
+                          result.status === "succeeded"
+                            ? `Commit verified: ${result.commitHash}`
+                            : result.sanitizedOutput,
+                        );
+                        if (result.status === "succeeded")
+                          setPlan(
+                            await bridge.request("commitPlan/get", { commitPlanId: plan.id }),
+                          );
+                      })
+                    }
+                  >
+                    Create this commit…
+                  </button>
+                </div>
+              )}
+            </article>
+          ))}
+          <div className="delivery-actions">
+            <button
+              className="ghost-button"
+              disabled={busy}
+              onClick={() =>
+                void run(async () => setPlan(await bridge.request("commitPlan/update", { plan })))
+              }
+            >
+              Save edits
+            </button>
+            <button
+              className="primary-button"
+              disabled={busy || plan.status === "approved"}
+              onClick={() =>
+                void run(async () =>
+                  setPlan(
+                    await bridge.request("commitPlan/approve", {
+                      commitPlanId: plan.id,
+                      confirm: true,
+                    }),
+                  ),
+                )
+              }
+            >
+              Approve commit plan
+            </button>
+          </div>
+        </section>
+      )}
 
-    <section className="delivery-panel"><h2>Branch and publication</h2><input value={branch} onChange={(event) => setBranch(event.target.value)} placeholder="feature/branch-name"/><div className="delivery-actions"><button className="danger-button" disabled={!branch || busy} onClick={() => void run(async () => { const result = await bridge.request("git/createBranch", { branch, confirm: true }); setNotice(result.sanitizedOutput); })}>Create and switch branch…</button><button className="danger-button" disabled={!repository?.defaultRemote || !branch || busy} onClick={() => void run(async () => { const result = await bridge.request("git/push", { remote: repository!.defaultRemote!, branch, confirm: true }); setNotice(result.sanitizedOutput); })}>Push to {repository?.defaultRemote ?? "remote"}…</button></div></section>
+      <section className="delivery-panel">
+        <h2>Branch and publication</h2>
+        <input
+          value={branch}
+          onChange={(event) => setBranch(event.target.value)}
+          placeholder="feature/branch-name"
+        />
+        <div className="delivery-actions">
+          <button
+            className="danger-button"
+            disabled={!branch || busy}
+            onClick={() =>
+              void run(async () => {
+                const result = await bridge.request("git/createBranch", { branch, confirm: true });
+                setNotice(result.sanitizedOutput);
+              })
+            }
+          >
+            Create and switch branch…
+          </button>
+          <button
+            className="danger-button"
+            disabled={!repository?.defaultRemote || !branch || busy}
+            onClick={() =>
+              void run(async () => {
+                const result = await bridge.request("git/push", {
+                  remote: repository!.defaultRemote!,
+                  branch,
+                  confirm: true,
+                });
+                setNotice(result.sanitizedOutput);
+              })
+            }
+          >
+            Push to {repository?.defaultRemote ?? "remote"}…
+          </button>
+        </div>
+      </section>
 
-    {changeSet && plan && <section className="delivery-panel"><h2>Pull request draft</h2>{!draft ? <button className="primary-button" disabled={!repository?.defaultBranch || busy} onClick={() => void run(async () => setDraft(await bridge.request("pullRequest/createDraft", { changeSetId: changeSet.id, commitPlanId: plan.id, baseBranch: repository!.defaultBranch! })))}>Generate evidence-based draft</button> : <><input value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })}/><textarea rows={14} value={draft.body} onChange={(event) => setDraft({ ...draft, body: event.target.value })}/><div className="delivery-actions"><button className="ghost-button" disabled={busy} onClick={() => void run(async () => setDraft(await bridge.request("pullRequest/updateDraft", { draft })))}>Save draft</button><button className="primary-button" disabled={busy || draft.status === "approved"} onClick={() => void run(async () => setDraft(await bridge.request("pullRequest/approve", { draftId: draft.id, confirm: true })))}>Approve exact draft</button><button className="danger-button" disabled={busy || draft.status !== "approved"} onClick={() => void run(async () => { const result = await bridge.request("pullRequest/create", { draftId: draft.id, confirm: true }); setNotice(result.status === "created" ? `PR created: ${result.url}` : "Draft handed to the supported provider; Keystone is awaiting authoritative confirmation."); })}>Create or open provider…</button></div></>}</section>}
-  </section>;
+      {changeSet && plan && (
+        <section className="delivery-panel">
+          <h2>Pull request draft</h2>
+          {!draft ? (
+            <button
+              className="primary-button"
+              disabled={!repository?.defaultBranch || busy}
+              onClick={() =>
+                void run(async () =>
+                  setDraft(
+                    await bridge.request("pullRequest/createDraft", {
+                      changeSetId: changeSet.id,
+                      commitPlanId: plan.id,
+                      baseBranch: repository!.defaultBranch!,
+                    }),
+                  ),
+                )
+              }
+            >
+              Generate evidence-based draft
+            </button>
+          ) : (
+            <>
+              <input
+                value={draft.title}
+                onChange={(event) => setDraft({ ...draft, title: event.target.value })}
+              />
+              <textarea
+                rows={14}
+                value={draft.body}
+                onChange={(event) => setDraft({ ...draft, body: event.target.value })}
+              />
+              <div className="delivery-actions">
+                <button
+                  className="ghost-button"
+                  disabled={busy}
+                  onClick={() =>
+                    void run(async () =>
+                      setDraft(await bridge.request("pullRequest/updateDraft", { draft })),
+                    )
+                  }
+                >
+                  Save draft
+                </button>
+                <button
+                  className="primary-button"
+                  disabled={busy || draft.status === "approved"}
+                  onClick={() =>
+                    void run(async () =>
+                      setDraft(
+                        await bridge.request("pullRequest/approve", {
+                          draftId: draft.id,
+                          confirm: true,
+                        }),
+                      ),
+                    )
+                  }
+                >
+                  Approve exact draft
+                </button>
+                <button
+                  className="danger-button"
+                  disabled={busy || draft.status !== "approved"}
+                  onClick={() =>
+                    void run(async () => {
+                      const result = await bridge.request("pullRequest/create", {
+                        draftId: draft.id,
+                        confirm: true,
+                      });
+                      setNotice(
+                        result.status === "created"
+                          ? `PR created: ${result.url}`
+                          : "Draft handed to the supported provider; Keystone is awaiting authoritative confirmation.",
+                      );
+                    })
+                  }
+                >
+                  Create or open provider…
+                </button>
+              </div>
+            </>
+          )}
+        </section>
+      )}
+    </section>
+  );
 }
 
-function show(setter: (message: string) => void): (cause: unknown) => void { return (cause) => setter(cause instanceof Error ? cause.message : String(cause)); }
+function show(setter: (message: string) => void): (cause: unknown) => void {
+  return (cause) => setter(cause instanceof Error ? cause.message : String(cause));
+}

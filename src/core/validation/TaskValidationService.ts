@@ -40,10 +40,7 @@ import {
   type ProviderResult,
   type RepositoryCommandValidationProvider,
 } from "./ValidationProviders";
-import {
-  commandFingerprint,
-  failureFingerprint,
-} from "../execution/ExecutionAnalysisServices";
+import { commandFingerprint, failureFingerprint } from "../execution/ExecutionAnalysisServices";
 import type { IntelligenceSnapshot } from "../../shared/contracts/intelligence";
 
 export interface CommandExecutionResult {
@@ -132,15 +129,10 @@ export class CommandExecutionService {
     if (command.safety === "prohibited")
       throw new Error("Prohibited validation commands cannot execute.");
     if (command.safety === "potentially-mutating" && !command.approved)
-      throw new Error(
-        "Potentially mutating command requires explicit approval.",
-      );
-    const normalized =
-      `${command.executable} ${command.args.join(" ")}`.toLowerCase();
+      throw new Error("Potentially mutating command requires explicit approval.");
+    const normalized = `${command.executable} ${command.args.join(" ")}`.toLowerCase();
     if (
-      /(?:^|\s)(?:publish|deploy|push|login)(?:\s|$)|migrate\s+deploy|production/.test(
-        normalized,
-      )
+      /(?:^|\s)(?:publish|deploy|push|login)(?:\s|$)|migrate\s+deploy|production/.test(normalized)
     )
       throw new Error(
         "Deployment, publishing, remote push, login, and production migration commands are prohibited.",
@@ -155,9 +147,7 @@ export class CommandExecutionService {
           return cwd === boundary || cwd.startsWith(`${boundary}${sep}`);
         })
       )
-        throw new Error(
-          "Validation working directory is outside the workspace.",
-        );
+        throw new Error("Validation working directory is outside the workspace.");
     }
   }
 }
@@ -189,24 +179,18 @@ export class ValidationPlanner {
     options: ValidationPlanOptions = {},
   ): Promise<ValidationPlan> {
     const snapshot = this.snapshots.getSnapshot();
-    if (!snapshot)
-      throw new Error(
-        "Current intelligence is required for validation planning.",
-      );
+    if (!snapshot) throw new Error("Current intelligence is required for validation planning.");
     const workflow = this.workflows.get(session.workflowId);
     const task = workflow?.tasks.find((item) => item.id === session.taskId);
     const specification = workflow?.specification;
-    if (!workflow || !task || !specification)
-      throw new Error("Task/specification unavailable.");
+    if (!workflow || !task || !specification) throw new Error("Task/specification unavailable.");
     if (specification.revision !== session.specificationRevision)
       throw new Error(
         "Specification changed during execution; validation requires explicit migration or a new execution.",
       );
     const root = this.workspace.getRoots()[0];
     if (!root) throw new Error("A workspace root is required.");
-    const cwd = root.uri.startsWith("file:")
-      ? fileURLToPath(root.uri)
-      : root.uri;
+    const cwd = root.uri.startsWith("file:") ? fileURLToPath(root.uri) : root.uri;
     const scopePaths = unique([
       ...session.expectedFiles,
       ...session.observedChanges.map((item) => item.relativePath),
@@ -241,8 +225,7 @@ export class ValidationPlanner {
           acceptanceCriterionIds: criterionIds,
           scopePaths: effectivePaths,
           inputFingerprint: validationFingerprint(snapshot, effectivePaths),
-          status:
-            command?.safety === "potentially-mutating" ? "pending" : "approved",
+          status: command?.safety === "potentially-mutating" ? "pending" : "approved",
         }),
       );
       return id;
@@ -268,12 +251,7 @@ export class ValidationPlanner {
       criteria,
       "SpecificationConformanceService",
     );
-    const discovered = await discoverCommands(
-      this.workspace,
-      snapshot,
-      cwd,
-      this.commandProviders,
-    );
+    const discovered = await discoverCommands(this.workspace, snapshot, cwd, this.commandProviders);
     for (const item of discovered.filter((item) => item.type !== "unit-test"))
       add(
         item.type,
@@ -284,14 +262,9 @@ export class ValidationPlanner {
         item.command,
       );
     const testMode = options.testMode ?? "impacted";
-    const testSelections = this.testImpact.select(
-      session,
-      options.excludedTestEntityIds,
-    );
+    const testSelections = this.testImpact.select(session, options.excludedTestEntityIds);
     const selectedPaths = unique(
-      testSelections
-        .filter((item) => item.selected)
-        .map((item) => item.relativePath),
+      testSelections.filter((item) => item.selected).map((item) => item.relativePath),
     );
     const unit = discovered.find((item) => item.type === "unit-test");
     if (unit && testMode === "impacted" && selectedPaths.length) {
@@ -342,11 +315,7 @@ export class ValidationPlanner {
       criteria,
       "SpecificationConformanceService",
     );
-    if (
-      session.changedEntities.some(
-        (item) => item.changeKind === "contract-change",
-      )
-    )
+    if (session.changedEntities.some((item) => item.changeKind === "contract-change"))
       add(
         "contract-validation",
         "Validate changed contract entities and unresolved contract diagnostics.",
@@ -354,11 +323,7 @@ export class ValidationPlanner {
         criteria,
         "StaticValidationProvider",
       );
-    if (
-      session.changedEntities.some(
-        (item) => item.changeKind === "schema-change",
-      )
-    )
+    if (session.changedEntities.some((item) => item.changeKind === "schema-change"))
       add(
         "schema-validation",
         "Validate changed schema/ORM entities and unresolved mappings.",
@@ -374,8 +339,7 @@ export class ValidationPlanner {
       "StaticValidationProvider",
     );
     const securityRequired =
-      workflow.intent.category === "security" ||
-      workflow.intent.risk === "critical";
+      workflow.intent.category === "security" || workflow.intent.risk === "critical";
     add(
       "security-check",
       "Run bounded deterministic changed-scope CPG security checks when supported.",
@@ -385,9 +349,7 @@ export class ValidationPlanner {
     );
     const performanceRequired =
       workflow.intent.category === "performance" ||
-      specification.testStrategy.risks.some((item) =>
-        /performance/i.test(item),
-      );
+      specification.testStrategy.risks.some((item) => /performance/i.test(item));
     add(
       "performance-check",
       "Report deterministic complexity candidates without claiming runtime performance.",
@@ -399,10 +361,7 @@ export class ValidationPlanner {
       criteria.includes(item.id),
     )) {
       if (
-        !steps.some(
-          (step) =>
-            step.required && step.acceptanceCriterionIds.includes(criterion.id),
-        )
+        !steps.some((step) => step.required && step.acceptanceCriterionIds.includes(criterion.id))
       )
         add(
           "manual-review",
@@ -423,10 +382,7 @@ export class ValidationPlanner {
     const mappings = criteria.map((criterionId) => ({
       criterionId,
       stepIds: steps
-        .filter(
-          (step) =>
-            step.required && step.acceptanceCriterionIds.includes(criterionId),
-        )
+        .filter((step) => step.required && step.acceptanceCriterionIds.includes(criterionId))
         .map((step) => step.id),
     }));
     return ValidationPlanSchema.parse({
@@ -474,12 +430,9 @@ export class AcceptanceCriteriaValidator {
     evidence: ValidationEvidence[],
   ): ValidationRunV2["acceptanceCriteriaResults"] {
     return plan.acceptanceCriteriaMappings.map((mapping) => {
-      const mapped = mapping.stepIds.map((id) =>
-        results.find((result) => result.stepId === id),
-      );
+      const mapped = mapping.stepIds.map((id) => results.find((result) => result.stepId === id));
       const manual = plan.steps.some(
-        (step) =>
-          mapping.stepIds.includes(step.id) && step.type === "manual-review",
+        (step) => mapping.stepIds.includes(step.id) && step.type === "manual-review",
       );
       const status = mapped.some((result) => result?.status === "failed")
         ? "failed"
@@ -489,13 +442,10 @@ export class AcceptanceCriteriaValidator {
             ? "requires-manual-review"
             : mapped.some(
                   (result) =>
-                    !result ||
-                    result.status === "skipped" ||
-                    result.status === "cancelled",
+                    !result || result.status === "skipped" || result.status === "cancelled",
                 )
               ? "not-run"
-              : mapped.length &&
-                  mapped.every((result) => result?.status === "passed")
+              : mapped.length && mapped.every((result) => result?.status === "passed")
                 ? "passed"
                 : "not-verifiable";
       return CriterionResultSchema.parse({
@@ -562,19 +512,11 @@ export class ValidationStepExecutor {
     let evidence: ValidationEvidence[] = [];
     let findings: ValidationFinding[] = [];
     if (step.command) {
-      if (
-        step.command.safety === "potentially-mutating" &&
-        !step.command.approved
-      ) {
+      if (step.command.safety === "potentially-mutating" && !step.command.approved) {
         status = "skipped";
         errorTail = "Explicit approval required.";
       } else {
-        const value = await this.commands.execute(
-          step.id,
-          step.command,
-          signal,
-          progress,
-        );
+        const value = await this.commands.execute(step.id, step.command, signal, progress);
         exitCode = value.exitCode;
         outputTail = value.outputTail;
         errorTail = value.errorTail;
@@ -585,15 +527,10 @@ export class ValidationStepExecutor {
             ? "passed"
             : "failed";
         if (value.timedOut)
-          errorTail =
-            `${errorTail}\nCommand exceeded ${step.command.timeoutMs} ms.`.trim();
+          errorTail = `${errorTail}\nCommand exceeded ${step.command.timeoutMs} ms.`.trim();
       }
     } else {
-      const providerResult = await this.executeProvider(
-        step,
-        session,
-        specification,
-      );
+      const providerResult = await this.executeProvider(step, session, specification);
       status = providerResult.status;
       outputTail = providerResult.output;
       evidence = providerResult.evidence;
@@ -626,16 +563,13 @@ export class ValidationStepExecutor {
         this.findings.create({
           title: `${step.description} failed`,
           description:
-            errorTail ||
-            outputTail ||
-            "Required deterministic evidence was not satisfied.",
+            errorTail || outputTail || "Required deterministic evidence was not satisfied.",
           severity: step.required ? "blocking" : "warning",
           category: category(step.type),
           relatedEntityIds: session.expectedEntityIds,
           acceptanceCriterionIds: step.acceptanceCriterionIds,
           evidenceIds: evidence.map((item) => item.id),
-          suggestedAction:
-            "Review the evidence, repair the scoped issue, and rerun validation.",
+          suggestedAction: "Review the evidence, repair the scoped issue, and rerun validation.",
           retryRelevant: true,
         }),
       );
@@ -653,13 +587,7 @@ export class ValidationStepExecutor {
         errorTail,
         outputTruncated,
         evidenceIds: evidence.map((item) => item.id),
-        baselineClassification: classifyBaseline(
-          session,
-          step,
-          status,
-          outputTail,
-          errorTail,
-        ),
+        baselineClassification: classifyBaseline(session, step, status, outputTail, errorTail),
       }),
       evidence,
       findings,
@@ -688,9 +616,7 @@ export class ValidationStepExecutor {
       );
     if (step.type === "unexpected-file-change") {
       const invalid = session.observedChanges.some(
-        (item) =>
-          ["unexpected", "ambiguous"].includes(item.classification) &&
-          !item.userOverride,
+        (item) => ["unexpected", "ambiguous"].includes(item.classification) && !item.userOverride,
       );
       return simpleProvider(!invalid, "Unexpected change attribution checked.");
     }
@@ -699,27 +625,19 @@ export class ValidationStepExecutor {
         session.changedEntities.length > 0 || !session.observedChanges.length,
         session.changedEntities
           .slice(0, 500)
-          .map(
-            (item) =>
-              `${item.changeKind} ${item.entityType} ${item.qualifiedName}`,
-          )
+          .map((item) => `${item.changeKind} ${item.entityType} ${item.qualifiedName}`)
           .join("\n") || "No repository change required semantic mapping.",
       );
     if (
-      [
-        "static-analysis",
-        "architecture-rule",
-        "contract-validation",
-        "schema-validation",
-      ].includes(step.type)
+      ["static-analysis", "architecture-rule", "contract-validation", "schema-validation"].includes(
+        step.type,
+      )
     )
       return this.staticValidation.validate(session, step);
     if (step.type === "specification-conformance")
       return this.conformance.validate(session, specification, step);
-    if (step.type === "security-check")
-      return this.security.validate(session, step);
-    if (step.type === "performance-check")
-      return this.performance.validate(session, step);
+    if (step.type === "security-check") return this.security.validate(session, step);
+    if (step.type === "performance-check") return this.performance.validate(session, step);
     if (step.type === "manual-review" || step.type === "runtime-verification")
       return {
         status: "skipped",
@@ -754,9 +672,7 @@ export class ValidationOrchestrator {
     this.commands = new CommandExecutionService(
       workspace.getRoots().flatMap((item) => {
         try {
-          return [
-            item.uri.startsWith("file:") ? fileURLToPath(item.uri) : item.uri,
-          ];
+          return [item.uri.startsWith("file:") ? fileURLToPath(item.uri) : item.uri];
         } catch {
           return [];
         }
@@ -773,10 +689,7 @@ export class ValidationOrchestrator {
     return this.persistence.snapshot.runs.find((item) => item.id === id);
   }
 
-  async plan(
-    sessionId: string,
-    options: ValidationPlanOptions = {},
-  ): Promise<ValidationPlan> {
+  async plan(sessionId: string, options: ValidationPlanOptions = {}): Promise<ValidationPlan> {
     const session = this.executions.get(sessionId);
     if (!session || session.status !== "result-captured")
       throw new Error("Result capture is required before validation planning.");
@@ -784,26 +697,21 @@ export class ValidationOrchestrator {
     const plan = await this.planner.plan(session, options);
     await this.persistence.update((state) => ({
       ...state,
-      plans: [
-        ...state.plans.filter((item) => item.executionSessionId !== sessionId),
-        plan,
-      ].slice(-500),
+      plans: [...state.plans.filter((item) => item.executionSessionId !== sessionId), plan].slice(
+        -500,
+      ),
     }));
     await this.executions.sessions.replace(sessionId, {
       validationPlanId: plan.id,
       metrics: {
         ...session.metrics,
-        testsSelected: plan.testSelections.filter((item) => item.selected)
-          .length,
+        testsSelected: plan.testSelections.filter((item) => item.selected).length,
       },
     });
     return plan;
   }
 
-  async approveCommand(
-    planId: string,
-    stepId: string,
-  ): Promise<ValidationPlan> {
+  async approveCommand(planId: string, stepId: string): Promise<ValidationPlan> {
     let output: ValidationPlan | undefined;
     await this.persistence.update((state) => ({
       ...state,
@@ -828,10 +736,7 @@ export class ValidationOrchestrator {
     return output;
   }
 
-  async updatePlan(
-    planId: string,
-    options: ValidationPlanOptions,
-  ): Promise<ValidationPlan> {
+  async updatePlan(planId: string, options: ValidationPlanOptions): Promise<ValidationPlan> {
     const current = this.getPlan(planId);
     const session = current && this.executions.get(current.executionSessionId);
     if (!current || !session) throw new Error("Validation plan not found.");
@@ -846,12 +751,7 @@ export class ValidationOrchestrator {
 
   async run(
     planId: string,
-    progress?: (
-      step: ValidationStep,
-      index: number,
-      total: number,
-      output?: string,
-    ) => void,
+    progress?: (step: ValidationStep, index: number, total: number, output?: string) => void,
     onStarted?: (runId: string) => void,
     onlyStepId?: string,
   ): Promise<ValidationRunV2> {
@@ -861,10 +761,7 @@ export class ValidationOrchestrator {
     if (!session) throw new Error("Execution session not found.");
     const workflow = this.workflows.get(session.workflowId);
     const specification = workflow?.specification;
-    if (
-      !specification ||
-      specification.revision !== session.specificationRevision
-    )
+    if (!specification || specification.revision !== session.specificationRevision)
       throw new Error("Specification revision changed during execution.");
     const controller = new AbortController();
     const runId = crypto.randomUUID();
@@ -905,39 +802,18 @@ export class ValidationOrchestrator {
         const cached = prior?.stepResults.find(
           (item) => item.stepId === step.id && item.status === "passed",
         );
-        if (
-          step.id !== onlyStepId &&
-          cached &&
-          currentFingerprint === step.inputFingerprint
-        ) {
-          stepResults.push(
-            ValidationStepResultSchema.parse({ ...cached, reused: true }),
-          );
-          evidence.push(
-            ...prior!.evidence.filter((item) =>
-              cached.evidenceIds.includes(item.id),
-            ),
-          );
-          progress?.(
-            step,
-            index + 1,
-            plan.steps.length,
-            "Reused current fingerprint evidence.",
-          );
+        if (step.id !== onlyStepId && cached && currentFingerprint === step.inputFingerprint) {
+          stepResults.push(ValidationStepResultSchema.parse({ ...cached, reused: true }));
+          evidence.push(...prior!.evidence.filter((item) => cached.evidenceIds.includes(item.id)));
+          progress?.(step, index + 1, plan.steps.length, "Reused current fingerprint evidence.");
           continue;
         }
         if (onlyStepId && step.id !== onlyStepId) {
-          const previous = prior?.stepResults.find(
-            (item) => item.stepId === step.id,
-          );
+          const previous = prior?.stepResults.find((item) => item.stepId === step.id);
           if (previous && currentFingerprint === step.inputFingerprint) {
-            stepResults.push(
-              ValidationStepResultSchema.parse({ ...previous, reused: true }),
-            );
+            stepResults.push(ValidationStepResultSchema.parse({ ...previous, reused: true }));
             evidence.push(
-              ...(prior?.evidence.filter((item) =>
-                previous.evidenceIds.includes(item.id),
-              ) ?? []),
+              ...(prior?.evidence.filter((item) => previous.evidenceIds.includes(item.id)) ?? []),
             );
             continue;
           }
@@ -973,11 +849,7 @@ export class ValidationOrchestrator {
             status: "running",
             startedAt,
             stepResults,
-            acceptanceCriteriaResults: this.criteria.evaluate(
-              plan,
-              stepResults,
-              evidence,
-            ),
+            acceptanceCriteriaResults: this.criteria.evaluate(plan, stepResults, evidence),
             findings,
             evidence,
             summary: summary(plan, stepResults, [], findings, session),
@@ -988,14 +860,8 @@ export class ValidationOrchestrator {
         );
         progress?.(step, index + 1, plan.steps.length);
       }
-      const criterionResults = this.criteria.evaluate(
-        plan,
-        stepResults,
-        evidence,
-      );
-      const required = new Set(
-        plan.steps.filter((item) => item.required).map((item) => item.id),
-      );
+      const criterionResults = this.criteria.evaluate(plan, stepResults, evidence);
+      const required = new Set(plan.steps.filter((item) => item.required).map((item) => item.id));
       const requiredFailed = stepResults.some(
         (item) => required.has(item.stepId) && item.status === "failed",
       );
@@ -1003,18 +869,12 @@ export class ValidationOrchestrator {
         (item) => required.has(item.stepId) && item.status === "stale",
       );
       const review = criterionResults.some((item) =>
-        ["requires-manual-review", "not-run", "not-verifiable"].includes(
-          item.status,
-        ),
+        ["requires-manual-review", "not-run", "not-verifiable"].includes(item.status),
       );
-      const blocking = findings.some(
-        (item) => item.severity === "blocking" && !item.override,
-      );
+      const blocking = findings.some((item) => item.severity === "blocking" && !item.override);
       const status: ValidationRunV2["status"] = requiredStale
         ? "stale"
-        : requiredFailed ||
-            blocking ||
-            criterionResults.some((item) => item.status === "failed")
+        : requiredFailed || blocking || criterionResults.some((item) => item.status === "failed")
           ? "failed"
           : review
             ? "awaiting-user-review"
@@ -1031,13 +891,7 @@ export class ValidationOrchestrator {
         acceptanceCriteriaResults: criterionResults,
         findings,
         evidence,
-        summary: summary(
-          plan,
-          stepResults,
-          criterionResults,
-          findings,
-          session,
-        ),
+        summary: summary(plan, stepResults, criterionResults, findings, session),
         repositoryGeneration: plan.repositoryGeneration,
         repositoryFingerprint: plan.repositoryFingerprint,
         diagnostics: requiredStale
@@ -1085,19 +939,13 @@ export class ValidationOrchestrator {
           startedAt,
           completedAt: new Date().toISOString(),
           stepResults,
-          acceptanceCriteriaResults: this.criteria.evaluate(
-            plan,
-            stepResults,
-            evidence,
-          ),
+          acceptanceCriteriaResults: this.criteria.evaluate(plan, stepResults, evidence),
           findings,
           evidence,
           summary: summary(plan, stepResults, [], findings, session),
           repositoryGeneration: plan.repositoryGeneration,
           repositoryFingerprint: plan.repositoryFingerprint,
-          diagnostics: [
-            "Validation was cancelled; incomplete passes cannot support completion.",
-          ],
+          diagnostics: ["Validation was cancelled; incomplete passes cannot support completion."],
         });
         await this.saveRun(run);
         const latest = this.executions.get(session.id) ?? session;
@@ -1119,9 +967,7 @@ export class ValidationOrchestrator {
   rerunStep(runId: string, stepId: string): Promise<ValidationRunV2> {
     const prior = this.getRun(runId);
     const session = prior && this.executions.get(prior.executionSessionId);
-    const plan = session?.validationPlanId
-      ? this.getPlan(session.validationPlanId)
-      : undefined;
+    const plan = session?.validationPlanId ? this.getPlan(session.validationPlanId) : undefined;
     if (!plan || !plan.steps.some((item) => item.id === stepId))
       throw new Error("Validation step was not found in the current plan.");
     return this.run(plan.id, undefined, undefined, stepId);
@@ -1140,15 +986,11 @@ export class ValidationOrchestrator {
         const criterion = run.acceptanceCriteriaResults.find(
           (item) => item.criterionId === criterionId,
         );
-        if (!criterion)
-          throw new Error("Manual-evidence criterion was not found.");
+        if (!criterion) throw new Error("Manual-evidence criterion was not found.");
         if (
-          ![
-            "requires-manual-review",
-            "not-verifiable",
-            "not-run",
-            "partially-passed",
-          ].includes(criterion.status)
+          !["requires-manual-review", "not-verifiable", "not-run", "partially-passed"].includes(
+            criterion.status,
+          )
         )
           throw new Error(
             `Manual evidence cannot replace a criterion in ${criterion.status} state; repair, rerun, or use an explicit audited override.`,
@@ -1164,16 +1006,15 @@ export class ValidationOrchestrator {
         output = ValidationRunSchemaV2.parse({
           ...run,
           evidence: [...run.evidence, evidence].slice(-1000),
-          acceptanceCriteriaResults: run.acceptanceCriteriaResults.map(
-            (item) =>
-              item.criterionId === criterionId
-                ? {
-                    ...item,
-                    status: "passed",
-                    evidenceIds: [...item.evidenceIds, evidence.id].slice(-100),
-                    explanation: `${item.explanation} Explicit user verification was recorded as manual evidence.`,
-                  }
-                : item,
+          acceptanceCriteriaResults: run.acceptanceCriteriaResults.map((item) =>
+            item.criterionId === criterionId
+              ? {
+                  ...item,
+                  status: "passed",
+                  evidenceIds: [...item.evidenceIds, evidence.id].slice(-100),
+                  explanation: `${item.explanation} Explicit user verification was recorded as manual evidence.`,
+                }
+              : item,
           ),
           diagnostics: [
             ...run.diagnostics,
@@ -1205,8 +1046,7 @@ export class ValidationOrchestrator {
         );
         const finding = run.findings.find((item) => item.id === targetId);
         const step = run.stepResults.find((item) => item.stepId === targetId);
-        const priorStatus =
-          criterion?.status ?? finding?.severity ?? step?.status;
+        const priorStatus = criterion?.status ?? finding?.severity ?? step?.status;
         if (!priorStatus) throw new Error("Override target was not found.");
         audit = OverrideAuditSchema.parse({
           id: crypto.randomUUID(),
@@ -1240,9 +1080,7 @@ export class ValidationOrchestrator {
           findings:
             targetType === "finding"
               ? run.findings.map((item) =>
-                  item.id === targetId
-                    ? { ...item, override: { reason, at } }
-                    : item,
+                  item.id === targetId ? { ...item, override: { reason, at } } : item,
                 )
               : run.findings,
           diagnostics: [
@@ -1252,9 +1090,7 @@ export class ValidationOrchestrator {
         });
         return output;
       }),
-      overrides: audit
-        ? [...state.overrides, audit].slice(-1000)
-        : state.overrides,
+      overrides: audit ? [...state.overrides, audit].slice(-1000) : state.overrides,
     }));
     if (!output) throw new Error("Validation run not found.");
     return output;
@@ -1277,9 +1113,7 @@ export class ValidationOrchestrator {
   private saveRun(run: ValidationRunV2): Promise<unknown> {
     return this.persistence.update((state) => ({
       ...state,
-      runs: [...state.runs.filter((item) => item.id !== run.id), run].slice(
-        -1000,
-      ),
+      runs: [...state.runs.filter((item) => item.id !== run.id), run].slice(-1000),
     }));
   }
 }
@@ -1302,19 +1136,16 @@ async function discoverCommands(
   const root = workspace.getRoots()[0]!;
   try {
     const raw = JSON.parse(
-      (
-        await workspace.readTextFile(
-          workspace.fileReference(root, "package.json").uri,
-        )
-      ).slice(0, 1_000_000),
+      (await workspace.readTextFile(workspace.fileReference(root, "package.json").uri)).slice(
+        0,
+        1_000_000,
+      ),
     ) as { scripts?: Record<string, unknown>; packageManager?: unknown };
     const scripts = raw.scripts ?? {};
     const executable =
-      typeof raw.packageManager === "string" &&
-      raw.packageManager.startsWith("pnpm")
+      typeof raw.packageManager === "string" && raw.packageManager.startsWith("pnpm")
         ? "pnpm"
-        : typeof raw.packageManager === "string" &&
-            raw.packageManager.startsWith("yarn")
+        : typeof raw.packageManager === "string" && raw.packageManager.startsWith("yarn")
           ? "yarn"
           : "npm";
     for (const provider of providers) {
@@ -1388,21 +1219,13 @@ async function discoverCommands(
     });
   };
   add("pom.xml", "unit-test", "TestValidationProvider", "mvn", ["test"]);
-  add("build.gradle", "unit-test", "TestValidationProvider", "gradle", [
-    "test",
-  ]);
-  add("build.gradle.kts", "unit-test", "TestValidationProvider", "gradle", [
-    "test",
-  ]);
+  add("build.gradle", "unit-test", "TestValidationProvider", "gradle", ["test"]);
+  add("build.gradle.kts", "unit-test", "TestValidationProvider", "gradle", ["test"]);
   add("go.mod", "unit-test", "TestValidationProvider", "go", ["test", "./..."]);
   add("Cargo.toml", "unit-test", "TestValidationProvider", "cargo", ["test"]);
   add("pyproject.toml", "unit-test", "TestValidationProvider", "pytest", []);
   const project = [...paths].find((item) => /\.csproj$/i.test(item));
-  if (project)
-    add(project, "unit-test", "TestValidationProvider", "dotnet", [
-      "test",
-      project,
-    ]);
+  if (project) add(project, "unit-test", "TestValidationProvider", "dotnet", ["test", project]);
   return deduplicateCommands(output).slice(0, 50);
 }
 
@@ -1414,10 +1237,7 @@ export function validationFingerprint(
   const paths = new Set(scopePaths);
   const files = snapshot.files
     .filter((item) => all || paths.has(item.relativePath))
-    .map(
-      (item) =>
-        `${item.relativePath}:${item.contentHash ?? item.structuralHash ?? "unhashed"}`,
-    )
+    .map((item) => `${item.relativePath}:${item.contentHash ?? item.structuralHash ?? "unhashed"}`)
     .sort();
   const relationships = snapshot.relationships
     .filter((item) => {
@@ -1466,9 +1286,7 @@ function summary(
   findings: ValidationFinding[],
   session: TaskExecutionSession,
 ): ValidationRunV2["summary"] {
-  const required = new Set(
-    plan.steps.filter((item) => item.required).map((item) => item.id),
-  );
+  const required = new Set(plan.steps.filter((item) => item.required).map((item) => item.id));
   return {
     requiredStepsPassed: results.filter(
       (item) => required.has(item.stepId) && item.status === "passed",
@@ -1482,34 +1300,24 @@ function summary(
     criteriaPassed: criteria.filter((item) => item.status === "passed").length,
     criteriaFailed: criteria.filter((item) => item.status === "failed").length,
     criteriaRequiringReview: criteria.filter((item) =>
-      ["requires-manual-review", "not-run", "not-verifiable"].includes(
-        item.status,
-      ),
+      ["requires-manual-review", "not-run", "not-verifiable"].includes(item.status),
     ).length,
     newRegressions: results.filter(
-      (item) =>
-        item.status === "failed" && item.baselineClassification === "new",
+      (item) => item.status === "failed" && item.baselineClassification === "new",
     ).length,
     preExistingFailures: results.filter(
-      (item) =>
-        item.status === "failed" &&
-        item.baselineClassification === "pre-existing",
+      (item) => item.status === "failed" && item.baselineClassification === "pre-existing",
     ).length,
     unexpectedChanges: session.observedChanges.filter(
-      (item) =>
-        ["unexpected", "ambiguous"].includes(item.classification) &&
-        !item.userOverride,
+      (item) => ["unexpected", "ambiguous"].includes(item.classification) && !item.userOverride,
     ).length,
-    blockingFindings: findings.filter(
-      (item) => item.severity === "blocking" && !item.override,
-    ).length,
+    blockingFindings: findings.filter((item) => item.severity === "blocking" && !item.override)
+      .length,
     testsSelected: plan.testSelections.filter((item) => item.selected).length,
     cacheReuseCount: results.filter((item) => item.reused).length,
-    cancelledSteps: results.filter((item) => item.status === "cancelled")
-      .length,
+    cancelledSteps: results.filter((item) => item.status === "cancelled").length,
     outputTruncations: results.filter((item) => item.outputTruncated).length,
-    staleInvalidations: results.filter((item) => item.status === "stale")
-      .length,
+    staleInvalidations: results.filter((item) => item.status === "stale").length,
   };
 }
 
@@ -1543,8 +1351,7 @@ function criteriaForType(
   const matched = specification.acceptanceCriteria
     .filter(
       (item) =>
-        allowed.includes(item.id) &&
-        matcher.test(`${item.validationMethod} ${item.description}`),
+        allowed.includes(item.id) && matcher.test(`${item.validationMethod} ${item.description}`),
     )
     .map((item) => item.id);
   return matched.length ? matched : allowed;
@@ -1569,9 +1376,7 @@ function category(type: ValidationStepType): ValidationFinding["category"] {
   if (type.includes("performance")) return "performance";
   if (type.includes("contract")) return "API";
   if (type.includes("schema")) return "data";
-  return type.includes("unexpected")
-    ? "unexpected-change"
-    : "acceptance-criterion";
+  return type.includes("unexpected") ? "unexpected-change" : "acceptance-criterion";
 }
 
 class BoundedSanitizedOutput {
@@ -1643,16 +1448,11 @@ function sanitize(value: string): string {
   const printable = [...value]
     .filter((character) => {
       const code = character.charCodeAt(0);
-      return (
-        character === "\n" || character === "\t" || (code >= 32 && code !== 127)
-      );
+      return character === "\n" || character === "\t" || (code >= 32 && code !== 127);
     })
     .join("");
   return printable
-    .replace(
-      new RegExp(`${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`, "g"),
-      "",
-    )
+    .replace(new RegExp(`${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`, "g"), "")
     .replace(
       /(?:gh[pousr]_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----|(?:password|token|secret|api[_-]?key)\s*[:=]\s*[^\s]+)/gi,
       "[REDACTED]",
@@ -1676,9 +1476,6 @@ function unique(values: string[]): string[] {
 function deduplicateCommands(values: DiscoveredCommand[]): DiscoveredCommand[] {
   const output = new Map<string, DiscoveredCommand>();
   for (const value of values)
-    output.set(
-      `${value.command.executable}:${value.command.args.join("\u001f")}`,
-      value,
-    );
+    output.set(`${value.command.executable}:${value.command.args.join("\u001f")}`, value);
   return [...output.values()];
 }

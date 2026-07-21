@@ -95,26 +95,19 @@ export class KeystoneDashboardViewModelService {
     const runtime = this.source.intelligence();
     const workflows = this.source
       .workflows()
-      .filter(
-        (workflow) =>
-          !snapshot || workflow.repositoryId === snapshot.repository.id,
-      );
+      .filter((workflow) => !snapshot || workflow.repositoryId === snapshot.repository.id);
     const workflow = workflows.at(-1);
     const task =
       workflow?.tasks.find((entry) =>
         ["ready", "executing", "blocked", "stale"].includes(entry.status),
       ) ?? workflow?.tasks.find((entry) => entry.status !== "completed");
     const review = workflow ? this.source.review(workflow.id) : undefined;
-    const validation = workflow
-      ? this.source.validation(workflow.id)
-      : { passed: 0, failed: 0 };
+    const validation = workflow ? this.source.validation(workflow.id) : { passed: 0, failed: 0 };
     const status = !snapshot
       ? "intelligence-unavailable"
       : runtime.pendingUpdate
         ? "intelligence-indexing"
-        : runtime.error ||
-            runtime.health === "missing" ||
-            runtime.health === "degraded"
+        : runtime.error || runtime.health === "missing" || runtime.health === "degraded"
           ? "degraded"
           : !workflow
             ? "no-workflow"
@@ -137,8 +130,7 @@ export class KeystoneDashboardViewModelService {
           : snapshot
             ? "Intelligence ready"
             : "Intelligence unavailable",
-        runtime.error ??
-          `Trust: ${workspace.trusted ? "trusted" : "restricted"}`,
+        runtime.error ?? `Trust: ${workspace.trusted ? "trusted" : "restricted"}`,
         runtime.pendingUpdate ? "sync~spin" : snapshot ? "database" : "warning",
         "keystone.intelligence",
         { type: "intelligence-query" },
@@ -150,8 +142,7 @@ export class KeystoneDashboardViewModelService {
           item(
             `workflow:${workflow.id}`,
             "workflow",
-            workflow.specification?.title ??
-              workflow.intent.normalizedObjective,
+            workflow.specification?.title ?? workflow.intent.normalizedObjective,
             `${workflow.intent.workType ?? workflow.intent.category} · ${workflow.status}`,
             "issue-opened",
             "keystone.workflow",
@@ -223,9 +214,7 @@ export class KeystoneDashboardViewModelService {
         ),
       );
     for (const finding of review?.findings
-      .filter(
-        (entry) => entry.finding.severity === "blocking" && !entry.disposition,
-      )
+      .filter((entry) => entry.finding.severity === "blocking" && !entry.disposition)
       .slice(0, 5) ?? [])
       attention.push(
         item(
@@ -270,10 +259,7 @@ export class KeystoneDashboardViewModelService {
           "warning",
         ),
       );
-    for (const [index, warning] of this.source
-      .persistenceWarnings()
-      .slice(0, 3)
-      .entries())
+    for (const [index, warning] of this.source.persistenceWarnings().slice(0, 3).entries())
       attention.push(
         item(
           `attention:persistence:${index}`,
@@ -437,13 +423,8 @@ export class KeystoneLaunchValidationService {
             ? destination.seedEntityId
             : undefined;
       const requestedRepository =
-        "repositoryId" in destination
-          ? destination.repositoryId
-          : request.repositoryId;
-      if (
-        requestedRepository &&
-        snapshot?.repository.id !== requestedRepository
-      )
+        "repositoryId" in destination ? destination.repositoryId : request.repositoryId;
+      if (requestedRepository && snapshot?.repository.id !== requestedRepository)
         recovery = recover(
           "repository-mismatch",
           "Repository mismatch",
@@ -464,9 +445,7 @@ export class KeystoneLaunchValidationService {
     } else if (destination.type === "import-handoff") route = "/";
     else {
       workflowId = destination.workflowId;
-      const workflow = workflows.find(
-        (entry) => entry.id === destination.workflowId,
-      );
+      const workflow = workflows.find((entry) => entry.id === destination.workflowId);
       if (!workflow)
         recovery = recover(
           "workflow-missing",
@@ -490,17 +469,11 @@ export class KeystoneLaunchValidationService {
             "Open the current workflow or task plan to choose a current task.",
             workbenchRoute(workflow.id, "plan"),
           );
-        else
-          route = workbenchRoute(
-            workflow.id,
-            stageForTask(workflow, destination.taskId),
-          );
+        else route = workbenchRoute(workflow.id, stageForTask(workflow, destination.taskId));
       } else if (destination.type === "finding") {
         const found = this.source
           .review(workflow.id)
-          ?.findings.some(
-            (entry) => entry.finding.id === destination.findingId,
-          );
+          ?.findings.some((entry) => entry.finding.id === destination.findingId);
         if (!found)
           recovery = recover(
             "target-unavailable",
@@ -511,11 +484,7 @@ export class KeystoneLaunchValidationService {
         else route = workbenchRoute(workflow.id, "review");
       } else if (destination.type === "approval")
         route = workbenchRoute(workflow.id, approvalStage(workflow));
-      else
-        route = workbenchRoute(
-          workflow.id,
-          destination.stage ?? currentStage(workflow),
-        );
+      else route = workbenchRoute(workflow.id, destination.stage ?? currentStage(workflow));
     }
     if (recovery) route = recovery.fallbackRoute;
     return ValidatedNavigationSchema.parse({
@@ -568,8 +537,7 @@ export class KeystonePanelStateService {
     });
   }
   async acknowledged(sequence: number, route: ValidatedNavigation["route"]) {
-    if (sequence !== this.store.snapshot.navigationSequence)
-      return this.store.snapshot;
+    if (sequence !== this.store.snapshot.navigationSequence) return this.store.snapshot;
     const pending = this.store.snapshot.pendingNavigation;
     return this.store.update({
       pendingNavigation: undefined,
@@ -703,17 +671,11 @@ function currentStage(
 ): "define" | "plan" | "build" | "validate" | "review" | "complete" {
   if (workflow.specification?.status !== "approved") return "define";
   if (!workflow.taskGraph?.ready) return "plan";
-  if (
-    workflow.tasks.some(
-      (entry) => !["completed", "cancelled"].includes(entry.status),
-    )
-  )
+  if (workflow.tasks.some((entry) => !["completed", "cancelled"].includes(entry.status)))
     return "build";
   return "review";
 }
-function approvalStage(
-  workflow: DevelopmentWorkflowSnapshot,
-): "define" | "plan" | "review" {
+function approvalStage(workflow: DevelopmentWorkflowSnapshot): "define" | "plan" | "review" {
   if (workflow.specification?.status !== "approved") return "define";
   if (!workflow.taskGraph?.ready) return "plan";
   return "review";

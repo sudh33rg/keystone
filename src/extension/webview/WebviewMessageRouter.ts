@@ -3,10 +3,7 @@ import type { IntelligenceQueryService } from "../../core/intelligence/Intellige
 import type { IntelligenceRuntime } from "../../core/intelligence/runtime/IntelligenceRuntime";
 import type { ContinuousIntelligenceState } from "../../core/intelligence/runtime/IntelligenceRuntime";
 import type { WorkspaceStateStore } from "../../core/persistence/WorkspaceStateStore";
-import type {
-  BootstrapSnapshot,
-  WorkspaceSummary,
-} from "../../shared/contracts/domain";
+import type { BootstrapSnapshot, WorkspaceSummary } from "../../shared/contracts/domain";
 import {
   hostMessage,
   WebviewRequestSchema,
@@ -35,20 +32,30 @@ import type { OrchestrationService } from "../../core/orchestration/Orchestratio
 import type { BuildWorkspaceService } from "../../core/workflows/BuildWorkspaceService";
 import type { CopilotCustomizationService } from "../../core/copilot/CopilotCustomizationService";
 import type { ReviewCompletionService } from "../../core/review/ReviewCompletionService";
-import type { CopilotCapabilityService, CopilotToolAuditService, CopilotToolExecutionService, CopilotToolRegistry } from "../../core/copilot/CopilotIntegrationService";
+import type {
+  CopilotCapabilityService,
+  CopilotToolAuditService,
+  CopilotToolExecutionService,
+  CopilotToolRegistry,
+} from "../../core/copilot/CopilotIntegrationService";
 import type { CopilotAssistedLaunchService } from "../../core/copilot/KeystoneChatAndLaunchService";
 import type { CopilotIntegrationPersistenceStore } from "../../core/persistence/CopilotIntegrationPersistenceStore";
+import type { HealthCheckService } from "../../core/health/HealthCheckService";
 import type { BuildTaskState } from "../../shared/contracts/build";
 import type { WorkflowInstance } from "../../shared/contracts/orchestration";
 import type {
-  ContextBudget,
   DevelopmentTask,
   DevelopmentWorkflowSnapshot,
 } from "../../shared/contracts/delegation";
 import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { KeystoneDashboardState, KeystonePanelState, OpenKeystoneRequest, ValidatedNavigation } from "../../shared/contracts/nativeShell";
+import type {
+  KeystoneDashboardState,
+  KeystonePanelState,
+  OpenKeystoneRequest,
+  ValidatedNavigation,
+} from "../../shared/contracts/nativeShell";
 
 type PostMessage = (message: HostMessage) => Thenable<boolean>;
 
@@ -73,8 +80,7 @@ export interface IntelligenceServiceRegistry {
   context: TaskContextService;
   delegation: DelegationService;
   currentEditor?(): string | undefined;
-  currentSelection?():
-    { relativePath: string; startLine: number; endLine: number } | undefined;
+  currentSelection?(): { relativePath: string; startLine: number; endLine: number } | undefined;
   execution: TaskExecutionService;
   validation: ValidationOrchestrator;
   completion: CompletionDecisionService;
@@ -91,6 +97,7 @@ export interface IntelligenceServiceRegistry {
   toolExecution: CopilotToolExecutionService;
   toolAudit: CopilotToolAuditService;
   assistedLaunch: CopilotAssistedLaunchService;
+  healthCheck: HealthCheckService;
   nativeShell?: {
     dashboard(): KeystoneDashboardState;
     refreshDashboard(): KeystoneDashboardState;
@@ -101,6 +108,15 @@ export interface IntelligenceServiceRegistry {
     validate(request: OpenKeystoneRequest): ValidatedNavigation;
     open(request: OpenKeystoneRequest): Promise<ValidatedNavigation>;
   };
+}
+
+/** Convert the webview's legacy budget payload (number or partial ContextBudget) into a token ceiling. */
+function budgetTokens(
+  budget: number | { maxEstimatedTokens?: number } | undefined,
+): number | undefined {
+  if (budget == null) return undefined;
+  if (typeof budget === "number") return budget;
+  return budget.maxEstimatedTokens;
 }
 
 export class WebviewMessageRouter {
@@ -123,14 +139,12 @@ export class WebviewMessageRouter {
     private readonly postMessage: PostMessage,
     private readonly services: IntelligenceServiceRegistry,
   ) {
-    this.runtimeSubscription = services.intelligenceRuntime.onDidChange(
-      (state) => {
-        this.pendingRuntimeState = state;
-        this.runtimeEventRevision += 1;
-        this.scheduleRuntimeEvent();
-        this.scheduleOverviewEvent();
-      },
-    );
+    this.runtimeSubscription = services.intelligenceRuntime.onDidChange((state) => {
+      this.pendingRuntimeState = state;
+      this.runtimeEventRevision += 1;
+      this.scheduleRuntimeEvent();
+      this.scheduleOverviewEvent();
+    });
   }
 
   dispose(): void {
@@ -187,23 +201,16 @@ export class WebviewMessageRouter {
         );
       if (overview.generation) {
         const delegationGenerationChanged = Boolean(
-          (this.lastQueryGeneration &&
-            overview.generation !== this.lastQueryGeneration) ||
+          (this.lastQueryGeneration && overview.generation !== this.lastQueryGeneration) ||
           this.services.workflow
             .list()
-            .some(
-              (workflow) =>
-                workflow.intelligenceGeneration !== overview.generation,
-            ),
+            .some((workflow) => workflow.intelligenceGeneration !== overview.generation),
         );
         this.lastQueryGeneration = overview.generation;
-        if (delegationGenerationChanged)
-          void this.reconcileDelegationState(overview.generation);
+        if (delegationGenerationChanged) void this.reconcileDelegationState(overview.generation);
       }
     } catch (cause) {
-      this.logger.error(
-        KeystoneError.fromUnknown(cause, "intelligence.overview.event"),
-      );
+      this.logger.error(KeystoneError.fromUnknown(cause, "intelligence.overview.event"));
     }
   }
 
@@ -220,8 +227,7 @@ export class WebviewMessageRouter {
           .join("; "),
         operation: "webview.route",
         recoverable: true,
-        recommendedAction:
-          "Reload the Keystone view. If the problem continues, review the logs.",
+        recommendedAction: "Reload the Keystone view. If the problem continues, review the logs.",
         retryable: true,
         correlationId: requestId,
       });
@@ -240,11 +246,7 @@ export class WebviewMessageRouter {
     try {
       await this.route(request);
     } catch (cause) {
-      const error = KeystoneError.fromUnknown(
-        cause,
-        request.type,
-        request.requestId,
-      );
+      const error = KeystoneError.fromUnknown(cause, request.type, request.requestId);
       this.logger.error(error);
       await this.sendError(request.requestId, error);
     }
@@ -297,23 +299,35 @@ export class WebviewMessageRouter {
         await this.sendSuccess(request.requestId, this.requireNativeShell().refreshDashboard());
         return;
       case "dashboard/openAction":
-        await this.sendSuccess(request.requestId, await this.requireNativeShell().openDashboardItem(request.payload.itemId));
+        await this.sendSuccess(
+          request.requestId,
+          await this.requireNativeShell().openDashboardItem(request.payload.itemId),
+        );
         return;
       case "panel/getState":
         await this.sendSuccess(request.requestId, this.requireNativeShell().panel());
         return;
       case "panel/updateState":
-        await this.sendSuccess(request.requestId, await this.requireNativeShell().updatePanel(request.payload));
+        await this.sendSuccess(
+          request.requestId,
+          await this.requireNativeShell().updatePanel(request.payload),
+        );
         return;
       case "panel/getPendingNavigation":
         await this.sendSuccess(request.requestId, this.requireNativeShell().pending());
         return;
       case "navigation/validateTarget":
       case "navigation/resolveFallback":
-        await this.sendSuccess(request.requestId, this.requireNativeShell().validate(request.payload));
+        await this.sendSuccess(
+          request.requestId,
+          this.requireNativeShell().validate(request.payload),
+        );
         return;
       case "navigation/open":
-        await this.sendSuccess(request.requestId, await this.requireNativeShell().open(request.payload));
+        await this.sendSuccess(
+          request.requestId,
+          await this.requireNativeShell().open(request.payload),
+        );
         return;
       case "navigation/set": {
         const state =
@@ -342,18 +356,12 @@ export class WebviewMessageRouter {
         await this.sendSuccess(
           request.requestId,
           await this.cancellableQuery(request.requestId, (signal) =>
-            this.services.intelligenceQuery.diagnostics(
-              request.payload,
-              signal,
-            ),
+            this.services.intelligenceQuery.diagnostics(request.payload, signal),
           ),
         );
         return;
       case "intelligence/scan/start":
-        await this.sendSuccess(
-          request.requestId,
-          this.services.intelligenceRuntime.start(),
-        );
+        await this.sendSuccess(request.requestId, this.services.intelligenceRuntime.start());
         return;
       case "intelligence/scan/cancel":
         this.services.intelligenceRuntime.cancel();
@@ -387,10 +395,7 @@ export class WebviewMessageRouter {
         await this.sendSuccess(
           request.requestId,
           await this.cancellableQuery(request.requestId, (signal) =>
-            this.services.intelligenceQuery.neighborhood(
-              request.payload,
-              signal,
-            ),
+            this.services.intelligenceQuery.neighborhood(request.payload, signal),
           ),
         );
         return;
@@ -398,10 +403,7 @@ export class WebviewMessageRouter {
         await this.sendSuccess(
           request.requestId,
           await this.cancellableQuery(request.requestId, (signal) =>
-            this.services.intelligenceQuery.technologies(
-              request.payload,
-              signal,
-            ),
+            this.services.intelligenceQuery.technologies(request.payload, signal),
           ),
         );
         return;
@@ -409,10 +411,7 @@ export class WebviewMessageRouter {
         await this.sendSuccess(
           request.requestId,
           await this.cancellableQuery(request.requestId, (signal) =>
-            this.services.intelligenceQuery.adapterDiagnostics(
-              request.payload,
-              signal,
-            ),
+            this.services.intelligenceQuery.adapterDiagnostics(request.payload, signal),
           ),
         );
         return;
@@ -442,18 +441,12 @@ export class WebviewMessageRouter {
         await this.sendSuccess(
           request.requestId,
           await this.cancellableQuery(request.requestId, (signal) =>
-            this.services.intelligenceQuery.suggestions(
-              request.payload,
-              signal,
-            ),
+            this.services.intelligenceQuery.suggestions(request.payload, signal),
           ),
         );
         return;
       case "intelligence/query/templates":
-        await this.sendSuccess(
-          request.requestId,
-          this.services.intelligenceQuery.templates(),
-        );
+        await this.sendSuccess(request.requestId, this.services.intelligenceQuery.templates());
         return;
       case "intelligence/query/explanation":
         await this.sendSuccess(
@@ -590,26 +583,21 @@ export class WebviewMessageRouter {
         );
         return;
       case "intelligence/source/open":
-        await this.services.openSource(
-          request.payload.relativePath,
-          request.payload.range,
-        );
+        await this.services.openSource(request.payload.relativePath, request.payload.range);
         await this.sendSuccess(request.requestId);
         return;
       case "workflow/capture": {
-        const workflow = await this.cancellableQuery(
-          request.requestId,
-          (signal) =>
-            this.services.workflow.capture(
-              request.payload.text,
-              request.payload.mode,
-              request.payload.title,
-              signal,
-              {
-                workType: request.payload.workType,
-                repositoryScope: request.payload.repositoryScope,
-              },
-            ),
+        const workflow = await this.cancellableQuery(request.requestId, (signal) =>
+          this.services.workflow.capture(
+            request.payload.text,
+            request.payload.mode,
+            request.payload.title,
+            signal,
+            {
+              workType: request.payload.workType,
+              repositoryScope: request.payload.repositoryScope,
+            },
+          ),
         );
         await this.postMessage(
           hostMessage(
@@ -624,10 +612,7 @@ export class WebviewMessageRouter {
         return;
       }
       case "workflow/list":
-        await this.sendSuccess(
-          request.requestId,
-          this.services.workflow.list(),
-        );
+        await this.sendSuccess(request.requestId, this.services.workflow.list());
         return;
       case "workflow/get":
         await this.sendSuccess(
@@ -638,9 +623,7 @@ export class WebviewMessageRouter {
       case "workflow/spec/submit":
         await this.sendWorkflow(
           request.requestId,
-          await this.services.workflow.submitForReview(
-            request.payload.workflowId,
-          ),
+          await this.services.workflow.submitForReview(request.payload.workflowId),
           "Specification submitted for review.",
         );
         return;
@@ -680,9 +663,7 @@ export class WebviewMessageRouter {
       case "workflow/tasks/generate":
         await this.sendWorkflow(
           request.requestId,
-          await this.services.workflow.generateTasks(
-            request.payload.workflowId,
-          ),
+          await this.services.workflow.generateTasks(request.payload.workflowId),
           "Dependency-ordered task graph generated.",
         );
         return;
@@ -690,8 +671,7 @@ export class WebviewMessageRouter {
         const workflow = await this.services.workflow.reconcileStaleness(
           request.payload.workflowId,
         );
-        const type =
-          workflow.status === "stale" ? "workflow/stale" : "workflow/updated";
+        const type = workflow.status === "stale" ? "workflow/stale" : "workflow/updated";
         await this.postMessage(
           hostMessage(
             type,
@@ -729,9 +709,7 @@ export class WebviewMessageRouter {
               ? workspace.indexStatus === "partial"
                 ? "partial"
                 : "ready"
-              : ["scanning", "reconciling", "indexing"].includes(
-                    workspace.indexStatus,
-                  )
+              : ["scanning", "reconciling", "indexing"].includes(workspace.indexStatus)
                 ? "building"
                 : "unavailable",
             generation: snapshot?.manifest.generation ?? 0,
@@ -763,26 +741,18 @@ export class WebviewMessageRouter {
               }
             : request.payload.repositoryScope;
         if (scope.kind === "current-file" && !scope.paths.length)
-          throw new Error(
-            "No active repository file is available for current-file scope.",
-          );
-        const workflow = await this.cancellableQuery(
-          request.requestId,
-          (signal) =>
-            this.services.workflow.createWorkbenchDraft(
-              { ...request.payload, repositoryScope: scope },
-              signal,
-            ),
+          throw new Error("No active repository file is available for current-file scope.");
+        const workflow = await this.cancellableQuery(request.requestId, (signal) =>
+          this.services.workflow.createWorkbenchDraft(
+            { ...request.payload, repositoryScope: scope },
+            signal,
+          ),
         );
         await this.store.setActiveRoute(`/workbench/${workflow.id}/define`);
         await this.postMessage(
           hostMessage(
             "workbench/workflowCreated",
-            workbenchEvent(
-              workflow,
-              "define",
-              "Workflow draft created from the developer intent.",
-            ),
+            workbenchEvent(workflow, "define", "Workflow draft created from the developer intent."),
           ),
         );
         await this.sendSuccess(request.requestId, workflow);
@@ -792,33 +762,22 @@ export class WebviewMessageRouter {
         const workflow = this.services.workflow.get(request.payload.workflowId);
         await this.sendSuccess(
           request.requestId,
-          workflow
-            ? this.services.workflow.getWorkbenchState(workflow.id)
-            : undefined,
+          workflow ? this.services.workflow.getWorkbenchState(workflow.id) : undefined,
         );
         return;
       }
       case "workbench/listWorkflows":
-        await this.sendSuccess(
-          request.requestId,
-          this.services.workflow.list(),
-        );
+        await this.sendSuccess(request.requestId, this.services.workflow.list());
         return;
       case "workbench/openWorkflow":
       case "workbench/navigateStage": {
-        const state = this.services.workflow.getWorkbenchState(
-          request.payload.workflowId,
-        );
-        const target = state.stageStates.find(
-          (item) => item.stage === request.payload.stage,
-        )!;
+        const state = this.services.workflow.getWorkbenchState(request.payload.workflowId);
+        const target = state.stageStates.find((item) => item.stage === request.payload.stage)!;
         if (["blocked", "unavailable"].includes(target.status))
           throw new Error(
             `${stageTitle(target.stage)} is unavailable. ${target.blockers.map((item) => `${item.message} ${item.recoveryAction}`).join(" ")}`,
           );
-        await this.store.setActiveRoute(
-          `/workbench/${state.workflow.id}/${request.payload.stage}`,
-        );
+        await this.store.setActiveRoute(`/workbench/${state.workflow.id}/${request.payload.stage}`);
         await this.postMessage(
           hostMessage(
             "workbench/stageStateChanged",
@@ -886,8 +845,7 @@ export class WebviewMessageRouter {
       case "workbench/getClarifications":
         await this.sendSuccess(
           request.requestId,
-          this.services.workflow.get(request.payload.workflowId)
-            ?.clarifications ?? [],
+          this.services.workflow.get(request.payload.workflowId)?.clarifications ?? [],
         );
         return;
       case "workbench/answerClarification": {
@@ -974,10 +932,9 @@ export class WebviewMessageRouter {
         return;
       }
       case "workbench/generateAcceptanceCriteria": {
-        const workflow =
-          await this.services.workflow.generateAcceptanceCriteria(
-            request.payload.workflowId,
-          );
+        const workflow = await this.services.workflow.generateAcceptanceCriteria(
+          request.payload.workflowId,
+        );
         await this.sendWorkbenchWorkflow(
           request.requestId,
           workflow,
@@ -987,9 +944,7 @@ export class WebviewMessageRouter {
         return;
       }
       case "workbench/approveSpecification": {
-        const state = this.services.workflow.getWorkbenchState(
-          request.payload.workflowId,
-        );
+        const state = this.services.workflow.getWorkbenchState(request.payload.workflowId);
         if (
           state.summary.repositoryFreshness !== "current" ||
           state.summary.intelligenceFreshness !== "current"
@@ -1017,9 +972,7 @@ export class WebviewMessageRouter {
         );
         return;
       case "workbench/generateTaskPlan": {
-        const workflow = await this.services.workflow.generateTaskPlan(
-          request.payload.workflowId,
-        );
+        const workflow = await this.services.workflow.generateTaskPlan(request.payload.workflowId);
         await this.sendWorkbenchWorkflow(
           request.requestId,
           workflow,
@@ -1130,8 +1083,7 @@ export class WebviewMessageRouter {
       case "workbench/getSummary":
         await this.sendSuccess(
           request.requestId,
-          this.services.workflow.getWorkbenchState(request.payload.workflowId)
-            .summary,
+          this.services.workflow.getWorkbenchState(request.payload.workflowId).summary,
         );
         return;
       case "build/getTaskQueue":
@@ -1153,10 +1105,8 @@ export class WebviewMessageRouter {
         const workflow = this.services.workflow.get(request.payload.workflowId);
         if (
           !workflow?.specification ||
-          workflow.specification.revision !==
-            request.payload.specificationRevision ||
-          workflow.intelligenceGeneration !==
-            request.payload.intelligenceGeneration
+          workflow.specification.revision !== request.payload.specificationRevision ||
+          workflow.intelligenceGeneration !== request.payload.intelligenceGeneration
         )
           throw new Error(
             "Task selection is stale; refresh the Build workspace before selecting it.",
@@ -1168,10 +1118,7 @@ export class WebviewMessageRouter {
         await this.postMessage(
           hostMessage(
             "build/taskSelected",
-            buildEvent(
-              state,
-              "Task selected after canonical readiness refresh.",
-            ),
+            buildEvent(state, "Task selected after canonical readiness refresh."),
           ),
         );
         await this.sendSuccess(request.requestId, state);
@@ -1199,10 +1146,7 @@ export class WebviewMessageRouter {
         await this.postMessage(
           hostMessage(
             "build/taskPaused",
-            buildEvent(
-              state,
-              "Task paused; state and baseline were preserved.",
-            ),
+            buildEvent(state, "Task paused; state and baseline were preserved."),
           ),
         );
         await this.sendSuccess(request.requestId, state);
@@ -1229,10 +1173,7 @@ export class WebviewMessageRouter {
           `${request.payload.category}: ${request.payload.reason}. Next: ${request.payload.suggestedAction}`,
         );
         await this.postMessage(
-          hostMessage(
-            "build/taskBlocked",
-            buildEvent(state, "Task explicitly blocked."),
-          ),
+          hostMessage("build/taskBlocked", buildEvent(state, "Task explicitly blocked.")),
         );
         await this.sendSuccess(request.requestId, state);
         return;
@@ -1245,10 +1186,7 @@ export class WebviewMessageRouter {
         await this.postMessage(
           hostMessage(
             "build/taskChanged",
-            buildEvent(
-              state,
-              "Task cancelled; no repository action was performed.",
-            ),
+            buildEvent(state, "Task cancelled; no repository action was performed."),
           ),
         );
         await this.sendSuccess(request.requestId, state);
@@ -1263,9 +1201,7 @@ export class WebviewMessageRouter {
       }
       case "build/getCustomizations": {
         const workflow = this.services.workflow.get(request.payload.workflowId);
-        const task = workflow?.tasks.find(
-          (item) => item.id === request.payload.taskId,
-        );
+        const task = workflow?.tasks.find((item) => item.id === request.payload.taskId);
         if (!task) throw new Error("Task not found.");
         await this.sendSuccess(
           request.requestId,
@@ -1282,9 +1218,7 @@ export class WebviewMessageRouter {
           request.payload.selected,
         );
         const workflow = this.services.workflow.get(request.payload.workflowId);
-        const task = workflow?.tasks.find(
-          (item) => item.id === request.payload.taskId,
-        );
+        const task = workflow?.tasks.find((item) => item.id === request.payload.taskId);
         if (!workflow || !task) throw new Error("Task not found.");
         if (this.services.context.get(task.id))
           await this.services.context.invalidate(
@@ -1305,10 +1239,7 @@ export class WebviewMessageRouter {
         return;
       }
       case "build/getAgents":
-        await this.sendSuccess(
-          request.requestId,
-          this.services.agents.getProfiles(),
-        );
+        await this.sendSuccess(request.requestId, this.services.agents.getProfiles());
         return;
       case "copilot/capabilities":
         await this.sendSuccess(
@@ -1318,16 +1249,11 @@ export class WebviewMessageRouter {
         );
         return;
       case "copilot/refreshCapabilities": {
-        const previousFingerprint =
-          this.services.copilot.getCapabilities()?.fingerprint;
-        const capabilities = await this.cancellableQuery(
-          request.requestId,
-          (signal) => this.services.copilot.refreshCapabilities(signal),
+        const previousFingerprint = this.services.copilot.getCapabilities()?.fingerprint;
+        const capabilities = await this.cancellableQuery(request.requestId, (signal) =>
+          this.services.copilot.refreshCapabilities(signal),
         );
-        if (
-          previousFingerprint &&
-          previousFingerprint !== capabilities.fingerprint
-        )
+        if (previousFingerprint && previousFingerprint !== capabilities.fingerprint)
           await this.invalidatePreparedDelegations(
             "Detected Copilot capabilities changed; rebuild context and approve the current prompt before delegation.",
           );
@@ -1341,15 +1267,11 @@ export class WebviewMessageRouter {
         return;
       }
       case "copilot/agents":
-        await this.sendSuccess(
-          request.requestId,
-          this.services.agents.getProfiles(),
-        );
+        await this.sendSuccess(request.requestId, this.services.agents.getProfiles());
         return;
       case "copilot/refreshAgents": {
-        const agents = await this.cancellableQuery(
-          request.requestId,
-          (signal) => this.services.agents.refresh(undefined, signal),
+        const agents = await this.cancellableQuery(request.requestId, (signal) =>
+          this.services.agents.refresh(undefined, signal),
         );
         await this.postMessage(
           hostMessage("copilot/agentsChanged", {
@@ -1375,9 +1297,7 @@ export class WebviewMessageRouter {
       case "copilot/selectAgent": {
         const agent = this.services.agents.getProfile(request.payload.agentId);
         if (!agent)
-          throw new Error(
-            "The selected agent is not in the current evidence-backed registry.",
-          );
+          throw new Error("The selected agent is not in the current evidence-backed registry.");
         await this.services.agents.selections.select(
           request.payload.taskId,
           agent,
@@ -1397,39 +1317,187 @@ export class WebviewMessageRouter {
       }
       case "copilot/getCapabilities":
       case "copilot/getIntegrationStatus":
-        await this.sendSuccess(request.requestId, await this.services.integrationCapabilities.refresh());
+        await this.sendSuccess(
+          request.requestId,
+          await this.services.integrationCapabilities.refresh(),
+        );
         return;
       case "copilot/listCustomizations":
       case "copilot/refreshCustomizations":
-      case "copilot/getApplicableCustomizations": { const { task } = resolveTask(this.services.workflow, request.payload.workflowId!, request.payload.taskId!); await this.sendSuccess(request.requestId, await this.services.customizations.discoverRecords(task)); return; }
-      case "copilot/getCustomization": { const { task } = resolveTask(this.services.workflow, request.payload.workflowId!, request.payload.taskId!); const items = await this.services.customizations.discoverRecords(task); await this.sendSuccess(request.requestId, items.find((item) => item.id === request.payload.customizationId)); return; }
-      case "copilot/setCustomizationEnabled": { const { task } = resolveTask(this.services.workflow, request.payload.workflowId!, request.payload.taskId!); await this.services.customizations.select(task.id, request.payload.customizationId, request.payload.enabled); await this.sendSuccess(request.requestId, await this.services.customizations.discoverRecords(task)); return; }
-      case "copilot/listAgents": await this.sendSuccess(request.requestId, this.services.agents.getProfiles()); return;
-      case "copilot/getAgent": await this.sendSuccess(request.requestId, this.services.agents.getProfile(request.payload.agentId)); return;
-      case "copilot/recommendAgent": { const { task } = resolveTask(this.services.workflow, request.payload.workflowId!, request.payload.taskId!); await this.sendSuccess(request.requestId, this.services.agents.recommend(task)); return; }
-      case "copilot/listKeystoneTools": await this.sendSuccess(request.requestId, this.services.toolRegistry.list()); return;
-      case "copilot/getToolStatus": await this.sendSuccess(request.requestId, this.services.toolRegistry.list().find((item) => item.name === request.payload.toolName)); return;
-      case "copilot/getToolAudit": await this.sendSuccess(request.requestId, this.services.toolAudit.list().slice(-request.payload.limit)); return;
-      case "copilot/testTool": await this.sendSuccess(request.requestId, await this.cancellableQuery(request.requestId, (signal) => this.services.toolExecution.execute(request.payload.toolName, request.payload.input, signal))); return;
-      case "copilot/prepareAssistedLaunch": { const { task } = resolveTask(this.services.workflow, request.payload.workflowId!, request.payload.taskId!); const customizations = await this.services.customizations.discoverRecords(task); await this.sendSuccess(request.requestId, await this.services.assistedLaunch.prepare(request.payload.workflowId!, request.payload.taskId!, customizations, { ...(request.payload.selectedAgentId ? { selectedAgentId: request.payload.selectedAgentId } : {}), ...(request.payload.intendedAgentLabel ? { intendedAgentLabel: request.payload.intendedAgentLabel } : {}) })); return; }
-      case "copilot/getPreparedPrompt": await this.sendSuccess(request.requestId, this.services.assistedLaunch.get(request.payload.launchId)); return;
-      case "copilot/openChat": await this.sendSuccess(request.requestId, await this.services.assistedLaunch.open(request.payload.launchId)); return;
-      case "copilot/copyPrompt": await this.sendSuccess(request.requestId, await this.services.assistedLaunch.copy(request.payload.launchId)); return;
-      case "copilot/confirmSubmission": await this.sendSuccess(request.requestId, await this.services.assistedLaunch.confirm(request.payload.launchId)); return;
-      case "copilot/cancelAssistedLaunch": await this.sendSuccess(request.requestId, await this.services.assistedLaunch.cancel(request.payload.launchId)); return;
-      case "copilot/getParticipantStatus": { const capabilities = await this.services.integrationCapabilities.refresh(); await this.sendSuccess(request.requestId, { available: capabilities.chatParticipantAvailable, enabled: this.services.copilotIntegrationStore.snapshot.settings.participantEnabled, ...(!capabilities.chatParticipantAvailable ? { limitation: capabilities.limitations.find((item) => item.includes("participant")) ?? "Chat participant unavailable." } : {}) }); return; }
-      case "copilot/openParticipant": await this.services.copilot.openCopilot(); await this.sendSuccess(request.requestId, undefined); return;
-      case "copilot/disableParticipant": await this.services.copilotIntegrationStore.update((state) => ({ ...state, settings: { ...state.settings, participantEnabled: false } })); await this.sendSuccess(request.requestId, { enabled: false as const }); return;
+      case "copilot/getApplicableCustomizations": {
+        const { task } = resolveTask(
+          this.services.workflow,
+          request.payload.workflowId!,
+          request.payload.taskId!,
+        );
+        await this.sendSuccess(
+          request.requestId,
+          await this.services.customizations.discoverRecords(task),
+        );
+        return;
+      }
+      case "copilot/getCustomization": {
+        const { task } = resolveTask(
+          this.services.workflow,
+          request.payload.workflowId!,
+          request.payload.taskId!,
+        );
+        const items = await this.services.customizations.discoverRecords(task);
+        await this.sendSuccess(
+          request.requestId,
+          items.find((item) => item.id === request.payload.customizationId),
+        );
+        return;
+      }
+      case "copilot/setCustomizationEnabled": {
+        const { task } = resolveTask(
+          this.services.workflow,
+          request.payload.workflowId!,
+          request.payload.taskId!,
+        );
+        await this.services.customizations.select(
+          task.id,
+          request.payload.customizationId,
+          request.payload.enabled,
+        );
+        await this.sendSuccess(
+          request.requestId,
+          await this.services.customizations.discoverRecords(task),
+        );
+        return;
+      }
+      case "copilot/listAgents":
+        await this.sendSuccess(request.requestId, this.services.agents.getProfiles());
+        return;
+      case "copilot/getAgent":
+        await this.sendSuccess(
+          request.requestId,
+          this.services.agents.getProfile(request.payload.agentId),
+        );
+        return;
+      case "copilot/recommendAgent": {
+        const { task } = resolveTask(
+          this.services.workflow,
+          request.payload.workflowId!,
+          request.payload.taskId!,
+        );
+        await this.sendSuccess(request.requestId, this.services.agents.recommend(task));
+        return;
+      }
+      case "copilot/listKeystoneTools":
+        await this.sendSuccess(request.requestId, this.services.toolRegistry.list());
+        return;
+      case "copilot/getToolStatus":
+        await this.sendSuccess(
+          request.requestId,
+          this.services.toolRegistry.list().find((item) => item.name === request.payload.toolName),
+        );
+        return;
+      case "copilot/getToolAudit":
+        await this.sendSuccess(
+          request.requestId,
+          this.services.toolAudit.list().slice(-request.payload.limit),
+        );
+        return;
+      case "copilot/testTool":
+        await this.sendSuccess(
+          request.requestId,
+          await this.cancellableQuery(request.requestId, (signal) =>
+            this.services.toolExecution.execute(
+              request.payload.toolName,
+              request.payload.input,
+              signal,
+            ),
+          ),
+        );
+        return;
+      case "copilot/prepareAssistedLaunch": {
+        const { task } = resolveTask(
+          this.services.workflow,
+          request.payload.workflowId!,
+          request.payload.taskId!,
+        );
+        const customizations = await this.services.customizations.discoverRecords(task);
+        await this.sendSuccess(
+          request.requestId,
+          await this.services.assistedLaunch.prepare(
+            request.payload.workflowId!,
+            request.payload.taskId!,
+            customizations,
+            {
+              ...(request.payload.selectedAgentId
+                ? { selectedAgentId: request.payload.selectedAgentId }
+                : {}),
+              ...(request.payload.intendedAgentLabel
+                ? { intendedAgentLabel: request.payload.intendedAgentLabel }
+                : {}),
+            },
+          ),
+        );
+        return;
+      }
+      case "copilot/getPreparedPrompt":
+        await this.sendSuccess(
+          request.requestId,
+          this.services.assistedLaunch.get(request.payload.launchId),
+        );
+        return;
+      case "copilot/openChat":
+        await this.sendSuccess(
+          request.requestId,
+          await this.services.assistedLaunch.open(request.payload.launchId),
+        );
+        return;
+      case "copilot/copyPrompt":
+        await this.sendSuccess(
+          request.requestId,
+          await this.services.assistedLaunch.copy(request.payload.launchId),
+        );
+        return;
+      case "copilot/confirmSubmission":
+        await this.sendSuccess(
+          request.requestId,
+          await this.services.assistedLaunch.confirm(request.payload.launchId),
+        );
+        return;
+      case "copilot/cancelAssistedLaunch":
+        await this.sendSuccess(
+          request.requestId,
+          await this.services.assistedLaunch.cancel(request.payload.launchId),
+        );
+        return;
+      case "copilot/getParticipantStatus": {
+        const capabilities = await this.services.integrationCapabilities.refresh();
+        await this.sendSuccess(request.requestId, {
+          available: capabilities.chatParticipantAvailable,
+          enabled: this.services.copilotIntegrationStore.snapshot.settings.participantEnabled,
+          ...(!capabilities.chatParticipantAvailable
+            ? {
+                limitation:
+                  capabilities.limitations.find((item) => item.includes("participant")) ??
+                  "Chat participant unavailable.",
+              }
+            : {}),
+        });
+        return;
+      }
+      case "copilot/openParticipant":
+        await this.services.copilot.openCopilot();
+        await this.sendSuccess(request.requestId, undefined);
+        return;
+      case "copilot/disableParticipant":
+        await this.services.copilotIntegrationStore.update((state) => ({
+          ...state,
+          settings: { ...state.settings, participantEnabled: false },
+        }));
+        await this.sendSuccess(request.requestId, { enabled: false as const });
+        return;
       case "build/selectAgent": {
         const agent = request.payload.agentId
           ? this.services.agents.getProfile(request.payload.agentId)
-          : await this.services.agents.addUnverifiedAlias(
-              request.payload.intendedAgentLabel!,
-            );
+          : await this.services.agents.addUnverifiedAlias(request.payload.intendedAgentLabel!);
         if (!agent)
-          throw new Error(
-            "The selected agent is not in the current evidence-backed registry.",
-          );
+          throw new Error("The selected agent is not in the current evidence-backed registry.");
         await this.services.agents.selections.select(
           request.payload.taskId,
           agent,
@@ -1463,7 +1531,7 @@ export class WebviewMessageRouter {
         const context = await this.buildContext(
           request.payload.workflowId,
           request.payload.taskId,
-          request.payload.budget,
+          budgetTokens(request.payload.budget),
           request.payload.pinnedEntityIds,
           request.payload.pinnedFiles,
           request.requestId,
@@ -1491,10 +1559,7 @@ export class WebviewMessageRouter {
       case "build/updateContextItem":
         await this.sendSuccess(
           request.requestId,
-          await this.services.context.restore(
-            request.payload.taskId,
-            request.payload.itemId,
-          ),
+          await this.services.context.restore(request.payload.taskId, request.payload.itemId),
         );
         return;
       case "context/removeItem":
@@ -1512,21 +1577,13 @@ export class WebviewMessageRouter {
       case "build/pinContextItem":
         await this.sendSuccess(
           request.requestId,
-          await this.services.context.pin(
-            request.payload.taskId,
-            request.payload.itemId,
-            true,
-          ),
+          await this.services.context.pin(request.payload.taskId, request.payload.itemId, true),
         );
         return;
       case "context/unpinItem":
         await this.sendSuccess(
           request.requestId,
-          await this.services.context.pin(
-            request.payload.taskId,
-            request.payload.itemId,
-            false,
-          ),
+          await this.services.context.pin(request.payload.taskId, request.payload.itemId, false),
         );
         return;
       case "context/addEntity": {
@@ -1534,16 +1591,16 @@ export class WebviewMessageRouter {
         const context = await this.buildContext(
           request.payload.workflowId,
           request.payload.taskId,
-          existing?.budget,
+          existing?.budget.requestedTokens,
           [
             ...(existing?.items
-              .filter((item) => item.pinned && item.sourceEntityId)
-              .map((item) => item.sourceEntityId!) ?? []),
+              .filter((item) => item.pinned && item.sourceReference.symbolId)
+              .map((item) => item.sourceReference.symbolId!) ?? []),
             request.payload.entityId,
           ],
           existing?.items
-            .filter((item) => item.pinned && item.relativePath)
-            .map((item) => item.relativePath!),
+            .filter((item) => item.pinned && item.sourceReference.filePath)
+            .map((item) => item.sourceReference.filePath!),
           request.requestId,
         );
         await this.sendSuccess(request.requestId, context);
@@ -1554,14 +1611,14 @@ export class WebviewMessageRouter {
         const context = await this.buildContext(
           request.payload.workflowId,
           request.payload.taskId,
-          existing?.budget,
+          existing?.budget.requestedTokens,
           existing?.items
-            .filter((item) => item.pinned && item.sourceEntityId)
-            .map((item) => item.sourceEntityId!),
+            .filter((item) => item.pinned && item.sourceReference.symbolId)
+            .map((item) => item.sourceReference.symbolId!),
           [
             ...(existing?.items
-              .filter((item) => item.pinned && item.relativePath)
-              .map((item) => item.relativePath!) ?? []),
+              .filter((item) => item.pinned && item.sourceReference.filePath)
+              .map((item) => item.sourceReference.filePath!) ?? []),
             request.payload.relativePath,
           ],
           request.requestId,
@@ -1574,13 +1631,13 @@ export class WebviewMessageRouter {
         const context = await this.buildContext(
           request.payload.workflowId,
           request.payload.taskId,
-          request.payload.budget,
+          budgetTokens(request.payload.budget),
           existing?.items
-            .filter((item) => item.pinned && item.sourceEntityId)
-            .map((item) => item.sourceEntityId!),
+            .filter((item) => item.pinned && item.sourceReference.symbolId)
+            .map((item) => item.sourceReference.symbolId!),
           existing?.items
-            .filter((item) => item.pinned && item.relativePath)
-            .map((item) => item.relativePath!),
+            .filter((item) => item.pinned && item.sourceReference.filePath)
+            .map((item) => item.sourceReference.filePath!),
           request.requestId,
         );
         await this.sendSuccess(request.requestId, context);
@@ -1598,10 +1655,7 @@ export class WebviewMessageRouter {
       case "delegation/prepare":
       case "build/prepareDelegation": {
         const context = this.services.context.get(request.payload.taskId);
-        if (!context)
-          throw new Error(
-            "Build and review context before preparing delegation.",
-          );
+        if (!context) throw new Error("Build and review context before preparing delegation.");
         const prepared = await this.services.delegation.prepare(
           request.payload.workflowId,
           request.payload.taskId,
@@ -1612,8 +1666,7 @@ export class WebviewMessageRouter {
           hostMessage("delegation/prepared", {
             taskId: request.payload.taskId,
             status: "awaiting-context-review",
-            message:
-              "Deterministic prompt prepared; explicit approval is required.",
+            message: "Deterministic prompt prepared; explicit approval is required.",
           }),
         );
         await this.sendSuccess(request.requestId, prepared);
@@ -1642,16 +1695,14 @@ export class WebviewMessageRouter {
         const context = this.services.context.get(request.payload.taskId);
         if (!context) throw new Error("Reviewed context is required.");
         try {
-          const session = await this.cancellableQuery(
-            request.requestId,
-            (signal) =>
-              this.services.delegation.start(
-                request.payload.workflowId,
-                request.payload.taskId,
-                context,
-                request.payload.overlapOverride,
-                signal,
-              ),
+          const session = await this.cancellableQuery(request.requestId, (signal) =>
+            this.services.delegation.start(
+              request.payload.workflowId,
+              request.payload.taskId,
+              context,
+              request.payload.overlapOverride,
+              signal,
+            ),
           );
           await this.postMessage(
             hostMessage("delegation/started", {
@@ -1679,11 +1730,8 @@ export class WebviewMessageRouter {
         await this.sendSuccess(request.requestId);
         return;
       case "delegation/copyPrompt": {
-        const prepared = this.services.delegation.getPrepared(
-          request.payload.taskId,
-        );
-        if (!prepared?.approved)
-          throw new Error("Approve the exact prompt before copying it.");
+        const prepared = this.services.delegation.getPrepared(request.payload.taskId);
+        if (!prepared?.approved) throw new Error("Approve the exact prompt before copying it.");
         await this.services.copilot.copyPrompt(prepared.prompt);
         await this.sendSuccess(request.requestId);
         return;
@@ -1706,16 +1754,13 @@ export class WebviewMessageRouter {
         return;
       }
       case "delegation/confirmStopped": {
-        const session = await this.services.delegation.confirmStopped(
-          request.payload.sessionId,
-        );
+        const session = await this.services.delegation.confirmStopped(request.payload.sessionId);
         await this.postMessage(
           hostMessage("delegation/statusChanged", {
             taskId: session.taskId,
             sessionId: session.id,
             status: session.status,
-            message:
-              "External execution stopped; completion remains unverified.",
+            message: "External execution stopped; completion remains unverified.",
           }),
         );
         await this.sendSuccess(request.requestId, session);
@@ -1732,21 +1777,16 @@ export class WebviewMessageRouter {
             taskId: session.taskId,
             sessionId: session.id,
             status: session.status,
-            message:
-              "Keystone tracking cancelled; unsupported external work may continue.",
+            message: "Keystone tracking cancelled; unsupported external work may continue.",
           }),
         );
         await this.sendSuccess(request.requestId, session);
         return;
       }
       case "delegation/status": {
-        const session = this.services.delegation.sessions.get(
-          request.payload.sessionId,
-        );
+        const session = this.services.delegation.sessions.get(request.payload.sessionId);
         if (session) {
-          const refreshed = await this.services.delegation.refreshChanges(
-            session.id,
-          );
+          const refreshed = await this.services.delegation.refreshChanges(session.id);
           await this.sendSuccess(request.requestId, refreshed);
         } else await this.sendSuccess(request.requestId);
         return;
@@ -1770,10 +1810,7 @@ export class WebviewMessageRouter {
         return;
       }
       case "execution/list":
-        await this.sendSuccess(
-          request.requestId,
-          this.services.execution.sessions.list(),
-        );
+        await this.sendSuccess(request.requestId, this.services.execution.sessions.list());
         return;
       case "execution/get":
       case "build/getExecutionState":
@@ -1783,9 +1820,7 @@ export class WebviewMessageRouter {
         );
         return;
       case "execution/confirmStarted": {
-        const session = await this.services.execution.confirmStarted(
-          request.payload.sessionId,
-        );
+        const session = await this.services.execution.confirmStarted(request.payload.sessionId);
         await this.postMessage(
           hostMessage("execution/statusChanged", {
             sessionId: session.id,
@@ -1798,9 +1833,7 @@ export class WebviewMessageRouter {
         return;
       }
       case "execution/confirmStopped": {
-        const session = await this.services.execution.confirmStopped(
-          request.payload.sessionId,
-        );
+        const session = await this.services.execution.confirmStopped(request.payload.sessionId);
         await this.postMessage(
           hostMessage("execution/statusChanged", {
             sessionId: session.id,
@@ -1813,16 +1846,13 @@ export class WebviewMessageRouter {
         return;
       }
       case "execution/cancel": {
-        const session = await this.services.execution.cancel(
-          request.payload.sessionId,
-        );
+        const session = await this.services.execution.cancel(request.payload.sessionId);
         await this.postMessage(
           hostMessage("execution/statusChanged", {
             sessionId: session.id,
             taskId: session.taskId,
             status: session.status,
-            message:
-              "Execution tracking cancelled; no completion claim was made.",
+            message: "Execution tracking cancelled; no completion claim was made.",
           }),
         );
         await this.sendSuccess(request.requestId, session);
@@ -1831,9 +1861,7 @@ export class WebviewMessageRouter {
       case "execution/observeChanges":
       case "build/getRepositoryChanges":
       case "build/refreshChanges": {
-        const session = await this.services.execution.observeChanges(
-          request.payload.sessionId,
-        );
+        const session = await this.services.execution.observeChanges(request.payload.sessionId);
         await this.postMessage(
           hostMessage("execution/repositoryChanged", {
             sessionId: session.id,
@@ -1869,21 +1897,17 @@ export class WebviewMessageRouter {
             sessionId: session.id,
             taskId: session.taskId,
             mode: session.resultCapture!.mode,
-            message:
-              "Result captured as untrusted claims plus repository observations.",
+            message: "Result captured as untrusted claims plus repository observations.",
           }),
         );
         await this.sendSuccess(request.requestId, session);
         return;
       }
       case "validation/plan": {
-        const plan = await this.services.validation.plan(
-          request.payload.sessionId,
-          {
-            testMode: request.payload.testMode,
-            excludedTestEntityIds: request.payload.excludedTestEntityIds,
-          },
-        );
+        const plan = await this.services.validation.plan(request.payload.sessionId, {
+          testMode: request.payload.testMode,
+          excludedTestEntityIds: request.payload.excludedTestEntityIds,
+        });
         await this.postMessage(
           hostMessage("validation/planned", {
             sessionId: plan.executionSessionId,
@@ -1955,8 +1979,7 @@ export class WebviewMessageRouter {
             sessionId: plan.executionSessionId,
             runId: run.id,
             status: run.status,
-            message:
-              "Validation completed; completion remains a separate explicit decision.",
+            message: "Validation completed; completion remains a separate explicit decision.",
           }),
         );
         await this.sendSuccess(request.requestId, run);
@@ -1982,18 +2005,14 @@ export class WebviewMessageRouter {
       case "build/getAcceptanceCriteriaState":
         await this.sendSuccess(
           request.requestId,
-          this.services.validation.getRun(request.payload.runId)
-            ?.acceptanceCriteriaResults ?? [],
+          this.services.validation.getRun(request.payload.runId)?.acceptanceCriteriaResults ?? [],
         );
         return;
       case "validation/rerunStep":
       case "build/rerunValidation":
         await this.sendSuccess(
           request.requestId,
-          await this.services.validation.rerunStep(
-            request.payload.runId,
-            request.payload.stepId,
-          ),
+          await this.services.validation.rerunStep(request.payload.runId, request.payload.stepId),
         );
         return;
       case "validation/override":
@@ -2034,8 +2053,7 @@ export class WebviewMessageRouter {
           hostMessage("retry/prepared", {
             sessionId: request.payload.sessionId,
             retryId: plan.id,
-            message:
-              "Focused repair context prepared; previous attempts remain immutable.",
+            message: "Focused repair context prepared; previous attempts remain immutable.",
           }),
         );
         await this.sendSuccess(request.requestId, plan);
@@ -2051,12 +2069,8 @@ export class WebviewMessageRouter {
         return;
       case "retry/start":
       case "build/startRetry": {
-        const session = await this.services.execution.startRetry(
-          request.payload.sessionId,
-        );
-        const plan = this.services.execution.getRetry(
-          request.payload.sessionId,
-        )!;
+        const session = await this.services.execution.startRetry(request.payload.sessionId);
+        const plan = this.services.execution.getRetry(request.payload.sessionId)!;
         await this.postMessage(
           hostMessage("retry/started", {
             sessionId: session.id,
@@ -2071,16 +2085,13 @@ export class WebviewMessageRouter {
       case "completion/evaluate":
       case "build/getCompletionReadiness":
       case "build/requestCompletionReview": {
-        const decision = this.services.completion.evaluate(
-          request.payload.sessionId,
-        );
+        const decision = this.services.completion.evaluate(request.payload.sessionId);
         await this.postMessage(
           hostMessage("completion/readinessChanged", {
             sessionId: request.payload.sessionId,
             status: decision.status,
             blockers: decision.blockers.length,
-            message:
-              "Completion evaluated only from current validation and repository evidence.",
+            message: "Completion evaluated only from current validation and repository evidence.",
           }),
         );
         await this.sendSuccess(request.requestId, decision);
@@ -2105,8 +2116,7 @@ export class WebviewMessageRouter {
           await this.postMessage(
             hostMessage("completion/dependenciesUnlocked", {
               taskIds: result.unlockedTaskIds,
-              message:
-                "Dependencies satisfied; tasks unlocked but were not delegated.",
+              message: "Dependencies satisfied; tasks unlocked but were not delegated.",
             }),
           );
         if (result.report)
@@ -2114,74 +2124,164 @@ export class WebviewMessageRouter {
             hostMessage("completion/workflowCompleted", {
               workflowId: result.report.workflowId,
               reportId: result.report.id,
-              message:
-                "All tasks completed; local workflow report generated without PR or push.",
+              message: "All tasks completed; local workflow report generated without PR or push.",
             }),
           );
         await this.sendSuccess(request.requestId, result);
         return;
       }
       case "review/getState":
-        await this.sendSuccess(request.requestId, this.services.review.getState(request.payload.workflowId));
+        await this.sendSuccess(
+          request.requestId,
+          this.services.review.getState(request.payload.workflowId),
+        );
         return;
       case "review/getSummary":
-        await this.sendSuccess(request.requestId, this.services.review.getState(request.payload.workflowId).summary);
+        await this.sendSuccess(
+          request.requestId,
+          this.services.review.getState(request.payload.workflowId).summary,
+        );
         return;
       case "review/getTraceability":
-        await this.sendSuccess(request.requestId, this.services.review.getState(request.payload.workflowId).traceability);
+        await this.sendSuccess(
+          request.requestId,
+          this.services.review.getState(request.payload.workflowId).traceability,
+        );
         return;
       case "review/getChanges":
-        await this.sendSuccess(request.requestId, this.services.review.getState(request.payload.workflowId).changes);
+        await this.sendSuccess(
+          request.requestId,
+          this.services.review.getState(request.payload.workflowId).changes,
+        );
         return;
       case "review/getQa":
-        await this.sendSuccess(request.requestId, this.services.review.getState(request.payload.workflowId).findings.filter((item) => item.source === "qa"));
+        await this.sendSuccess(
+          request.requestId,
+          this.services.review
+            .getState(request.payload.workflowId)
+            .findings.filter((item) => item.source === "qa"),
+        );
         return;
       case "review/getSecurity":
-        await this.sendSuccess(request.requestId, this.services.review.getState(request.payload.workflowId).findings.filter((item) => item.source === "security"));
+        await this.sendSuccess(
+          request.requestId,
+          this.services.review
+            .getState(request.payload.workflowId)
+            .findings.filter((item) => item.source === "security"),
+        );
         return;
       case "review/getPerformance":
-        await this.sendSuccess(request.requestId, this.services.review.getState(request.payload.workflowId).findings.filter((item) => item.source === "performance"));
+        await this.sendSuccess(
+          request.requestId,
+          this.services.review
+            .getState(request.payload.workflowId)
+            .findings.filter((item) => item.source === "performance"),
+        );
         return;
       case "review/getDocumentation":
-        await this.sendSuccess(request.requestId, this.services.review.getState(request.payload.workflowId).findings.filter((item) => item.source === "documentation"));
+        await this.sendSuccess(
+          request.requestId,
+          this.services.review
+            .getState(request.payload.workflowId)
+            .findings.filter((item) => item.source === "documentation"),
+        );
         return;
       case "review/getDiff": {
         const controller = new AbortController();
         this.queryControllers.set(request.requestId, controller);
         try {
-          await this.sendSuccess(request.requestId, await this.services.delivery.adapter.diff(this.services.delivery.root, request.payload.path, "working-head", request.payload.maxBytes, controller.signal));
-        } finally { this.queryControllers.delete(request.requestId); }
+          await this.sendSuccess(
+            request.requestId,
+            await this.services.delivery.adapter.diff(
+              this.services.delivery.root,
+              request.payload.path,
+              "working-head",
+              request.payload.maxBytes,
+              controller.signal,
+            ),
+          );
+        } finally {
+          this.queryControllers.delete(request.requestId);
+        }
         return;
       }
       case "review/attributeChange": {
-        const session = this.services.execution.sessions.list().filter((item) => item.workflowId === request.payload.workflowId && item.observedChanges.some((change) => change.relativePath === request.payload.path)).at(-1);
-        if (!session) throw new Error("No retained task-attributed execution change matches this path.");
-        const value = await this.services.execution.attributeChange(session.id, request.payload.path, request.payload.classification, request.payload.reason);
-        await this.publishReviewEvent("review/stateChanged", request.payload.workflowId, `Change ${request.payload.path} marked ${request.payload.classification} by the reviewer.`);
+        const session = this.services.execution.sessions
+          .list()
+          .filter(
+            (item) =>
+              item.workflowId === request.payload.workflowId &&
+              item.observedChanges.some((change) => change.relativePath === request.payload.path),
+          )
+          .at(-1);
+        if (!session)
+          throw new Error("No retained task-attributed execution change matches this path.");
+        const value = await this.services.execution.attributeChange(
+          session.id,
+          request.payload.path,
+          request.payload.classification,
+          request.payload.reason,
+        );
+        await this.publishReviewEvent(
+          "review/stateChanged",
+          request.payload.workflowId,
+          `Change ${request.payload.path} marked ${request.payload.classification} by the reviewer.`,
+        );
         await this.sendSuccess(request.requestId, value);
         return;
       }
       case "review/addNote": {
         const note = await this.services.review.addNote(request.payload);
-        await this.publishReviewEvent("review/noteChanged", request.payload.workflowId, "Review note added.");
+        await this.publishReviewEvent(
+          "review/noteChanged",
+          request.payload.workflowId,
+          "Review note added.",
+        );
         await this.sendSuccess(request.requestId, note);
         return;
       }
       case "review/updateNote": {
-        const note = await this.services.review.updateNote(request.payload.workflowId, request.payload.noteId, request.payload.text, request.payload.blocking);
-        await this.publishReviewEvent("review/noteChanged", request.payload.workflowId, "Review note updated.");
+        const note = await this.services.review.updateNote(
+          request.payload.workflowId,
+          request.payload.noteId,
+          request.payload.text,
+          request.payload.blocking,
+        );
+        await this.publishReviewEvent(
+          "review/noteChanged",
+          request.payload.workflowId,
+          "Review note updated.",
+        );
         await this.sendSuccess(request.requestId, note);
         return;
       }
       case "review/resolveNote": {
-        const note = await this.services.review.resolveNote(request.payload.workflowId, request.payload.noteId, request.payload.resolution);
-        await this.publishReviewEvent("review/noteChanged", request.payload.workflowId, "Review note resolved.");
+        const note = await this.services.review.resolveNote(
+          request.payload.workflowId,
+          request.payload.noteId,
+          request.payload.resolution,
+        );
+        await this.publishReviewEvent(
+          "review/noteChanged",
+          request.payload.workflowId,
+          "Review note resolved.",
+        );
         await this.sendSuccess(request.requestId, note);
         return;
       }
       case "review/dispositionFinding": {
-        const value = await this.services.review.disposition(request.payload.workflowId, request.payload.findingId, request.payload.disposition, request.payload.reason, request.payload.scope);
-        await this.publishReviewEvent("review/stateChanged", request.payload.workflowId, "Finding disposition recorded with explicit user approval.");
+        const value = await this.services.review.disposition(
+          request.payload.workflowId,
+          request.payload.findingId,
+          request.payload.disposition,
+          request.payload.reason,
+          request.payload.scope,
+        );
+        await this.publishReviewEvent(
+          "review/stateChanged",
+          request.payload.workflowId,
+          "Finding disposition recorded with explicit user approval.",
+        );
         await this.sendSuccess(request.requestId, value);
         return;
       }
@@ -2189,228 +2289,607 @@ export class WebviewMessageRouter {
       case "review/returnToBuild":
       case "review/returnToDefine": {
         const value = await this.services.review.requestChanges(request.payload);
-        await this.publishReviewEvent("review/changesRequested", request.payload.workflowId, request.type === "review/returnToDefine" ? "Review returned to Define with retained history." : "Review returned to Build with retained history.");
+        await this.publishReviewEvent(
+          "review/changesRequested",
+          request.payload.workflowId,
+          request.type === "review/returnToDefine"
+            ? "Review returned to Define with retained history."
+            : "Review returned to Build with retained history.",
+        );
         await this.sendSuccess(request.requestId, value);
         return;
       }
       case "review/createFollowUpTask": {
         const value = await this.services.review.createFollowUp(request.payload);
-        await this.publishReviewEvent("review/changesRequested", request.payload.workflowId, "Follow-up task created from Review.");
+        await this.publishReviewEvent(
+          "review/changesRequested",
+          request.payload.workflowId,
+          "Follow-up task created from Review.",
+        );
         await this.sendSuccess(request.requestId, value);
         return;
       }
       case "review/getReadiness": {
         const value = this.services.review.getState(request.payload.workflowId);
-        await this.sendSuccess(request.requestId, { ready: value.readinessBlockers.length === 0, blockers: value.readinessBlockers, warnings: value.warnings });
+        await this.sendSuccess(request.requestId, {
+          ready: value.readinessBlockers.length === 0,
+          blockers: value.readinessBlockers,
+          warnings: value.warnings,
+        });
         return;
       }
       case "review/getPrChecklist":
-        await this.sendSuccess(request.requestId, this.services.review.getState(request.payload.workflowId).checklist);
+        await this.sendSuccess(
+          request.requestId,
+          this.services.review.getState(request.payload.workflowId).checklist,
+        );
         return;
       case "review/getPrDraft":
-        await this.sendSuccess(request.requestId, this.services.review.getState(request.payload.workflowId).prDraft);
+        await this.sendSuccess(
+          request.requestId,
+          this.services.review.getState(request.payload.workflowId).prDraft,
+        );
         return;
       case "review/generatePrDraft":
       case "complete/preparePr": {
         const workflowId = request.payload.workflowId;
-        const state = await this.services.delivery.repositories.getState(this.services.delivery.root);
-        const detected = await this.services.delivery.pullRequests.detect(this.services.delivery.root, state);
-        const capability = detected.capability.detected && detected.capability.draftCreationAvailable ? detected.capability : undefined;
-        if (!capability) throw new Error("No capability-compatible PR draft provider is available.");
-        const changeSet = this.services.delivery.persistence.snapshot.changeSets.filter((item) => item.workflowId === workflowId).at(-1) ?? await this.services.delivery.createChangeSet(workflowId);
-        const plan = this.services.delivery.persistence.snapshot.commitPlans.filter((item) => item.changeSetId === changeSet.id).at(-1) ?? await this.services.delivery.createCommitPlan(changeSet.id);
-        const draft = await this.services.delivery.drafts.create(changeSet, plan, capability, state.defaultBranch ?? "main");
-        await this.publishReviewEvent("review/prDraftChanged", workflowId, "Deterministic PR review package generated; no pull request was created.");
+        const state = await this.services.delivery.repositories.getState(
+          this.services.delivery.root,
+        );
+        const detected = await this.services.delivery.pullRequests.detect(
+          this.services.delivery.root,
+          state,
+        );
+        const capability =
+          detected.capability.detected && detected.capability.draftCreationAvailable
+            ? detected.capability
+            : undefined;
+        if (!capability)
+          throw new Error("No capability-compatible PR draft provider is available.");
+        const changeSet =
+          this.services.delivery.persistence.snapshot.changeSets
+            .filter((item) => item.workflowId === workflowId)
+            .at(-1) ?? (await this.services.delivery.createChangeSet(workflowId));
+        const plan =
+          this.services.delivery.persistence.snapshot.commitPlans
+            .filter((item) => item.changeSetId === changeSet.id)
+            .at(-1) ?? (await this.services.delivery.createCommitPlan(changeSet.id));
+        const draft = await this.services.delivery.drafts.create(
+          changeSet,
+          plan,
+          capability,
+          state.defaultBranch ?? "main",
+        );
+        await this.publishReviewEvent(
+          "review/prDraftChanged",
+          workflowId,
+          "Deterministic PR review package generated; no pull request was created.",
+        );
         await this.sendSuccess(request.requestId, draft);
         return;
       }
       case "review/updatePrDraft": {
         const value = await this.services.delivery.updateDraft(request.payload.draft);
-        await this.publishReviewEvent("review/prDraftChanged", value.workflowId, "User-edited PR draft saved.");
+        await this.publishReviewEvent(
+          "review/prDraftChanged",
+          value.workflowId,
+          "User-edited PR draft saved.",
+        );
         await this.sendSuccess(request.requestId, value);
         return;
       }
       case "review/approve":
       case "review/approveWithWarnings":
       case "review/reject": {
-        const value = request.type === "review/reject" ? await this.services.review.reject(request.payload.workflowId, request.payload.reason) : await this.services.review.approve(request.payload.workflowId, request.payload.reason, request.type === "review/approveWithWarnings");
-        await this.publishReviewEvent(request.type === "review/reject" ? "review/changesRequested" : "review/approved", request.payload.workflowId, `Review decision recorded: ${value.status}.`);
+        const value =
+          request.type === "review/reject"
+            ? await this.services.review.reject(request.payload.workflowId, request.payload.reason)
+            : await this.services.review.approve(
+                request.payload.workflowId,
+                request.payload.reason,
+                request.type === "review/approveWithWarnings",
+              );
+        await this.publishReviewEvent(
+          request.type === "review/reject" ? "review/changesRequested" : "review/approved",
+          request.payload.workflowId,
+          `Review decision recorded: ${value.status}.`,
+        );
         await this.sendSuccess(request.requestId, value);
         return;
       }
       case "complete/getState":
-        await this.sendSuccess(request.requestId, await this.services.review.getCompletionState(request.payload.workflowId));
+        await this.sendSuccess(
+          request.requestId,
+          await this.services.review.getCompletionState(request.payload.workflowId),
+        );
         return;
       case "complete/getOptions":
-        await this.sendSuccess(request.requestId, (await this.services.review.getCompletionState(request.payload.workflowId)).options);
+        await this.sendSuccess(
+          request.requestId,
+          (await this.services.review.getCompletionState(request.payload.workflowId)).options,
+        );
         return;
       case "complete/getReport":
-        await this.sendSuccess(request.requestId, this.services.review.persisted.completions.find((item) => item.workflowId === request.payload.workflowId));
+        await this.sendSuccess(
+          request.requestId,
+          this.services.review.persisted.completions.find(
+            (item) => item.workflowId === request.payload.workflowId,
+          ),
+        );
         return;
       case "complete/completeLocally":
       case "complete/closePartial":
       case "complete/cancelWithChanges": {
-        const mode = request.type === "complete/completeLocally" ? "local" : request.type === "complete/closePartial" ? "closed-partial" : "cancelled-with-changes";
-        const value = await this.services.review.complete(request.payload.workflowId, mode, request.payload.reason);
-        await this.publishReviewEvent(request.type === "complete/closePartial" ? "complete/workflowClosedPartial" : "complete/workflowCompleted", request.payload.workflowId, `Workflow recorded as ${value.status}; repository files were not mutated.`);
+        const mode =
+          request.type === "complete/completeLocally"
+            ? "local"
+            : request.type === "complete/closePartial"
+              ? "closed-partial"
+              : "cancelled-with-changes";
+        const value = await this.services.review.complete(
+          request.payload.workflowId,
+          mode,
+          request.payload.reason,
+        );
+        await this.publishReviewEvent(
+          request.type === "complete/closePartial"
+            ? "complete/workflowClosedPartial"
+            : "complete/workflowCompleted",
+          request.payload.workflowId,
+          `Workflow recorded as ${value.status}; repository files were not mutated.`,
+        );
         await this.sendSuccess(request.requestId, value);
         return;
       }
       case "complete/archive": {
         const value = await this.services.review.archive(request.payload.workflowId);
-        await this.publishReviewEvent("complete/workflowCompleted", request.payload.workflowId, "Completed workflow archived.");
+        await this.publishReviewEvent(
+          "complete/workflowCompleted",
+          request.payload.workflowId,
+          "Completed workflow archived.",
+        );
         await this.sendSuccess(request.requestId, value);
         return;
       }
       case "complete/getChangeSet": {
-        const current = this.services.delivery.persistence.snapshot.changeSets.filter((item) => item.workflowId === request.payload.workflowId).at(-1);
-        const value = current ?? await this.services.delivery.createChangeSet(request.payload.workflowId);
-        await this.publishReviewEvent("complete/changeSetChanged", request.payload.workflowId, current ? "Current completion change set refreshed in the UI." : "Completion change set created from current repository evidence.");
+        const current = this.services.delivery.persistence.snapshot.changeSets
+          .filter((item) => item.workflowId === request.payload.workflowId)
+          .at(-1);
+        const value =
+          current ?? (await this.services.delivery.createChangeSet(request.payload.workflowId));
+        await this.publishReviewEvent(
+          "complete/changeSetChanged",
+          request.payload.workflowId,
+          current
+            ? "Current completion change set refreshed in the UI."
+            : "Completion change set created from current repository evidence.",
+        );
         await this.sendSuccess(request.requestId, value);
         return;
       }
       case "complete/updateChangeSet": {
-        const value = await this.services.delivery.decideFile(request.payload.changeSetId, request.payload.fileId, request.payload.included, request.payload.explanation);
-        await this.publishReviewEvent("complete/changeSetChanged", value.workflowId, "Completion change-set selection updated; prior dependent approvals are invalid.");
+        const value = await this.services.delivery.decideFile(
+          request.payload.changeSetId,
+          request.payload.fileId,
+          request.payload.included,
+          request.payload.explanation,
+        );
+        await this.publishReviewEvent(
+          "complete/changeSetChanged",
+          value.workflowId,
+          "Completion change-set selection updated; prior dependent approvals are invalid.",
+        );
         await this.sendSuccess(request.requestId, value);
         return;
       }
       case "complete/generateCommitPlan": {
         const value = await this.services.delivery.createCommitPlan(request.payload.changeSetId);
         const changeSet = this.requireChangeSet(value.changeSetId);
-        await this.publishReviewEvent("complete/commitPlanChanged", changeSet.workflowId, "Commit plan generated for review.");
+        await this.publishReviewEvent(
+          "complete/commitPlanChanged",
+          changeSet.workflowId,
+          "Commit plan generated for review.",
+        );
         await this.sendSuccess(request.requestId, value);
         return;
       }
       case "complete/updateCommitPlan": {
-        const value = await this.services.delivery.commits.save({ ...request.payload.commitPlan, status: "draft", updatedAt: new Date().toISOString() });
+        const value = await this.services.delivery.commits.save({
+          ...request.payload.commitPlan,
+          status: "draft",
+          updatedAt: new Date().toISOString(),
+        });
         const changeSet = this.requireChangeSet(value.changeSetId);
-        await this.publishReviewEvent("complete/commitPlanChanged", changeSet.workflowId, "Commit plan edits saved.");
+        await this.publishReviewEvent(
+          "complete/commitPlanChanged",
+          changeSet.workflowId,
+          "Commit plan edits saved.",
+        );
         await this.sendSuccess(request.requestId, value);
         return;
       }
       case "complete/getPushReadiness":
-        await this.sendSuccess(request.requestId, await this.services.delivery.evaluate(request.payload.workflowId));
+        await this.sendSuccess(
+          request.requestId,
+          await this.services.delivery.evaluate(request.payload.workflowId),
+        );
         return;
       case "complete/getPrCapabilities": {
-        const state = await this.services.delivery.repositories.getState(this.services.delivery.root);
-        await this.sendSuccess(request.requestId, (await this.services.delivery.pullRequests.detect(this.services.delivery.root, state)).capability);
+        const state = await this.services.delivery.repositories.getState(
+          this.services.delivery.root,
+        );
+        await this.sendSuccess(
+          request.requestId,
+          (await this.services.delivery.pullRequests.detect(this.services.delivery.root, state))
+            .capability,
+        );
         return;
       }
       case "complete/approveStaging": {
-        const review = this.requireCurrentApprovedReview(request.payload.workflowId, request.payload.fingerprint);
-        const changeSet = this.services.delivery.persistence.snapshot.changeSets.filter((item) => item.workflowId === review.workflow.id).at(-1) ?? await this.services.delivery.createChangeSet(review.workflow.id);
-        const repository = await this.services.delivery.repositories.getState(this.services.delivery.root);
-        const paths = changeSet.files.filter((item) => item.included && !item.sensitive).map((item) => item.path);
-        if (!paths.length) throw new Error("No reviewed, non-sensitive paths are selected for staging.");
-        await this.sendSuccess(request.requestId, await this.services.delivery.approvals.approve({ action: "stage", repositoryId: changeSet.repositoryId, branch: changeSet.branch, changeSetId: changeSet.id, changeSetFingerprint: changeSet.fingerprint, paths, message: repository.fingerprint, risks: changeSet.findings, safelyRetryable: true }));
+        const review = this.requireCurrentApprovedReview(
+          request.payload.workflowId,
+          request.payload.fingerprint,
+        );
+        const changeSet =
+          this.services.delivery.persistence.snapshot.changeSets
+            .filter((item) => item.workflowId === review.workflow.id)
+            .at(-1) ?? (await this.services.delivery.createChangeSet(review.workflow.id));
+        const repository = await this.services.delivery.repositories.getState(
+          this.services.delivery.root,
+        );
+        const paths = changeSet.files
+          .filter((item) => item.included && !item.sensitive)
+          .map((item) => item.path);
+        if (!paths.length)
+          throw new Error("No reviewed, non-sensitive paths are selected for staging.");
+        await this.sendSuccess(
+          request.requestId,
+          await this.services.delivery.approvals.approve({
+            action: "stage",
+            repositoryId: changeSet.repositoryId,
+            branch: changeSet.branch,
+            changeSetId: changeSet.id,
+            changeSetFingerprint: changeSet.fingerprint,
+            paths,
+            message: repository.fingerprint,
+            risks: changeSet.findings,
+            safelyRetryable: true,
+          }),
+        );
         return;
       }
       case "complete/stageChanges": {
-        const approval = this.services.delivery.approvals.require(request.payload.approvalId, "stage");
+        const approval = this.services.delivery.approvals.require(
+          request.payload.approvalId,
+          "stage",
+        );
         const changeSet = this.requireChangeSet(approval.changeSetId!);
-        const result = await this.services.delivery.mutations.stage(this.services.delivery.root, approval.id, changeSet);
-        await this.publishReviewEvent("complete/changeSetChanged", changeSet.workflowId, `Staging ${result.status}; only separately approved paths were attempted.`);
+        const result = await this.services.delivery.mutations.stage(
+          this.services.delivery.root,
+          approval.id,
+          changeSet,
+        );
+        await this.publishReviewEvent(
+          "complete/changeSetChanged",
+          changeSet.workflowId,
+          `Staging ${result.status}; only separately approved paths were attempted.`,
+        );
         await this.sendSuccess(request.requestId, result);
         return;
       }
       case "complete/approveCommit": {
-        const review = this.requireCurrentApprovedReview(request.payload.workflowId, request.payload.fingerprint);
-        const changeSet = this.services.delivery.persistence.snapshot.changeSets.filter((item) => item.workflowId === review.workflow.id).at(-1);
+        const review = this.requireCurrentApprovedReview(
+          request.payload.workflowId,
+          request.payload.fingerprint,
+        );
+        const changeSet = this.services.delivery.persistence.snapshot.changeSets
+          .filter((item) => item.workflowId === review.workflow.id)
+          .at(-1);
         if (!changeSet) throw new Error("Create and review a completion change set first.");
-        const plan = this.services.delivery.persistence.snapshot.commitPlans.filter((item) => item.changeSetId === changeSet.id).at(-1);
+        const plan = this.services.delivery.persistence.snapshot.commitPlans
+          .filter((item) => item.changeSetId === changeSet.id)
+          .at(-1);
         if (!plan) throw new Error("Generate a commit plan first.");
         const proposed = plan.commits.find((item) => !item.createdCommitHash);
-        if (!proposed) throw new Error("Every proposed commit already has a recorded commit reference.");
-        const message = `${proposed.breaking ? "BREAKING CHANGE: " : ""}${proposed.title}\n\n${proposed.description}`.slice(0, 20_000);
-        await this.sendSuccess(request.requestId, await this.services.delivery.approvals.approve({ action: "commit", repositoryId: changeSet.repositoryId, branch: changeSet.branch, changeSetId: changeSet.id, changeSetFingerprint: changeSet.fingerprint, commitPlanId: plan.id, proposedCommitId: proposed.id, paths: [], message, risks: proposed.risks, safelyRetryable: false }));
+        if (!proposed)
+          throw new Error("Every proposed commit already has a recorded commit reference.");
+        const message =
+          `${proposed.breaking ? "BREAKING CHANGE: " : ""}${proposed.title}\n\n${proposed.description}`.slice(
+            0,
+            20_000,
+          );
+        await this.sendSuccess(
+          request.requestId,
+          await this.services.delivery.approvals.approve({
+            action: "commit",
+            repositoryId: changeSet.repositoryId,
+            branch: changeSet.branch,
+            changeSetId: changeSet.id,
+            changeSetFingerprint: changeSet.fingerprint,
+            commitPlanId: plan.id,
+            proposedCommitId: proposed.id,
+            paths: [],
+            message,
+            risks: proposed.risks,
+            safelyRetryable: false,
+          }),
+        );
         return;
       }
       case "complete/createCommit": {
-        const approval = this.services.delivery.approvals.require(request.payload.approvalId, "commit");
+        const approval = this.services.delivery.approvals.require(
+          request.payload.approvalId,
+          "commit",
+        );
         const changeSet = this.requireChangeSet(approval.changeSetId!);
         const plan = this.requireCommitPlan(approval.commitPlanId!);
-        const result = await this.services.delivery.mutations.commit(this.services.delivery.root, approval.id, changeSet, plan);
-        if (result.status === "succeeded") await this.services.delivery.commits.save({ ...plan, commits: plan.commits.map((item) => item.id === approval.proposedCommitId ? { ...item, createdCommitHash: result.commitHash, actualFiles: result.affectedPaths } : item), status: plan.commits.every((item) => item.id === approval.proposedCommitId || item.createdCommitHash) ? "completed" : "partially-created", updatedAt: new Date().toISOString() });
-        await this.publishReviewEvent("complete/commitCreated", changeSet.workflowId, `Commit result: ${result.status}.`);
+        const result = await this.services.delivery.mutations.commit(
+          this.services.delivery.root,
+          approval.id,
+          changeSet,
+          plan,
+        );
+        if (result.status === "succeeded")
+          await this.services.delivery.commits.save({
+            ...plan,
+            commits: plan.commits.map((item) =>
+              item.id === approval.proposedCommitId
+                ? {
+                    ...item,
+                    createdCommitHash: result.commitHash,
+                    actualFiles: result.affectedPaths,
+                  }
+                : item,
+            ),
+            status: plan.commits.every(
+              (item) => item.id === approval.proposedCommitId || item.createdCommitHash,
+            )
+              ? "completed"
+              : "partially-created",
+            updatedAt: new Date().toISOString(),
+          });
+        await this.publishReviewEvent(
+          "complete/commitCreated",
+          changeSet.workflowId,
+          `Commit result: ${result.status}.`,
+        );
         await this.sendSuccess(request.requestId, result);
         return;
       }
       case "complete/approvePush": {
-        const review = this.requireCurrentApprovedReview(request.payload.workflowId, request.payload.fingerprint);
-        const repository = await this.services.delivery.repositories.getState(this.services.delivery.root);
-        if (repository.behind > 0 || repository.detachedHead || repository.conflictedFiles.length) throw new Error("Push approval is blocked by behind-upstream, detached HEAD, or conflicts.");
-        const remote = repository.defaultRemote ?? repository.remotes.find((item) => item.isDefault)?.name;
-        if (!remote || !repository.branch) throw new Error("A current branch and configured remote are required for push approval.");
-        await this.sendSuccess(request.requestId, await this.services.delivery.approvals.approve({ action: "push", repositoryId: repository.repositoryId, branch: repository.branch, paths: [], message: review.repositoryFingerprint, remote, remoteBranch: repository.branch, risks: ["Publishes local commits to the selected remote branch; force-push is not used."], safelyRetryable: true }));
+        const review = this.requireCurrentApprovedReview(
+          request.payload.workflowId,
+          request.payload.fingerprint,
+        );
+        const repository = await this.services.delivery.repositories.getState(
+          this.services.delivery.root,
+        );
+        if (repository.behind > 0 || repository.detachedHead || repository.conflictedFiles.length)
+          throw new Error(
+            "Push approval is blocked by behind-upstream, detached HEAD, or conflicts.",
+          );
+        const remote =
+          repository.defaultRemote ?? repository.remotes.find((item) => item.isDefault)?.name;
+        if (!remote || !repository.branch)
+          throw new Error("A current branch and configured remote are required for push approval.");
+        await this.sendSuccess(
+          request.requestId,
+          await this.services.delivery.approvals.approve({
+            action: "push",
+            repositoryId: repository.repositoryId,
+            branch: repository.branch,
+            paths: [],
+            message: review.repositoryFingerprint,
+            remote,
+            remoteBranch: repository.branch,
+            risks: [
+              "Publishes local commits to the selected remote branch; force-push is not used.",
+            ],
+            safelyRetryable: true,
+          }),
+        );
         return;
       }
       case "complete/push": {
-        const approval = this.services.delivery.approvals.require(request.payload.approvalId, "push");
-        const result = await this.services.delivery.mutations.push(this.services.delivery.root, approval.id);
-        const workflowId = this.services.review.persisted.decisions.find((item) => item.repositoryFingerprint === approval.message)?.workflowId;
-        if (workflowId) await this.publishReviewEvent("complete/pushCompleted", workflowId, `Push result: ${result.status}.`);
+        const approval = this.services.delivery.approvals.require(
+          request.payload.approvalId,
+          "push",
+        );
+        const result = await this.services.delivery.mutations.push(
+          this.services.delivery.root,
+          approval.id,
+        );
+        const workflowId = this.services.review.persisted.decisions.find(
+          (item) => item.repositoryFingerprint === approval.message,
+        )?.workflowId;
+        if (workflowId)
+          await this.publishReviewEvent(
+            "complete/pushCompleted",
+            workflowId,
+            `Push result: ${result.status}.`,
+          );
         await this.sendSuccess(request.requestId, result);
         return;
       }
       case "complete/approvePrCreation": {
-        const review = this.requireCurrentApprovedReview(request.payload.workflowId, request.payload.fingerprint);
-        const draft = this.services.delivery.persistence.snapshot.pullRequestDrafts.filter((item) => item.workflowId === review.workflow.id).at(-1);
+        const review = this.requireCurrentApprovedReview(
+          request.payload.workflowId,
+          request.payload.fingerprint,
+        );
+        const draft = this.services.delivery.persistence.snapshot.pullRequestDrafts
+          .filter((item) => item.workflowId === review.workflow.id)
+          .at(-1);
         if (!draft) throw new Error("Prepare and review a PR draft before approving creation.");
-        const repository = await this.services.delivery.repositories.getState(this.services.delivery.root);
-        await this.sendSuccess(request.requestId, await this.services.delivery.approvals.approve({ action: "create-pr", repositoryId: repository.repositoryId, branch: repository.branch, paths: [], message: draft.fingerprint, risks: draft.riskSummary, safelyRetryable: false }));
+        const repository = await this.services.delivery.repositories.getState(
+          this.services.delivery.root,
+        );
+        await this.sendSuccess(
+          request.requestId,
+          await this.services.delivery.approvals.approve({
+            action: "create-pr",
+            repositoryId: repository.repositoryId,
+            branch: repository.branch,
+            paths: [],
+            message: draft.fingerprint,
+            risks: draft.riskSummary,
+            safelyRetryable: false,
+          }),
+        );
         return;
       }
       case "complete/createPr": {
-        const approval = this.services.delivery.approvals.require(request.payload.approvalId, "create-pr");
-        const draft = this.services.delivery.persistence.snapshot.pullRequestDrafts.find((item) => item.fingerprint === approval.message);
+        const approval = this.services.delivery.approvals.require(
+          request.payload.approvalId,
+          "create-pr",
+        );
+        const draft = this.services.delivery.persistence.snapshot.pullRequestDrafts.find(
+          (item) => item.fingerprint === approval.message,
+        );
         if (!draft) throw new Error("The approved PR draft is unavailable or changed.");
-        const repository = await this.services.delivery.repositories.getState(this.services.delivery.root);
-        const detected = await this.services.delivery.providers.detect(this.services.delivery.root, repository);
-        if (!detected.provider) throw new Error("A supported pull-request provider is unavailable.");
-        const result = detected.capability.directCreationAvailable ? await this.services.delivery.creation.create(approval.id, draft, detected.provider, detected.capability) : await this.services.delivery.creation.assisted(approval.id, draft, detected.provider);
-        await this.publishReviewEvent("complete/prCreated", draft.workflowId, result.status === "created" ? "Pull request creation was confirmed by the provider." : "PR creation is awaiting explicit external confirmation.");
+        const repository = await this.services.delivery.repositories.getState(
+          this.services.delivery.root,
+        );
+        const detected = await this.services.delivery.providers.detect(
+          this.services.delivery.root,
+          repository,
+        );
+        if (!detected.provider)
+          throw new Error("A supported pull-request provider is unavailable.");
+        const result = detected.capability.directCreationAvailable
+          ? await this.services.delivery.creation.create(
+              approval.id,
+              draft,
+              detected.provider,
+              detected.capability,
+            )
+          : await this.services.delivery.creation.assisted(approval.id, draft, detected.provider);
+        await this.publishReviewEvent(
+          "complete/prCreated",
+          draft.workflowId,
+          result.status === "created"
+            ? "Pull request creation was confirmed by the provider."
+            : "PR creation is awaiting explicit external confirmation.",
+        );
         await this.sendSuccess(request.requestId, result);
         return;
       }
       case "complete/confirmAssistedPr": {
-        const draft = this.services.delivery.persistence.snapshot.pullRequestDrafts.filter((item) => item.workflowId === request.payload.workflowId).at(-1);
+        const draft = this.services.delivery.persistence.snapshot.pullRequestDrafts
+          .filter((item) => item.workflowId === request.payload.workflowId)
+          .at(-1);
         if (!draft) throw new Error("No assisted PR draft is awaiting confirmation.");
-        const result = await this.services.delivery.creation.confirmExternal(draft, request.payload.url);
-        await this.publishReviewEvent("complete/prCreated", draft.workflowId, "User confirmed externally created pull request; URL retained as evidence.");
+        const result = await this.services.delivery.creation.confirmExternal(
+          draft,
+          request.payload.url,
+        );
+        await this.publishReviewEvent(
+          "complete/prCreated",
+          draft.workflowId,
+          "User confirmed externally created pull request; URL retained as evidence.",
+        );
         await this.sendSuccess(request.requestId, result);
         return;
       }
       case "complete/preparePatch": {
         const review = this.services.review.getState(request.payload.workflowId);
-        const changeSet = this.services.delivery.persistence.snapshot.changeSets.filter((item) => item.workflowId === request.payload.workflowId).at(-1) ?? await this.services.delivery.createChangeSet(request.payload.workflowId);
+        const changeSet =
+          this.services.delivery.persistence.snapshot.changeSets
+            .filter((item) => item.workflowId === request.payload.workflowId)
+            .at(-1) ?? (await this.services.delivery.createChangeSet(request.payload.workflowId));
         const selected = [...new Set(request.payload.includedPaths)];
-        const blockedPaths = selected.filter((path) => { const file = changeSet.files.find((item) => item.path === path); return !file || file.sensitive || file.binary || !file.included; });
+        const blockedPaths = selected.filter((path) => {
+          const file = changeSet.files.find((item) => item.path === path);
+          return !file || file.sensitive || file.binary || !file.included;
+        });
         let totalBytes = 0;
-        for (const path of selected.filter((item) => !blockedPaths.includes(item))) totalBytes += (await this.services.delivery.adapter.diff(this.services.delivery.root, path, "working-head", 100_000)).totalBytes;
-        if (review.repositoryFingerprint !== this.services.review.getState(request.payload.workflowId).repositoryFingerprint) throw new Error("Review became stale while preparing the patch preview.");
-        await this.sendSuccess(request.requestId, { paths: selected.slice(0, 5000), totalBytes, blockedPaths });
+        for (const path of selected.filter((item) => !blockedPaths.includes(item)))
+          totalBytes += (
+            await this.services.delivery.adapter.diff(
+              this.services.delivery.root,
+              path,
+              "working-head",
+              100_000,
+            )
+          ).totalBytes;
+        if (
+          review.repositoryFingerprint !==
+          this.services.review.getState(request.payload.workflowId).repositoryFingerprint
+        )
+          throw new Error("Review became stale while preparing the patch preview.");
+        await this.sendSuccess(request.requestId, {
+          paths: selected.slice(0, 5000),
+          totalBytes,
+          blockedPaths,
+        });
         return;
       }
       case "complete/approvePatchExport": {
-        const review = this.requireCurrentApprovedReview(request.payload.workflowId, request.payload.fingerprint);
-        const changeSet = this.services.delivery.persistence.snapshot.changeSets.filter((item) => item.workflowId === review.workflow.id).at(-1);
-        if (!changeSet) throw new Error("Prepare and review a change set before patch export approval.");
-        const repository = await this.services.delivery.repositories.getState(this.services.delivery.root);
-        const paths = changeSet.files.filter((item) => item.included && !item.sensitive && !item.binary).map((item) => item.path);
-        if (!paths.length) throw new Error("No safe reviewed paths are available for patch export.");
-        await this.sendSuccess(request.requestId, await this.services.delivery.approvals.approve({ action: "export-patch", repositoryId: repository.repositoryId, branch: repository.branch, changeSetId: changeSet.id, changeSetFingerprint: changeSet.fingerprint, paths, message: repository.fingerprint, risks: ["Writes a local patch under .keystone/exports; it is never applied automatically."], safelyRetryable: true }));
+        const review = this.requireCurrentApprovedReview(
+          request.payload.workflowId,
+          request.payload.fingerprint,
+        );
+        const changeSet = this.services.delivery.persistence.snapshot.changeSets
+          .filter((item) => item.workflowId === review.workflow.id)
+          .at(-1);
+        if (!changeSet)
+          throw new Error("Prepare and review a change set before patch export approval.");
+        const repository = await this.services.delivery.repositories.getState(
+          this.services.delivery.root,
+        );
+        const paths = changeSet.files
+          .filter((item) => item.included && !item.sensitive && !item.binary)
+          .map((item) => item.path);
+        if (!paths.length)
+          throw new Error("No safe reviewed paths are available for patch export.");
+        await this.sendSuccess(
+          request.requestId,
+          await this.services.delivery.approvals.approve({
+            action: "export-patch",
+            repositoryId: repository.repositoryId,
+            branch: repository.branch,
+            changeSetId: changeSet.id,
+            changeSetFingerprint: changeSet.fingerprint,
+            paths,
+            message: repository.fingerprint,
+            risks: [
+              "Writes a local patch under .keystone/exports; it is never applied automatically.",
+            ],
+            safelyRetryable: true,
+          }),
+        );
         return;
       }
       case "complete/exportPatch": {
-        const approval = this.services.delivery.approvals.require(request.payload.approvalId, "export-patch");
+        const approval = this.services.delivery.approvals.require(
+          request.payload.approvalId,
+          "export-patch",
+        );
         const review = this.services.review.getState(request.payload.workflowId);
         const changeSet = this.requireChangeSet(approval.changeSetId!);
-        if (changeSet.workflowId !== request.payload.workflowId || changeSet.fingerprint !== approval.changeSetFingerprint) throw new Error("The reviewed change set changed after patch approval.");
-        const repository = await this.services.delivery.repositories.getState(this.services.delivery.root);
-        if (repository.fingerprint !== approval.message) throw new Error("Repository state changed after patch approval; prepare and approve again.");
+        if (
+          changeSet.workflowId !== request.payload.workflowId ||
+          changeSet.fingerprint !== approval.changeSetFingerprint
+        )
+          throw new Error("The reviewed change set changed after patch approval.");
+        const repository = await this.services.delivery.repositories.getState(
+          this.services.delivery.root,
+        );
+        if (repository.fingerprint !== approval.message)
+          throw new Error(
+            "Repository state changed after patch approval; prepare and approve again.",
+          );
         const parts: string[] = [];
-        for (const path of approval.paths) { const value = await this.services.delivery.adapter.diff(this.services.delivery.root, path, "working-head", 100_000); if (value.binary || value.truncated) throw new Error(`Patch export is blocked for binary or truncated diff ${path}.`); parts.push(value.text); }
+        for (const path of approval.paths) {
+          const value = await this.services.delivery.adapter.diff(
+            this.services.delivery.root,
+            path,
+            "working-head",
+            100_000,
+          );
+          if (value.binary || value.truncated)
+            throw new Error(`Patch export is blocked for binary or truncated diff ${path}.`);
+          parts.push(value.text);
+        }
         const text = parts.join("\n");
         const hash = `sha256:${createHash("sha256").update(text).digest("hex")}`;
         const directory = join(this.services.delivery.root, ".keystone", "exports");
@@ -2418,7 +2897,11 @@ export class WebviewMessageRouter {
         const name = `workflow-${review.workflow.id}-${Date.now()}.patch`;
         await writeFile(join(directory, name), text, { encoding: "utf8", mode: 0o600 });
         await this.services.delivery.approvals.consume(approval.id);
-        await this.publishReviewEvent("complete/patchExported", review.workflow.id, `Reviewed patch exported as .keystone/exports/${name}.`);
+        await this.publishReviewEvent(
+          "complete/patchExported",
+          review.workflow.id,
+          `Reviewed patch exported as .keystone/exports/${name}.`,
+        );
         await this.sendSuccess(request.requestId, { path: `.keystone/exports/${name}`, hash });
         return;
       }
@@ -2426,19 +2909,58 @@ export class WebviewMessageRouter {
         const review = this.services.review.getState(request.payload.workflowId);
         const incomplete = review.workflow.tasks.find((item) => item.status !== "completed");
         if (!incomplete) throw new Error("Task Handoff requires explicit unfinished work.");
-        const assignment = this.services.team.store.snapshot.assignments.find((item) => item.workflowId === review.workflow.id && item.taskId === incomplete.id && ["accepted", "in-progress", "handoff-requested"].includes(item.status));
-        if (!assignment) throw new Error("Assign and accept the unfinished task before preparing a Handoff.");
-        const packageData = await this.services.team.packages.build({ assignmentId: assignment.id, senderParticipantId: assignment.assignedTo, completedWork: review.workflow.tasks.filter((item) => item.status === "completed").map((item) => item.title), remainingWork: review.workflow.tasks.filter((item) => item.status !== "completed").map((item) => item.title), blockers: review.readinessBlockers.map((description) => ({ id: crypto.randomUUID(), category: "review", description, blocking: true })), openQuestions: review.notes.filter((item) => !item.resolvedAt && item.type === "question").map((item) => ({ id: crypto.randomUUID(), question: item.text, blocking: item.blocking })), senderNotes: "Prepared from the current retained Review evidence." });
-        await this.publishReviewEvent("complete/handoffPrepared", review.workflow.id, "Task-centered Handoff package prepared for the unfinished task.");
+        const assignment = this.services.team.store.snapshot.assignments.find(
+          (item) =>
+            item.workflowId === review.workflow.id &&
+            item.taskId === incomplete.id &&
+            ["accepted", "in-progress", "handoff-requested"].includes(item.status),
+        );
+        if (!assignment)
+          throw new Error("Assign and accept the unfinished task before preparing a Handoff.");
+        const packageData = await this.services.team.packages.build({
+          assignmentId: assignment.id,
+          senderParticipantId: assignment.assignedTo,
+          completedWork: review.workflow.tasks
+            .filter((item) => item.status === "completed")
+            .map((item) => item.title),
+          remainingWork: review.workflow.tasks
+            .filter((item) => item.status !== "completed")
+            .map((item) => item.title),
+          blockers: review.readinessBlockers.map((description) => ({
+            id: crypto.randomUUID(),
+            category: "review",
+            description,
+            blocking: true,
+          })),
+          openQuestions: review.notes
+            .filter((item) => !item.resolvedAt && item.type === "question")
+            .map((item) => ({
+              id: crypto.randomUUID(),
+              question: item.text,
+              blocking: item.blocking,
+            })),
+          senderNotes: "Prepared from the current retained Review evidence.",
+        });
+        await this.publishReviewEvent(
+          "complete/handoffPrepared",
+          review.workflow.id,
+          "Task-centered Handoff package prepared for the unfinished task.",
+        );
         await this.sendSuccess(request.requestId, packageData);
         return;
       }
       case "complete/exportHandoff": {
-        const packageData = this.services.team.store.snapshot.packages.find((item) => item.id === request.payload.packageId);
+        const packageData = this.services.team.store.snapshot.packages.find(
+          (item) => item.id === request.payload.packageId,
+        );
         if (!packageData) throw new Error("Handoff package not found.");
         const destination = await this.services.team.artifacts.export(packageData, "json");
-        if (!destination) throw new Error("Handoff export was cancelled; the package remains available.");
-        await this.sendSuccess(request.requestId, { uri: destination, hash: packageData.fingerprint });
+        if (!destination)
+          throw new Error("Handoff export was cancelled; the package remains available.");
+        await this.sendSuccess(request.requestId, {
+          uri: destination,
+          hash: packageData.fingerprint,
+        });
         return;
       }
       case "completion/getWorkflowReport":
@@ -2451,27 +2973,19 @@ export class WebviewMessageRouter {
       case "git/refresh":
         await this.sendSuccess(
           request.requestId,
-          await this.services.delivery.capabilities.refresh(
-            this.services.delivery.root,
-          ),
+          await this.services.delivery.capabilities.refresh(this.services.delivery.root),
         );
         return;
       case "git/repositoryState":
         await this.sendSuccess(
           request.requestId,
-          await this.services.delivery.repositories.getState(
-            this.services.delivery.root,
-          ),
+          await this.services.delivery.repositories.getState(this.services.delivery.root),
         );
         return;
       case "git/remotes":
         await this.sendSuccess(
           request.requestId,
-          (
-            await this.services.delivery.repositories.getState(
-              this.services.delivery.root,
-            )
-          ).remotes,
+          (await this.services.delivery.repositories.getState(this.services.delivery.root)).remotes,
         );
         return;
       case "git/branches": {
@@ -2514,14 +3028,11 @@ export class WebviewMessageRouter {
         return;
       case "delivery/createChangeSet":
       case "delivery/rebuildChangeSet": {
-        const changeSet = await this.services.delivery.createChangeSet(
-          request.payload.workflowId,
-        );
+        const changeSet = await this.services.delivery.createChangeSet(request.payload.workflowId);
         await this.postMessage(
           hostMessage("delivery/changeSetChanged", {
             changeSetId: changeSet.id,
-            message:
-              "Delivery change set rebuilt from current repository and workflow evidence.",
+            message: "Delivery change set rebuilt from current repository and workflow evidence.",
           }),
         );
         await this.sendSuccess(request.requestId, changeSet);
@@ -2544,8 +3055,7 @@ export class WebviewMessageRouter {
         await this.postMessage(
           hostMessage("delivery/changeSetChanged", {
             changeSetId: changeSet.id,
-            message:
-              "Reviewed file selection changed; dependent approvals must be renewed.",
+            message: "Reviewed file selection changed; dependent approvals must be renewed.",
           }),
         );
         await this.sendSuccess(request.requestId, changeSet);
@@ -2600,10 +3110,7 @@ export class WebviewMessageRouter {
         const current = this.requireCommitPlan(request.payload.commitPlanId);
         await this.sendSuccess(
           request.requestId,
-          await this.services.delivery.commits.merge(
-            current,
-            request.payload.commitIds,
-          ),
+          await this.services.delivery.commits.merge(current, request.payload.commitIds),
         );
         return;
       }
@@ -2624,10 +3131,7 @@ export class WebviewMessageRouter {
         const current = this.requireCommitPlan(request.payload.commitPlanId);
         await this.sendSuccess(
           request.requestId,
-          await this.services.delivery.commits.reorder(
-            current,
-            request.payload.commitIds,
-          ),
+          await this.services.delivery.commits.reorder(current, request.payload.commitIds),
         );
         return;
       }
@@ -2684,9 +3188,7 @@ export class WebviewMessageRouter {
               );
         await this.postMessage(
           hostMessage(
-            result.status === "succeeded"
-              ? "git/actionCompleted"
-              : "git/actionFailed",
+            result.status === "succeeded" ? "git/actionCompleted" : "git/actionFailed",
             result.status === "succeeded"
               ? {
                   action: approval.action,
@@ -2726,9 +3228,7 @@ export class WebviewMessageRouter {
         const changeSet = this.requireChangeSet(request.payload.changeSetId);
         const plan = this.requireCommitPlan(request.payload.commitPlanId);
         if (plan.status !== "approved")
-          throw new Error(
-            "The commit plan must be explicitly approved before commit creation.",
-          );
+          throw new Error("The commit plan must be explicitly approved before commit creation.");
         const approval = await this.services.delivery.approvals.approve({
           action: "commit",
           repositoryId: changeSet.repositoryId,
@@ -2785,10 +3285,7 @@ export class WebviewMessageRouter {
         });
         await this.sendSuccess(
           request.requestId,
-          await this.services.delivery.mutations.push(
-            this.services.delivery.root,
-            approval.id,
-          ),
+          await this.services.delivery.mutations.push(this.services.delivery.root, approval.id),
         );
         return;
       }
@@ -2814,9 +3311,7 @@ export class WebviewMessageRouter {
         await this.sendSuccess(
           request.requestId,
           detected.provider
-            ? await detected.provider.discoverTemplates(
-                this.services.delivery.root,
-              )
+            ? await detected.provider.discoverTemplates(this.services.delivery.root)
             : [],
         );
         return;
@@ -2838,11 +3333,7 @@ export class WebviewMessageRouter {
           request.payload.baseBranch,
         );
         const template = detected.provider
-          ? (
-              await detected.provider.discoverTemplates(
-                this.services.delivery.root,
-              )
-            )[0]
+          ? (await detected.provider.discoverTemplates(this.services.delivery.root))[0]
           : undefined;
         if (template?.body.trim())
           draft = await this.services.delivery.updateDraft({
@@ -2869,11 +3360,7 @@ export class WebviewMessageRouter {
         );
         await this.sendSuccess(
           request.requestId,
-          this.services.delivery.draftValidation.validate(
-            draft,
-            detected.capability,
-            state,
-          ),
+          this.services.delivery.draftValidation.validate(draft, detected.capability, state),
         );
         return;
       }
@@ -2917,21 +3404,12 @@ export class WebviewMessageRouter {
           state,
         );
         if (!validation.ready || !detected.provider)
-          throw new Error(
-            validation.blockers.join(" ") ||
-              "Pull-request provider unavailable.",
-          );
-        const approval =
-          this.services.delivery.persistence.snapshot.approvals.find(
-            (item) =>
-              item.action === "create-pr" &&
-              item.message === draft.fingerprint &&
-              !item.consumedAt,
-          );
-        if (!approval)
-          throw new Error(
-            "A current explicit pull-request approval is required.",
-          );
+          throw new Error(validation.blockers.join(" ") || "Pull-request provider unavailable.");
+        const approval = this.services.delivery.persistence.snapshot.approvals.find(
+          (item) =>
+            item.action === "create-pr" && item.message === draft.fingerprint && !item.consumedAt,
+        );
+        if (!approval) throw new Error("A current explicit pull-request approval is required.");
         const result = detected.capability.directCreationAvailable
           ? await this.services.delivery.creation.create(
               approval.id,
@@ -2939,11 +3417,7 @@ export class WebviewMessageRouter {
               detected.provider,
               detected.capability,
             )
-          : await this.services.delivery.creation.assisted(
-              approval.id,
-              draft,
-              detected.provider,
-            );
+          : await this.services.delivery.creation.assisted(approval.id, draft, detected.provider);
         await this.sendSuccess(request.requestId, result);
         return;
       }
@@ -2951,10 +3425,7 @@ export class WebviewMessageRouter {
         const draft = this.requireDraft(request.payload.draftId);
         await this.sendSuccess(
           request.requestId,
-          await this.services.delivery.creation.confirmExternal(
-            draft,
-            request.payload.url,
-          ),
+          await this.services.delivery.creation.confirmExternal(draft, request.payload.url),
         );
         return;
       }
@@ -2968,20 +3439,13 @@ export class WebviewMessageRouter {
         );
         return;
       case "team/participants":
-        await this.sendSuccess(
-          request.requestId,
-          this.services.team.participants.list(),
-        );
+        await this.sendSuccess(request.requestId, this.services.team.participants.list());
         return;
       case "team/addParticipant": {
-        const participant = await this.services.team.participants.create(
-          request.payload,
-        );
+        const participant = await this.services.team.participants.create(request.payload);
         await this.postMessage(
           hostMessage("team/participantsChanged", {
-            participantIds: this.services.team.participants
-              .list()
-              .map((item) => item.id),
+            participantIds: this.services.team.participants.list().map((item) => item.id),
             message: "Participant added to local team metadata.",
           }),
         );
@@ -2989,14 +3453,10 @@ export class WebviewMessageRouter {
         return;
       }
       case "team/updateParticipant": {
-        const participant = await this.services.team.participants.update(
-          request.payload,
-        );
+        const participant = await this.services.team.participants.update(request.payload);
         await this.postMessage(
           hostMessage("team/participantsChanged", {
-            participantIds: this.services.team.participants
-              .list()
-              .map((item) => item.id),
+            participantIds: this.services.team.participants.list().map((item) => item.id),
             message: "Participant metadata updated.",
           }),
         );
@@ -3004,14 +3464,10 @@ export class WebviewMessageRouter {
         return;
       }
       case "team/removeParticipant":
-        await this.services.team.participants.remove(
-          request.payload.participantId,
-        );
+        await this.services.team.participants.remove(request.payload.participantId);
         await this.postMessage(
           hostMessage("team/participantsChanged", {
-            participantIds: this.services.team.participants
-              .list()
-              .map((item) => item.id),
+            participantIds: this.services.team.participants.list().map((item) => item.id),
             message: "Participant removed from local team metadata.",
           }),
         );
@@ -3036,9 +3492,7 @@ export class WebviewMessageRouter {
         });
         return;
       case "assignment/create": {
-        const assignment = await this.services.team.assignments.create(
-          request.payload,
-        );
+        const assignment = await this.services.team.assignments.create(request.payload);
         await this.postMessage(
           hostMessage("assignment/created", {
             assignmentId: assignment.id,
@@ -3079,10 +3533,7 @@ export class WebviewMessageRouter {
             : request.type === "assignment/reject"
               ? "rejected"
               : "clarification-requested";
-        const assignment = await this.services.team.assignments.decide(
-          request.payload,
-          decision,
-        );
+        const assignment = await this.services.team.assignments.decide(request.payload, decision);
         await this.postMessage(
           hostMessage("assignment/statusChanged", {
             assignmentId: assignment.id,
@@ -3093,23 +3544,18 @@ export class WebviewMessageRouter {
         return;
       }
       case "assignment/reassign": {
-        const assignment = await this.services.team.reassignments.reassign(
-          request.payload,
-        );
+        const assignment = await this.services.team.reassignments.reassign(request.payload);
         await this.postMessage(
           hostMessage("assignment/reassigned", {
             assignmentId: assignment.id,
-            message:
-              "Assignment reassigned with an auditable continuity record.",
+            message: "Assignment reassigned with an auditable continuity record.",
           }),
         );
         await this.sendSuccess(request.requestId, assignment);
         return;
       }
       case "assignment/cancel": {
-        const assignment = await this.services.team.assignments.cancel(
-          request.payload,
-        );
+        const assignment = await this.services.team.assignments.cancel(request.payload);
         await this.postMessage(
           hostMessage("assignment/statusChanged", {
             assignmentId: assignment.id,
@@ -3126,9 +3572,7 @@ export class WebviewMessageRouter {
             message: "Preparing immutable, evidence-linked handoff package.",
           }),
         );
-        const packageData = await this.services.team.packages.build(
-          request.payload,
-        );
+        const packageData = await this.services.team.packages.build(request.payload);
         await this.postMessage(
           hostMessage("handoff/prepared", {
             packageId: packageData.id,
@@ -3184,21 +3628,18 @@ export class WebviewMessageRouter {
           await this.sendSuccess(request.requestId, undefined);
           return;
         }
-        const imported = await this.cancellableQuery(
-          request.requestId,
-          (signal) =>
-            this.services.team.imports.importJson(
-              artifact.bytes,
-              artifact.source,
-              artifact.label,
-              signal,
-            ),
+        const imported = await this.cancellableQuery(request.requestId, (signal) =>
+          this.services.team.imports.importJson(
+            artifact.bytes,
+            artifact.source,
+            artifact.label,
+            signal,
+          ),
         );
         await this.postMessage(
           hostMessage("handoff/imported", {
             packageId: imported.package.id,
-            message:
-              "Handoff imported for review; no repository or execution state was changed.",
+            message: "Handoff imported for review; no repository or execution state was changed.",
           }),
         );
         await this.sendSuccess(request.requestId, {
@@ -3213,8 +3654,7 @@ export class WebviewMessageRouter {
           (item) => item.id === request.payload.packageId,
         );
         if (!packageData) throw new Error("Handoff package not found.");
-        const reconciliation =
-          await this.services.team.reconciliation.reconcile(packageData);
+        const reconciliation = await this.services.team.reconciliation.reconcile(packageData);
         await this.postMessage(
           hostMessage("handoff/reconciliationCompleted", {
             packageId: packageData.id,
@@ -3245,20 +3685,14 @@ export class WebviewMessageRouter {
           const workflow = packageData
             ? this.services.workflow.get(packageData.workflowId)
             : undefined;
-          const task = workflow?.tasks.find(
-            (item) => item.id === packageData?.taskId,
-          );
+          const task = workflow?.tasks.find((item) => item.id === packageData?.taskId);
           if (packageData && workflow?.specification && task) {
             try {
               const rebuilt = await this.services.context.build({
                 task,
                 specification: workflow.specification,
-                pinnedEntityIds: packageData.context.flatMap(
-                  (item) => item.canonicalEntityIds,
-                ),
-                pinnedFiles: packageData.context.flatMap(
-                  (item) => item.sourcePaths,
-                ),
+                pinnedEntityIds: packageData.context.flatMap((item) => item.canonicalEntityIds),
+                pinnedFiles: packageData.context.flatMap((item) => item.sourcePaths),
                 currentFile: this.services.currentEditor?.(),
                 currentSelection: this.services.currentSelection?.(),
               });
@@ -3266,25 +3700,18 @@ export class WebviewMessageRouter {
             } catch (cause) {
               contextMessage =
                 " Receiver context could not be rebuilt automatically and must be prepared before delegation.";
-              this.logger.warning(
-                "handoff.context.rebuild",
-                contextMessage,
-                cause,
-              );
+              this.logger.warning("handoff.context.rebuild", contextMessage, cause);
             }
           }
         }
         await this.postMessage(
-          hostMessage(
-            decision === "accepted" ? "handoff/accepted" : "handoff/rejected",
-            {
-              packageId: acceptance.packageId,
-              message:
-                decision === "accepted"
-                  ? `Handoff accepted; a fresh execution approval is still required.${contextMessage}`
-                  : `Handoff retained as ${decision}.`,
-            },
-          ),
+          hostMessage(decision === "accepted" ? "handoff/accepted" : "handoff/rejected", {
+            packageId: acceptance.packageId,
+            message:
+              decision === "accepted"
+                ? `Handoff accepted; a fresh execution approval is still required.${contextMessage}`
+                : `Handoff retained as ${decision}.`,
+          }),
         );
         await this.sendSuccess(request.requestId, acceptance);
         return;
@@ -3293,9 +3720,7 @@ export class WebviewMessageRouter {
       case "build/cancelHandoff":
         await this.services.team.store.update((state) => ({
           ...state,
-          packages: state.packages.filter(
-            (item) => item.id !== request.payload.packageId,
-          ),
+          packages: state.packages.filter((item) => item.id !== request.payload.packageId),
         }));
         await this.sendSuccess(request.requestId);
         return;
@@ -3307,15 +3732,11 @@ export class WebviewMessageRouter {
         return;
       case "progress/tasks":
       case "progress/refresh": {
-        const progress = this.services.team.progress.get(
-          request.payload.workflowId,
-        );
+        const progress = this.services.team.progress.get(request.payload.workflowId);
         await this.services.team.store.update((state) => ({
           ...state,
           progress: [
-            ...state.progress.filter(
-              (item) => item.workflowId !== progress.workflowId,
-            ),
+            ...state.progress.filter((item) => item.workflowId !== progress.workflowId),
             progress,
           ].slice(-500),
         }));
@@ -3331,10 +3752,7 @@ export class WebviewMessageRouter {
       case "progress/audit":
         await this.sendSuccess(
           request.requestId,
-          this.services.team.audit.list(
-            this.services.team.store.snapshot,
-            request.payload,
-          ),
+          this.services.team.audit.list(this.services.team.store.snapshot, request.payload),
         );
         return;
       case "orchestration/create": {
@@ -3359,27 +3777,16 @@ export class WebviewMessageRouter {
         );
         return;
       case "orchestration/list":
-        await this.sendSuccess(
-          request.requestId,
-          this.services.orchestration.list(),
-        );
+        await this.sendSuccess(request.requestId, this.services.orchestration.list());
         return;
       case "orchestration/definitions":
-        await this.sendSuccess(
-          request.requestId,
-          this.services.orchestration.definitions.list(),
-        );
+        await this.sendSuccess(request.requestId, this.services.orchestration.definitions.list());
         return;
       case "orchestration/policies":
-        await this.sendSuccess(
-          request.requestId,
-          this.services.orchestration.policies.list(),
-        );
+        await this.sendSuccess(request.requestId, this.services.orchestration.policies.list());
         return;
       case "orchestration/plan": {
-        const value = await this.services.orchestration.plan(
-          request.payload.orchestrationId,
-        );
+        const value = await this.services.orchestration.plan(request.payload.orchestrationId);
         await this.orchestrationEvent(
           "orchestration/planned",
           value,
@@ -3389,9 +3796,7 @@ export class WebviewMessageRouter {
         return;
       }
       case "orchestration/validatePlan": {
-        const value = this.services.orchestration.get(
-          request.payload.orchestrationId,
-        );
+        const value = this.services.orchestration.get(request.payload.orchestrationId);
         await this.sendSuccess(request.requestId, {
           valid: Boolean(
             value?.plan &&
@@ -3400,9 +3805,7 @@ export class WebviewMessageRouter {
           ),
           blockers: value?.diagnostics
             .filter((item) => item.severity === "error")
-            .map((item) => item.message) ?? [
-            "Orchestration instance was not found.",
-          ],
+            .map((item) => item.message) ?? ["Orchestration instance was not found."],
           warnings:
             value?.diagnostics
               .filter((item) => item.severity === "warning")
@@ -3411,9 +3814,7 @@ export class WebviewMessageRouter {
         return;
       }
       case "orchestration/start": {
-        const value = await this.services.orchestration.start(
-          request.payload.orchestrationId,
-        );
+        const value = await this.services.orchestration.start(request.payload.orchestrationId);
         await this.orchestrationEvent(
           "orchestration/started",
           value,
@@ -3423,9 +3824,7 @@ export class WebviewMessageRouter {
         return;
       }
       case "orchestration/pause": {
-        const value = await this.services.orchestration.pause(
-          request.payload.orchestrationId,
-        );
+        const value = await this.services.orchestration.pause(request.payload.orchestrationId);
         await this.orchestrationEvent(
           "orchestration/paused",
           value,
@@ -3448,9 +3847,7 @@ export class WebviewMessageRouter {
         return;
       }
       case "orchestration/cancel": {
-        const value = await this.services.orchestration.cancel(
-          request.payload.orchestrationId,
-        );
+        const value = await this.services.orchestration.cancel(request.payload.orchestrationId);
         await this.orchestrationEvent(
           "orchestration/cancelled",
           value,
@@ -3542,8 +3939,7 @@ export class WebviewMessageRouter {
         return;
       }
       case "orchestration/changeAgent": {
-        if (!request.payload.agentId)
-          throw new Error("An explicit agent ID is required.");
+        if (!request.payload.agentId) throw new Error("An explicit agent ID is required.");
         const value = await this.services.orchestration.changeAgent(
           request.payload.orchestrationId,
           request.payload.taskId,
@@ -3572,8 +3968,7 @@ export class WebviewMessageRouter {
       case "orchestration/approvals":
         await this.sendSuccess(
           request.requestId,
-          this.services.orchestration.get(request.payload.orchestrationId)
-            ?.approvalGates ?? [],
+          this.services.orchestration.get(request.payload.orchestrationId)?.approvalGates ?? [],
         );
         return;
       case "orchestration/approve":
@@ -3606,38 +4001,28 @@ export class WebviewMessageRouter {
       case "orchestration/audit":
         await this.sendSuccess(
           request.requestId,
-          this.services.orchestration.get(request.payload.orchestrationId)
-            ?.audit ?? [],
+          this.services.orchestration.get(request.payload.orchestrationId)?.audit ?? [],
         );
         return;
       case "orchestration/qaPlan":
       case "orchestration/qaRun":
         await this.sendSuccess(
           request.requestId,
-          this.services.orchestration.reviewPlan(
-            request.payload.orchestrationId,
-            "qa",
-          ),
+          this.services.orchestration.reviewPlan(request.payload.orchestrationId, "qa"),
         );
         return;
       case "orchestration/securityPlan":
       case "orchestration/securityRun":
         await this.sendSuccess(
           request.requestId,
-          this.services.orchestration.reviewPlan(
-            request.payload.orchestrationId,
-            "security",
-          ),
+          this.services.orchestration.reviewPlan(request.payload.orchestrationId, "security"),
         );
         return;
       case "orchestration/performancePlan":
       case "orchestration/performanceRun":
         await this.sendSuccess(
           request.requestId,
-          this.services.orchestration.reviewPlan(
-            request.payload.orchestrationId,
-            "performance",
-          ),
+          this.services.orchestration.reviewPlan(request.payload.orchestrationId, "performance"),
         );
         return;
       case "orchestration/validationPlan":
@@ -3645,10 +4030,7 @@ export class WebviewMessageRouter {
       case "orchestration/rerunValidation":
         await this.sendSuccess(
           request.requestId,
-          this.services.orchestration.reviewPlan(
-            request.payload.orchestrationId,
-            "validation",
-          ),
+          this.services.orchestration.reviewPlan(request.payload.orchestrationId, "validation"),
         );
         return;
       case "orchestration/cancelValidation":
@@ -3679,9 +4061,7 @@ export class WebviewMessageRouter {
       case "orchestration/qaFinding":
       case "orchestration/securityFinding":
       case "orchestration/performanceFinding": {
-        const value = this.services.orchestration.get(
-          request.payload.orchestrationId,
-        );
+        const value = this.services.orchestration.get(request.payload.orchestrationId);
         if (!value) throw new Error("Orchestration instance not found.");
         await this.sendSuccess(request.requestId, value);
         return;
@@ -3689,8 +4069,7 @@ export class WebviewMessageRouter {
       case "orchestration/metrics":
         await this.sendSuccess(
           request.requestId,
-          this.services.orchestration.get(request.payload.orchestrationId)
-            ?.metrics ?? {
+          this.services.orchestration.get(request.payload.orchestrationId)?.metrics ?? {
             workflowDurationMs: 0,
             waitingForUserMs: 0,
             delegationCount: 0,
@@ -3703,18 +4082,13 @@ export class WebviewMessageRouter {
         );
         return;
       case "orchestration/report": {
-        const value = this.services.orchestration.get(
-          request.payload.orchestrationId,
-        );
+        const value = this.services.orchestration.get(request.payload.orchestrationId);
         if (!value) throw new Error("Orchestration instance not found.");
         await this.sendSuccess(request.requestId, value);
         return;
       }
       case "execution/route":
-        await this.sendSuccess(
-          request.requestId,
-          this.services.routing.decide(request.payload),
-        );
+        await this.sendSuccess(request.requestId, this.services.routing.decide(request.payload));
         return;
       case "request/cancel":
         this.queryControllers.get(request.payload.targetRequestId)?.abort();
@@ -3724,7 +4098,8 @@ export class WebviewMessageRouter {
   }
 
   private requireNativeShell(): NonNullable<IntelligenceServiceRegistry["nativeShell"]> {
-    if (!this.services.nativeShell) throw new Error("The Keystone native shell has not finished initializing.");
+    if (!this.services.nativeShell)
+      throw new Error("The Keystone native shell has not finished initializing.");
     return this.services.nativeShell;
   }
 
@@ -3774,8 +4149,7 @@ export class WebviewMessageRouter {
       "build/startRetry",
     ]);
     if (
-      (request.type === "handoff/export" ||
-        request.type === "build/exportHandoff") &&
+      (request.type === "handoff/export" || request.type === "build/exportHandoff") &&
       request.payload.mode === "repository-artifact"
     )
       blocked.add(request.type);
@@ -3837,9 +4211,7 @@ export class WebviewMessageRouter {
     workflow: DevelopmentWorkflowSnapshot,
     message: string,
   ): Promise<void> {
-    await this.postMessage(
-      hostMessage("workflow/updated", workflowEvent(workflow, message)),
-    );
+    await this.postMessage(hostMessage("workflow/updated", workflowEvent(workflow, message)));
     await this.sendSuccess(requestId, workflow);
   }
 
@@ -3859,10 +4231,7 @@ export class WebviewMessageRouter {
   ): Promise<void> {
     const state = this.services.workflow.getWorkbenchState(workflow.id);
     await this.postMessage(
-      hostMessage(
-        type,
-        workbenchEvent(workflow, state.summary.currentStage, message),
-      ),
+      hostMessage(type, workbenchEvent(workflow, state.summary.currentStage, message)),
     );
     await this.postMessage(
       hostMessage(
@@ -3880,12 +4249,8 @@ export class WebviewMessageRouter {
   private async reconcileDelegationState(generation: number): Promise<void> {
     for (const current of this.services.workflow.list()) {
       try {
-        const workflow = await this.services.workflow.reconcileStaleness(
-          current.id,
-        );
-        const staleAssignments = await this.services.team.reconcileStaleness(
-          current.id,
-        );
+        const workflow = await this.services.workflow.reconcileStaleness(current.id);
+        const staleAssignments = await this.services.team.reconcileStaleness(current.id);
         for (const assignment of staleAssignments)
           await this.postMessage(
             hostMessage("assignment/stale", {
@@ -3894,9 +4259,7 @@ export class WebviewMessageRouter {
                 "Assignment became stale after canonical workflow or repository state changed.",
             }),
           );
-        const staleTasks = workflow.tasks.filter(
-          (task) => task.status === "stale",
-        );
+        const staleTasks = workflow.tasks.filter((task) => task.status === "stale");
         for (const task of staleTasks) {
           if (this.services.context.get(task.id))
             await this.services.context.invalidate(
@@ -3927,9 +4290,7 @@ export class WebviewMessageRouter {
           ),
         );
       } catch (cause) {
-        this.logger.error(
-          KeystoneError.fromUnknown(cause, "workflow.reconcile.generation"),
-        );
+        this.logger.error(KeystoneError.fromUnknown(cause, "workflow.reconcile.generation"));
       }
     }
   }
@@ -3944,16 +4305,12 @@ export class WebviewMessageRouter {
   private async buildContext(
     workflowId: string,
     taskId: string,
-    budget: Partial<ContextBudget> | undefined,
+    budgetTokens: number | undefined,
     pinnedEntityIds: string[] | undefined,
     pinnedFiles: string[] | undefined,
     requestId: string,
   ) {
-    const { task, specification } = resolveTask(
-      this.services.workflow,
-      workflowId,
-      taskId,
-    );
+    const { task, specification } = resolveTask(this.services.workflow, workflowId, taskId);
     const controller = new AbortController();
     this.queryControllers.set(requestId, controller);
     try {
@@ -3961,15 +4318,14 @@ export class WebviewMessageRouter {
         hostMessage("context/buildProgress", {
           taskId,
           progress: 30,
-          message:
-            "Ranking repository entities, tests, relationships, and source ranges.",
+          message: "Ranking repository entities, tests, relationships, and source ranges.",
         }),
       );
       return await this.services.context.build({
         task,
         specification,
         selectedAgentId: task.assignedAgentId,
-        budget,
+        budget: budgetTokens ? { maxEstimatedTokens: budgetTokens } : undefined,
         pinnedEntityIds,
         pinnedFiles,
         currentFile: this.services.currentEditor?.(),
@@ -4012,19 +4368,29 @@ export class WebviewMessageRouter {
     message: string,
   ): Promise<void> {
     const state = this.services.review.getState(workflowId);
-    await this.postMessage(hostMessage(type, {
-      workflowId,
-      specificationRevision: state.summary.specificationRevision,
-      repositoryFingerprint: state.repositoryFingerprint,
-      message,
-      at: new Date().toISOString(),
-    }));
+    await this.postMessage(
+      hostMessage(type, {
+        workflowId,
+        specificationRevision: state.summary.specificationRevision,
+        repositoryFingerprint: state.repositoryFingerprint,
+        message,
+        at: new Date().toISOString(),
+      }),
+    );
   }
 
   private requireCurrentApprovedReview(workflowId: string, fingerprint: string) {
     const review = this.services.review.getState(workflowId);
-    if (!review.summary.completionReady || !review.decision || !["approved", "approved-with-warnings"].includes(review.decision.status)) throw new Error("A current approved Review with no blocking findings is required.");
-    if (review.repositoryFingerprint !== fingerprint) throw new Error("Repository evidence changed after Review. Refresh, revalidate affected work, and approve Review again.");
+    if (
+      !review.summary.completionReady ||
+      !review.decision ||
+      !["approved", "approved-with-warnings"].includes(review.decision.status)
+    )
+      throw new Error("A current approved Review with no blocking findings is required.");
+    if (review.repositoryFingerprint !== fingerprint)
+      throw new Error(
+        "Repository evidence changed after Review. Refresh, revalidate affected work, and approve Review again.",
+      );
     return review;
   }
 
@@ -4097,10 +4463,7 @@ export class WebviewMessageRouter {
     }
   }
 
-  private runIntelligenceService(
-    service: string,
-    payload: unknown,
-  ): Promise<unknown> {
+  private runIntelligenceService(service: string, payload: unknown): Promise<unknown> {
     // This is a placeholder - in a real implementation, you would:
     // 1. Import the appropriate service (e.g., ExportedSymbolsService, WildcardSearchService, etc.)
     // 2. Instantiate it with the intelligence store
@@ -4115,10 +4478,7 @@ export class WebviewMessageRouter {
     });
   }
 
-  private async sendError(
-    requestId: string,
-    error: KeystoneError,
-  ): Promise<void> {
+  private async sendError(requestId: string, error: KeystoneError): Promise<void> {
     const response = hostMessage("response/error", {
       requestId,
       error: error.serialize(),
@@ -4137,12 +4497,7 @@ export class WebviewMessageRouter {
 }
 
 function readRequestId(raw: unknown): string {
-  if (
-    raw &&
-    typeof raw === "object" &&
-    "requestId" in raw &&
-    typeof raw.requestId === "string"
-  )
+  if (raw && typeof raw === "object" && "requestId" in raw && typeof raw.requestId === "string")
     return raw.requestId;
   return crypto.randomUUID();
 }
@@ -4197,15 +4552,13 @@ function workbenchDefinitions() {
       workType: "bug" as const,
       definitionId: "bug-fix",
       label: "Bug fix",
-      description:
-        "Investigate and repair incorrect behavior with regression evidence.",
+      description: "Investigate and repair incorrect behavior with regression evidence.",
     },
     {
       workType: "refactor" as const,
       definitionId: "refactoring",
       label: "Refactoring",
-      description:
-        "Improve internal structure without changing approved behavior.",
+      description: "Improve internal structure without changing approved behavior.",
     },
     {
       workType: "test" as const,
@@ -4217,15 +4570,13 @@ function workbenchDefinitions() {
       workType: "modernization" as const,
       definitionId: "modernization",
       label: "Modernization",
-      description:
-        "Move toward an approved target while preserving compatibility.",
+      description: "Move toward an approved target while preserving compatibility.",
     },
     {
       workType: "investigation" as const,
       definitionId: "quick-fix",
       label: "Investigation",
-      description:
-        "Understand a bounded problem and produce evidence before implementation.",
+      description: "Understand a bounded problem and produce evidence before implementation.",
     },
   ];
 }
@@ -4243,7 +4594,6 @@ function resolveTask(
   if (!workflow) throw new Error(`Workflow ${workflowId} was not found.`);
   const task = workflow.tasks.find((item) => item.id === taskId);
   if (!task) throw new Error(`Task ${taskId} was not found.`);
-  if (!workflow.specification)
-    throw new Error("The workflow has no specification.");
+  if (!workflow.specification) throw new Error("The workflow has no specification.");
   return { workflow, task, specification: workflow.specification };
 }

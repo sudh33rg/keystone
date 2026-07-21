@@ -5,13 +5,13 @@
  * the configured execution profiles and capability availability.
  */
 
-import type { ExecutionProfile } from './executionProfile';
-import type { PromptPackage } from './promptPackageBuilder';
-import type { CapabilityDiscoveryService } from './capabilityDiscoveryService';
-import type { KeystoneLogger } from '../../shared/logging/KeystoneLogger';
-import type { VSCodeAPI } from '../../shared/contracts/vscodeApi';
-import type { AgentCapability } from './capability';
-import { KeystoneError } from '../../shared/errors/KeystoneError';
+import type { ExecutionProfile } from "./executionProfile";
+import type { PromptPackage } from "./promptPackageBuilder";
+import type { CapabilityDiscoveryService } from "./capabilityDiscoveryService";
+import type { KeystoneLogger } from "../../shared/logging/KeystoneLogger";
+import type { VSCodeAPI } from "../../shared/contracts/vscodeApi";
+import type { AgentCapability } from "./capability";
+import { KeystoneError } from "../../shared/errors/KeystoneError";
 
 /**
  * Delegation request object
@@ -56,16 +56,16 @@ export interface DelegationExecutionResult {
    * Status of the delegation
    */
   status:
-    | 'prepared'
-    | 'awaiting-approval'
-    | 'invoked'
-    | 'handed-off'
-    | 'running'
-    | 'completed'
-    | 'failed'
-    | 'cancelled'
-    | 'result-rejected'
-    | 'superseded';
+    | "prepared"
+    | "awaiting-approval"
+    | "invoked"
+    | "handed-off"
+    | "running"
+    | "completed"
+    | "failed"
+    | "cancelled"
+    | "result-rejected"
+    | "superseded";
 
   /**
    * Timestamp when the delegation started
@@ -128,7 +128,7 @@ export interface PreparedDelegation {
   /**
    * Mode of delegation
    */
-  delegationMode: 'direct' | 'chat-handoff' | 'clipboard-handoff' | 'manual' | 'deterministic';
+  delegationMode: "direct" | "chat-handoff" | "clipboard-handoff" | "manual" | "deterministic";
 
   /**
    * Prepared task content (for clipboard or manual modes)
@@ -145,7 +145,11 @@ export class DelegationService {
   private vscodeAPI: VSCodeAPI;
   private delegationHistory: DelegationExecutionResult[] = [];
 
-  constructor(logger: KeystoneLogger, capabilityService: CapabilityDiscoveryService, vscodeAPI: VSCodeAPI) {
+  constructor(
+    logger: KeystoneLogger,
+    capabilityService: CapabilityDiscoveryService,
+    vscodeAPI: VSCodeAPI,
+  ) {
     this.logger = logger;
     this.capabilityService = capabilityService;
     this.vscodeAPI = vscodeAPI;
@@ -158,7 +162,10 @@ export class DelegationService {
    * @returns Promise resolving to prepared delegation details
    */
   prepareDelegation(request: DelegationRequest): PreparedDelegation {
-    this.logger.info('delegationService.prepareDelegation', `Preparing delegation for workflow ${request.workflowId}, stage ${request.stageId}`);
+    this.logger.info(
+      "delegationService.prepareDelegation",
+      `Preparing delegation for workflow ${request.workflowId}, stage ${request.stageId}`,
+    );
 
     try {
       // Find the agent capability to use
@@ -172,26 +179,33 @@ export class DelegationService {
       const delegationMode = this.determineDelegationMode(agentCapability, request.profile);
 
       // Check if direct execution is possible
-      const canExecuteDirectly = delegationMode === 'direct' && agentCapability.supportsDirectInvocation;
+      const canExecuteDirectly =
+        delegationMode === "direct" && agentCapability.supportsDirectInvocation;
 
       // Create prepared delegation object
       const prepared: PreparedDelegation = {
         request,
         agentCapability,
         canExecuteDirectly,
-        delegationMode
+        delegationMode,
       };
 
       // For manual or clipboard modes, prepare the task content
-      if (delegationMode === 'clipboard-handoff' || delegationMode === 'manual') {
+      if (delegationMode === "clipboard-handoff" || delegationMode === "manual") {
         prepared.taskContent = this.prepareTaskContent(request, agentCapability);
       }
 
-      this.logger.info('delegationService.prepareDelegation', `Prepared delegation with mode: ${delegationMode}`);
+      this.logger.info(
+        "delegationService.prepareDelegation",
+        `Prepared delegation with mode: ${delegationMode}`,
+      );
       return prepared;
     } catch (error) {
-      this.logger.error(KeystoneError.fromUnknown(error, 'delegationService.prepareDelegation'));
-      throw new Error(`Failed to prepare delegation: ${error instanceof Error ? error.message : 'Unknown error'}`, { cause: error });
+      this.logger.error(KeystoneError.fromUnknown(error, "delegationService.prepareDelegation"));
+      throw new Error(
+        `Failed to prepare delegation: ${error instanceof Error ? error.message : "Unknown error"}`,
+        { cause: error },
+      );
     }
   }
 
@@ -202,12 +216,15 @@ export class DelegationService {
    * @returns Promise resolving to the execution result
    */
   async executeDelegation(prepared: PreparedDelegation): Promise<DelegationExecutionResult> {
-    this.logger.info('delegationService.executeDelegation', `Executing delegation for workflow ${prepared.request.workflowId}, stage ${prepared.request.stageId}`);
+    this.logger.info(
+      "delegationService.executeDelegation",
+      `Executing delegation for workflow ${prepared.request.workflowId}, stage ${prepared.request.stageId}`,
+    );
 
     const result: DelegationExecutionResult = {
-      status: 'running',
+      status: "running",
       startTime: new Date().toISOString(),
-      workflowId: prepared.request.workflowId
+      workflowId: prepared.request.workflowId,
     };
 
     try {
@@ -215,51 +232,63 @@ export class DelegationService {
       this.recordDelegationAttempt(prepared);
 
       switch (prepared.delegationMode) {
-        case 'direct':
+        case "direct":
           if (prepared.canExecuteDirectly) {
             // Execute directly using the VS Code API
             const executionResult = await this.executeDirectly(prepared);
-            result.status = 'completed';
+            result.status = "completed";
             result.result = executionResult;
             result.endTime = new Date().toISOString();
-            this.logger.info('delegationService.executeDelegation', 'Direct delegation completed successfully');
+            this.logger.info(
+              "delegationService.executeDelegation",
+              "Direct delegation completed successfully",
+            );
           } else {
             // Fallback to handoff mode
-            result.status = 'handed-off';
+            result.status = "handed-off";
             result.endTime = new Date().toISOString();
-            this.logger.warning('delegationService.executeDelegation', 'Direct execution not available, falling back to handoff mode');
+            this.logger.warning(
+              "delegationService.executeDelegation",
+              "Direct execution not available, falling back to handoff mode",
+            );
           }
           break;
 
-        case 'chat-handoff':
+        case "chat-handoff":
           // Open VS Code chat with the task
-          result.status = 'handed-off';
+          result.status = "handed-off";
           result.endTime = new Date().toISOString();
           await this.executeChatHandoff(prepared);
-          this.logger.info('delegationService.executeDelegation', 'Chat handoff completed');
+          this.logger.info("delegationService.executeDelegation", "Chat handoff completed");
           break;
 
-        case 'clipboard-handoff':
+        case "clipboard-handoff":
           // Copy to clipboard
-          result.status = 'handed-off';
+          result.status = "handed-off";
           result.endTime = new Date().toISOString();
           await this.executeClipboardHandoff(prepared);
-          this.logger.info('delegationService.executeDelegation', 'Clipboard handoff completed');
+          this.logger.info("delegationService.executeDelegation", "Clipboard handoff completed");
           break;
 
-        case 'manual':
+        case "manual":
           // Show manual instructions
-          result.status = 'handed-off';
+          result.status = "handed-off";
           result.endTime = new Date().toISOString();
-          this.logger.info('delegationService.executeDelegation', 'Manual handoff instructions provided');
+          this.logger.info(
+            "delegationService.executeDelegation",
+            "Manual handoff instructions provided",
+          );
           break;
 
-        case 'deterministic':
+        case "deterministic":
           // Execute a deterministic operation (internal Keystone logic)
-          result.status = 'completed';
+          result.status = "completed";
           result.result = this.executeDeterministic(prepared);
           result.endTime = new Date().toISOString();
-          this.logger.info('delegationService.executeDelegation', 'Deterministic delegation completed');
+          this.logger.info(
+            "delegationService.executeDelegation",
+            "Deterministic delegation completed",
+          );
           break;
 
         default:
@@ -270,12 +299,12 @@ export class DelegationService {
       this.recordDelegationResult(prepared, result);
       return result;
     } catch (error) {
-      this.logger.error(KeystoneError.fromUnknown(error, 'delegationService.executeDelegation'));
+      this.logger.error(KeystoneError.fromUnknown(error, "delegationService.executeDelegation"));
 
-      result.status = 'failed';
+      result.status = "failed";
       result.endTime = new Date().toISOString();
       result.error = {
-        message: error instanceof Error ? error.message : 'Unknown delegation error'
+        message: error instanceof Error ? error.message : "Unknown delegation error",
       };
 
       // Record failure
@@ -293,32 +322,32 @@ export class DelegationService {
    */
   private determineDelegationMode(
     agentCapability: AgentCapability,
-    profile: ExecutionProfile
-  ): 'direct' | 'chat-handoff' | 'clipboard-handoff' | 'manual' | 'deterministic' {
+    profile: ExecutionProfile,
+  ): "direct" | "chat-handoff" | "clipboard-handoff" | "manual" | "deterministic" {
     // Check the profile's invocation mode first
-    if (profile.executor.invocationMode === 'direct') {
+    if (profile.executor.invocationMode === "direct") {
       // Check if the agent supports direct execution
       if (agentCapability.supportsDirectInvocation) {
-        return 'direct';
+        return "direct";
       } else {
         // Fallback to chat handoff if direct is not supported
-        return 'chat-handoff';
+        return "chat-handoff";
       }
     }
 
     // If not direct, use the mode from the profile or default to chat handoff
-    if (profile.executor.invocationMode === 'chat-handoff') {
-      return 'chat-handoff';
-    } else if (profile.executor.invocationMode === 'clipboard-handoff') {
-      return 'clipboard-handoff';
-    } else if (profile.executor.invocationMode === 'manual') {
-      return 'manual';
-    } else if (profile.executor.invocationMode === 'deterministic') {
-      return 'deterministic';
+    if (profile.executor.invocationMode === "chat-handoff") {
+      return "chat-handoff";
+    } else if (profile.executor.invocationMode === "clipboard-handoff") {
+      return "clipboard-handoff";
+    } else if (profile.executor.invocationMode === "manual") {
+      return "manual";
+    } else if (profile.executor.invocationMode === "deterministic") {
+      return "deterministic";
     }
 
     // Default to chat handoff
-    return 'chat-handoff';
+    return "chat-handoff";
   }
 
   /**
@@ -329,23 +358,27 @@ export class DelegationService {
    */
   private getAgentCapabilityForRequest(request: DelegationRequest): AgentCapability | undefined {
     // Try to get the specific agent defined in the profile
-    const agent = this.capabilityService.getCapabilityById(request.profile.executor.agentId) as AgentCapability | undefined;
+    const agent = this.capabilityService.getCapabilityById(request.profile.executor.agentId) as
+      AgentCapability | undefined;
 
-    if (agent && agent.state === 'available') {
+    if (agent && agent.state === "available") {
       return agent;
     }
 
     // If the specified agent is not available, try fallback agent if one is defined
     if (request.profile.executor.fallbackAgentId) {
-      const fallbackAgent = this.capabilityService.getCapabilityById(request.profile.executor.fallbackAgentId) as AgentCapability | undefined;
-      if (fallbackAgent && fallbackAgent.state === 'available') {
+      const fallbackAgent = this.capabilityService.getCapabilityById(
+        request.profile.executor.fallbackAgentId,
+      ) as AgentCapability | undefined;
+      if (fallbackAgent && fallbackAgent.state === "available") {
         return fallbackAgent;
       }
     }
 
     // Find any available agent as a last resort
-    const availableAgents = this.capabilityService.getCapabilitiesByType('agent')
-      .filter(a => a.state === 'available') as AgentCapability[];
+    const availableAgents = this.capabilityService
+      .getCapabilitiesByType("agent")
+      .filter((a) => a.state === "available") as AgentCapability[];
 
     return availableAgents[0];
   }
@@ -362,15 +395,18 @@ export class DelegationService {
     // In a real implementation, this would use the VS Code Language Model API
     // or a specific agent API to execute the task directly
 
-    this.logger.debug('delegationService.executeDirectly', `Executing direct delegation with agent: ${agentCapability.name}`);
+    this.logger.debug(
+      "delegationService.executeDirectly",
+      `Executing direct delegation with agent: ${agentCapability.name}`,
+    );
 
     // This is a placeholder - in real implementation, we'd make actual API calls
     return {
       agent: agentCapability.name,
-      executionType: 'direct',
+      executionType: "direct",
       workflowId: request.workflowId,
       stageId: request.stageId,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     };
   }
 
@@ -388,11 +424,14 @@ export class DelegationService {
     // 3. Set the appropriate agent context
     // 4. Possibly provide pre-filled messages or instructions
 
-    this.logger.debug('delegationService.executeChatHandoff', `Executing chat handoff for agent: ${agentCapability.name}`);
+    this.logger.debug(
+      "delegationService.executeChatHandoff",
+      `Executing chat handoff for agent: ${agentCapability.name}`,
+    );
 
     // This is a placeholder - in real implementation, we'd use VS Code chat APIs
     await this.vscodeAPI.openChatWithContent(
-      `Task for ${request.stageId}: ${prepared.taskContent || 'Task details'}`
+      `Task for ${request.stageId}: ${prepared.taskContent || "Task details"}`,
     );
   }
 
@@ -405,11 +444,11 @@ export class DelegationService {
     const { taskContent } = prepared;
 
     if (!taskContent) {
-      throw new Error('No task content available for clipboard handoff');
+      throw new Error("No task content available for clipboard handoff");
     }
 
     // In a real implementation, this would copy the task content to the clipboard
-    this.logger.debug('delegationService.executeClipboardHandoff', 'Executing clipboard handoff');
+    this.logger.debug("delegationService.executeClipboardHandoff", "Executing clipboard handoff");
 
     // This is a placeholder - in real implementation, we'd use VS Code clipboard APIs
     await this.vscodeAPI.copyToClipboard(taskContent);
@@ -427,15 +466,18 @@ export class DelegationService {
     // In a real implementation, this would run internal Keystone logic
     // such as static analysis, graph traversal, or other deterministic operations
 
-    this.logger.debug('delegationService.executeDeterministic', 'Executing deterministic delegation');
+    this.logger.debug(
+      "delegationService.executeDeterministic",
+      "Executing deterministic delegation",
+    );
 
     // This is a placeholder - in real implementation, we'd perform deterministic operations
     return {
       workflowId: request.workflowId,
       stageId: request.stageId,
-      operationType: 'deterministic',
+      operationType: "deterministic",
       timestamp: new Date().toISOString(),
-      result: 'Deterministic operation completed successfully'
+      result: "Deterministic operation completed successfully",
     };
   }
 
@@ -458,15 +500,15 @@ ${request.promptPackage.rendered}
 
 **Task Details:**
 - Exact work: ${request.promptPackage.structured.task?.exactWork}
-- Boundaries: ${request.promptPackage.structured.task?.boundaries?.join(', ') || 'None specified'}
-- Files allowed: ${request.promptPackage.structured.task?.allowedFiles?.join(', ') || 'None specified'}
-- Files excluded: ${request.promptPackage.structured.task?.excludedFiles?.join(', ') || 'None specified'}
+- Boundaries: ${request.promptPackage.structured.task?.boundaries?.join(", ") || "None specified"}
+- Files allowed: ${request.promptPackage.structured.task?.allowedFiles?.join(", ") || "None specified"}
+- Files excluded: ${request.promptPackage.structured.task?.excludedFiles?.join(", ") || "None specified"}
 
 **Expected Output:**
-${request.promptPackage.structured.expectedOutput?.requiredResultStructure || 'Not specified'}
+${request.promptPackage.structured.expectedOutput?.requiredResultStructure || "Not specified"}
 
 **Additional Context:**
-${request.promptPackage.structured.context?.userPinnedContext?.join('\n') || 'None provided'}
+${request.promptPackage.structured.context?.userPinnedContext?.join("\n") || "None provided"}
 `;
   }
 
@@ -477,7 +519,10 @@ ${request.promptPackage.structured.context?.userPinnedContext?.join('\n') || 'No
    */
   private recordDelegationAttempt(prepared: PreparedDelegation): void {
     // In a real implementation, this would persist the delegation attempt to storage
-    this.logger.debug('delegationService.recordDelegationAttempt', `Recording delegation attempt for stage: ${prepared.request.stageId}`);
+    this.logger.debug(
+      "delegationService.recordDelegationAttempt",
+      `Recording delegation attempt for stage: ${prepared.request.stageId}`,
+    );
   }
 
   /**
@@ -486,10 +531,16 @@ ${request.promptPackage.structured.context?.userPinnedContext?.join('\n') || 'No
    * @param prepared The prepared delegation
    * @param result The execution result
    */
-  private recordDelegationResult(prepared: PreparedDelegation, result: DelegationExecutionResult): void {
+  private recordDelegationResult(
+    prepared: PreparedDelegation,
+    result: DelegationExecutionResult,
+  ): void {
     // In a real implementation, this would persist the delegation result to storage
     this.delegationHistory.push(result);
-    this.logger.debug('delegationService.recordDelegationResult', `Recording delegation result for stage: ${prepared.request.stageId}`);
+    this.logger.debug(
+      "delegationService.recordDelegationResult",
+      `Recording delegation result for stage: ${prepared.request.stageId}`,
+    );
   }
 
   /**
@@ -508,8 +559,8 @@ ${request.promptPackage.structured.context?.userPinnedContext?.join('\n') || 'No
    * @returns List of delegation attempts for that workflow
    */
   getDelegationHistoryForWorkflow(workflowId: string): DelegationExecutionResult[] {
-    return this.delegationHistory.filter((entry) =>
-      entry.status !== 'superseded' && entry.workflowId === workflowId
+    return this.delegationHistory.filter(
+      (entry) => entry.status !== "superseded" && entry.workflowId === workflowId,
     );
   }
 }

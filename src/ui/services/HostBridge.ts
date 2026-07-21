@@ -24,10 +24,7 @@ import {
   type WebviewRequestType,
   type WebviewResult,
 } from "../../shared/contracts/messages";
-import {
-  CpgQueryResultSchema,
-  CpgSliceResultSchema,
-} from "../../shared/contracts/cpg";
+import { CpgQueryResultSchema, CpgSliceResultSchema } from "../../shared/contracts/cpg";
 import {
   IntelligenceQueryResultSchema,
   QueryCompilationSchema,
@@ -165,9 +162,7 @@ export class HostBridge {
     } as WebviewRequest;
     return new Promise<WebviewResult<T>>((resolve, reject) => {
       if (options?.signal?.aborted) {
-        reject(
-          new DOMException("The Keystone request was cancelled.", "AbortError"),
-        );
+        reject(new DOMException("The Keystone request was cancelled.", "AbortError"));
         return;
       }
       const timer = window.setTimeout(() => {
@@ -179,17 +174,11 @@ export class HostBridge {
       if (options?.signal) {
         const abort = (): void => {
           this.settle(requestId);
-          reject(
-            new DOMException(
-              "The Keystone request was cancelled.",
-              "AbortError",
-            ),
-          );
+          reject(new DOMException("The Keystone request was cancelled.", "AbortError"));
           this.postCancellation(requestId);
         };
         options.signal.addEventListener("abort", abort, { once: true });
-        pending.removeAbort = () =>
-          options.signal?.removeEventListener("abort", abort);
+        pending.removeAbort = () => options.signal?.removeEventListener("abort", abort);
       }
       this.pending.set(requestId, pending);
       this.api.postMessage(request);
@@ -216,10 +205,7 @@ export class HostBridge {
     const parsed = HostMessageSchema.safeParse(event.data);
     if (!parsed.success) return;
     const message = parsed.data;
-    if (
-      message.type === "response/success" ||
-      message.type === "response/error"
-    ) {
+    if (message.type === "response/success" || message.type === "response/error") {
       const pending = this.pending.get(message.payload.requestId);
       if (pending) {
         this.settle(message.payload.requestId);
@@ -227,9 +213,7 @@ export class HostBridge {
           try {
             pending.resolve(validateResult(pending.type, message.payload.data));
           } catch (cause) {
-            pending.reject(
-              cause instanceof Error ? cause : new Error(String(cause)),
-            );
+            pending.reject(cause instanceof Error ? cause : new Error(String(cause)));
           }
         } else {
           pending.reject(
@@ -263,8 +247,7 @@ export class HostBridge {
 }
 
 export function createHostBridge(): HostBridge {
-  if (typeof acquireVsCodeApi === "function")
-    return new HostBridge(acquireVsCodeApi());
+  if (typeof acquireVsCodeApi === "function") return new HostBridge(acquireVsCodeApi());
   if (import.meta.env.DEV) return new HostBridge(createPreviewApi());
   throw new Error("Keystone must run inside a VS Code Webview.");
 }
@@ -288,9 +271,7 @@ function validateResult(type: WebviewRequestType, value: unknown): unknown {
     case "navigation/open":
       return ValidatedNavigationSchema.parse(value);
     case "panel/getPendingNavigation":
-      return value === undefined
-        ? undefined
-        : ValidatedNavigationSchema.parse(value);
+      return value === undefined ? undefined : ValidatedNavigationSchema.parse(value);
     case "orchestration/create":
     case "orchestration/plan":
     case "orchestration/start":
@@ -319,9 +300,7 @@ function validateResult(type: WebviewRequestType, value: unknown): unknown {
       return WorkflowInstanceSchema.parse(value);
     case "orchestration/get":
     case "orchestration/status":
-      return value === undefined
-        ? undefined
-        : WorkflowInstanceSchema.parse(value);
+      return value === undefined ? undefined : WorkflowInstanceSchema.parse(value);
     case "orchestration/list":
       return WorkflowInstanceSchema.array().max(100).parse(value);
     case "orchestration/definitions":
@@ -364,9 +343,7 @@ function validateResult(type: WebviewRequestType, value: unknown): unknown {
     case "intelligence/diagnostics":
       return IntelligenceDiagnosticsResultSchema.parse(value);
     case "intelligence/entity":
-      return value === undefined
-        ? undefined
-        : IntelligenceEntityDetailsSchema.parse(value);
+      return value === undefined ? undefined : IntelligenceEntityDetailsSchema.parse(value);
     case "intelligence/neighborhood":
       return IntelligenceNeighborhoodSchema.parse(value);
     case "intelligence/technologies":
@@ -374,13 +351,9 @@ function validateResult(type: WebviewRequestType, value: unknown): unknown {
     case "intelligence/adapter-diagnostics":
       return AdapterDiagnosticsResultSchema.parse(value);
     case "intelligence/cpg/scope":
-      return value === undefined
-        ? undefined
-        : CpgQueryResultSchema.parse(value);
+      return value === undefined ? undefined : CpgQueryResultSchema.parse(value);
     case "intelligence/cpg/slice":
-      return value === undefined
-        ? undefined
-        : CpgSliceResultSchema.parse(value);
+      return value === undefined ? undefined : CpgSliceResultSchema.parse(value);
     case "intelligence/query":
     case "intelligence/path":
     case "intelligence/impact":
@@ -407,9 +380,7 @@ function validateResult(type: WebviewRequestType, value: unknown): unknown {
     case "intelligence/query/templates":
       return QueryTemplatesResultSchema.parse(value);
     case "intelligence/query/explanation":
-      return value === undefined
-        ? undefined
-        : QueryExplanationSchema.parse(value);
+      return value === undefined ? undefined : QueryExplanationSchema.parse(value);
     case "workflow/capture":
     case "workflow/spec/submit":
     case "workflow/spec/revise":
@@ -423,9 +394,7 @@ function validateResult(type: WebviewRequestType, value: unknown): unknown {
     case "workflow/list":
       return DevelopmentWorkflowSnapshotSchema.array().max(100).parse(value);
     case "workflow/get":
-      return value === undefined
-        ? undefined
-        : DevelopmentWorkflowSnapshotSchema.parse(value);
+      return value === undefined ? undefined : DevelopmentWorkflowSnapshotSchema.parse(value);
     case "workbench/getCreateContext":
       return WorkbenchCreateContextSchema.parse(value);
     case "workbench/createWorkflow":
@@ -449,9 +418,7 @@ function validateResult(type: WebviewRequestType, value: unknown): unknown {
     case "workbench/approveTaskPlan":
       return DevelopmentWorkflowSnapshotSchema.parse(value);
     case "workbench/getWorkflow":
-      return value === undefined
-        ? undefined
-        : WorkbenchWorkflowStateSchema.parse(value);
+      return value === undefined ? undefined : WorkbenchWorkflowStateSchema.parse(value);
     case "workbench/listWorkflows":
       return DevelopmentWorkflowSnapshotSchema.array().max(100).parse(value);
     case "workbench/openWorkflow":
@@ -503,23 +470,17 @@ function validateResult(type: WebviewRequestType, value: unknown): unknown {
     case "copilot/getApplicableCustomizations":
       return CopilotCustomizationRecordSchema.array().max(500).parse(value);
     case "copilot/getCustomization":
-      return value === undefined
-        ? undefined
-        : CopilotCustomizationRecordSchema.parse(value);
+      return value === undefined ? undefined : CopilotCustomizationRecordSchema.parse(value);
     case "copilot/listAgents":
       return CopilotAgentDescriptorSchema.array().max(200).parse(value);
     case "copilot/getAgent":
-      return value === undefined
-        ? undefined
-        : CopilotAgentDescriptorSchema.parse(value);
+      return value === undefined ? undefined : CopilotAgentDescriptorSchema.parse(value);
     case "copilot/recommendAgent":
       return AgentRecommendationSchema.parse(value);
     case "copilot/listKeystoneTools":
       return KeystoneToolDescriptorSchema.array().max(50).parse(value);
     case "copilot/getToolStatus":
-      return value === undefined
-        ? undefined
-        : KeystoneToolDescriptorSchema.parse(value);
+      return value === undefined ? undefined : KeystoneToolDescriptorSchema.parse(value);
     case "copilot/getToolAudit":
       return CopilotToolAuditEntrySchema.array().max(200).parse(value);
     case "copilot/testTool":
@@ -530,9 +491,7 @@ function validateResult(type: WebviewRequestType, value: unknown): unknown {
     case "copilot/copyPrompt":
     case "copilot/confirmSubmission":
     case "copilot/cancelAssistedLaunch":
-      return value === undefined
-        ? undefined
-        : AssistedLaunchStateSchema.parse(value);
+      return value === undefined ? undefined : AssistedLaunchStateSchema.parse(value);
     case "context/build":
     case "context/get":
     case "context/update":
@@ -544,44 +503,32 @@ function validateResult(type: WebviewRequestType, value: unknown): unknown {
     case "context/changeBudget":
     case "context/regenerate":
     case "context/validate":
-      return value === undefined
-        ? undefined
-        : TaskContextPackageSchema.parse(value);
+      return value === undefined ? undefined : TaskContextPackageSchema.parse(value);
     case "build/createContext":
     case "build/getContext":
     case "build/updateContextItem":
     case "build/pinContextItem":
     case "build/excludeContextItem":
     case "build/regenerateContext":
-      return value === undefined
-        ? undefined
-        : TaskContextPackageSchema.parse(value);
+      return value === undefined ? undefined : TaskContextPackageSchema.parse(value);
     case "delegation/prepare":
     case "delegation/getPrompt":
     case "delegation/approve":
-      return value === undefined
-        ? undefined
-        : PreparedDelegationSchema.parse(value);
+      return value === undefined ? undefined : PreparedDelegationSchema.parse(value);
     case "build/prepareDelegation":
     case "build/getPromptPreview":
     case "build/approveDelegation":
-      return value === undefined
-        ? undefined
-        : PreparedDelegationSchema.parse(value);
+      return value === undefined ? undefined : PreparedDelegationSchema.parse(value);
     case "delegation/start":
     case "delegation/confirmStarted":
     case "delegation/confirmStopped":
     case "delegation/cancel":
     case "delegation/status":
-      return value === undefined
-        ? undefined
-        : DelegationSessionSchema.parse(value);
+      return value === undefined ? undefined : DelegationSessionSchema.parse(value);
     case "build/startDelegation":
     case "build/confirmAssistedState":
     case "build/cancelDelegation":
-      return value === undefined
-        ? undefined
-        : DelegationSessionSchema.parse(value);
+      return value === undefined ? undefined : DelegationSessionSchema.parse(value);
     case "execution/list":
       return TaskExecutionSessionSchema.array().max(500).parse(value);
     case "execution/start":
@@ -592,41 +539,29 @@ function validateResult(type: WebviewRequestType, value: unknown): unknown {
     case "execution/observeChanges":
     case "execution/attributeChange":
     case "execution/captureResult":
-      return value === undefined
-        ? undefined
-        : TaskExecutionSessionSchema.parse(value);
+      return value === undefined ? undefined : TaskExecutionSessionSchema.parse(value);
     case "build/getExecutionState":
     case "build/getRepositoryChanges":
     case "build/updateChangeAttribution":
     case "build/refreshChanges":
-      return value === undefined
-        ? undefined
-        : TaskExecutionSessionSchema.parse(value);
+      return value === undefined ? undefined : TaskExecutionSessionSchema.parse(value);
     case "validation/plan":
     case "validation/getPlan":
     case "validation/updatePlan":
     case "validation/approveCommand":
-      return value === undefined
-        ? undefined
-        : ValidationPlanSchema.parse(value);
+      return value === undefined ? undefined : ValidationPlanSchema.parse(value);
     case "build/getValidationPlan":
-      return value === undefined
-        ? undefined
-        : ValidationPlanSchema.parse(value);
+      return value === undefined ? undefined : ValidationPlanSchema.parse(value);
     case "validation/run":
     case "validation/getRun":
     case "validation/rerunStep":
     case "validation/override":
     case "validation/manualEvidence":
-      return value === undefined
-        ? undefined
-        : ValidationRunSchemaV2.parse(value);
+      return value === undefined ? undefined : ValidationRunSchemaV2.parse(value);
     case "build/runValidation":
     case "build/rerunValidation":
     case "build/addManualEvidence":
-      return value === undefined
-        ? undefined
-        : ValidationRunSchemaV2.parse(value);
+      return value === undefined ? undefined : ValidationRunSchemaV2.parse(value);
     case "build/getAcceptanceCriteriaState":
       return ValidationRunSchemaV2.shape.acceptanceCriteriaResults.parse(value);
     case "retry/plan":
@@ -653,15 +588,10 @@ function validateResult(type: WebviewRequestType, value: unknown): unknown {
       return value && typeof value === "object"
         ? {
             ...value,
-            decision: CompletionDecisionSchema.parse(
-              (value as { decision?: unknown }).decision,
-            ),
-            ...(Array.isArray(
-              (value as { unlockedTaskIds?: unknown }).unlockedTaskIds,
-            )
+            decision: CompletionDecisionSchema.parse((value as { decision?: unknown }).decision),
+            ...(Array.isArray((value as { unlockedTaskIds?: unknown }).unlockedTaskIds)
               ? {
-                  unlockedTaskIds: (value as { unlockedTaskIds: unknown[] })
-                    .unlockedTaskIds,
+                  unlockedTaskIds: (value as { unlockedTaskIds: unknown[] }).unlockedTaskIds,
                 }
               : { unlockedTaskIds: [] }),
             ...(typeof (value as { report?: unknown }).report === "object"
@@ -674,9 +604,7 @@ function validateResult(type: WebviewRequestType, value: unknown): unknown {
           }
         : value;
     case "completion/getWorkflowReport":
-      return value === undefined
-        ? undefined
-        : WorkflowCompletionReportSchema.parse(value);
+      return value === undefined ? undefined : WorkflowCompletionReportSchema.parse(value);
     case "review/getState":
       return WorkflowReviewStateSchema.parse(value);
     case "review/getSummary":
@@ -714,9 +642,7 @@ function validateResult(type: WebviewRequestType, value: unknown): unknown {
     case "complete/preparePr":
       return PullRequestDraftSchema.parse(value);
     case "review/getPrDraft":
-      return value === undefined
-        ? undefined
-        : PullRequestDraftSchema.parse(value);
+      return value === undefined ? undefined : PullRequestDraftSchema.parse(value);
     case "review/getPrChecklist":
       return WorkflowReviewStateSchema.shape.checklist.parse(value);
     case "review/getReadiness":
@@ -726,18 +652,14 @@ function validateResult(type: WebviewRequestType, value: unknown): unknown {
     case "complete/getOptions":
       return CompletionStateSchema.shape.options.parse(value);
     case "complete/getReport":
-      return value === undefined
-        ? undefined
-        : WorkflowCompletionRecordSchema.parse(value);
+      return value === undefined ? undefined : WorkflowCompletionRecordSchema.parse(value);
     case "complete/completeLocally":
     case "complete/closePartial":
     case "complete/cancelWithChanges":
     case "complete/archive":
       return WorkflowCompletionRecordSchema.parse(value);
     case "complete/getChangeSet":
-      return value === undefined
-        ? undefined
-        : DeliveryChangeSetSchema.parse(value);
+      return value === undefined ? undefined : DeliveryChangeSetSchema.parse(value);
     case "complete/updateChangeSet":
       return DeliveryChangeSetSchema.parse(value);
     case "complete/generateCommitPlan":
@@ -780,9 +702,7 @@ function validateResult(type: WebviewRequestType, value: unknown): unknown {
     case "assignment/cancel":
       return TaskAssignmentSchema.parse(value);
     case "assignment/get":
-      return value === undefined
-        ? undefined
-        : TaskAssignmentSchema.parse(value);
+      return value === undefined ? undefined : TaskAssignmentSchema.parse(value);
     case "assignment/list":
     case "progress/assignments":
       return TaskAssignmentSchema.array().max(2000).parse(value);
@@ -790,9 +710,7 @@ function validateResult(type: WebviewRequestType, value: unknown): unknown {
     case "build/prepareHandoff":
       return HandoffPackageSchema.parse(value);
     case "handoff/get":
-      return value === undefined
-        ? undefined
-        : HandoffPackageSchema.parse(value);
+      return value === undefined ? undefined : HandoffPackageSchema.parse(value);
     case "handoff/validate":
     case "build/validateHandoff":
       return HandoffValidationResultSchema.parse(value);
@@ -800,9 +718,7 @@ function validateResult(type: WebviewRequestType, value: unknown): unknown {
       return value === undefined
         ? undefined
         : {
-            package: HandoffPackageSchema.parse(
-              (value as { package: unknown }).package,
-            ),
+            package: HandoffPackageSchema.parse((value as { package: unknown }).package),
             validation: HandoffValidationResultSchema.parse(
               (value as { validation: unknown }).validation,
             ),
@@ -843,9 +759,7 @@ function validateResult(type: WebviewRequestType, value: unknown): unknown {
     case "delivery/attributeFile":
       return DeliveryChangeSetSchema.parse(value);
     case "delivery/getChangeSet":
-      return value === undefined
-        ? undefined
-        : DeliveryChangeSetSchema.parse(value);
+      return value === undefined ? undefined : DeliveryChangeSetSchema.parse(value);
     case "commitPlan/create":
     case "commitPlan/update":
     case "commitPlan/merge":
@@ -872,9 +786,7 @@ function validateResult(type: WebviewRequestType, value: unknown): unknown {
     case "pullRequest/confirmExternalCreation":
     case "pullRequest/status":
     case "pullRequest/refresh":
-      return value === undefined
-        ? undefined
-        : PullRequestCreationResultSchema.parse(value);
+      return value === undefined ? undefined : PullRequestCreationResultSchema.parse(value);
     case "git/remotes":
     case "git/branches":
     case "git/diff":
@@ -932,8 +844,7 @@ function createPreviewApi(): VsCodeApi {
   return {
     getState: () => state,
     setState: (next) => {
-      if (next && typeof next === "object")
-        state = next as PersistedFoundationState;
+      if (next && typeof next === "object") state = next as PersistedFoundationState;
     },
     postMessage: (message) => {
       const request = message as WebviewRequest;
@@ -1093,8 +1004,7 @@ function createPreviewApi(): VsCodeApi {
             intelligence: {
               status: "ready",
               generation: 1,
-              message:
-                "Preview repository evidence is available for interaction testing.",
+              message: "Preview repository evidence is available for interaction testing.",
             },
             copilot: {
               available: false,
@@ -1106,22 +1016,19 @@ function createPreviewApi(): VsCodeApi {
                 workType: "feature",
                 definitionId: "feature-development",
                 label: "Feature",
-                description:
-                  "Add user-visible behavior with specification, tests, and review.",
+                description: "Add user-visible behavior with specification, tests, and review.",
               },
               {
                 workType: "bug",
                 definitionId: "bug-fix",
                 label: "Bug fix",
-                description:
-                  "Repair incorrect behavior with regression evidence.",
+                description: "Repair incorrect behavior with regression evidence.",
               },
               {
                 workType: "refactor",
                 definitionId: "refactoring",
                 label: "Refactoring",
-                description:
-                  "Improve internal structure without changing approved behavior.",
+                description: "Improve internal structure without changing approved behavior.",
               },
               {
                 workType: "test",
@@ -1133,8 +1040,7 @@ function createPreviewApi(): VsCodeApi {
                 workType: "modernization",
                 definitionId: "modernization",
                 label: "Modernization",
-                description:
-                  "Move toward an approved target while preserving compatibility.",
+                description: "Move toward an approved target while preserving compatibility.",
               },
               {
                 workType: "investigation",
@@ -1148,33 +1054,78 @@ function createPreviewApi(): VsCodeApi {
           const now = new Date().toISOString();
           const workflowId = crypto.randomUUID();
           previewWorkflow = DevelopmentWorkflowSnapshotSchema.parse({
-            schemaVersion: 1, id: workflowId, revision: 0,
-            repositoryId: request.payload.expectedRepositoryId, branch: "preview", headCommit: "preview-head",
+            schemaVersion: 1,
+            id: workflowId,
+            revision: 0,
+            repositoryId: request.payload.expectedRepositoryId,
+            branch: "preview",
+            headCommit: "preview-head",
             intelligenceGeneration: request.payload.expectedIntelligenceGeneration,
             intent: {
-              id: crypto.randomUUID(), workflowId, revision: 1,
-              originalText: request.payload.intent, normalizedObjective: request.payload.intent,
-              mode: "guided", category: request.payload.workType, workType: request.payload.workType,
-              repositoryScope: request.payload.repositoryScope, expectedOutcome: request.payload.intent, risk: "low",
-              constraints: request.payload.constraints.map((item) => ({ description: `${item.kind}: ${item.value}`, provenance: "user" as const })),
-              ambiguities: [], requiredDecisions: [], affectedEntities: [],
-              intelligenceGeneration: request.payload.expectedIntelligenceGeneration, branch: "preview", createdAt: now, updatedAt: now,
+              id: crypto.randomUUID(),
+              workflowId,
+              revision: 1,
+              originalText: request.payload.intent,
+              normalizedObjective: request.payload.intent,
+              mode: "guided",
+              category: request.payload.workType,
+              workType: request.payload.workType,
+              repositoryScope: request.payload.repositoryScope,
+              expectedOutcome: request.payload.intent,
+              risk: "low",
+              constraints: request.payload.constraints.map((item) => ({
+                description: `${item.kind}: ${item.value}`,
+                provenance: "user" as const,
+              })),
+              ambiguities: [],
+              requiredDecisions: [],
+              affectedEntities: [],
+              intelligenceGeneration: request.payload.expectedIntelligenceGeneration,
+              branch: "preview",
+              createdAt: now,
+              updatedAt: now,
             },
-            intentHistory: [], clarifications: [], decisions: [], specificationHistory: [], taskGraphHistory: [], tasks: [],
-            status: "capturing", createdAt: now, updatedAt: now,
+            intentHistory: [],
+            clarifications: [],
+            decisions: [],
+            specificationHistory: [],
+            taskGraphHistory: [],
+            tasks: [],
+            status: "capturing",
+            createdAt: now,
+            updatedAt: now,
           });
           data = previewWorkflow;
-        } else if (request.type === "workbench/getWorkflow" && previewWorkflow?.id === request.payload.workflowId) {
+        } else if (
+          request.type === "workbench/getWorkflow" &&
+          previewWorkflow?.id === request.payload.workflowId
+        ) {
           data = createPreviewWorkflowState(previewWorkflow);
-        } else if (request.type === "workbench/getDefineState" && previewWorkflow?.id === request.payload.workflowId) {
+        } else if (
+          request.type === "workbench/getDefineState" &&
+          previewWorkflow?.id === request.payload.workflowId
+        ) {
           const projected = createPreviewWorkflowState(previewWorkflow);
           data = WorkbenchDefineStateSchema.parse({
-            schemaVersion: 1, workflow: previewWorkflow,
-            repository: { generation: 1, freshness: "current", modules: [], entities: [], tests: [], apisAndData: [], patterns: [], limitations: ["Local visual preview contains no repository source evidence."] },
-            clarifications: [], diagnostics: [], staleness: [], stageStates: projected.stageStates, summary: projected.summary,
+            schemaVersion: 1,
+            workflow: previewWorkflow,
+            repository: {
+              generation: 1,
+              freshness: "current",
+              modules: [],
+              entities: [],
+              tests: [],
+              apisAndData: [],
+              patterns: [],
+              limitations: ["Local visual preview contains no repository source evidence."],
+            },
+            clarifications: [],
+            diagnostics: [],
+            staleness: [],
+            stageStates: projected.stageStates,
+            summary: projected.summary,
           });
-        } else if (request.type === "app/ping")
-          data = { serverTime: new Date().toISOString() };
+        } else if (request.type === "app/ping") data = { serverTime: new Date().toISOString() };
         dispatch(
           hostMessage("response/success", {
             requestId: request.requestId,
@@ -1186,11 +1137,53 @@ function createPreviewApi(): VsCodeApi {
   };
 }
 
-function createPreviewWorkflowState(workflow: ReturnType<typeof DevelopmentWorkflowSnapshotSchema.parse>) {
-  const stageStates = WorkbenchStageStateSchema.array().length(6).parse([
-    { stage: "define", status: "current", blockers: [], warnings: [], primaryAction: { id: "generate-specification", label: "Generate specification", enabled: true } },
-    ...(["plan", "build", "validate", "review", "complete"] as const).map((stage) => ({ stage, status: "blocked" as const, blockers: [{ code: "preview-prerequisite", message: "Complete Define first.", recoveryAction: "Return to Define." }], warnings: [] })),
-  ]);
-  const summary = WorkbenchSummarySchema.parse({ workflowId: workflow.id, currentStage: "define", specificationStatus: "not generated", taskPlanStatus: "not generated", taskCounts: {}, pendingApprovals: 0, blockingDiagnostics: 0, repositoryFreshness: "current", intelligenceFreshness: "current" });
-  return WorkbenchWorkflowStateSchema.parse({ schemaVersion: 1, workflow, repositoryName: "Local UI preview", staleness: [], stageStates, summary });
+function createPreviewWorkflowState(
+  workflow: ReturnType<typeof DevelopmentWorkflowSnapshotSchema.parse>,
+) {
+  const stageStates = WorkbenchStageStateSchema.array()
+    .length(6)
+    .parse([
+      {
+        stage: "define",
+        status: "current",
+        blockers: [],
+        warnings: [],
+        primaryAction: {
+          id: "generate-specification",
+          label: "Generate specification",
+          enabled: true,
+        },
+      },
+      ...(["plan", "build", "validate", "review", "complete"] as const).map((stage) => ({
+        stage,
+        status: "blocked" as const,
+        blockers: [
+          {
+            code: "preview-prerequisite",
+            message: "Complete Define first.",
+            recoveryAction: "Return to Define.",
+          },
+        ],
+        warnings: [],
+      })),
+    ]);
+  const summary = WorkbenchSummarySchema.parse({
+    workflowId: workflow.id,
+    currentStage: "define",
+    specificationStatus: "not generated",
+    taskPlanStatus: "not generated",
+    taskCounts: {},
+    pendingApprovals: 0,
+    blockingDiagnostics: 0,
+    repositoryFreshness: "current",
+    intelligenceFreshness: "current",
+  });
+  return WorkbenchWorkflowStateSchema.parse({
+    schemaVersion: 1,
+    workflow,
+    repositoryName: "Local UI preview",
+    staleness: [],
+    stageStates,
+    summary,
+  });
 }

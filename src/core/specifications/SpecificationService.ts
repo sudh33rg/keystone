@@ -8,7 +8,7 @@ import {
   type AcceptanceCriterion,
   type ApprovalRecord,
   type IntentRecord,
-  KeystoneSpecificationSchema
+  KeystoneSpecificationSchema,
 } from "../../shared/contracts/domain";
 import { KeystoneError } from "../../shared/errors/KeystoneError";
 
@@ -20,7 +20,7 @@ export class SpecificationService {
     private readonly workspace: WorkspaceAdapter,
     private readonly index: RepositoryIndexService,
     private readonly intentEngine: IntentEngine,
-    private readonly store: WorkspaceStateStore
+    private readonly store: WorkspaceStateStore,
   ) {}
 
   create(intentId: string, title: string, workflowId: string): KeystoneSpecification {
@@ -37,21 +37,21 @@ export class SpecificationService {
         originalRequest: "",
         normalizedIntent: "",
         businessObjective: "",
-        outcome: ""
+        outcome: "",
       },
       scope: {
         includedFunctionality: [],
         excludedFunctionality: [],
         modules: [],
         expectedFiles: [],
-        dependencies: []
+        dependencies: [],
       },
       existingBehavior: {
         implementationSummary: "",
         architecture: "",
         constraints: [],
         knownLimitations: [],
-        evidenceReferences: []
+        evidenceReferences: [],
       },
       proposedBehavior: {
         functionalRequirements: [],
@@ -59,7 +59,7 @@ export class SpecificationService {
         userFlows: "",
         interfaces: "",
         models: "",
-        errors: ""
+        errors: "",
       },
       engineeringConstraints: {
         conventions: [],
@@ -68,7 +68,7 @@ export class SpecificationService {
         security: [],
         performance: [],
         compatibility: [],
-        protectedAreas: []
+        protectedAreas: [],
       },
       criteria: [],
       testStrategy: {
@@ -77,18 +77,18 @@ export class SpecificationService {
         impactedSuites: [],
         manualScenarios: [],
         negativeScenarios: [],
-        regressionRisks: []
+        regressionRisks: [],
       },
       implementationPlan: {
-        planRevision: 0
+        planRevision: 0,
       },
       decisionLog: {
         questions: [],
         decisions: [],
         assumptions: [],
         rejectedApproaches: [],
-        revisions: []
-      }
+        revisions: [],
+      },
     };
 
     this.specifications.set(id, spec);
@@ -105,7 +105,7 @@ export class SpecificationService {
         message: `Specification ${specificationId} not found.`,
         operation: "spec.update",
         recoverable: false,
-        recommendedAction: "Create a new specification first."
+        recommendedAction: "Create a new specification first.",
       });
     }
 
@@ -125,7 +125,7 @@ export class SpecificationService {
         message: "Specification update failed validation.",
         operation: "spec.update",
         recoverable: false,
-        recommendedAction: "Review the specification fields and retry."
+        recommendedAction: "Review the specification fields and retry.",
       });
     }
 
@@ -133,7 +133,11 @@ export class SpecificationService {
     return spec;
   }
 
-  approve(specificationId: string, expectedRevision: number, rationale?: string): KeystoneSpecification {
+  approve(
+    specificationId: string,
+    expectedRevision: number,
+    rationale?: string,
+  ): KeystoneSpecification {
     const spec = this.specifications.get(specificationId);
     if (!spec) {
       throw new KeystoneError({
@@ -142,7 +146,7 @@ export class SpecificationService {
         message: `Specification ${specificationId} not found.`,
         operation: "spec.approve",
         recoverable: false,
-        recommendedAction: "Create a new specification first."
+        recommendedAction: "Create a new specification first.",
       });
     }
 
@@ -153,7 +157,7 @@ export class SpecificationService {
         message: `Expected revision ${expectedRevision}, but current revision is ${spec.revision}.`,
         operation: "spec.approve",
         recoverable: false,
-        recommendedAction: "Review the latest specification revision and retry."
+        recommendedAction: "Review the latest specification revision and retry.",
       });
     }
 
@@ -164,7 +168,7 @@ export class SpecificationService {
         message: `Specification ${specificationId} is not in an approvable state (${spec.status}).`,
         operation: "spec.approve",
         recoverable: false,
-        recommendedAction: "Submit the specification for review first."
+        recommendedAction: "Submit the specification for review first.",
       });
     }
 
@@ -175,7 +179,7 @@ export class SpecificationService {
         message: "Cannot approve: some required criteria lack a validation method.",
         operation: "spec.approve",
         recoverable: false,
-        recommendedAction: "Add validation methods to all required criteria."
+        recommendedAction: "Add validation methods to all required criteria.",
       });
     }
 
@@ -183,7 +187,7 @@ export class SpecificationService {
       approvedBy: "user",
       approvedAt: new Date().toISOString(),
       expectedRevision,
-      rationale
+      rationale,
     };
 
     spec.status = "approved";
@@ -202,7 +206,7 @@ export class SpecificationService {
         message: `Specification ${specificationId} not found.`,
         operation: "spec.reject",
         recoverable: false,
-        recommendedAction: "Create a new specification first."
+        recommendedAction: "Create a new specification first.",
       });
     }
 
@@ -213,7 +217,7 @@ export class SpecificationService {
         message: `Specification ${specificationId} is not in a rejectable state (${spec.status}).`,
         operation: "spec.reject",
         recoverable: false,
-        recommendedAction: "Submit the specification for review first."
+        recommendedAction: "Submit the specification for review first.",
       });
     }
 
@@ -232,7 +236,7 @@ export class SpecificationService {
         message: `Specification ${specificationId} not found.`,
         operation: "spec.revise",
         recoverable: false,
-        recommendedAction: "Create a new specification first."
+        recommendedAction: "Create a new specification first.",
       });
     }
 
@@ -245,7 +249,7 @@ export class SpecificationService {
       semanticChangeClass: "editorial",
       impactedTaskIds: [],
       author: "user",
-      reason
+      reason,
     };
 
     if (spec.status === "approved") {
@@ -257,11 +261,7 @@ export class SpecificationService {
     return revision;
   }
 
-  generateFromIntent(
-    intentId: string,
-    workflowId: string,
-    title: string
-  ): KeystoneSpecification {
+  generateFromIntent(intentId: string, workflowId: string, title: string): KeystoneSpecification {
     const intent = this.intentEngine.getIntent(intentId);
     if (!intent) {
       throw new KeystoneError({
@@ -270,7 +270,7 @@ export class SpecificationService {
         message: `Intent ${intentId} not found.`,
         operation: "spec.generateFromIntent",
         recoverable: false,
-        recommendedAction: "Create an intent first before generating a specification."
+        recommendedAction: "Create an intent first before generating a specification.",
       });
     }
 
@@ -280,7 +280,7 @@ export class SpecificationService {
       originalRequest: intent.originalText,
       normalizedIntent: intent.normalizedObjective,
       businessObjective: intent.expectedOutcome,
-      outcome: intent.expectedOutcome
+      outcome: intent.expectedOutcome,
     };
 
     spec.scope.modules = intent.affectedAreas.map((a) => a.reference);
@@ -306,7 +306,7 @@ export class SpecificationService {
     specificationId: string,
     semanticClass: "editorial" | "clarification" | "material",
     reason: string,
-    approval?: ApprovalRecord
+    approval?: ApprovalRecord,
   ): void {
     const spec = this.specifications.get(specificationId);
     if (!spec) return;
@@ -316,13 +316,14 @@ export class SpecificationService {
       specificationId,
       revisionNumber: spec.revision,
       snapshot: { ...spec },
-      previousRevisionId: this.revisions.get(specificationId)?.[this.revisions.get(specificationId)!.length - 1]?.id,
+      previousRevisionId:
+        this.revisions.get(specificationId)?.[this.revisions.get(specificationId)!.length - 1]?.id,
       changedSectionPaths: [],
       semanticChangeClass: semanticClass,
       impactedTaskIds: [],
       author: "user",
       reason,
-      approvalRecord: approval
+      approvalRecord: approval,
     };
 
     const existing = this.revisions.get(specificationId) ?? [];
@@ -341,7 +342,7 @@ export class SpecificationService {
         expectedEvidenceType: "code-review",
         coveringTaskIds: [],
         result: "unverified",
-        evidenceReferences: []
+        evidenceReferences: [],
       },
       {
         id: crypto.randomUUID(),
@@ -352,8 +353,8 @@ export class SpecificationService {
         expectedEvidenceType: "test-results",
         coveringTaskIds: [],
         result: "unverified",
-        evidenceReferences: []
-      }
+        evidenceReferences: [],
+      },
     ];
 
     if (intent.expectedOutcome) {
@@ -366,7 +367,7 @@ export class SpecificationService {
         expectedEvidenceType: "code-review",
         coveringTaskIds: [],
         result: "unverified",
-        evidenceReferences: []
+        evidenceReferences: [],
       });
     }
 

@@ -47,16 +47,11 @@ export class BuildWorkspaceService {
   }
   async start(workflowId: string, taskId: string): Promise<BuildTaskState> {
     const { workflow, task } = this.requireTask(workflowId, taskId);
-    const blockers = this.readiness(workflow, task).filter(
-      (item) => item.blocking && !item.passed,
-    );
+    const blockers = this.readiness(workflow, task).filter((item) => item.blocking && !item.passed);
     if (blockers.length)
-      throw new Error(
-        `Task start blocked: ${blockers.map((item) => item.explanation).join(" ")}`,
-      );
+      throw new Error(`Task start blocked: ${blockers.map((item) => item.explanation).join(" ")}`);
     const active = workflow.tasks.find(
-      (item) =>
-        item.id !== taskId && item.status === "executing" && codeWriting(item),
+      (item) => item.id !== taskId && item.status === "executing" && codeWriting(item),
     );
     if (active && codeWriting(task))
       throw new Error(
@@ -85,9 +80,7 @@ export class BuildWorkspaceService {
       (item) => item.blocking && !item.passed && item.code !== "task-status",
     );
     if (blockers.length)
-      throw new Error(
-        `Resume blocked: ${blockers.map((item) => item.explanation).join(" ")}`,
-      );
+      throw new Error(`Resume blocked: ${blockers.map((item) => item.explanation).join(" ")}`);
     await this.workflows.setTaskStatus(
       workflowId,
       taskId,
@@ -95,11 +88,7 @@ export class BuildWorkspaceService {
     );
     return this.state(workflowId, taskId);
   }
-  async block(
-    workflowId: string,
-    taskId: string,
-    reason: string,
-  ): Promise<BuildTaskState> {
+  async block(workflowId: string, taskId: string, reason: string): Promise<BuildTaskState> {
     await this.workflows.setTaskStatus(workflowId, taskId, "blocked", reason);
     return this.state(workflowId, taskId);
   }
@@ -111,16 +100,13 @@ export class BuildWorkspaceService {
   queue(workflowId: string): BuildTaskQueue {
     const workflow = this.requireWorkflow(workflowId);
     const snapshot = this.workflows.getCurrentSnapshot();
-    const selectedTaskId =
-      this.persistence.snapshot.selectedTaskByWorkflow[workflowId];
+    const selectedTaskId = this.persistence.snapshot.selectedTaskByWorkflow[workflowId];
     return BuildTaskQueueSchema.parse({
       schemaVersion: 1,
       workflowId,
       selectedTaskId,
       activeTaskId: workflow.tasks.find((task) =>
-        ["delegating", "awaiting-external-start", "executing"].includes(
-          task.status,
-        ),
+        ["delegating", "awaiting-external-start", "executing"].includes(task.status),
       )?.id,
       items: workflow.tasks.map((task) => ({
         task,
@@ -132,15 +118,9 @@ export class BuildWorkspaceService {
             .at(-1)?.status,
         ),
         owner: task.assignedAgentId,
-        validationSummary: validationSummary(
-          task,
-          this.executions,
-          this.validation,
-        ),
+        validationSummary: validationSummary(task, this.executions, this.validation),
         blockerSummary:
-          task.status === "blocked"
-            ? (task.staleReasons.at(-1) ?? "Task is blocked.")
-            : undefined,
+          task.status === "blocked" ? (task.staleReasons.at(-1) ?? "Task is blocked.") : undefined,
         readiness: this.readiness(workflow, task),
       })),
       repositoryGeneration: snapshot?.manifest.generation ?? 0,
@@ -154,15 +134,13 @@ export class BuildWorkspaceService {
     const queue = this.queue(workflowId);
     const task =
       workflow.tasks.find(
-        (item) =>
-          item.id === (taskId ?? queue.selectedTaskId ?? queue.activeTaskId),
+        (item) => item.id === (taskId ?? queue.selectedTaskId ?? queue.activeTaskId),
       ) ??
       workflow.tasks.find((item) => item.status === "ready") ??
       workflow.tasks[0];
     if (!task) throw new Error("The approved workflow contains no user tasks.");
     const capabilities =
-      this.copilot.getCapabilities() ??
-      (await this.copilot.refreshCapabilities());
+      this.copilot.getCapabilities() ?? (await this.copilot.refreshCapabilities());
     const agents = this.agents.getProfiles();
     const recommendation = this.agents.recommend(task);
     const context = this.contexts.get(task.id);
@@ -181,9 +159,7 @@ export class BuildWorkspaceService {
     const validationRun = execution?.validationRunIds.length
       ? this.validation.getRun(execution.validationRunIds.at(-1)!)
       : undefined;
-    const retry = execution
-      ? this.executions.getRetry(execution.id)
-      : undefined;
+    const retry = execution ? this.executions.getRetry(execution.id) : undefined;
     let completion;
     if (execution) {
       try {
@@ -212,14 +188,7 @@ export class BuildWorkspaceService {
       validationRun,
       retry,
       completion,
-      nextAction: nextAction(
-        task,
-        context,
-        prepared,
-        execution,
-        validationRun,
-        completion,
-      ),
+      nextAction: nextAction(task, context, prepared, execution, validationRun, completion),
       diagnostics: [],
     });
   }
@@ -265,8 +234,7 @@ export class BuildWorkspaceService {
       "dependencies-complete",
       "Dependencies complete",
       task.dependencies.every(
-        (id) =>
-          workflow.tasks.find((item) => item.id === id)?.status === "completed",
+        (id) => workflow.tasks.find((item) => item.id === id)?.status === "completed",
       ),
       "All dependencies must be explicitly completed.",
       "Complete or unblock dependency tasks.",
@@ -285,10 +253,7 @@ export class BuildWorkspaceService {
     add(
       "intelligence-current",
       "Intelligence current",
-      Boolean(
-        snapshot &&
-        snapshot.manifest.generation >= workflow.intelligenceGeneration,
-      ),
+      Boolean(snapshot && snapshot.manifest.generation >= workflow.intelligenceGeneration),
       "Current Intelligence cannot be older than the workflow.",
       "Wait for Intelligence reconciliation and refresh.",
     );
@@ -346,9 +311,7 @@ export class BuildWorkspaceService {
 }
 
 function codeWriting(task: DevelopmentTask): boolean {
-  return !["review", "validation", "manual", "documentation"].includes(
-    task.category,
-  );
+  return !["review", "validation", "manual", "documentation"].includes(task.category);
 }
 function group(
   task: DevelopmentTask,
@@ -356,9 +319,7 @@ function group(
 ): BuildTaskQueue["items"][number]["group"] {
   if (task.status === "completed") return "completed";
   if (task.status === "blocked" || task.status === "stale") return "blocked";
-  if (
-    ["executing", "delegating", "awaiting-external-start"].includes(task.status)
-  )
+  if (["executing", "delegating", "awaiting-external-start"].includes(task.status))
     return "in-progress";
   if (
     execution === "validation-required" ||
@@ -393,14 +354,11 @@ function nextAction(
   run: { status: string } | undefined,
   completion: { status: string } | undefined,
 ): string {
-  if (task.status === "ready")
-    return "Start the task after reviewing readiness.";
+  if (task.status === "ready") return "Start the task after reviewing readiness.";
   if (!context) return "Build the deterministic context package.";
-  if (!prepared)
-    return "Review context and prepare the exact delegation prompt.";
+  if (!prepared) return "Review context and prepare the exact delegation prompt.";
   if (!execution) return "Approve and start the supported delegation mode.";
   if (!run) return "Capture the result and create the task validation plan.";
-  if (completion?.status === "ready")
-    return "Request explicit completion review.";
+  if (completion?.status === "ready") return "Request explicit completion review.";
   return `Resolve the current ${execution.status} execution and ${run.status} validation state.`;
 }

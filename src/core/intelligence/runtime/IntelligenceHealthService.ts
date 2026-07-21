@@ -1,4 +1,7 @@
-import type { IntelligencePersistenceHealth, IntelligenceStore } from "../../persistence/IntelligenceStore";
+import type {
+  IntelligencePersistenceHealth,
+  IntelligenceStore,
+} from "../../persistence/IntelligenceStore";
 
 export interface IntelligenceHealthState {
   status: "healthy" | "missing" | "damaged" | "recovering";
@@ -22,13 +25,18 @@ export class IntelligenceHealthService {
 
   async refresh(): Promise<IntelligenceHealthState> {
     const health = await this.store.checkHealth();
-    if (this.state.status !== "recovering" || health.status === "healthy") this.state = fromPersistence(health);
+    if (this.state.status !== "recovering" || health.status === "healthy")
+      this.state = fromPersistence(health);
     this.emit();
     return this.getState();
   }
 
   markRecovering(message = "Reconstructing extension-managed intelligence."): void {
-    this.state = { status: "recovering", message, pendingGenerations: this.state.pendingGenerations };
+    this.state = {
+      status: "recovering",
+      message,
+      pendingGenerations: this.state.pendingGenerations,
+    };
     this.emit();
   }
 
@@ -58,5 +66,9 @@ export class IntelligenceHealthService {
 }
 
 function fromPersistence(health: IntelligencePersistenceHealth): IntelligenceHealthState {
-  return { status: health.status, pendingGenerations: health.pendingGenerations, ...(health.message ? { message: health.message } : {}) };
+  return {
+    status: health.status,
+    pendingGenerations: health.pendingGenerations,
+    ...(health.message ? { message: health.message } : {}),
+  };
 }

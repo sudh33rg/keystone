@@ -16,9 +16,7 @@ export class ReviewPersistenceStore {
     storageRoot?: string,
     private readonly writer = new AtomicFileWriter(),
   ) {
-    this.path = storageRoot
-      ? join(storageRoot, "workflow", "review-state.json")
-      : undefined;
+    this.path = storageRoot ? join(storageRoot, "workflow", "review-state.json") : undefined;
   }
 
   get snapshot(): CompletionPersistentState {
@@ -44,16 +42,18 @@ export class ReviewPersistenceStore {
     mutate: (state: CompletionPersistentState) => CompletionPersistentState,
   ): Promise<CompletionPersistentState> {
     let output: CompletionPersistentState | undefined;
-    this.chain = this.chain.catch(() => undefined).then(async () => {
-      const next = CompletionPersistentStateSchema.parse({
-        ...mutate(this.snapshot),
-        revision: this.state.revision + 1,
-        updatedAt: new Date().toISOString(),
+    this.chain = this.chain
+      .catch(() => undefined)
+      .then(async () => {
+        const next = CompletionPersistentStateSchema.parse({
+          ...mutate(this.snapshot),
+          revision: this.state.revision + 1,
+          updatedAt: new Date().toISOString(),
+        });
+        await this.persist(next);
+        this.state = next;
+        output = this.snapshot;
       });
-      await this.persist(next);
-      this.state = next;
-      output = this.snapshot;
-    });
     await this.chain;
     return output!;
   }

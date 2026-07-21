@@ -1,4 +1,7 @@
-import type { IntelligenceEvidenceRecord, SourceRange } from "../../../shared/contracts/intelligence";
+import type {
+  IntelligenceEvidenceRecord,
+  SourceRange,
+} from "../../../shared/contracts/intelligence";
 import { IntelligenceIdFactory } from "./IntelligenceIdFactory";
 
 export interface EvidenceInput {
@@ -23,9 +26,19 @@ export class EvidenceFactory {
   constructor(private readonly ids = new IntelligenceIdFactory()) {}
 
   create(input: EvidenceInput): IntelligenceEvidenceRecord {
-    const rangeKey = input.range ? `${input.range.startLine}:${input.range.startColumn}:${input.range.endLine}:${input.range.endColumn}` : "file";
+    const rangeKey = input.range
+      ? `${input.range.startLine}:${input.range.startColumn}:${input.range.endLine}:${input.range.endColumn}`
+      : "file";
     return {
-      id: this.ids.create("evidence", input.subjectId, input.ownerFileId, rangeKey, input.extractorId, input.extractorVersion, input.contentHash),
+      id: this.ids.create(
+        "evidence",
+        input.subjectId,
+        input.ownerFileId,
+        rangeKey,
+        input.extractorId,
+        input.extractorVersion,
+        input.contentHash,
+      ),
       subjectId: input.subjectId,
       ownerFileId: input.ownerFileId,
       workspaceRootId: input.workspaceRootId,
@@ -40,7 +53,7 @@ export class EvidenceFactory {
       ...(input.commit ? { commit: input.commit } : {}),
       generation: input.generation,
       confidence: input.confidence,
-      statement: input.statement
+      statement: input.statement,
     };
   }
 }

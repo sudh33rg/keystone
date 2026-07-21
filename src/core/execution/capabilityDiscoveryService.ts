@@ -5,10 +5,22 @@
  * VS Code environment, including agents, skills, instructions, and language model providers.
  */
 
-import type { Capability, CapabilityDiscoveryResult, CapabilityState, AgentCapability, SkillCapability, InstructionCapability, CapabilityType, ExtensionContributionCapability, LanguageModelProviderCapability, CommandCapability, PromptCapability } from './capability';
-import type { KeystoneLogger } from '../../shared/logging/KeystoneLogger';
-import type { VSCodeAPI } from '../../shared/contracts/vscodeApi';
-import { KeystoneError } from '../../shared/errors/KeystoneError';
+import type {
+  Capability,
+  CapabilityDiscoveryResult,
+  CapabilityState,
+  AgentCapability,
+  SkillCapability,
+  InstructionCapability,
+  CapabilityType,
+  ExtensionContributionCapability,
+  LanguageModelProviderCapability,
+  CommandCapability,
+  PromptCapability,
+} from "./capability";
+import type { KeystoneLogger } from "../../shared/logging/KeystoneLogger";
+import type { VSCodeAPI } from "../../shared/contracts/vscodeApi";
+import { KeystoneError } from "../../shared/errors/KeystoneError";
 
 /**
  * Service that discovers available execution capabilities in the VS Code environment.
@@ -30,7 +42,10 @@ export class CapabilityDiscoveryService {
    * @returns Promise resolving to capability discovery results
    */
   async discoverCapabilities(): Promise<CapabilityDiscoveryResult> {
-    this.logger.info('capabilityDiscoveryService.discoverCapabilities', 'Starting capability discovery process');
+    this.logger.info(
+      "capabilityDiscoveryService.discoverCapabilities",
+      "Starting capability discovery process",
+    );
 
     try {
       const capabilities: Capability[] = [];
@@ -66,19 +81,26 @@ export class CapabilityDiscoveryService {
       this.capabilities = capabilities;
       this.lastDiscoveryTimestamp = new Date().toISOString();
 
-      this.logger.info('capabilityDiscoveryService.discoverCapabilities', `Discovered ${capabilities.length} capabilities`);
+      this.logger.info(
+        "capabilityDiscoveryService.discoverCapabilities",
+        `Discovered ${capabilities.length} capabilities`,
+      );
 
       return {
         capabilities,
         timestamp: this.lastDiscoveryTimestamp,
-        errors: []
+        errors: [],
       };
     } catch (error) {
-      this.logger.error(KeystoneError.fromUnknown(error, 'capabilityDiscoveryService.discoverCapabilities'));
+      this.logger.error(
+        KeystoneError.fromUnknown(error, "capabilityDiscoveryService.discoverCapabilities"),
+      );
       return {
         capabilities: [],
         timestamp: this.lastDiscoveryTimestamp,
-        errors: [error instanceof Error ? error.message : 'Unknown error during capability discovery']
+        errors: [
+          error instanceof Error ? error.message : "Unknown error during capability discovery",
+        ],
       };
     }
   }
@@ -94,21 +116,24 @@ export class CapabilityDiscoveryService {
     try {
       // Check if VS Code chat participants are available
       const chatParticipants = await this.vscodeAPI.getChatParticipants();
-      this.logger.debug('capabilityDiscoveryService.discoverAgents', `Found ${chatParticipants.length} chat participants`);
+      this.logger.debug(
+        "capabilityDiscoveryService.discoverAgents",
+        `Found ${chatParticipants.length} chat participants`,
+      );
 
       for (const participant of chatParticipants) {
         const agent: AgentCapability = {
           id: `chat-participant-${participant.id}`,
           name: participant.name,
-          type: 'agent',
-          source: 'vscode-chat-participant',
+          type: "agent",
+          source: "vscode-chat-participant",
           description: participant.description,
-          state: 'available',
+          state: "available",
           lastDiscovered: this.lastDiscoveryTimestamp,
           supportsDirectInvocation: false,
           supportsManualHandoff: false,
-          supportedStageTypes: ['implementation', 'analysis', 'testing', 'review'],
-          invocationModes: ['manual']
+          supportedStageTypes: ["implementation", "analysis", "testing", "review"],
+          invocationModes: ["manual"],
         };
 
         agents.push(agent);
@@ -116,43 +141,48 @@ export class CapabilityDiscoveryService {
 
       // Check for Copilot agents
       const copilotAgent: AgentCapability = {
-        id: 'copilot-agent',
-        name: 'GitHub Copilot Agent',
-        type: 'agent',
-        source: 'github-copilot',
-        description: 'GitHub Copilot agent for code completion and assistance',
-        state: 'partially-available',
+        id: "copilot-agent",
+        name: "GitHub Copilot Agent",
+        type: "agent",
+        source: "github-copilot",
+        description: "GitHub Copilot agent for code completion and assistance",
+        state: "partially-available",
         lastDiscovered: this.lastDiscoveryTimestamp,
         supportsDirectInvocation: false,
         supportsManualHandoff: true,
-        supportedStageTypes: ['implementation', 'analysis', 'testing', 'review'],
-        invocationModes: ['chat-handoff', 'clipboard-handoff', 'manual']
+        supportedStageTypes: ["implementation", "analysis", "testing", "review"],
+        invocationModes: ["chat-handoff", "clipboard-handoff", "manual"],
       };
 
       agents.push(copilotAgent);
 
       // Check for built-in Keystone agents
       const keystoneAgent: AgentCapability = {
-        id: 'keystone-agent',
-        name: 'Keystone Agent',
-        type: 'agent',
-        source: 'keystone-built-in',
-        description: 'Keystone internal deterministic operation agent',
-        state: 'available',
+        id: "keystone-agent",
+        name: "Keystone Agent",
+        type: "agent",
+        source: "keystone-built-in",
+        description: "Keystone internal deterministic operation agent",
+        state: "available",
         lastDiscovered: this.lastDiscoveryTimestamp,
         supportsDirectInvocation: true,
         supportsManualHandoff: true,
-        supportedStageTypes: ['implementation', 'analysis', 'testing', 'review', 'validation'],
-        invocationModes: ['direct', 'manual', 'deterministic']
+        supportedStageTypes: ["implementation", "analysis", "testing", "review", "validation"],
+        invocationModes: ["direct", "manual", "deterministic"],
       };
 
       agents.push(keystoneAgent);
 
-      this.logger.debug('capabilityDiscoveryService.discoverAgents', `Discovered ${agents.length} agents`);
+      this.logger.debug(
+        "capabilityDiscoveryService.discoverAgents",
+        `Discovered ${agents.length} agents`,
+      );
 
       return agents;
     } catch (error) {
-      this.logger.error(KeystoneError.fromUnknown(error, 'capabilityDiscoveryService.discoverAgents'));
+      this.logger.error(
+        KeystoneError.fromUnknown(error, "capabilityDiscoveryService.discoverAgents"),
+      );
       return [];
     }
   }
@@ -169,144 +199,149 @@ export class CapabilityDiscoveryService {
       // Built-in Keystone skills
       const keystoneSkills: SkillCapability[] = [
         {
-          id: 'repository-understanding',
-          name: 'Repository Understanding',
-          type: 'skill',
-          source: 'keystone-built-in',
-          description: 'Skill for understanding repository structure and patterns',
-          state: 'available',
+          id: "repository-understanding",
+          name: "Repository Understanding",
+          type: "skill",
+          source: "keystone-built-in",
+          description: "Skill for understanding repository structure and patterns",
+          state: "available",
           lastDiscovered: this.lastDiscoveryTimestamp,
-          applicableStageTypes: ['understanding', 'analysis'],
-          requiredCapabilities: ['language-model-provider'],
-          instructionReferences: ['repository-instructions.md'],
-          version: '1.0.0'
+          applicableStageTypes: ["understanding", "analysis"],
+          requiredCapabilities: ["language-model-provider"],
+          instructionReferences: ["repository-instructions.md"],
+          version: "1.0.0",
         },
         {
-          id: 'implementation-planning',
-          name: 'Implementation Planning',
-          type: 'skill',
-          source: 'keystone-built-in',
-          description: 'Skill for planning code implementations',
-          state: 'available',
+          id: "implementation-planning",
+          name: "Implementation Planning",
+          type: "skill",
+          source: "keystone-built-in",
+          description: "Skill for planning code implementations",
+          state: "available",
           lastDiscovered: this.lastDiscoveryTimestamp,
-          applicableStageTypes: ['implementation'],
-          requiredCapabilities: ['language-model-provider'],
-          instructionReferences: ['coding-guidelines.md'],
-          version: '1.0.0'
+          applicableStageTypes: ["implementation"],
+          requiredCapabilities: ["language-model-provider"],
+          instructionReferences: ["coding-guidelines.md"],
+          version: "1.0.0",
         },
         {
-          id: 'bounded-code-modification',
-          name: 'Bounded Code Modification',
-          type: 'skill',
-          source: 'keystone-built-in',
-          description: 'Skill for making specific code changes within constraints',
-          state: 'available',
+          id: "bounded-code-modification",
+          name: "Bounded Code Modification",
+          type: "skill",
+          source: "keystone-built-in",
+          description: "Skill for making specific code changes within constraints",
+          state: "available",
           lastDiscovered: this.lastDiscoveryTimestamp,
-          applicableStageTypes: ['implementation'],
-          requiredCapabilities: ['language-model-provider'],
-          instructionReferences: ['change-constraints.md'],
-          version: '1.0.0'
+          applicableStageTypes: ["implementation"],
+          requiredCapabilities: ["language-model-provider"],
+          instructionReferences: ["change-constraints.md"],
+          version: "1.0.0",
         },
         {
-          id: 'test-impact-analysis',
-          name: 'Test Impact Analysis',
-          type: 'skill',
-          source: 'keystone-built-in',
-          description: 'Skill for analyzing impact of code changes on tests',
-          state: 'available',
+          id: "test-impact-analysis",
+          name: "Test Impact Analysis",
+          type: "skill",
+          source: "keystone-built-in",
+          description: "Skill for analyzing impact of code changes on tests",
+          state: "available",
           lastDiscovered: this.lastDiscoveryTimestamp,
-          applicableStageTypes: ['testing', 'analysis'],
-          requiredCapabilities: ['language-model-provider'],
-          instructionReferences: ['test-guidelines.md'],
-          version: '1.0.0'
+          applicableStageTypes: ["testing", "analysis"],
+          requiredCapabilities: ["language-model-provider"],
+          instructionReferences: ["test-guidelines.md"],
+          version: "1.0.0",
         },
         {
-          id: 'test-generation',
-          name: 'Test Generation',
-          type: 'skill',
-          source: 'keystone-built-in',
-          description: 'Skill for generating new tests for code changes',
-          state: 'available',
+          id: "test-generation",
+          name: "Test Generation",
+          type: "skill",
+          source: "keystone-built-in",
+          description: "Skill for generating new tests for code changes",
+          state: "available",
           lastDiscovered: this.lastDiscoveryTimestamp,
-          applicableStageTypes: ['testing'],
-          requiredCapabilities: ['language-model-provider'],
-          instructionReferences: ['test-generation.md'],
-          version: '1.0.0'
+          applicableStageTypes: ["testing"],
+          requiredCapabilities: ["language-model-provider"],
+          instructionReferences: ["test-generation.md"],
+          version: "1.0.0",
         },
         {
-          id: 'failure-classification',
-          name: 'Failure Classification',
-          type: 'skill',
-          source: 'keystone-built-in',
-          description: 'Skill for categorizing and classifying test failures',
-          state: 'available',
+          id: "failure-classification",
+          name: "Failure Classification",
+          type: "skill",
+          source: "keystone-built-in",
+          description: "Skill for categorizing and classifying test failures",
+          state: "available",
           lastDiscovered: this.lastDiscoveryTimestamp,
-          applicableStageTypes: ['testing'],
-          requiredCapabilities: ['language-model-provider'],
-          instructionReferences: ['failure-analysis.md'],
-          version: '1.0.0'
+          applicableStageTypes: ["testing"],
+          requiredCapabilities: ["language-model-provider"],
+          instructionReferences: ["failure-analysis.md"],
+          version: "1.0.0",
         },
         {
-          id: 'safe-test-healing',
-          name: 'Safe Test Healing',
-          type: 'skill',
-          source: 'keystone-built-in',
-          description: 'Skill for healing failing tests with minimal impact',
-          state: 'available',
+          id: "safe-test-healing",
+          name: "Safe Test Healing",
+          type: "skill",
+          source: "keystone-built-in",
+          description: "Skill for healing failing tests with minimal impact",
+          state: "available",
           lastDiscovered: this.lastDiscoveryTimestamp,
-          applicableStageTypes: ['testing'],
-          requiredCapabilities: ['language-model-provider'],
-          instructionReferences: ['test-healing.md'],
-          version: '1.0.0'
+          applicableStageTypes: ["testing"],
+          requiredCapabilities: ["language-model-provider"],
+          instructionReferences: ["test-healing.md"],
+          version: "1.0.0",
         },
         {
-          id: 'security-review',
-          name: 'Security Review',
-          type: 'skill',
-          source: 'keystone-built-in',
-          description: 'Skill for performing security code reviews',
-          state: 'available',
+          id: "security-review",
+          name: "Security Review",
+          type: "skill",
+          source: "keystone-built-in",
+          description: "Skill for performing security code reviews",
+          state: "available",
           lastDiscovered: this.lastDiscoveryTimestamp,
-          applicableStageTypes: ['review'],
-          requiredCapabilities: ['language-model-provider'],
-          instructionReferences: ['security-guidelines.md'],
-          version: '1.0.0'
+          applicableStageTypes: ["review"],
+          requiredCapabilities: ["language-model-provider"],
+          instructionReferences: ["security-guidelines.md"],
+          version: "1.0.0",
         },
         {
-          id: 'performance-review',
-          name: 'Performance Review',
-          type: 'skill',
-          source: 'keystone-built-in',
-          description: 'Skill for analyzing code performance characteristics',
-          state: 'available',
+          id: "performance-review",
+          name: "Performance Review",
+          type: "skill",
+          source: "keystone-built-in",
+          description: "Skill for analyzing code performance characteristics",
+          state: "available",
           lastDiscovered: this.lastDiscoveryTimestamp,
-          applicableStageTypes: ['review'],
-          requiredCapabilities: ['language-model-provider'],
-          instructionReferences: ['performance-guidelines.md'],
-          version: '1.0.0'
+          applicableStageTypes: ["review"],
+          requiredCapabilities: ["language-model-provider"],
+          instructionReferences: ["performance-guidelines.md"],
+          version: "1.0.0",
         },
         {
-          id: 'pr-review',
-          name: 'PR Review',
-          type: 'skill',
-          source: 'keystone-built-in',
-          description: 'Skill for conducting comprehensive PR reviews',
-          state: 'available',
+          id: "pr-review",
+          name: "PR Review",
+          type: "skill",
+          source: "keystone-built-in",
+          description: "Skill for conducting comprehensive PR reviews",
+          state: "available",
           lastDiscovered: this.lastDiscoveryTimestamp,
-          applicableStageTypes: ['review'],
-          requiredCapabilities: ['language-model-provider'],
-          instructionReferences: ['pr-review-guidelines.md'],
-          version: '1.0.0'
-        }
+          applicableStageTypes: ["review"],
+          requiredCapabilities: ["language-model-provider"],
+          instructionReferences: ["pr-review-guidelines.md"],
+          version: "1.0.0",
+        },
       ];
 
       skills.push(...keystoneSkills);
 
-      this.logger.debug('capabilityDiscoveryService.discoverSkills', `Discovered ${skills.length} skills`);
+      this.logger.debug(
+        "capabilityDiscoveryService.discoverSkills",
+        `Discovered ${skills.length} skills`,
+      );
 
       return skills;
     } catch (error) {
-      this.logger.error(KeystoneError.fromUnknown(error, 'capabilityDiscoveryService.discoverSkills'));
+      this.logger.error(
+        KeystoneError.fromUnknown(error, "capabilityDiscoveryService.discoverSkills"),
+      );
       return [];
     }
   }
@@ -336,11 +371,16 @@ export class CapabilityDiscoveryService {
       const systemInstructions = this.discoverSystemInstructions();
       instructions.push(...systemInstructions);
 
-      this.logger.debug('capabilityDiscoveryService.discoverInstructions', `Discovered ${instructions.length} instructions`);
+      this.logger.debug(
+        "capabilityDiscoveryService.discoverInstructions",
+        `Discovered ${instructions.length} instructions`,
+      );
 
       return instructions;
     } catch (error) {
-      this.logger.error(KeystoneError.fromUnknown(error, 'capabilityDiscoveryService.discoverInstructions'));
+      this.logger.error(
+        KeystoneError.fromUnknown(error, "capabilityDiscoveryService.discoverInstructions"),
+      );
       return [];
     }
   }
@@ -356,30 +396,30 @@ export class CapabilityDiscoveryService {
     try {
       // Look for common instruction file patterns in the repository
       const instructionFiles = [
-        'repository-instructions.md',
-        'coding-guidelines.md',
-        'change-constraints.md',
-        'test-guidelines.md',
-        'security-guidelines.md',
-        'performance-guidelines.md',
-        'pr-review-guidelines.md'
+        "repository-instructions.md",
+        "coding-guidelines.md",
+        "change-constraints.md",
+        "test-guidelines.md",
+        "security-guidelines.md",
+        "performance-guidelines.md",
+        "pr-review-guidelines.md",
       ];
 
       for (const filename of instructionFiles) {
         // For now, we'll create placeholders - actual file checking would require filesystem access
         const instruction: InstructionCapability = {
-          id: `repo-${filename.replace('.', '-')}`,
+          id: `repo-${filename.replace(".", "-")}`,
           name: filename,
-          type: 'instruction',
-          source: 'repository',
+          type: "instruction",
+          source: "repository",
           description: `Repository instruction file: ${filename}`,
-          state: 'partially-available', // We don't know if file exists yet
+          state: "partially-available", // We don't know if file exists yet
           lastDiscovered: this.lastDiscoveryTimestamp,
           filePath: filename,
-          scope: 'repository',
+          scope: "repository",
           precedence: 5, // Lower numbers have higher precedence
           enabled: true,
-          contentHash: undefined
+          contentHash: undefined,
         };
 
         instructions.push(instruction);
@@ -387,7 +427,12 @@ export class CapabilityDiscoveryService {
 
       return instructions;
     } catch (error) {
-      this.logger.error(KeystoneError.fromUnknown(error, 'capabilityDiscoveryService.discoverRepositoryInstructions'));
+      this.logger.error(
+        KeystoneError.fromUnknown(
+          error,
+          "capabilityDiscoveryService.discoverRepositoryInstructions",
+        ),
+      );
       return [];
     }
   }
@@ -403,24 +448,24 @@ export class CapabilityDiscoveryService {
     try {
       // Look for workspace-specific instruction files
       const workspaceInstructionFiles = [
-        '.vscode/workspace-instructions.md',
-        '.keystone/workspace-instructions.md'
+        ".vscode/workspace-instructions.md",
+        ".keystone/workspace-instructions.md",
       ];
 
       for (const filename of workspaceInstructionFiles) {
         const instruction: InstructionCapability = {
-          id: `workspace-${filename.replace('.', '-')}`,
+          id: `workspace-${filename.replace(".", "-")}`,
           name: filename,
-          type: 'instruction',
-          source: 'workspace',
+          type: "instruction",
+          source: "workspace",
           description: `Workspace instruction file: ${filename}`,
-          state: 'partially-available',
+          state: "partially-available",
           lastDiscovered: this.lastDiscoveryTimestamp,
           filePath: filename,
-          scope: 'workspace',
+          scope: "workspace",
           precedence: 6,
           enabled: true,
-          contentHash: undefined
+          contentHash: undefined,
         };
 
         instructions.push(instruction);
@@ -428,7 +473,12 @@ export class CapabilityDiscoveryService {
 
       return instructions;
     } catch (error) {
-      this.logger.error(KeystoneError.fromUnknown(error, 'capabilityDiscoveryService.discoverWorkspaceInstructions'));
+      this.logger.error(
+        KeystoneError.fromUnknown(
+          error,
+          "capabilityDiscoveryService.discoverWorkspaceInstructions",
+        ),
+      );
       return [];
     }
   }
@@ -443,25 +493,22 @@ export class CapabilityDiscoveryService {
 
     try {
       // Look for user-selected instruction files
-      const userInstructionFiles = [
-        '.keystone/user-instructions.md',
-        'custom-instructions.md'
-      ];
+      const userInstructionFiles = [".keystone/user-instructions.md", "custom-instructions.md"];
 
       for (const filename of userInstructionFiles) {
         const instruction: InstructionCapability = {
-          id: `user-${filename.replace('.', '-')}`,
+          id: `user-${filename.replace(".", "-")}`,
           name: filename,
-          type: 'instruction',
-          source: 'user',
+          type: "instruction",
+          source: "user",
           description: `User instruction file: ${filename}`,
-          state: 'partially-available',
+          state: "partially-available",
           lastDiscovered: this.lastDiscoveryTimestamp,
           filePath: filename,
-          scope: 'user',
+          scope: "user",
           precedence: 7,
           enabled: true,
-          contentHash: undefined
+          contentHash: undefined,
         };
 
         instructions.push(instruction);
@@ -469,7 +516,9 @@ export class CapabilityDiscoveryService {
 
       return instructions;
     } catch (error) {
-      this.logger.error(KeystoneError.fromUnknown(error, 'capabilityDiscoveryService.discoverUserInstructions'));
+      this.logger.error(
+        KeystoneError.fromUnknown(error, "capabilityDiscoveryService.discoverUserInstructions"),
+      );
       return [];
     }
   }
@@ -486,40 +535,42 @@ export class CapabilityDiscoveryService {
       // System or built-in instructions that are always available
       const systemInstructions: InstructionCapability[] = [
         {
-          id: 'keystone-safety',
-          name: 'Keystone Safety Instructions',
-          type: 'instruction' as const,
-          source: 'keystone-system',
-          description: 'Keystone safety and execution contract instructions',
-          state: 'available',
+          id: "keystone-safety",
+          name: "Keystone Safety Instructions",
+          type: "instruction" as const,
+          source: "keystone-system",
+          description: "Keystone safety and execution contract instructions",
+          state: "available",
           lastDiscovered: this.lastDiscoveryTimestamp,
           filePath: undefined,
-          scope: 'system',
+          scope: "system",
           precedence: 1, // Highest precedence
           enabled: true,
-          contentHash: 'safety-1.0.0'
+          contentHash: "safety-1.0.0",
         },
         {
-          id: 'output-contract',
-          name: 'Output Contract Instructions',
-          type: 'instruction' as const,
-          source: 'keystone-system',
-          description: 'Instructions about expected output formats',
-          state: 'available',
+          id: "output-contract",
+          name: "Output Contract Instructions",
+          type: "instruction" as const,
+          source: "keystone-system",
+          description: "Instructions about expected output formats",
+          state: "available",
           lastDiscovered: this.lastDiscoveryTimestamp,
           filePath: undefined,
-          scope: 'system',
+          scope: "system",
           precedence: 2, // Second highest precedence
           enabled: true,
-          contentHash: 'output-1.0.0'
-        }
+          contentHash: "output-1.0.0",
+        },
       ];
 
       instructions.push(...systemInstructions);
 
       return instructions;
     } catch (error) {
-      this.logger.error(KeystoneError.fromUnknown(error, 'capabilityDiscoveryService.discoverSystemInstructions'));
+      this.logger.error(
+        KeystoneError.fromUnknown(error, "capabilityDiscoveryService.discoverSystemInstructions"),
+      );
       return [];
     }
   }
@@ -540,14 +591,14 @@ export class CapabilityDiscoveryService {
         const lmProvider: LanguageModelProviderCapability = {
           id: `lm-provider-${provider.id}`,
           name: provider.name,
-          type: 'languageModelProvider',
-          source: 'vscode-language-model',
+          type: "languageModelProvider",
+          source: "vscode-language-model",
           description: `Language model provider: ${provider.name}`,
-          state: 'available',
+          state: "available",
           lastDiscovered: this.lastDiscoveryTimestamp,
           providerName: provider.name,
           supportedModels: provider.models,
-          supportsDirectInvocation: true
+          supportsDirectInvocation: true,
         };
 
         providers.push(lmProvider);
@@ -555,25 +606,33 @@ export class CapabilityDiscoveryService {
 
       // Add built-in Keystone provider (for internal operations)
       const keystoneProvider: LanguageModelProviderCapability = {
-        id: 'keystone-built-in-provider',
-        name: 'Keystone Built-in Provider',
-        type: 'languageModelProvider',
-        source: 'keystone-built-in',
-        description: 'Keystone internal language model provider',
-        state: 'available',
+        id: "keystone-built-in-provider",
+        name: "Keystone Built-in Provider",
+        type: "languageModelProvider",
+        source: "keystone-built-in",
+        description: "Keystone internal language model provider",
+        state: "available",
         lastDiscovered: this.lastDiscoveryTimestamp,
-        providerName: 'keystone-builtin',
-        supportedModels: ['keystone-deterministic'],
-        supportsDirectInvocation: true
+        providerName: "keystone-builtin",
+        supportedModels: ["keystone-deterministic"],
+        supportsDirectInvocation: true,
       };
 
       providers.push(keystoneProvider);
 
-      this.logger.debug('capabilityDiscoveryService.discoverLanguageModelProviders', `Discovered ${providers.length} language model providers`);
+      this.logger.debug(
+        "capabilityDiscoveryService.discoverLanguageModelProviders",
+        `Discovered ${providers.length} language model providers`,
+      );
 
       return providers;
     } catch (error) {
-      this.logger.error(KeystoneError.fromUnknown(error, 'capabilityDiscoveryService.discoverLanguageModelProviders'));
+      this.logger.error(
+        KeystoneError.fromUnknown(
+          error,
+          "capabilityDiscoveryService.discoverLanguageModelProviders",
+        ),
+      );
       return [];
     }
   }
@@ -591,31 +650,36 @@ export class CapabilityDiscoveryService {
       const availableCommands = await this.vscodeAPI.getCommands();
 
       // Filter for Keystone-related commands
-      const keystoneCommands = availableCommands.filter((cmd: string) =>
-        cmd.startsWith('keystone.') || cmd.startsWith('copilot.')
+      const keystoneCommands = availableCommands.filter(
+        (cmd: string) => cmd.startsWith("keystone.") || cmd.startsWith("copilot."),
       );
 
       for (const command of keystoneCommands) {
         const cmd: CommandCapability = {
-          id: `command-${command.replace('.', '-')}`,
+          id: `command-${command.replace(".", "-")}`,
           name: command,
-          type: 'command',
-          source: 'vscode-commands',
+          type: "command",
+          source: "vscode-commands",
           description: `VS Code command: ${command}`,
-          state: 'available',
+          state: "available",
           lastDiscovered: this.lastDiscoveryTimestamp,
           commandName: command,
-          available: true
+          available: true,
         };
 
         commands.push(cmd);
       }
 
-      this.logger.debug('capabilityDiscoveryService.discoverCommands', `Discovered ${commands.length} commands`);
+      this.logger.debug(
+        "capabilityDiscoveryService.discoverCommands",
+        `Discovered ${commands.length} commands`,
+      );
 
       return commands;
     } catch (error) {
-      this.logger.error(KeystoneError.fromUnknown(error, 'capabilityDiscoveryService.discoverCommands'));
+      this.logger.error(
+        KeystoneError.fromUnknown(error, "capabilityDiscoveryService.discoverCommands"),
+      );
       return [];
     }
   }
@@ -631,33 +695,38 @@ export class CapabilityDiscoveryService {
     try {
       // Look for prompt files in the repository or workspace
       const promptFiles = [
-        '.keystone/prompts/implementation.md',
-        '.keystone/prompts/analysis.md',
-        '.keystone/prompts/testing.md'
+        ".keystone/prompts/implementation.md",
+        ".keystone/prompts/analysis.md",
+        ".keystone/prompts/testing.md",
       ];
 
       for (const filename of promptFiles) {
         const prompt: PromptCapability = {
-          id: `prompt-${filename.replace('.', '-')}`,
+          id: `prompt-${filename.replace(".", "-")}`,
           name: filename,
-          type: 'prompt',
-          source: 'keystone-prompts',
+          type: "prompt",
+          source: "keystone-prompts",
           description: `Prompt file: ${filename}`,
-          state: 'partially-available',
+          state: "partially-available",
           lastDiscovered: this.lastDiscoveryTimestamp,
           promptPath: filename,
-          expectedOutputFormat: 'structured-output',
-          content: undefined
+          expectedOutputFormat: "structured-output",
+          content: undefined,
         };
 
         prompts.push(prompt);
       }
 
-      this.logger.debug('capabilityDiscoveryService.discoverPrompts', `Discovered ${prompts.length} prompts`);
+      this.logger.debug(
+        "capabilityDiscoveryService.discoverPrompts",
+        `Discovered ${prompts.length} prompts`,
+      );
 
       return prompts;
     } catch (error) {
-      this.logger.error(KeystoneError.fromUnknown(error, 'capabilityDiscoveryService.discoverPrompts'));
+      this.logger.error(
+        KeystoneError.fromUnknown(error, "capabilityDiscoveryService.discoverPrompts"),
+      );
       return [];
     }
   }
@@ -679,13 +748,13 @@ export class CapabilityDiscoveryService {
           const contribution: ExtensionContributionCapability = {
             id: `extension-${extension.id}-chat-participant`,
             name: `${extension.name} Chat Participant`,
-            type: 'extensionContribution',
+            type: "extensionContribution",
             source: extension.id,
             description: `Chat participant from extension: ${extension.name}`,
-            state: 'available',
+            state: "available",
             lastDiscovered: this.lastDiscoveryTimestamp,
             extensionId: extension.id,
-            contributionType: 'agent'
+            contributionType: "agent",
           };
 
           contributions.push(contribution);
@@ -695,24 +764,32 @@ export class CapabilityDiscoveryService {
           const contribution: ExtensionContributionCapability = {
             id: `extension-${extension.id}-lm-tool`,
             name: `${extension.name} Language Model Tool`,
-            type: 'extensionContribution',
+            type: "extensionContribution",
             source: extension.id,
             description: `Language model tool from extension: ${extension.name}`,
-            state: 'available',
+            state: "available",
             lastDiscovered: this.lastDiscoveryTimestamp,
             extensionId: extension.id,
-            contributionType: 'languageModelProvider'
+            contributionType: "languageModelProvider",
           };
 
           contributions.push(contribution);
         }
       }
 
-      this.logger.debug('capabilityDiscoveryService.discoverExtensionContributions', `Discovered ${contributions.length} extension contributions`);
+      this.logger.debug(
+        "capabilityDiscoveryService.discoverExtensionContributions",
+        `Discovered ${contributions.length} extension contributions`,
+      );
 
       return contributions;
     } catch (error) {
-      this.logger.error(KeystoneError.fromUnknown(error, 'capabilityDiscoveryService.discoverExtensionContributions'));
+      this.logger.error(
+        KeystoneError.fromUnknown(
+          error,
+          "capabilityDiscoveryService.discoverExtensionContributions",
+        ),
+      );
       return [];
     }
   }
@@ -733,7 +810,7 @@ export class CapabilityDiscoveryService {
    * @returns List of capabilities matching the type
    */
   getCapabilitiesByType(type: CapabilityType): Capability[] {
-    return this.capabilities.filter(cap => cap.type === type);
+    return this.capabilities.filter((cap) => cap.type === type);
   }
 
   /**
@@ -743,7 +820,7 @@ export class CapabilityDiscoveryService {
    * @returns The capability if found, otherwise undefined
    */
   getCapabilityById(id: string): Capability | undefined {
-    return this.capabilities.find(cap => cap.id === id);
+    return this.capabilities.find((cap) => cap.id === id);
   }
 
   /**
@@ -768,6 +845,6 @@ export class CapabilityDiscoveryService {
    */
   isCapabilityAvailable(id: string): boolean {
     const capability = this.getCapabilityById(id);
-    return capability?.state === 'available' || capability?.state === 'partially-available';
+    return capability?.state === "available" || capability?.state === "partially-available";
   }
 }

@@ -70,7 +70,7 @@ export class KeystoneError extends Error {
       recoverable: this.recoverable,
       recommendedAction: this.recommendedAction,
       retryable: this.retryable,
-      correlationId: this.correlationId
+      correlationId: this.correlationId,
     };
   }
 
@@ -86,8 +86,7 @@ export class KeystoneError extends Error {
       recommendedAction: "Review the Keystone logs and retry the operation.",
       retryable: true,
       correlationId,
-      cause: error
+      cause: error,
     });
   }
 }
-

@@ -16,9 +16,7 @@ export interface IntelligenceOverviewMarkdownResult {
 export class IntelligenceOverviewMarkdownService {
   constructor(private readonly store: IntelligenceSnapshotReader) {}
 
-  generate(
-    options: IntelligenceOverviewMarkdownOptions = {},
-  ): IntelligenceOverviewMarkdownResult {
+  generate(options: IntelligenceOverviewMarkdownOptions = {}): IntelligenceOverviewMarkdownResult {
     const snapshot = this.store.getSnapshot();
     if (!snapshot) {
       throw new Error("Intelligence snapshot unavailable.");
@@ -55,7 +53,9 @@ export class IntelligenceOverviewMarkdownService {
     if (languages.size > 0) {
       lines.push("## Languages");
       lines.push("");
-      for (const [lang, count] of [...languages.entries()].sort((a, b) => b[1] - a[1]).slice(0, maxItems)) {
+      for (const [lang, count] of [...languages.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, maxItems)) {
         lines.push(`- **${lang}:** ${count} files`);
       }
       lines.push("");
@@ -69,7 +69,9 @@ export class IntelligenceOverviewMarkdownService {
     if (categories.size > 0) {
       lines.push("## Categories");
       lines.push("");
-      for (const [cat, count] of [...categories.entries()].sort((a, b) => b[1] - a[1]).slice(0, maxItems)) {
+      for (const [cat, count] of [...categories.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, maxItems)) {
         lines.push(`- **${cat}:** ${count} files`);
       }
       lines.push("");
@@ -83,7 +85,9 @@ export class IntelligenceOverviewMarkdownService {
     if (symbolTypes.size > 0) {
       lines.push("## Symbol Types");
       lines.push("");
-      for (const [type, count] of [...symbolTypes.entries()].sort((a, b) => b[1] - a[1]).slice(0, maxItems)) {
+      for (const [type, count] of [...symbolTypes.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, maxItems)) {
         lines.push(`- **${type}:** ${count}`);
       }
       lines.push("");
@@ -97,7 +101,9 @@ export class IntelligenceOverviewMarkdownService {
     if (relationshipTypes.size > 0) {
       lines.push("## Relationship Types");
       lines.push("");
-      for (const [type, count] of [...relationshipTypes.entries()].sort((a, b) => b[1] - a[1]).slice(0, maxItems)) {
+      for (const [type, count] of [...relationshipTypes.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, maxItems)) {
         lines.push(`- **${type}:** ${count}`);
       }
       lines.push("");
@@ -129,9 +135,7 @@ export class IntelligenceOverviewMarkdownService {
     for (const symbol of snapshot.symbols) {
       fileSymbolCounts.set(symbol.fileId, (fileSymbolCounts.get(symbol.fileId) ?? 0) + 1);
     }
-    const topFiles = [...fileSymbolCounts.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, maxItems);
+    const topFiles = [...fileSymbolCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, maxItems);
 
     if (topFiles.length > 0) {
       lines.push("| File | Symbols |");
@@ -156,7 +160,9 @@ export class IntelligenceOverviewMarkdownService {
       lines.push("| Qualified Name | Type | Confidence |");
       lines.push("|---------------|------|------------|");
       for (const symbol of topSymbols) {
-        lines.push(`| ${symbol.qualifiedName} | ${symbol.type} | ${symbol.confidence.toFixed(2)} |`);
+        lines.push(
+          `| ${symbol.qualifiedName} | ${symbol.type} | ${symbol.confidence.toFixed(2)} |`,
+        );
       }
       lines.push("");
     }
@@ -169,7 +175,9 @@ export class IntelligenceOverviewMarkdownService {
       for (const diag of snapshot.diagnostics) {
         diagByCode.set(diag.code, (diagByCode.get(diag.code) ?? 0) + 1);
       }
-      for (const [code, count] of [...diagByCode.entries()].sort((a, b) => b[1] - a[1]).slice(0, maxItems)) {
+      for (const [code, count] of [...diagByCode.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, maxItems)) {
         lines.push(`- **${code}:** ${count}`);
       }
       lines.push("");

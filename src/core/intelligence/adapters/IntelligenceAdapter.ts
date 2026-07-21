@@ -2,16 +2,24 @@ import type {
   AdapterCapability,
   AdapterDetection,
   AdapterDiagnostic,
-  AdapterOutput
+  AdapterOutput,
 } from "../../../shared/contracts/adapters";
 import type { SemanticProjectRequest, SemanticSourceFileInput } from "../semantic/SemanticModel";
 
 export interface AdapterContext {
-  repositoryId: string; generation: number; jobRevision: number; branch?: string; commit?: string;
-  allFiles: readonly SemanticSourceFileInput[]; detections: readonly AdapterDetection[];
+  repositoryId: string;
+  generation: number;
+  jobRevision: number;
+  branch?: string;
+  commit?: string;
+  allFiles: readonly SemanticSourceFileInput[];
+  detections: readonly AdapterDetection[];
 }
 
-export interface AdapterInput { files: readonly SemanticSourceFileInput[]; context: AdapterContext; }
+export interface AdapterInput {
+  files: readonly SemanticSourceFileInput[];
+  context: AdapterContext;
+}
 
 export interface IntelligenceAdapter {
   readonly id: string;

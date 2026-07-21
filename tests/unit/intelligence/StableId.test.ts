@@ -1,10 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { normalizeRelativePath, normalizeSignature, stableId } from "../../../src/core/intelligence/StableId";
+import {
+  normalizeRelativePath,
+  normalizeSignature,
+  stableId,
+} from "../../../src/core/intelligence/StableId";
 
 describe("stable intelligence identifiers", () => {
   it("normalizes paths and signatures", () => {
     expect(normalizeRelativePath("./src\\feature/../index.ts")).toBe("src/index.ts");
-    expect(normalizeSignature("  function  value ( x: string ) ")).toBe("function value ( x: string )");
+    expect(normalizeSignature("  function  value ( x: string ) ")).toBe(
+      "function value ( x: string )",
+    );
   });
 
   it("is deterministic and namespace-sensitive", async () => {

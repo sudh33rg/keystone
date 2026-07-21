@@ -1,6 +1,6 @@
 # Keystone Architecture Overview
 
-> **Version:** 0.2.0 | **Date:** 2026-07-19 | **Author:** Sudheer G
+> **Version:** 0.1.0 | **Date:** 2026-07-19 | **Author:** Sudheer G
 
 ## 1. System Philosophy
 

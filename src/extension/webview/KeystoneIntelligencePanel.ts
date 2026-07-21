@@ -37,9 +37,7 @@ export class KeystoneIntelligencePanel implements vscode.Disposable {
       {
         enableScripts: true,
         retainContextWhenHidden: true,
-        localResourceRoots: [
-          vscode.Uri.joinPath(this.extensionUri, "dist"),
-        ],
+        localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, "dist")],
       },
     );
 
@@ -82,10 +80,14 @@ export class KeystoneIntelligencePanel implements vscode.Disposable {
         }
         case "wildcard-search": {
           const service = new WildcardSearchService(this.store);
-          const payload = msg.payload as { pattern: string; fields?: ("name" | "qualifiedName" | "relativePath" | "type" | "language")[]; limit?: number } | undefined;
-          const result = await service.search(
-            payload ?? { pattern: "" },
-          );
+          const payload = msg.payload as
+            | {
+                pattern: string;
+                fields?: ("name" | "qualifiedName" | "relativePath" | "type" | "language")[];
+                limit?: number;
+              }
+            | undefined;
+          const result = await service.search(payload ?? { pattern: "" });
           this.panel.webview.postMessage({
             type: "wildcard-search/result",
             data: result,
@@ -130,10 +132,10 @@ export class KeystoneIntelligencePanel implements vscode.Disposable {
         }
         case "filtered-subgraph": {
           const service = new FilteredSubgraphService(this.store);
-          const payload = msg.payload as { seedIds: string[]; direction?: "incoming" | "outgoing" | "both"; maxDepth?: number } | undefined;
-          const result = await service.extract(
-            payload ?? { seedIds: [] },
-          );
+          const payload = msg.payload as
+            | { seedIds: string[]; direction?: "incoming" | "outgoing" | "both"; maxDepth?: number }
+            | undefined;
+          const result = await service.extract(payload ?? { seedIds: [] });
           this.panel.webview.postMessage({
             type: "filtered-subgraph/result",
             data: result,

@@ -7,10 +7,7 @@ import type {
   RepositoryScopeSelection,
   TaskActionDescriptor,
 } from "../../../shared/contracts/delegation";
-import type {
-  AppRoute,
-  WorkbenchStage,
-} from "../../../shared/contracts/domain";
+import type { AppRoute, WorkbenchStage } from "../../../shared/contracts/domain";
 import type {
   HandoffPackage,
   HandoffValidationResult,
@@ -26,37 +23,32 @@ import type {
   WorkbenchWorkflowState,
 } from "../../../shared/contracts/workbench";
 import type { BuildTaskState } from "../../../shared/contracts/build";
-import type { AssistedLaunchState, CopilotCustomizationRecord, CopilotIntegrationCapabilities, KeystoneToolDescriptor } from "../../../shared/contracts/copilotIntegration";
 import type {
-  CompletionState,
-  WorkflowReviewState,
-} from "../../../shared/contracts/review";
-import {
-  WORKBENCH_STAGES,
-  parseWorkbenchRoute,
-  workbenchRoute,
-} from "../../../shared/navigation";
+  AssistedLaunchState,
+  CopilotCustomizationRecord,
+  CopilotIntegrationCapabilities,
+  KeystoneToolDescriptor,
+} from "../../../shared/contracts/copilotIntegration";
+import type { CompletionState, WorkflowReviewState } from "../../../shared/contracts/review";
+import { WORKBENCH_STAGES, parseWorkbenchRoute, workbenchRoute } from "../../../shared/navigation";
 import type { HostBridge } from "../../services/HostBridge";
 import { ExecutionValidationWorkspace } from "../execution/ExecutionValidationWorkspace";
+import { LoadingState } from "../UiState";
 
 const EXAMPLES: Record<DevelopmentWorkType, string> = {
-  feature:
-    "Add order cancellation with authorization checks and audit history.",
+  feature: "Add order cancellation with authorization checks and audit history.",
   bug: "Orders remain in pending status when payment confirmation arrives after a retry.",
-  refactor:
-    "Separate payment-provider logic from CheckoutService without changing behavior.",
+  refactor: "Separate payment-provider logic from CheckoutService without changing behavior.",
   test: "Add regression coverage for retry ordering and duplicate payment confirmations.",
   modernization:
     "Replace the legacy payment adapter incrementally while preserving the public contract.",
-  investigation:
-    "Determine why payment confirmation processing occasionally stalls after a retry.",
+  investigation: "Determine why payment confirmation processing occasionally stalls after a retry.",
 };
 const FALLBACK_DEFINITIONS = [
   {
     workType: "feature",
     label: "Feature",
-    description:
-      "Add user-visible behavior with specification, tests, and review.",
+    description: "Add user-visible behavior with specification, tests, and review.",
   },
   {
     workType: "bug",
@@ -66,8 +58,7 @@ const FALLBACK_DEFINITIONS = [
   {
     workType: "refactor",
     label: "Refactoring",
-    description:
-      "Improve internal structure without changing approved behavior.",
+    description: "Improve internal structure without changing approved behavior.",
   },
   {
     workType: "test",
@@ -77,8 +68,7 @@ const FALLBACK_DEFINITIONS = [
   {
     workType: "modernization",
     label: "Modernization",
-    description:
-      "Move toward an approved target while preserving compatibility.",
+    description: "Move toward an approved target while preserving compatibility.",
   },
   {
     workType: "investigation",
@@ -97,8 +87,7 @@ export function SDLCWorkbench({
   navigate: (route: AppRoute) => void;
 }): React.JSX.Element {
   const parsed = parseWorkbenchRoute(route);
-  if (!parsed || parsed.kind === "new")
-    return <StartNewWork bridge={bridge} navigate={navigate} />;
+  if (!parsed || parsed.kind === "new") return <StartNewWork bridge={bridge} navigate={navigate} />;
   return (
     <WorkbenchShell
       bridge={bridge}
@@ -155,8 +144,7 @@ function WorkbenchShell({
   useEffect(() => {
     if (!state || recovered) return;
     const requested = state.stageStates.find((item) => item.stage === stage);
-    if (!requested || !["blocked", "unavailable"].includes(requested.status))
-      return;
+    if (!requested || !["blocked", "unavailable"].includes(requested.status)) return;
     const valid = state.summary.currentStage;
     void bridge
       .request("workbench/navigateStage", { workflowId, stage: valid })
@@ -202,20 +190,15 @@ function WorkbenchShell({
     );
   if (!state)
     return (
-      <section className="loading-view" aria-live="polite">
-        <div className="loader" />
-        <p>Restoring workflow and recalculating stage readiness…</p>
-      </section>
+      <LoadingState
+        message="Restoring workflow and recalculating stage readiness…"
+        title="Loading Workbench"
+      />
     );
   const workflow = state.workflow;
   return (
     <section className="workbench-shell">
-      <WorkbenchHeader
-        workflow={workflow}
-        state={state}
-        bridge={bridge}
-        navigate={navigate}
-      />
+      <WorkbenchHeader workflow={workflow} state={state} bridge={bridge} navigate={navigate} />
       {notice && (
         <div className="honesty-note" role="status">
           {notice}
@@ -228,10 +211,7 @@ function WorkbenchShell({
         onNavigate={(target) => void go(target)}
       />
       <div className="workbench-layout">
-        <main
-          className="workbench-stage"
-          aria-label={`${stageLabel(stage)} stage`}
-        >
+        <main className="workbench-stage" aria-label={`${stageLabel(stage)} stage`}>
           {stage === "define" ? (
             <DefineStage
               bridge={bridge}
@@ -309,9 +289,7 @@ function WorkbenchHeader({
             : workflow.intent.category}{" "}
           · {state.repositoryName ?? "Active repository"}
         </div>
-        <h1>
-          {workflow.specification?.title ?? workflow.intent.normalizedObjective}
-        </h1>
+        <h1>{workflow.specification?.title ?? workflow.intent.normalizedObjective}</h1>
         <div className="workbench-metadata">
           <span>Repository {state.repositoryName ?? "available"}</span>
           <span>Branch {workflow.branch ?? "unknown"}</span>
@@ -322,13 +300,9 @@ function WorkbenchHeader({
       </div>
       <details className="workbench-overflow">
         <summary>Workflow actions</summary>
-        <button onClick={() => navigate("/intelligence")}>
-          Ask Repository Intelligence
-        </button>
+        <button onClick={() => navigate("/intelligence")}>Ask Repository Intelligence</button>
         <button onClick={() => navigate("/history")}>Open History</button>
-        <button onClick={() => navigate("/workbench/new")}>
-          Start new work
-        </button>
+        <button onClick={() => navigate("/workbench/new")}>Start new work</button>
       </details>
     </header>
   );
@@ -366,11 +340,7 @@ function StageNavigation({
     if (target) onNavigate(target);
   };
   return (
-    <nav
-      className="workbench-stages"
-      aria-label="SDLC Workbench stages"
-      onKeyDown={onKeyDown}
-    >
+    <nav className="workbench-stages" aria-label="SDLC Workbench stages" onKeyDown={onKeyDown}>
       {states.map((item, index) => {
         const reasonId = `stage-${item.stage}-reason`;
         return (
@@ -389,9 +359,7 @@ function StageNavigation({
               <small>{item.status}</small>
             </button>
             <span id={reasonId} className="stage-reason">
-              {item.blockers[0]?.message ??
-                item.warnings[0] ??
-                stageStatusDescription(item.status)}
+              {item.blockers[0]?.message ?? item.warnings[0] ?? stageStatusDescription(item.status)}
             </span>
           </div>
         );
@@ -410,12 +378,9 @@ function StartNewWork({
   const [context, setContext] = useState<WorkbenchCreateContext>();
   const [workType, setWorkType] = useState<DevelopmentWorkType>("feature");
   const [intent, setIntent] = useState("");
-  const [scopeKind, setScopeKind] =
-    useState<RepositoryScopeSelection["kind"]>("repository");
+  const [scopeKind, setScopeKind] = useState<RepositoryScopeSelection["kind"]>("repository");
   const [paths, setPaths] = useState("");
-  const [constraints, setConstraints] = useState<WorkbenchConstraintInput[]>(
-    [],
-  );
+  const [constraints, setConstraints] = useState<WorkbenchConstraintInput[]>([]);
   const [advanced, setAdvanced] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -477,21 +442,16 @@ function StartNewWork({
   );
   return (
     <section className="page workbench-new">
-      <div className="eyebrow">
-        Repository → Intelligence → Workflow → Tasks
-      </div>
+      <div className="eyebrow">Repository → Intelligence → Workflow → Tasks</div>
       <h1>Start new work</h1>
       <p>
-        Create one durable workflow draft. Specification and tasks are generated
-        only after explicit actions in Define and Plan.
+        Create one durable workflow draft. Specification and tasks are generated only after explicit
+        actions in Define and Plan.
       </p>
       {error && (
         <div className="error-banner" role="alert">
           {error}
-          <p>
-            Your entered intent has not been discarded. Correct the issue and
-            retry.
-          </p>
+          <p>Your entered intent has not been discarded. Correct the issue and retry.</p>
         </div>
       )}
       <div className="create-context" aria-label="Repository context">
@@ -502,21 +462,14 @@ function StartNewWork({
           {context?.intelligence.generation ?? 0}
         </span>
         <span>
-          {context?.repository.trusted
-            ? "Trusted workspace"
-            : "Workspace trust required"}
+          {context?.repository.trusted ? "Trusted workspace" : "Workspace trust required"}
         </span>
-        {context?.activeEditor && (
-          <span>Active file: {context.activeEditor}</span>
-        )}
+        {context?.activeEditor && <span>Active file: {context.activeEditor}</span>}
       </div>
       <fieldset className="work-type-grid">
         <legend>Choose work type</legend>
         {definitions.map((item) => (
-          <label
-            className={workType === item.workType ? "selected" : ""}
-            key={item.workType}
-          >
+          <label className={workType === item.workType ? "selected" : ""} key={item.workType}>
             <input
               type="radio"
               name="work-type"
@@ -545,9 +498,7 @@ function StartNewWork({
         <select
           aria-label="Repository scope"
           value={scopeKind}
-          onChange={(event) =>
-            setScopeKind(event.target.value as RepositoryScopeSelection["kind"])
-          }
+          onChange={(event) => setScopeKind(event.target.value as RepositoryScopeSelection["kind"])}
         >
           <option value="repository">Entire active repository</option>
           <option value="current-file" disabled={!context?.activeEditor}>
@@ -571,22 +522,16 @@ function StartNewWork({
       >
         Advanced constraints
       </button>
-      {advanced && (
-        <ConstraintEditor value={constraints} onChange={setConstraints} />
-      )}
+      {advanced && <ConstraintEditor value={constraints} onChange={setConstraints} />}
       <div aria-live="polite">
         {!canStart && context && (
           <p className="stage-reason">
-            Starting requires a trusted repository, ready Intelligence, a
-            non-empty intent, and valid selected scope.
+            Starting requires a trusted repository, ready Intelligence, a non-empty intent, and
+            valid selected scope.
           </p>
         )}
       </div>
-      <button
-        className="primary-button"
-        disabled={busy || !canStart}
-        onClick={() => void start()}
-      >
+      <button className="primary-button" disabled={busy || !canStart} onClick={() => void start()}>
         {busy ? "Starting…" : "Start workflow"}
       </button>
     </section>
@@ -600,8 +545,7 @@ function ConstraintEditor({
   value: WorkbenchConstraintInput[];
   onChange: (value: WorkbenchConstraintInput[]) => void;
 }): React.JSX.Element {
-  const [kind, setKind] =
-    useState<WorkbenchConstraintInput["kind"]>("compatibility");
+  const [kind, setKind] = useState<WorkbenchConstraintInput["kind"]>("compatibility");
   const [text, setText] = useState("");
   return (
     <section className="summary-card">
@@ -610,9 +554,7 @@ function ConstraintEditor({
         <select
           aria-label="Constraint type"
           value={kind}
-          onChange={(event) =>
-            setKind(event.target.value as WorkbenchConstraintInput["kind"])
-          }
+          onChange={(event) => setKind(event.target.value as WorkbenchConstraintInput["kind"])}
         >
           <option value="avoid">Files or modules to avoid</option>
           <option value="framework">Required framework or pattern</option>
@@ -643,11 +585,7 @@ function ConstraintEditor({
           <span>
             {item.kind}: {item.value}
           </span>
-          <button
-            onClick={() =>
-              onChange(value.filter((_, itemIndex) => itemIndex !== index))
-            }
-          >
+          <button onClick={() => onChange(value.filter((_, itemIndex) => itemIndex !== index))}>
             Remove
           </button>
         </div>
@@ -691,10 +629,7 @@ function DefineStage({
       active = false;
     };
   }, [bridge, workflowId]);
-  const act = async (
-    operation: () => Promise<unknown>,
-    success: string,
-  ): Promise<void> => {
+  const act = async (operation: () => Promise<unknown>, success: string): Promise<void> => {
     setError(undefined);
     try {
       await operation();
@@ -798,8 +733,8 @@ function DefineStage({
         <section className="summary-card">
           <h2>Specification</h2>
           <p>
-            No specification has been generated. Creation of the workflow did
-            not approve or fabricate one.
+            No specification has been generated. Creation of the workflow did not approve or
+            fabricate one.
           </p>
           <button
             className="primary-button"
@@ -868,12 +803,10 @@ function IntentEditor({
             onChange={(event) => setText(event.target.value)}
           />
           <p>
-            Saving creates a new intent revision and marks generated
-            specification or plan state stale.
+            Saving creates a new intent revision and marks generated specification or plan state
+            stale.
           </p>
-          <button
-            onClick={() => void onSave(text).then(() => setEditing(false))}
-          >
+          <button onClick={() => void onSave(text).then(() => setEditing(false))}>
             Save intent revision
           </button>
         </>
@@ -928,8 +861,7 @@ function RepositoryUnderstanding({
     ...state.repository.apisAndData,
   ].filter(
     (item, index, items) =>
-      items.findIndex((candidate) => candidate.entityId === item.entityId) ===
-      index,
+      items.findIndex((candidate) => candidate.entityId === item.entityId) === index,
   );
   return (
     <section className="summary-card">
@@ -937,15 +869,10 @@ function RepositoryUnderstanding({
         <div>
           <h2>Repository understanding</h2>
           <p>
-            Generation {state.repository.generation} ·{" "}
-            {state.repository.freshness}
+            Generation {state.repository.generation} · {state.repository.freshness}
           </p>
         </div>
-        <button
-          onClick={() =>
-            void bridge.request("navigation/set", { route: "/intelligence" })
-          }
-        >
+        <button onClick={() => void bridge.request("navigation/set", { route: "/intelligence" })}>
           Ask Repository
         </button>
       </header>
@@ -954,8 +881,7 @@ function RepositoryUnderstanding({
           <div>
             <strong>{item.name}</strong>
             <span>
-              {item.type} · {item.classification} ·{" "}
-              {Math.round(item.confidence * 100)}%
+              {item.type} · {item.classification} · {Math.round(item.confidence * 100)}%
             </span>
             <p>{item.reason}</p>
           </div>
@@ -991,8 +917,8 @@ function RepositoryUnderstanding({
       ))}
       {!evidence.length && (
         <p>
-          No exact entity was resolved. This is an explicit scope limitation,
-          not an empty assurance.
+          No exact entity was resolved. This is an explicit scope limitation, not an empty
+          assurance.
         </p>
       )}
       {state.repository.limitations.map((item) => (
@@ -1067,9 +993,7 @@ function Clarification({
         </span>
       </header>
       <p>{item.whyItMatters}</p>
-      <small>
-        {item.evidenceReferences.length} repository evidence reference(s)
-      </small>
+      <small>{item.evidenceReferences.length} repository evidence reference(s)</small>
       {item.options.length > 0 && (
         <div className="button-row">
           {item.options.map((option) => (
@@ -1087,16 +1011,11 @@ function Clarification({
             onChange={(event) => setAnswer(event.target.value)}
           />
           <div className="button-row">
-            <button
-              disabled={!answer.trim()}
-              onClick={() => void onAnswer(item.id, answer.trim())}
-            >
+            <button disabled={!answer.trim()} onClick={() => void onAnswer(item.id, answer.trim())}>
               Answer
             </button>
             <button onClick={() => void onDefer(item.id)}>Defer</button>
-            <button onClick={() => void onNotApplicable(item.id)}>
-              Mark not applicable
-            </button>
+            <button onClick={() => void onNotApplicable(item.id)}>Mark not applicable</button>
           </div>
         </>
       ) : (
@@ -1147,10 +1066,7 @@ function SpecificationEditor({
       </header>
       <label className="field-stack">
         <strong>Objective</strong>
-        <textarea
-          value={objective}
-          onChange={(event) => setObjective(event.target.value)}
-        />
+        <textarea value={objective} onChange={(event) => setObjective(event.target.value)} />
       </label>
       <label className="field-stack">
         <strong>Required behavior</strong>
@@ -1175,16 +1091,12 @@ function SpecificationEditor({
                 patch: {
                   objective,
                   sections: {
-                    currentBehavior:
-                      specification.sections?.currentBehavior ?? "Unknown",
+                    currentBehavior: specification.sections?.currentBehavior ?? "Unknown",
                     requiredBehavior,
-                    errorBehavior:
-                      specification.sections?.errorBehavior ?? "Unknown",
-                    compatibility:
-                      specification.sections?.compatibility ?? "Unknown",
+                    errorBehavior: specification.sections?.errorBehavior ?? "Unknown",
+                    compatibility: specification.sections?.compatibility ?? "Unknown",
                     security: specification.sections?.security ?? "Unknown",
-                    performance:
-                      specification.sections?.performance ?? "Unknown",
+                    performance: specification.sections?.performance ?? "Unknown",
                     assumptions: specification.sections?.assumptions ?? [],
                     openQuestions: specification.sections?.openQuestions ?? [],
                   },
@@ -1252,14 +1164,12 @@ function SpecDetails({
         ))}
       </details>
       <details>
-        <summary>
-          Acceptance criteria ({specification.acceptanceCriteria.length})
-        </summary>
+        <summary>Acceptance criteria ({specification.acceptanceCriteria.length})</summary>
         {specification.acceptanceCriteria.map((item) => (
           <p key={item.id}>
             {item.id} · {item.category ?? "behavior"} ·{" "}
-            {item.blocking === false ? "non-blocking" : "blocking"}:{" "}
-            {item.description} — verify: {item.validationMethod}
+            {item.blocking === false ? "non-blocking" : "blocking"}: {item.description} — verify:{" "}
+            {item.validationMethod}
           </p>
         ))}
       </details>
@@ -1310,10 +1220,7 @@ function PlanStage({
       active = false;
     };
   }, [bridge, workflowId]);
-  const act = async (
-    operation: () => Promise<unknown>,
-    success: string,
-  ): Promise<void> => {
+  const act = async (operation: () => Promise<unknown>, success: string): Promise<void> => {
     try {
       await operation();
       setNotice(success);
@@ -1343,17 +1250,13 @@ function PlanStage({
       {!graph ? (
         <section className="summary-card">
           <h2>No task plan yet</h2>
-          <p>
-            Tasks are generated only after the approved specification and an
-            explicit action.
-          </p>
+          <p>Tasks are generated only after the approved specification and an explicit action.</p>
           <button
             className="primary-button"
             disabled={workflow.specification?.status !== "approved"}
             onClick={() =>
               void act(
-                () =>
-                  bridge.request("workbench/generateTaskPlan", { workflowId }),
+                () => bridge.request("workbench/generateTaskPlan", { workflowId }),
                 "Task-plan draft generated. No task was delegated.",
               )
             }
@@ -1406,19 +1309,13 @@ function PlanStage({
     </section>
   );
 }
-function PlanValidation({
-  state,
-}: {
-  state: WorkbenchPlanState;
-}): React.JSX.Element {
+function PlanValidation({ state }: { state: WorkbenchPlanState }): React.JSX.Element {
   return (
     <section className="summary-card" aria-live="polite">
       <h2>Plan validation</h2>
       <p>
-        {state.validation.valid
-          ? "Ready for explicit approval"
-          : "Approval blocked"}{" "}
-        · revision {state.workflow.taskGraph?.revision ?? 0}
+        {state.validation.valid ? "Ready for explicit approval" : "Approval blocked"} · revision{" "}
+        {state.workflow.taskGraph?.revision ?? 0}
       </p>
       {state.validation.diagnostics.map((item) => (
         <p className={`diagnostic ${item.severity}`} key={item.id}>
@@ -1427,8 +1324,7 @@ function PlanValidation({
       ))}
       <p>
         {state.validation.topologicalOrder.length} ordered task(s) ·{" "}
-        {state.validation.uncoveredCriterionIds.length} uncovered
-        criterion/criteria
+        {state.validation.uncoveredCriterionIds.length} uncovered criterion/criteria
       </p>
     </section>
   );
@@ -1557,23 +1453,16 @@ function TaskEditor({
         <span>{index + 1}</span>
         <strong>{task.title}</strong>
         <small>
-          {task.status} · {task.risk ?? "medium"} risk ·{" "}
-          {task.optional ? "optional" : "required"}
+          {task.status} · {task.risk ?? "medium"} risk · {task.optional ? "optional" : "required"}
         </small>
       </header>
       <label>
         Title
-        <input
-          value={title}
-          onChange={(event) => setTitle(event.target.value)}
-        />
+        <input value={title} onChange={(event) => setTitle(event.target.value)} />
       </label>
       <label>
         Objective
-        <textarea
-          value={objective}
-          onChange={(event) => setObjective(event.target.value)}
-        />
+        <textarea value={objective} onChange={(event) => setObjective(event.target.value)} />
       </label>
       <label>
         Validation steps
@@ -1595,9 +1484,7 @@ function TaskEditor({
         <select
           aria-label={`Category for ${task.title}`}
           value={category}
-          onChange={(event) =>
-            setCategory(event.target.value as DevelopmentTask["category"])
-          }
+          onChange={(event) => setCategory(event.target.value as DevelopmentTask["category"])}
         >
           {[
             "investigation",
@@ -1617,11 +1504,7 @@ function TaskEditor({
           aria-label={`Execution route for ${task.title}`}
           value={route}
           onChange={(event) =>
-            setRoute(
-              event.target.value as NonNullable<
-                DevelopmentTask["executionRoute"]
-              >,
-            )
+            setRoute(event.target.value as NonNullable<DevelopmentTask["executionRoute"]>)
           }
         >
           <option value="deterministic">deterministic</option>
@@ -1648,10 +1531,7 @@ function TaskEditor({
         <button disabled={index === 0} onClick={() => void onReorder("up")}>
           Move up
         </button>
-        <button
-          disabled={index === allTasks.length - 1}
-          onClick={() => void onReorder("down")}
-        >
+        <button disabled={index === allTasks.length - 1} onClick={() => void onReorder("down")}>
           Move down
         </button>
         <button onClick={() => void onRemove()}>Remove task</button>
@@ -1663,8 +1543,7 @@ function TaskEditor({
       <div className="button-row">
         {task.dependencies.map((id) => (
           <button key={id} onClick={() => void onDependency(id, "remove")}>
-            Remove dependency:{" "}
-            {allTasks.find((item) => item.id === id)?.title ?? id}
+            Remove dependency: {allTasks.find((item) => item.id === id)?.title ?? id}
           </button>
         ))}
         {dependency && (
@@ -1704,8 +1583,7 @@ function AddTaskForm({
   const requirement = specification.requirements[0];
   const criterion = specification.acceptanceCriteria[0];
   const submit = (): void => {
-    if (!title.trim() || !objective.trim() || !requirement || !criterion)
-      return;
+    if (!title.trim() || !objective.trim() || !requirement || !criterion) return;
     void onAdd({
       title: title.trim(),
       objective: objective.trim(),
@@ -1744,9 +1622,7 @@ function AddTaskForm({
         />
       </label>
       <button
-        disabled={
-          !title.trim() || !objective.trim() || !requirement || !criterion
-        }
+        disabled={!title.trim() || !objective.trim() || !requirement || !criterion}
         onClick={submit}
       >
         Add task to plan
@@ -1783,8 +1659,7 @@ function BuildStage({
   useEffect(() => {
     let active = true;
     const target =
-      workflow.tasks.find((task) => task.status === "ready")?.id ??
-      workflow.tasks[0]?.id;
+      workflow.tasks.find((task) => task.status === "ready")?.id ?? workflow.tasks[0]?.id;
     if (target)
       void bridge
         .request("build/getTaskState", {
@@ -1801,10 +1676,7 @@ function BuildStage({
       active = false;
     };
   }, [bridge, workflow.id, workflow.tasks]);
-  const act = async (
-    operation: () => Promise<unknown>,
-    success: string,
-  ): Promise<void> => {
+  const act = async (operation: () => Promise<unknown>, success: string): Promise<void> => {
     setBusy(true);
     setError(undefined);
     try {
@@ -1851,10 +1723,8 @@ function BuildStage({
                   .request("build/selectTask", {
                     workflowId: workflow.id,
                     taskId,
-                    specificationRevision:
-                      state.workflow.specification!.revision,
-                    intelligenceGeneration:
-                      state.workflow.intelligenceGeneration,
+                    specificationRevision: state.workflow.specification!.revision,
+                    intelligenceGeneration: state.workflow.intelligenceGeneration,
                   })
                   .then(setState),
               "Task selected and readiness refreshed.",
@@ -1862,31 +1732,11 @@ function BuildStage({
           }
         />
         <div className="build-active">
-          <BuildTaskDetails
-            state={state}
-            busy={busy}
-            act={act}
-            bridge={bridge}
-          />
-          <BuildCopilotContext
-            state={state}
-            busy={busy}
-            act={act}
-            bridge={bridge}
-          />
-          <BuildExecutionControls
-            state={state}
-            busy={busy}
-            act={act}
-            bridge={bridge}
-          />
+          <BuildTaskDetails state={state} busy={busy} act={act} bridge={bridge} />
+          <BuildCopilotContext state={state} busy={busy} act={act} bridge={bridge} />
+          <BuildExecutionControls state={state} busy={busy} act={act} bridge={bridge} />
         </div>
-        <BuildChangesValidation
-          state={state}
-          busy={busy}
-          act={act}
-          bridge={bridge}
-        />
+        <BuildChangesValidation state={state} busy={busy} act={act} bridge={bridge} />
       </div>
     </section>
   );
@@ -1913,22 +1763,14 @@ function BuildTaskQueue({
     "awaiting-review",
     "completed",
   ] as const;
-  const categories = [
-    ...new Set(state.queue.items.map((item) => item.task.category)),
-  ].sort();
-  const statuses = [
-    ...new Set(state.queue.items.map((item) => item.task.status)),
-  ].sort();
+  const categories = [...new Set(state.queue.items.map((item) => item.task.category))].sort();
+  const statuses = [...new Set(state.queue.items.map((item) => item.task.status))].sort();
   const routes = [
-    ...new Set(
-      state.queue.items.map((item) => item.task.executionRoute ?? "manual"),
-    ),
+    ...new Set(state.queue.items.map((item) => item.task.executionRoute ?? "manual")),
   ].sort();
   const owners = [
     ...new Set(
-      state.queue.items
-        .map((item) => item.owner)
-        .filter((item): item is string => Boolean(item)),
+      state.queue.items.map((item) => item.owner).filter((item): item is string => Boolean(item)),
     ),
   ].sort();
   const visibleItems = state.queue.items.filter(
@@ -1937,8 +1779,7 @@ function BuildTaskQueue({
       (status === "all" || item.task.status === status) &&
       (route === "all" || (item.task.executionRoute ?? "manual") === route) &&
       (owner === "all" || item.owner === owner) &&
-      (blocking === "all" ||
-        (blocking === "blocked") === Boolean(item.blockerSummary)),
+      (blocking === "all" || (blocking === "blocked") === Boolean(item.blockerSummary)),
   );
   return (
     <aside
@@ -1946,17 +1787,12 @@ function BuildTaskQueue({
       aria-label="Task queue"
       onKeyDown={(event) => {
         if (!["ArrowDown", "ArrowUp"].includes(event.key)) return;
-        const index = visibleItems.findIndex(
-          (item) => item.task.id === state.task.id,
-        );
+        const index = visibleItems.findIndex((item) => item.task.id === state.task.id);
         const next =
           visibleItems[
             Math.max(
               0,
-              Math.min(
-                visibleItems.length - 1,
-                index + (event.key === "ArrowDown" ? 1 : -1),
-              ),
+              Math.min(visibleItems.length - 1, index + (event.key === "ArrowDown" ? 1 : -1)),
             )
           ];
         if (next) select(next.task.id);
@@ -1966,10 +1802,7 @@ function BuildTaskQueue({
         <summary>Queue filters</summary>
         <label>
           Category
-          <select
-            value={category}
-            onChange={(event) => setCategory(event.target.value)}
-          >
+          <select value={category} onChange={(event) => setCategory(event.target.value)}>
             <option value="all">All</option>
             {categories.map((item) => (
               <option key={item}>{item}</option>
@@ -1978,10 +1811,7 @@ function BuildTaskQueue({
         </label>
         <label>
           Status
-          <select
-            value={status}
-            onChange={(event) => setStatus(event.target.value)}
-          >
+          <select value={status} onChange={(event) => setStatus(event.target.value)}>
             <option value="all">All</option>
             {statuses.map((item) => (
               <option key={item}>{item}</option>
@@ -1990,10 +1820,7 @@ function BuildTaskQueue({
         </label>
         <label>
           Route
-          <select
-            value={route}
-            onChange={(event) => setRoute(event.target.value)}
-          >
+          <select value={route} onChange={(event) => setRoute(event.target.value)}>
             <option value="all">All</option>
             {routes.map((item) => (
               <option key={item}>{item}</option>
@@ -2002,10 +1829,7 @@ function BuildTaskQueue({
         </label>
         <label>
           Owner
-          <select
-            value={owner}
-            onChange={(event) => setOwner(event.target.value)}
-          >
+          <select value={owner} onChange={(event) => setOwner(event.target.value)}>
             <option value="all">All</option>
             {owners.map((item) => (
               <option key={item}>{item}</option>
@@ -2014,10 +1838,7 @@ function BuildTaskQueue({
         </label>
         <label>
           Blocking
-          <select
-            value={blocking}
-            onChange={(event) => setBlocking(event.target.value)}
-          >
+          <select value={blocking} onChange={(event) => setBlocking(event.target.value)}>
             <option value="all">All</option>
             <option value="blocked">Blocked only</option>
             <option value="clear">Not blocked</option>
@@ -2070,18 +1891,11 @@ function BuildTaskDetails({
   const spec = state.workflow.specification!;
   const [blockReason, setBlockReason] = useState("");
   const [blockCategory, setBlockCategory] = useState<
-    | "decision"
-    | "dependency"
-    | "external"
-    | "repository"
-    | "validation"
-    | "other"
+    "decision" | "dependency" | "external" | "repository" | "validation" | "other"
   >("other");
   const [blockDecision, setBlockDecision] = useState("");
   const [blockAction, setBlockAction] = useState("");
-  const requirements = spec.requirements.filter((item) =>
-    task.requirementIds.includes(item.id),
-  );
+  const requirements = spec.requirements.filter((item) => task.requirementIds.includes(item.id));
   const criteria = spec.acceptanceCriteria.filter((item) =>
     task.acceptanceCriterionIds.includes(item.id),
   );
@@ -2099,14 +1913,11 @@ function BuildTaskDetails({
       <p>{task.objective}</p>
       <details open>
         <summary>
-          Readiness ({state.readiness.filter((item) => item.passed).length}/
-          {state.readiness.length})
+          Readiness ({state.readiness.filter((item) => item.passed).length}/{state.readiness.length}
+          )
         </summary>
         {state.readiness.map((item) => (
-          <p
-            className={`diagnostic ${item.passed ? "info" : "error"}`}
-            key={item.code}
-          >
+          <p className={`diagnostic ${item.passed ? "info" : "error"}`} key={item.code}>
             <strong>
               {item.passed ? "Pass" : "Blocked"}: {item.label}
             </strong>{" "}
@@ -2131,30 +1942,18 @@ function BuildTaskDetails({
         <summary>Scope and dependencies</summary>
         <p>Included: {spec.scope.included.join(" · ")}</p>
         <p>Excluded: {spec.scope.excluded.join(" · ")}</p>
-        <p>
-          Expected files: {task.expectedFiles.join(", ") || "No path assumed"}
-        </p>
-        <p>
-          Expected entities:{" "}
-          {task.expectedEntityIds.join(", ") || "No exact entity"}
-        </p>
+        <p>Expected files: {task.expectedFiles.join(", ") || "No path assumed"}</p>
+        <p>Expected entities: {task.expectedEntityIds.join(", ") || "No exact entity"}</p>
         <p>
           Dependencies:{" "}
           {task.dependencies
-            .map(
-              (id) =>
-                state.workflow.tasks.find((item) => item.id === id)?.title ??
-                id,
-            )
+            .map((id) => state.workflow.tasks.find((item) => item.id === id)?.title ?? id)
             .join(", ") || "None"}
         </p>
       </details>
       <div className="button-row">
         <button
-          disabled={
-            busy ||
-            !state.readiness.every((item) => item.passed || !item.blocking)
-          }
+          disabled={busy || !state.readiness.every((item) => item.passed || !item.blocking)}
           onClick={() =>
             void act(
               () =>
@@ -2171,20 +1970,15 @@ function BuildTaskDetails({
           Start task
         </button>
         <button
-          disabled={
-            busy ||
-            !["delegating", "executing", "blocked"].includes(task.status)
-          }
+          disabled={busy || !["delegating", "executing", "blocked"].includes(task.status)}
           onClick={() =>
             void act(
               () =>
                 bridge
-                  .request(
-                    task.status === "blocked"
-                      ? "build/resumeTask"
-                      : "build/pauseTask",
-                    { workflowId: state.workflow.id, taskId: task.id },
-                  )
+                  .request(task.status === "blocked" ? "build/resumeTask" : "build/pauseTask", {
+                    workflowId: state.workflow.id,
+                    taskId: task.id,
+                  })
                   .then(setNoop),
               task.status === "blocked"
                 ? "Task resumed after readiness checks."
@@ -2226,9 +2020,7 @@ function BuildTaskDetails({
           Category
           <select
             value={blockCategory}
-            onChange={(event) =>
-              setBlockCategory(event.target.value as typeof blockCategory)
-            }
+            onChange={(event) => setBlockCategory(event.target.value as typeof blockCategory)}
           >
             <option value="decision">Decision</option>
             <option value="dependency">Dependency</option>
@@ -2256,10 +2048,7 @@ function BuildTaskDetails({
         </label>
         <button
           disabled={
-            busy ||
-            task.status === "completed" ||
-            !blockReason.trim() ||
-            !blockAction.trim()
+            busy || task.status === "completed" || !blockReason.trim() || !blockAction.trim()
           }
           onClick={() =>
             void act(
@@ -2270,9 +2059,7 @@ function BuildTaskDetails({
                     taskId: task.id,
                     reason: blockReason.trim(),
                     category: blockCategory,
-                    ...(blockDecision.trim()
-                      ? { requiredDecision: blockDecision.trim() }
-                      : {}),
+                    ...(blockDecision.trim() ? { requiredDecision: blockDecision.trim() } : {}),
                     suggestedAction: blockAction.trim(),
                   })
                   .then(setNoop),
@@ -2298,15 +2085,43 @@ function BuildCopilotContext({
   bridge: HostBridge;
 }): React.JSX.Element {
   const task = state.task;
-  const [budget, setBudget] = useState(
-    state.context?.budget.maxEstimatedTokens ?? 12_000,
-  );
+  const [budget, setBudget] = useState(state.context?.budget.maxEstimatedTokens ?? 12_000);
   const [intendedAgent, setIntendedAgent] = useState("");
   const [integration, setIntegration] = useState<CopilotIntegrationCapabilities>();
   const [guidance, setGuidance] = useState<CopilotCustomizationRecord[]>([]);
   const [tools, setTools] = useState<KeystoneToolDescriptor[]>([]);
   const [launch, setLaunch] = useState<AssistedLaunchState>();
-  useEffect(() => { let active = true; const scope = { repositoryId: state.workflow.repositoryId, workflowId: state.workflow.id, taskId: task.id, intelligenceGeneration: state.workflow.intelligenceGeneration }; void Promise.all([bridge.request("copilot/getIntegrationStatus", {}), bridge.request("copilot/getApplicableCustomizations", scope), bridge.request("copilot/listKeystoneTools", {})]).then(([capabilities, items, descriptors]) => { if (active) { setIntegration(capabilities); setGuidance(items); setTools(descriptors); } }).catch(() => undefined); return () => { active = false; }; }, [bridge, state.workflow.id, state.workflow.intelligenceGeneration, state.workflow.repositoryId, task.id]);
+  useEffect(() => {
+    let active = true;
+    const scope = {
+      repositoryId: state.workflow.repositoryId,
+      workflowId: state.workflow.id,
+      taskId: task.id,
+      intelligenceGeneration: state.workflow.intelligenceGeneration,
+    };
+    void Promise.all([
+      bridge.request("copilot/getIntegrationStatus", {}),
+      bridge.request("copilot/getApplicableCustomizations", scope),
+      bridge.request("copilot/listKeystoneTools", {}),
+    ])
+      .then(([capabilities, items, descriptors]) => {
+        if (active) {
+          setIntegration(capabilities);
+          setGuidance(items);
+          setTools(descriptors);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [
+    bridge,
+    state.workflow.id,
+    state.workflow.intelligenceGeneration,
+    state.workflow.repositoryId,
+    task.id,
+  ]);
   return (
     <section className="summary-card">
       <h2>Copilot and context</h2>
@@ -2321,12 +2136,28 @@ function BuildCopilotContext({
       </p>
       <div className="capability-strip" role="status" aria-label="Copilot integration capabilities">
         <span>{integration?.chatAvailable ? "Copilot ready" : "Copilot limited"}</span>
-        <span>{integration?.languageModelToolsAvailable ? `${tools.filter((item) => item.available).length} tools available` : "Tools unavailable"}</span>
+        <span>
+          {integration?.languageModelToolsAvailable
+            ? `${tools.filter((item) => item.available).length} tools available`
+            : "Tools unavailable"}
+        </span>
         <span>{guidance.filter((item) => item.kind === "agent").length} agent definitions</span>
-        <span>{guidance.filter((item) => item.applicable && item.enabled).length} guidance items active</span>
-        <span>{integration?.assistedInvocationAvailable ? "Assisted mode available" : integration?.clipboardFallbackAvailable ? "Clipboard fallback" : "Launch unavailable"}</span>
+        <span>
+          {guidance.filter((item) => item.applicable && item.enabled).length} guidance items active
+        </span>
+        <span>
+          {integration?.assistedInvocationAvailable
+            ? "Assisted mode available"
+            : integration?.clipboardFallbackAvailable
+              ? "Clipboard fallback"
+              : "Launch unavailable"}
+        </span>
       </div>
-      {integration?.limitations.map((item) => <p className="stage-reason" key={item}>{item}</p>)}
+      {integration?.limitations.map((item) => (
+        <p className="stage-reason" key={item}>
+          {item}
+        </p>
+      ))}
       <div className="agent-grid">
         {state.agents.map((agent) => (
           <button
@@ -2383,8 +2214,7 @@ function BuildCopilotContext({
       </div>
       <details>
         <summary>
-          Repository guidance (
-          {state.customizations.filter((item) => item.selected).length}{" "}
+          Repository guidance ({state.customizations.filter((item) => item.selected).length}{" "}
           selected)
         </summary>
         {state.customizations.map((item) => (
@@ -2415,17 +2245,155 @@ function BuildCopilotContext({
       </details>
       <details>
         <summary>Customization applicability and trust ({guidance.length})</summary>
-        {guidance.map((item) => <div className="context-row" key={item.id}><div><strong>{item.name}</strong><span>{item.kind} · {item.source} · {item.trustState} · {item.applicability}</span><small>{item.applicabilityReason}</small>{item.duplicateOf && <small>Duplicate of {item.duplicateOf}; excluded from prompt duplication.</small>}</div><button aria-pressed={item.enabled} disabled={busy || item.trustState === "untrusted"} onClick={() => void act(async () => { const values = await bridge.request("copilot/setCustomizationEnabled", { repositoryId: state.workflow.repositoryId, workflowId: state.workflow.id, taskId: task.id, intelligenceGeneration: state.workflow.intelligenceGeneration, customizationId: item.id, enabled: !item.enabled }); setGuidance(values); }, `${item.name} ${item.enabled ? "disabled" : "enabled"}.`)}>{item.enabled ? "Disable" : "Enable"}</button></div>)}
+        {guidance.map((item) => (
+          <div className="context-row" key={item.id}>
+            <div>
+              <strong>{item.name}</strong>
+              <span>
+                {item.kind} · {item.source} · {item.trustState} · {item.applicability}
+              </span>
+              <small>{item.applicabilityReason}</small>
+              {item.duplicateOf && (
+                <small>Duplicate of {item.duplicateOf}; excluded from prompt duplication.</small>
+              )}
+            </div>
+            <button
+              aria-pressed={item.enabled}
+              disabled={busy || item.trustState === "untrusted"}
+              onClick={() =>
+                void act(
+                  async () => {
+                    const values = await bridge.request("copilot/setCustomizationEnabled", {
+                      repositoryId: state.workflow.repositoryId,
+                      workflowId: state.workflow.id,
+                      taskId: task.id,
+                      intelligenceGeneration: state.workflow.intelligenceGeneration,
+                      customizationId: item.id,
+                      enabled: !item.enabled,
+                    });
+                    setGuidance(values);
+                  },
+                  `${item.name} ${item.enabled ? "disabled" : "enabled"}.`,
+                )
+              }
+            >
+              {item.enabled ? "Disable" : "Enable"}
+            </button>
+          </div>
+        ))}
       </details>
       <details>
-        <summary>Keystone Intelligence tools ({tools.filter((item) => item.available).length} available)</summary>
-        <p>All registered tools are read-only, bounded, generation-aware, cancellable, and audited without prompt or source bodies.</p>
-        <ul>{tools.map((item) => <li key={item.name}><strong>{item.name}</strong> — {item.available ? item.description : item.limitation}</li>)}</ul>
+        <summary>
+          Keystone Intelligence tools ({tools.filter((item) => item.available).length} available)
+        </summary>
+        <p>
+          All registered tools are read-only, bounded, generation-aware, cancellable, and audited
+          without prompt or source bodies.
+        </p>
+        <ul>
+          {tools.map((item) => (
+            <li key={item.name}>
+              <strong>{item.name}</strong> — {item.available ? item.description : item.limitation}
+            </li>
+          ))}
+        </ul>
       </details>
       <section className="subpanel" aria-live="polite">
         <h3>Assisted Copilot launch</h3>
-        <p>Prepare and review the exact prompt first. Opening or copying never claims submission; confirm only after you submit it yourself.</p>
-        {!launch ? <button disabled={busy || !task.assignedAgentId} onClick={() => void act(async () => { const value = await bridge.request("copilot/prepareAssistedLaunch", { repositoryId: state.workflow.repositoryId, workflowId: state.workflow.id, taskId: task.id, intelligenceGeneration: state.workflow.intelligenceGeneration, ...(task.assignedAgentId ? { selectedAgentId: task.assignedAgentId } : {}) }); setLaunch(value); }, "Assisted launch prepared for review; nothing was submitted.")}>Prepare assisted launch</button> : <><p><strong>Status:</strong> {launch.status} · fingerprint {launch.promptFingerprint.slice(0, 20)}…</p><textarea aria-label="Prepared Copilot prompt" readOnly value={launch.prompt} rows={12} /><div className="button-row"><button disabled={busy || !integration?.chatAvailable} onClick={() => void act(async () => setLaunch(await bridge.request("copilot/openChat", { launchId: launch.id })), "Copilot Chat opened; submission is still awaiting your confirmation.")}>Open Copilot Chat</button><button disabled={busy || !integration?.clipboardFallbackAvailable} onClick={() => void act(async () => setLaunch(await bridge.request("copilot/copyPrompt", { launchId: launch.id })), "Prompt copied; submission is still awaiting your confirmation.")}>Copy prompt</button><button disabled={busy || !["opened", "copied", "uncertain"].includes(launch.status)} onClick={() => void act(async () => setLaunch(await bridge.request("copilot/confirmSubmission", { launchId: launch.id })), "User submission confirmation recorded; Keystone did not infer Copilot progress.")}>I submitted it</button><button disabled={busy || launch.status === "confirmed"} onClick={() => void act(async () => setLaunch(await bridge.request("copilot/cancelAssistedLaunch", { launchId: launch.id })), "Assisted launch cancelled.")}>Cancel</button></div></>}
+        <p>
+          Prepare and review the exact prompt first. Opening or copying never claims submission;
+          confirm only after you submit it yourself.
+        </p>
+        {!launch ? (
+          <button
+            disabled={busy || !task.assignedAgentId}
+            onClick={() =>
+              void act(async () => {
+                const value = await bridge.request("copilot/prepareAssistedLaunch", {
+                  repositoryId: state.workflow.repositoryId,
+                  workflowId: state.workflow.id,
+                  taskId: task.id,
+                  intelligenceGeneration: state.workflow.intelligenceGeneration,
+                  ...(task.assignedAgentId ? { selectedAgentId: task.assignedAgentId } : {}),
+                });
+                setLaunch(value);
+              }, "Assisted launch prepared for review; nothing was submitted.")
+            }
+          >
+            Prepare assisted launch
+          </button>
+        ) : (
+          <>
+            <p>
+              <strong>Status:</strong> {launch.status} · fingerprint{" "}
+              {launch.promptFingerprint.slice(0, 20)}…
+            </p>
+            <textarea
+              aria-label="Prepared Copilot prompt"
+              readOnly
+              value={launch.prompt}
+              rows={12}
+            />
+            <div className="button-row">
+              <button
+                disabled={busy || !integration?.chatAvailable}
+                onClick={() =>
+                  void act(
+                    async () =>
+                      setLaunch(await bridge.request("copilot/openChat", { launchId: launch.id })),
+                    "Copilot Chat opened; submission is still awaiting your confirmation.",
+                  )
+                }
+              >
+                Open Copilot Chat
+              </button>
+              <button
+                disabled={busy || !integration?.clipboardFallbackAvailable}
+                onClick={() =>
+                  void act(
+                    async () =>
+                      setLaunch(
+                        await bridge.request("copilot/copyPrompt", { launchId: launch.id }),
+                      ),
+                    "Prompt copied; submission is still awaiting your confirmation.",
+                  )
+                }
+              >
+                Copy prompt
+              </button>
+              <button
+                disabled={busy || !["opened", "copied", "uncertain"].includes(launch.status)}
+                onClick={() =>
+                  void act(
+                    async () =>
+                      setLaunch(
+                        await bridge.request("copilot/confirmSubmission", { launchId: launch.id }),
+                      ),
+                    "User submission confirmation recorded; Keystone did not infer Copilot progress.",
+                  )
+                }
+              >
+                I submitted it
+              </button>
+              <button
+                disabled={busy || launch.status === "confirmed"}
+                onClick={() =>
+                  void act(
+                    async () =>
+                      setLaunch(
+                        await bridge.request("copilot/cancelAssistedLaunch", {
+                          launchId: launch.id,
+                        }),
+                      ),
+                    "Assisted launch cancelled.",
+                  )
+                }
+              >
+                Cancel
+              </button>
+            </div>
+          </>
+        )}
       </section>
       {!state.context ? (
         <button
@@ -2447,8 +2415,7 @@ function BuildCopilotContext({
         <>
           <p>
             {state.context.estimatedTokens} estimated tokens /{" "}
-            {state.context.budget.maxEstimatedTokens} ·{" "}
-            {state.context.completeness} ·{" "}
+            {state.context.budget.maxEstimatedTokens} · {state.context.completeness} ·{" "}
             {state.context.reviewed ? "approved" : "review required"}
           </p>
           {state.context.items.map((item) => (
@@ -2467,13 +2434,11 @@ function BuildCopilotContext({
                   onClick={() =>
                     void act(
                       () =>
-                        bridge.request(
-                          item.pinned ? "context/unpinItem" : "context/pinItem",
-                          { taskId: task.id, itemId: item.id },
-                        ),
-                      item.pinned
-                        ? "Context item unpinned."
-                        : "Context item pinned.",
+                        bridge.request(item.pinned ? "context/unpinItem" : "context/pinItem", {
+                          taskId: task.id,
+                          itemId: item.id,
+                        }),
+                      item.pinned ? "Context item unpinned." : "Context item pinned.",
                     )
                   }
                 >
@@ -2559,9 +2524,7 @@ function BuildCopilotContext({
               />
             </label>
             <button
-              disabled={
-                busy || budget === state.context.budget.maxEstimatedTokens
-              }
+              disabled={busy || budget === state.context.budget.maxEstimatedTokens}
               onClick={() =>
                 void act(
                   () =>
@@ -2579,9 +2542,7 @@ function BuildCopilotContext({
           </div>
           {state.context.exclusions.length > 0 && (
             <details>
-              <summary>
-                Excluded context ({state.context.exclusions.length})
-              </summary>
+              <summary>Excluded context ({state.context.exclusions.length})</summary>
               {state.context.exclusions.map((entry) => (
                 <article className="context-row" key={entry.item.id}>
                   <span>
@@ -2663,8 +2624,7 @@ function BuildExecutionControls({
       <h2>Execution</h2>
       <p>
         Delegation: {delegation?.mode ?? "not started"} ·{" "}
-        {delegation?.status ??
-          (state.prepared?.approved ? "approved" : "not approved")}
+        {delegation?.status ?? (state.prepared?.approved ? "approved" : "not approved")}
       </p>
       <p>Execution evidence: {execution?.status ?? "not started"}</p>
       <div className="button-row">
@@ -2758,47 +2718,43 @@ function BuildExecutionControls({
             Confirm implementation started
           </button>
         )}
-        {execution &&
-          ["executing", "repository-changed"].includes(execution.status) && (
-            <button
-              disabled={busy}
-              onClick={() =>
-                void act(
-                  () =>
-                    bridge.request("execution/confirmStopped", {
-                      sessionId: execution.id,
-                    }),
-                  "Implementation stopped; result evidence must now be captured.",
-                )
-              }
-            >
-              Confirm implementation finished
-            </button>
-          )}
-        {delegation &&
-          !["cancelled", "completed-later"].includes(delegation.status) && (
-            <button
-              disabled={busy}
-              onClick={() =>
-                void act(
-                  () =>
-                    bridge.request("delegation/cancel", {
-                      workflowId: state.workflow.id,
-                      sessionId: delegation.id,
-                    }),
-                  "Delegation tracking cancelled; unsupported external work may continue.",
-                )
-              }
-            >
-              Cancel delegation tracking
-            </button>
-          )}
+        {execution && ["executing", "repository-changed"].includes(execution.status) && (
+          <button
+            disabled={busy}
+            onClick={() =>
+              void act(
+                () =>
+                  bridge.request("execution/confirmStopped", {
+                    sessionId: execution.id,
+                  }),
+                "Implementation stopped; result evidence must now be captured.",
+              )
+            }
+          >
+            Confirm implementation finished
+          </button>
+        )}
+        {delegation && !["cancelled", "completed-later"].includes(delegation.status) && (
+          <button
+            disabled={busy}
+            onClick={() =>
+              void act(
+                () =>
+                  bridge.request("delegation/cancel", {
+                    workflowId: state.workflow.id,
+                    sessionId: delegation.id,
+                  }),
+                "Delegation tracking cancelled; unsupported external work may continue.",
+              )
+            }
+          >
+            Cancel delegation tracking
+          </button>
+        )}
       </div>
       {execution?.status === "awaiting-result-capture" && (
         <div className="field-stack">
-          <label htmlFor={`result-notes-${execution.id}`}>
-            Execution notes
-          </label>
+          <label htmlFor={`result-notes-${execution.id}`}>Execution notes</label>
           <textarea
             id={`result-notes-${execution.id}`}
             value={notes}
@@ -2855,9 +2811,7 @@ function BuildChangesValidation({
     text: string;
     truncated: boolean;
   }>();
-  const failedStep = state.validationRun?.stepResults.find(
-    (step) => step.status === "failed",
-  );
+  const failedStep = state.validationRun?.stepResults.find((step) => step.status === "failed");
   const manualCriterion = state.validationRun?.acceptanceCriteriaResults.find(
     (criterion) => criterion.status === "requires-manual-review",
   );
@@ -2874,34 +2828,31 @@ function BuildChangesValidation({
           <article key={change.relativePath}>
             <strong>{change.relativePath}</strong>
             <span>
-              {change.kind} ·{" "}
-              {change.userOverride?.classification ?? change.classification} ·{" "}
+              {change.kind} · {change.userOverride?.classification ?? change.classification} ·{" "}
               {Math.round(change.confidence * 100)}%
             </span>
             <small>{change.reasons.join(" ")}</small>
             <div className="button-row">
-              {(["expected", "pre-existing", "excluded"] as const).map(
-                (classification) => (
-                  <button
-                    key={classification}
-                    disabled={busy}
-                    onClick={() =>
-                      void act(
-                        () =>
-                          bridge.request("execution/attributeChange", {
-                            sessionId: execution.id,
-                            relativePath: change.relativePath,
-                            classification,
-                            reason: `User classified this change as ${classification} in Build.`,
-                          }),
-                        `Change marked ${classification}; the audit record was preserved.`,
-                      )
-                    }
-                  >
-                    Mark {classification}
-                  </button>
-                ),
-              )}
+              {(["expected", "pre-existing", "excluded"] as const).map((classification) => (
+                <button
+                  key={classification}
+                  disabled={busy}
+                  onClick={() =>
+                    void act(
+                      () =>
+                        bridge.request("execution/attributeChange", {
+                          sessionId: execution.id,
+                          relativePath: change.relativePath,
+                          classification,
+                          reason: `User classified this change as ${classification} in Build.`,
+                        }),
+                      `Change marked ${classification}; the audit record was preserved.`,
+                    )
+                  }
+                >
+                  Mark {classification}
+                </button>
+              ))}
               <button
                 onClick={() =>
                   void bridge
@@ -2965,9 +2916,7 @@ function BuildChangesValidation({
       <section>
         <h2>Validation</h2>
         {execution &&
-          ["result-captured", "planning-validation"].includes(
-            execution.status,
-          ) &&
+          ["result-captured", "planning-validation"].includes(execution.status) &&
           !state.validationPlan && (
             <button
               disabled={busy}
@@ -2989,8 +2938,8 @@ function BuildChangesValidation({
           <>
             {state.validationPlan.steps.map((step) => (
               <p key={step.id}>
-                <strong>{step.type}</strong> ·{" "}
-                {step.required ? "required" : "optional"} · {step.status}
+                <strong>{step.type}</strong> · {step.required ? "required" : "optional"} ·{" "}
+                {step.status}
               </p>
             ))}
             <button
@@ -3042,9 +2991,7 @@ function BuildChangesValidation({
             )}
           </>
         ) : (
-          <p>
-            Validation plan is available after an execution result is captured.
-          </p>
+          <p>Validation plan is available after an execution result is captured.</p>
         )}
         {state.validationRun && (
           <>
@@ -3056,15 +3003,12 @@ function BuildChangesValidation({
             </p>
             {state.validationRun.acceptanceCriteriaResults.map((criterion) => (
               <p key={criterion.criterionId}>
-                {criterion.criterionId}: {criterion.status} ·{" "}
-                {criterion.explanation}
+                {criterion.criterionId}: {criterion.status} · {criterion.explanation}
               </p>
             ))}
             {manualCriterion && (
               <div className="field-stack">
-                <label
-                  htmlFor={`manual-evidence-${manualCriterion.criterionId}`}
-                >
+                <label htmlFor={`manual-evidence-${manualCriterion.criterionId}`}>
                   Manual evidence for {manualCriterion.criterionId}
                 </label>
                 <textarea
@@ -3097,16 +3041,13 @@ function BuildChangesValidation({
       <section>
         <h2>Continuity</h2>
         <p>
-          Retry history: {execution?.retryAttempt ?? 0} · Handoff eligibility
-          requires an accepted or active assignment.
+          Retry history: {execution?.retryAttempt ?? 0} · Handoff eligibility requires an accepted
+          or active assignment.
         </p>
         {execution &&
-          [
-            "validation-failed",
-            "failed",
-            "blocked",
-            "awaiting-user-review",
-          ].includes(execution.status) &&
+          ["validation-failed", "failed", "blocked", "awaiting-user-review"].includes(
+            execution.status,
+          ) &&
           !state.retry && (
             <button
               disabled={busy}
@@ -3127,12 +3068,9 @@ function BuildChangesValidation({
             </button>
           )}
         {execution &&
-          [
-            "validation-failed",
-            "failed",
-            "blocked",
-            "awaiting-user-review",
-          ].includes(execution.status) &&
+          ["validation-failed", "failed", "blocked", "awaiting-user-review"].includes(
+            execution.status,
+          ) &&
           !state.retry && (
             <div className="button-row">
               <label>
@@ -3145,8 +3083,7 @@ function BuildChangesValidation({
                   {state.agents
                     .filter(
                       (agent) =>
-                        agent.availability !== "unavailable" &&
-                        agent.id !== execution.agentId,
+                        agent.availability !== "unavailable" && agent.id !== execution.agentId,
                     )
                     .map((agent) => (
                       <option value={agent.id} key={agent.id}>
@@ -3183,8 +3120,8 @@ function BuildChangesValidation({
             <p>{state.retry.reason}</p>
             <p>
               {state.retry.failedCriterionIds.length} failed criteria ·{" "}
-              {state.retry.findingIds.length} findings ·{" "}
-              {state.retry.repairContext.length} focused context items
+              {state.retry.findingIds.length} findings · {state.retry.repairContext.length} focused
+              context items
             </p>
             {state.retry.status === "planned" && execution && (
               <button
@@ -3240,12 +3177,7 @@ function BuildChangesValidation({
           {state.completion?.blockers.join(" ") ??
             "Completion readiness requires validation evidence."}
         </p>
-        <BuildHandoffPanel
-          state={state}
-          busy={busy}
-          act={act}
-          bridge={bridge}
-        />
+        <BuildHandoffPanel state={state} busy={busy} act={act} bridge={bridge} />
       </section>
     </aside>
   );
@@ -3275,13 +3207,9 @@ function BuildHandoffPanel({
       if (!active) return;
       setAssignments(nextAssignments);
       setParticipants(nextParticipants);
-      const current = nextAssignments.find(
-        (item) => item.taskId === state.task.id,
-      );
+      const current = nextAssignments.find((item) => item.taskId === state.task.id);
       setReceiverId(
-        nextParticipants.find(
-          (item) => item.id !== current?.assignedTo && item.active,
-        )?.id ?? "",
+        nextParticipants.find((item) => item.id !== current?.assignedTo && item.active)?.id ?? "",
       );
     });
     return () => {
@@ -3299,19 +3227,13 @@ function BuildHandoffPanel({
     <details>
       <summary>Task handoff</summary>
       {!assignment && (
-        <p>
-          Handoff unavailable: this task requires an accepted or active
-          assignment.
-        </p>
+        <p>Handoff unavailable: this task requires an accepted or active assignment.</p>
       )}
       {assignment && (
         <>
           <label className="field-stack">
             Intended receiver
-            <select
-              value={receiverId}
-              onChange={(event) => setReceiverId(event.target.value)}
-            >
+            <select value={receiverId} onChange={(event) => setReceiverId(event.target.value)}>
               <option value="">Select a different active participant</option>
               {participants
                 .filter((item) => item.active && item.id !== senderId)
@@ -3343,16 +3265,13 @@ function BuildHandoffPanel({
                             {
                               id: crypto.randomUUID(),
                               category: "task",
-                              description:
-                                state.task.staleReasons.at(-1) ??
-                                "Task is blocked.",
+                              description: state.task.staleReasons.at(-1) ?? "Task is blocked.",
                               blocking: true,
                             },
                           ]
                         : [],
                     openQuestions: [],
-                    senderNotes:
-                      "Prepared from the task-centered Build workspace.",
+                    senderNotes: "Prepared from the task-centered Build workspace.",
                   });
                   setHandoff(value);
                 }, "Bounded handoff package prepared for review; no credentials or active agent state were included.")
@@ -3366,17 +3285,14 @@ function BuildHandoffPanel({
       {handoff && (
         <div className="handoff-preview">
           <p>
-            {handoff.task.title} · {handoff.progress.stage} ·{" "}
-            {handoff.changedFiles.length} changed files
+            {handoff.task.title} · {handoff.progress.stage} · {handoff.changedFiles.length} changed
+            files
           </p>
           <p>
             {handoff.execution?.attemptCount ?? 0} execution attempts ·{" "}
             {handoff.validation?.latestStatus ?? "validation unavailable"}
           </p>
-          <p>
-            Context fingerprint:{" "}
-            {handoff.context[0]?.contentFingerprint ?? "none"}
-          </p>
+          <p>Context fingerprint: {handoff.context[0]?.contentFingerprint ?? "none"}</p>
           {handoff.changedFiles.map((file) => (
             <p key={file.path}>
               {file.kind}: {file.path} · {file.classification}
@@ -3452,17 +3368,34 @@ function ReviewStage({
   const [busy, setBusy] = useState(false);
   const [diff, setDiff] = useState<{ path: string; text: string; truncated: boolean }>();
   const [note, setNote] = useState("");
-  const [decisionReason, setDecisionReason] = useState("I reviewed the retained specification, changes, validation evidence, findings, and limitations.");
+  const [decisionReason, setDecisionReason] = useState(
+    "I reviewed the retained specification, changes, validation evidence, findings, and limitations.",
+  );
   const refresh = useCallback(async (): Promise<void> => {
-    try { setState(await bridge.request("review/getState", { workflowId })); setError(undefined); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    try {
+      setState(await bridge.request("review/getState", { workflowId }));
+      setError(undefined);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
   }, [bridge, workflowId]);
-  useEffect(() => { queueMicrotask(() => void refresh()); return bridge.subscribe((message) => { if (message.type.startsWith("review/")) void refresh(); }); }, [bridge, refresh]);
+  useEffect(() => {
+    queueMicrotask(() => void refresh());
+    return bridge.subscribe((message) => {
+      if (message.type.startsWith("review/")) void refresh();
+    });
+  }, [bridge, refresh]);
   const act = async (action: () => Promise<unknown>): Promise<void> => {
-    setBusy(true); setError(undefined);
-    try { await action(); await refresh(); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
-    finally { setBusy(false); }
+    setBusy(true);
+    setError(undefined);
+    try {
+      await action();
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
   };
   return (
     <>
@@ -3471,31 +3404,399 @@ function ReviewStage({
         title="Review implementation evidence"
         description="Compare the approved specification with attributed changes, current validation, findings, and explicit reviewer decisions."
       />
-      {error && <div className="honesty-note" role="alert">{error}</div>}
-      {!state ? <p role="status">Loading review evidence…</p> : <>
-        <section className="summary-card" aria-labelledby="review-summary-title">
-          <div className="section-heading"><div><span className="eyebrow">Review summary</span><h2 id="review-summary-title">{state.summary.title}</h2></div><span className={`status-pill status-${state.summary.status}`}>{state.summary.status}</span></div>
-          <dl className="review-metrics">
-            <div><dt>Specification</dt><dd>Revision {state.summary.specificationRevision}</dd></div>
-            <div><dt>Repository</dt><dd>{state.summary.repositoryId}</dd></div>
-            <div><dt>Branch / HEAD</dt><dd>{state.summary.branch ?? "unavailable"} · {state.summary.headCommit?.slice(0, 12) ?? "unavailable"}</dd></div>
-            <div><dt>Tasks</dt><dd>{state.summary.tasksCompleted} complete · {state.summary.tasksIncomplete} incomplete</dd></div>
-            <div><dt>Validation</dt><dd>{state.summary.validationPassed} passed · {state.summary.validationFailed} failed</dd></div>
-            <div><dt>Findings</dt><dd>{state.summary.blockingFindings} blocking · {state.summary.warnings} warnings</dd></div>
-          </dl>
-          {state.readinessBlockers.length > 0 && <div className="review-blockers"><h3>Completion blockers</h3><ul>{state.readinessBlockers.map((item) => <li key={item}>{item}</li>)}</ul></div>}
-        </section>
-        <details open className="summary-card"><summary><strong>Requirement traceability</strong> · {state.traceability.length}</summary>
-          <div className="review-list">{state.traceability.map((item) => <article key={`${item.kind}-${item.id}`} className="review-row"><div><strong>{item.description}</strong><p>{item.kind} · {item.status}</p></div><p>{item.taskIds.length} tasks · {item.changedFiles.length} files · {item.validationEvidenceIds.length} evidence</p>{item.openConcern && <p className="honesty-note">{item.openConcern}</p>}</article>)}</div>
-        </details>
-        <details open className="summary-card"><summary><strong>Change review</strong> · {state.changes.length}</summary>
-          <div className="review-list">{state.changes.map((change) => <article key={change.path} className="review-row"><div><strong>{change.path}</strong><p>{change.kind} · {change.classification} · {change.changedSymbols.length} changed symbols</p></div><div className="button-row"><button disabled={busy} onClick={() => void act(async () => { const value = await bridge.request("review/getDiff", { workflowId, path: change.path, maxBytes: 50_000 }); setDiff({ path: value.path, text: value.text, truncated: value.truncated }); })}>Open bounded diff</button>{["unexpected", "ambiguous", "concurrent"].includes(change.classification) && <><button disabled={busy} onClick={() => void act(() => bridge.request("review/attributeChange", { workflowId, path: change.path, classification: "expected", reason: "Reviewer confirmed this change is within approved scope." }))}>Mark expected</button><button disabled={busy} onClick={() => void act(() => bridge.request("review/attributeChange", { workflowId, path: change.path, classification: "excluded", reason: "Reviewer marked this change unrelated to workflow completion." }))}>Mark unrelated</button></>}</div></article>)}</div>
-          {diff && <div className="bounded-diff" aria-label={`Diff for ${diff.path}`}><div><strong>{diff.path}</strong>{diff.truncated && <span> · truncated</span>}</div><pre>{diff.text}</pre></div>}
-        </details>
-        {(["qa", "security", "performance", "documentation"] as const).map((source) => { const findings = state.findings.filter((item) => item.source === source); if (!findings.length && source !== "qa" && source !== "documentation") return null; return <details key={source} className="summary-card"><summary><strong>{source === "qa" ? "Validation and QA" : source[0]!.toUpperCase() + source.slice(1)}</strong> · {findings.length}</summary><div className="review-list">{findings.length ? findings.map((entry) => <article key={entry.finding.id} className="review-row"><div><strong>{entry.finding.title}</strong><p>{entry.finding.severity} · {entry.staticOrMeasured} · {entry.finding.description}</p><p>Limitation: {entry.limitation}</p></div>{entry.finding.severity === "blocking" && !entry.disposition && <button disabled={busy} onClick={() => void act(() => bridge.request("review/dispositionFinding", { workflowId, findingId: entry.finding.id, disposition: source === "security" ? "accepted-risk" : "accepted", reason: "Explicitly accepted after reviewing retained evidence and limitations.", scope: entry.finding.title }))}>Record explicit disposition</button>}{entry.disposition && <span className="status-pill">{entry.disposition.disposition}</span>}</article>) : <p>Not triggered by retained evidence.</p>}</div></details>; })}
-        <details className="summary-card"><summary><strong>PR review package</strong></summary><p>Generate a deterministic, editable package. This does not create a pull request.</p><button disabled={busy} onClick={() => void act(() => bridge.request("review/generatePrDraft", { workflowId }))}>{state.prDraft ? "Regenerate draft" : "Generate PR draft"}</button>{state.prDraft && <><label>Title<input value={state.prDraft.title} onChange={(event) => setState({ ...state, prDraft: { ...state.prDraft!, title: event.target.value } })} /></label><label>Description<textarea rows={10} value={state.prDraft.body} onChange={(event) => setState({ ...state, prDraft: { ...state.prDraft!, body: event.target.value } })} /></label><button disabled={busy} onClick={() => void act(() => bridge.request("review/updatePrDraft", { draft: state.prDraft! }))}>Save PR draft edits</button></>}</details>
-        <section className="summary-card"><h2>Review notes and decision</h2><label>Add workflow note<textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="Question, issue, risk, or follow-up" /></label><button disabled={busy || !note.trim()} onClick={() => void act(async () => { await bridge.request("review/addNote", { workflowId, targetType: "workflow", targetId: workflowId, type: "issue", text: note, blocking: true }); setNote(""); })}>Add blocking note</button><div className="review-list">{state.notes.map((item) => <article key={item.id} className="review-row"><div><strong>{item.type}</strong><p>{item.text}</p><small>{item.blocking ? "Blocking" : "Advisory"} · {item.resolvedAt ? `Resolved: ${item.resolution}` : "Open"}</small></div>{!item.resolvedAt && <button disabled={busy} onClick={() => void act(() => bridge.request("review/resolveNote", { workflowId, noteId: item.id, resolution: "Resolved during explicit review." }))}>Resolve</button>}</article>)}</div><label>Decision rationale<textarea value={decisionReason} onChange={(event) => setDecisionReason(event.target.value)} /></label><div className="button-row"><button disabled={busy || state.readinessBlockers.length > 0} onClick={() => void act(() => bridge.request("review/approve", { workflowId, reason: decisionReason, confirm: true }))}>Approve review</button><button disabled={busy || state.readinessBlockers.length > 0} onClick={() => void act(() => bridge.request("review/approveWithWarnings", { workflowId, reason: decisionReason, confirm: true }))}>Approve with warnings</button><button className="secondary" disabled={busy} onClick={() => void act(() => bridge.request("review/reject", { workflowId, reason: decisionReason, confirm: true }))}>Reject</button></div></section>
-      </>}
+      {error && (
+        <div className="honesty-note" role="alert">
+          {error}
+        </div>
+      )}
+      {!state ? (
+        <p role="status">Loading review evidence…</p>
+      ) : (
+        <>
+          <section className="summary-card" aria-labelledby="review-summary-title">
+            <div className="section-heading">
+              <div>
+                <span className="eyebrow">Review summary</span>
+                <h2 id="review-summary-title">{state.summary.title}</h2>
+              </div>
+              <span className={`status-pill status-${state.summary.status}`}>
+                {state.summary.status}
+              </span>
+            </div>
+            <dl className="review-metrics">
+              <div>
+                <dt>Specification</dt>
+                <dd>Revision {state.summary.specificationRevision}</dd>
+              </div>
+              <div>
+                <dt>Repository</dt>
+                <dd>{state.summary.repositoryId}</dd>
+              </div>
+              <div>
+                <dt>Branch / HEAD</dt>
+                <dd>
+                  {state.summary.branch ?? "unavailable"} ·{" "}
+                  {state.summary.headCommit?.slice(0, 12) ?? "unavailable"}
+                </dd>
+              </div>
+              <div>
+                <dt>Tasks</dt>
+                <dd>
+                  {state.summary.tasksCompleted} complete · {state.summary.tasksIncomplete}{" "}
+                  incomplete
+                </dd>
+              </div>
+              <div>
+                <dt>Validation</dt>
+                <dd>
+                  {state.summary.validationPassed} passed · {state.summary.validationFailed} failed
+                </dd>
+              </div>
+              <div>
+                <dt>Findings</dt>
+                <dd>
+                  {state.summary.blockingFindings} blocking · {state.summary.warnings} warnings
+                </dd>
+              </div>
+            </dl>
+            {state.readinessBlockers.length > 0 && (
+              <div className="review-blockers">
+                <h3>Completion blockers</h3>
+                <ul>
+                  {state.readinessBlockers.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </section>
+          <details open className="summary-card">
+            <summary>
+              <strong>Requirement traceability</strong> · {state.traceability.length}
+            </summary>
+            <div className="review-list">
+              {state.traceability.map((item) => (
+                <article key={`${item.kind}-${item.id}`} className="review-row">
+                  <div>
+                    <strong>{item.description}</strong>
+                    <p>
+                      {item.kind} · {item.status}
+                    </p>
+                  </div>
+                  <p>
+                    {item.taskIds.length} tasks · {item.changedFiles.length} files ·{" "}
+                    {item.validationEvidenceIds.length} evidence
+                  </p>
+                  {item.openConcern && <p className="honesty-note">{item.openConcern}</p>}
+                </article>
+              ))}
+            </div>
+          </details>
+          <details open className="summary-card">
+            <summary>
+              <strong>Change review</strong> · {state.changes.length}
+            </summary>
+            <div className="review-list">
+              {state.changes.map((change) => (
+                <article key={change.path} className="review-row">
+                  <div>
+                    <strong>{change.path}</strong>
+                    <p>
+                      {change.kind} · {change.classification} · {change.changedSymbols.length}{" "}
+                      changed symbols
+                    </p>
+                  </div>
+                  <div className="button-row">
+                    <button
+                      disabled={busy}
+                      onClick={() =>
+                        void act(async () => {
+                          const value = await bridge.request("review/getDiff", {
+                            workflowId,
+                            path: change.path,
+                            maxBytes: 50_000,
+                          });
+                          setDiff({
+                            path: value.path,
+                            text: value.text,
+                            truncated: value.truncated,
+                          });
+                        })
+                      }
+                    >
+                      Open bounded diff
+                    </button>
+                    {["unexpected", "ambiguous", "concurrent"].includes(change.classification) && (
+                      <>
+                        <button
+                          disabled={busy}
+                          onClick={() =>
+                            void act(() =>
+                              bridge.request("review/attributeChange", {
+                                workflowId,
+                                path: change.path,
+                                classification: "expected",
+                                reason: "Reviewer confirmed this change is within approved scope.",
+                              }),
+                            )
+                          }
+                        >
+                          Mark expected
+                        </button>
+                        <button
+                          disabled={busy}
+                          onClick={() =>
+                            void act(() =>
+                              bridge.request("review/attributeChange", {
+                                workflowId,
+                                path: change.path,
+                                classification: "excluded",
+                                reason:
+                                  "Reviewer marked this change unrelated to workflow completion.",
+                              }),
+                            )
+                          }
+                        >
+                          Mark unrelated
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </article>
+              ))}
+            </div>
+            {diff && (
+              <div className="bounded-diff" aria-label={`Diff for ${diff.path}`}>
+                <div>
+                  <strong>{diff.path}</strong>
+                  {diff.truncated && <span> · truncated</span>}
+                </div>
+                <pre>{diff.text}</pre>
+              </div>
+            )}
+          </details>
+          {(["qa", "security", "performance", "documentation"] as const).map((source) => {
+            const findings = state.findings.filter((item) => item.source === source);
+            if (!findings.length && source !== "qa" && source !== "documentation") return null;
+            return (
+              <details key={source} className="summary-card">
+                <summary>
+                  <strong>
+                    {source === "qa"
+                      ? "Validation and QA"
+                      : source[0]!.toUpperCase() + source.slice(1)}
+                  </strong>{" "}
+                  · {findings.length}
+                </summary>
+                <div className="review-list">
+                  {findings.length ? (
+                    findings.map((entry) => (
+                      <article key={entry.finding.id} className="review-row">
+                        <div>
+                          <strong>{entry.finding.title}</strong>
+                          <p>
+                            {entry.finding.severity} · {entry.staticOrMeasured} ·{" "}
+                            {entry.finding.description}
+                          </p>
+                          <p>Limitation: {entry.limitation}</p>
+                        </div>
+                        {entry.finding.severity === "blocking" && !entry.disposition && (
+                          <button
+                            disabled={busy}
+                            onClick={() =>
+                              void act(() =>
+                                bridge.request("review/dispositionFinding", {
+                                  workflowId,
+                                  findingId: entry.finding.id,
+                                  disposition: source === "security" ? "accepted-risk" : "accepted",
+                                  reason:
+                                    "Explicitly accepted after reviewing retained evidence and limitations.",
+                                  scope: entry.finding.title,
+                                }),
+                              )
+                            }
+                          >
+                            Record explicit disposition
+                          </button>
+                        )}
+                        {entry.disposition && (
+                          <span className="status-pill">{entry.disposition.disposition}</span>
+                        )}
+                      </article>
+                    ))
+                  ) : (
+                    <p>Not triggered by retained evidence.</p>
+                  )}
+                </div>
+              </details>
+            );
+          })}
+          <details className="summary-card">
+            <summary>
+              <strong>PR review package</strong>
+            </summary>
+            <p>Generate a deterministic, editable package. This does not create a pull request.</p>
+            <button
+              disabled={busy}
+              onClick={() =>
+                void act(() => bridge.request("review/generatePrDraft", { workflowId }))
+              }
+            >
+              {state.prDraft ? "Regenerate draft" : "Generate PR draft"}
+            </button>
+            {state.prDraft && (
+              <>
+                <label>
+                  Title
+                  <input
+                    value={state.prDraft.title}
+                    onChange={(event) =>
+                      setState({
+                        ...state,
+                        prDraft: { ...state.prDraft!, title: event.target.value },
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  Description
+                  <textarea
+                    rows={10}
+                    value={state.prDraft.body}
+                    onChange={(event) =>
+                      setState({
+                        ...state,
+                        prDraft: { ...state.prDraft!, body: event.target.value },
+                      })
+                    }
+                  />
+                </label>
+                <button
+                  disabled={busy}
+                  onClick={() =>
+                    void act(() =>
+                      bridge.request("review/updatePrDraft", { draft: state.prDraft! }),
+                    )
+                  }
+                >
+                  Save PR draft edits
+                </button>
+              </>
+            )}
+          </details>
+          <section className="summary-card">
+            <h2>Review notes and decision</h2>
+            <label>
+              Add workflow note
+              <textarea
+                value={note}
+                onChange={(event) => setNote(event.target.value)}
+                placeholder="Question, issue, risk, or follow-up"
+              />
+            </label>
+            <button
+              disabled={busy || !note.trim()}
+              onClick={() =>
+                void act(async () => {
+                  await bridge.request("review/addNote", {
+                    workflowId,
+                    targetType: "workflow",
+                    targetId: workflowId,
+                    type: "issue",
+                    text: note,
+                    blocking: true,
+                  });
+                  setNote("");
+                })
+              }
+            >
+              Add blocking note
+            </button>
+            <div className="review-list">
+              {state.notes.map((item) => (
+                <article key={item.id} className="review-row">
+                  <div>
+                    <strong>{item.type}</strong>
+                    <p>{item.text}</p>
+                    <small>
+                      {item.blocking ? "Blocking" : "Advisory"} ·{" "}
+                      {item.resolvedAt ? `Resolved: ${item.resolution}` : "Open"}
+                    </small>
+                  </div>
+                  {!item.resolvedAt && (
+                    <button
+                      disabled={busy}
+                      onClick={() =>
+                        void act(() =>
+                          bridge.request("review/resolveNote", {
+                            workflowId,
+                            noteId: item.id,
+                            resolution: "Resolved during explicit review.",
+                          }),
+                        )
+                      }
+                    >
+                      Resolve
+                    </button>
+                  )}
+                </article>
+              ))}
+            </div>
+            <label>
+              Decision rationale
+              <textarea
+                value={decisionReason}
+                onChange={(event) => setDecisionReason(event.target.value)}
+              />
+            </label>
+            <div className="button-row">
+              <button
+                disabled={busy || state.readinessBlockers.length > 0}
+                onClick={() =>
+                  void act(() =>
+                    bridge.request("review/approve", {
+                      workflowId,
+                      reason: decisionReason,
+                      confirm: true,
+                    }),
+                  )
+                }
+              >
+                Approve review
+              </button>
+              <button
+                disabled={busy || state.readinessBlockers.length > 0}
+                onClick={() =>
+                  void act(() =>
+                    bridge.request("review/approveWithWarnings", {
+                      workflowId,
+                      reason: decisionReason,
+                      confirm: true,
+                    }),
+                  )
+                }
+              >
+                Approve with warnings
+              </button>
+              <button
+                className="secondary"
+                disabled={busy}
+                onClick={() =>
+                  void act(() =>
+                    bridge.request("review/reject", {
+                      workflowId,
+                      reason: decisionReason,
+                      confirm: true,
+                    }),
+                  )
+                }
+              >
+                Reject
+              </button>
+            </div>
+          </section>
+        </>
+      )}
     </>
   );
 }
@@ -3509,11 +3810,43 @@ function CompleteStage({
   const [state, setState] = useState<CompletionState>();
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
-  const [reason, setReason] = useState("Complete from the approved review while preserving retained evidence.");
-  const [approval, setApproval] = useState<{ stage?: string; commit?: string; push?: string; pr?: string; patch?: string }>({});
-  const refresh = useCallback(async (): Promise<void> => { try { setState(await bridge.request("complete/getState", { workflowId })); setError(undefined); } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } }, [bridge, workflowId]);
-  useEffect(() => { queueMicrotask(() => void refresh()); return bridge.subscribe((message) => { if (message.type.startsWith("complete/") || message.type.startsWith("review/")) void refresh(); }); }, [bridge, refresh]);
-  const act = async (action: () => Promise<unknown>): Promise<void> => { setBusy(true); setError(undefined); try { await action(); await refresh(); } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setBusy(false); } };
+  const [reason, setReason] = useState(
+    "Complete from the approved review while preserving retained evidence.",
+  );
+  const [approval, setApproval] = useState<{
+    stage?: string;
+    commit?: string;
+    push?: string;
+    pr?: string;
+    patch?: string;
+  }>({});
+  const refresh = useCallback(async (): Promise<void> => {
+    try {
+      setState(await bridge.request("complete/getState", { workflowId }));
+      setError(undefined);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }, [bridge, workflowId]);
+  useEffect(() => {
+    queueMicrotask(() => void refresh());
+    return bridge.subscribe((message) => {
+      if (message.type.startsWith("complete/") || message.type.startsWith("review/"))
+        void refresh();
+    });
+  }, [bridge, refresh]);
+  const act = async (action: () => Promise<unknown>): Promise<void> => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      await action();
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <>
       <StageHeading
@@ -3521,26 +3854,395 @@ function CompleteStage({
         title="Choose how this workflow ends"
         description="Local completion is first-class. Git, pull request, patch, and Handoff actions remain optional and capability-gated."
       />
-      {error && <div className="honesty-note" role="alert">{error}</div>}
-      {!state ? <p role="status">Loading completion options…</p> : <>
-        <section className="summary-card"><div className="section-heading"><div><span className="eyebrow">Completion summary</span><h2>{state.review.summary.title}</h2></div><span className="status-pill">{state.completion?.status ?? (state.review.summary.completionReady ? "ready" : "blocked")}</span></div><p>Review: {state.review.decision?.status ?? "not approved"} · {state.review.readinessBlockers.length} blockers · {state.review.warnings.length} warnings</p>{state.completion && <pre className="completion-report">{state.completion.report}</pre>}</section>
-        <section className="summary-card"><h2>Completion modes</h2><div className="completion-options">{state.options.map((option) => <article key={option.mode} className="completion-option"><div><strong>{option.label}</strong><p>{option.explanation}</p><small>Changes: {option.mutation} Approval: {option.approvalRequired}. Capability: {option.capabilityRequired}. {option.reversible ? "Reversible." : "May not be reversible."}</small></div>{option.mode === "local" && <button disabled={busy || !option.available || Boolean(state.completion)} onClick={() => void act(() => bridge.request("complete/completeLocally", { workflowId, reason, confirm: true }))}>Complete locally</button>}{option.mode === "closed-partial" && <button disabled={busy || !option.available || Boolean(state.completion)} onClick={() => void act(() => bridge.request("complete/closePartial", { workflowId, reason, confirm: true }))}>Close partial</button>}{option.mode === "cancelled-with-changes" && <button disabled={busy || !option.available || Boolean(state.completion)} onClick={() => void act(() => bridge.request("complete/cancelWithChanges", { workflowId, reason, confirm: true }))}>Cancel, retain changes</button>}</article>)}</div><label>Final confirmation rationale<textarea value={reason} onChange={(event) => setReason(event.target.value)} /></label></section>
-        <details className="summary-card"><summary><strong>Optional Git and PR actions</strong></summary><dl className="review-metrics"><div><dt>Git repository</dt><dd>{state.gitCapabilities.repositoryDetected ? "Available" : "Unavailable"}</dd></div><div><dt>Commit</dt><dd>{state.gitCapabilities.commitAvailable ? "Available" : "Unavailable"}</dd></div><div><dt>Push</dt><dd>{state.gitCapabilities.pushAvailable ? "Available" : "Unavailable"}</dd></div><div><dt>PR provider</dt><dd>{state.prCapabilities?.integrationMethod ?? "Unavailable"}</dd></div></dl><p>Each approval is single-use and bound to the current reviewed fingerprint. Repository changes invalidate the next mutation.</p><div className="button-row"><button disabled={busy || !state.gitCapabilities.repositoryDetected} onClick={() => void act(() => bridge.request("complete/getChangeSet", { workflowId }))}>{state.changeSet ? "Refresh change set" : "Prepare change set"}</button><button disabled={busy || !state.changeSet} onClick={() => void act(() => bridge.request("complete/generateCommitPlan", { changeSetId: state.changeSet!.id }))}>{state.commitPlan ? "Regenerate commit plan" : "Generate commit plan"}</button></div>{state.changeSet && <p>{state.changeSet.includedFileIds.length} included · {state.changeSet.excludedFileIds.length} excluded · sensitive files remain excluded.</p>}{state.commitPlan && <ol>{state.commitPlan.commits.map((item) => <li key={item.id}><strong>{item.title}</strong> · {item.includedFileIds.length} files · {item.risks.length} risks</li>)}</ol>}<div className="completion-options"><article className="completion-option"><div><strong>Staging</strong><p>Approval records exact reviewed paths. Staging is a separate second action.</p></div>{approval.stage ? <button disabled={busy} onClick={() => void act(async () => { await bridge.request("complete/stageChanges", { approvalId: approval.stage! }); setApproval((value) => ({ ...value, stage: undefined })); })}>Stage approved paths</button> : <button disabled={busy || !state.changeSet || !state.review.summary.completionReady} onClick={() => void act(async () => { const value = await bridge.request("complete/approveStaging", { workflowId, fingerprint: state.review.repositoryFingerprint, confirm: true }); setApproval((current) => ({ ...current, stage: value.id })); })}>Approve staging</button>}</article><article className="completion-option"><div><strong>Commit</strong><p>Approval binds the next proposed commit and message. Commit is a separate second action.</p></div>{approval.commit ? <button disabled={busy} onClick={() => void act(async () => { await bridge.request("complete/createCommit", { approvalId: approval.commit! }); setApproval((value) => ({ ...value, commit: undefined })); })}>Create approved commit</button> : <button disabled={busy || !state.commitPlan || !state.review.summary.completionReady} onClick={() => void act(async () => { const value = await bridge.request("complete/approveCommit", { workflowId, fingerprint: state.review.repositoryFingerprint, confirm: true }); setApproval((current) => ({ ...current, commit: value.id })); })}>Approve next commit</button>}</article><article className="completion-option"><div><strong>Push</strong><p>Push never force-pushes and is blocked when behind, conflicted, or detached.</p></div>{approval.push ? <button disabled={busy} onClick={() => void act(async () => { await bridge.request("complete/push", { approvalId: approval.push! }); setApproval((value) => ({ ...value, push: undefined })); })}>Push approved branch</button> : <button disabled={busy || !state.gitCapabilities.pushAvailable || !state.review.summary.completionReady} onClick={() => void act(async () => { const value = await bridge.request("complete/approvePush", { workflowId, fingerprint: state.review.repositoryFingerprint, confirm: true }); setApproval((current) => ({ ...current, push: value.id })); })}>Approve push</button>}</article><article className="completion-option"><div><strong>Pull request</strong><p>Prepare is non-mutating. Direct or assisted creation requires its own approval and provider capability.</p></div>{!state.prDraft ? <button disabled={busy || !state.review.summary.completionReady} onClick={() => void act(() => bridge.request("complete/preparePr", { workflowId }))}>Prepare PR</button> : approval.pr ? <button disabled={busy} onClick={() => void act(async () => { await bridge.request("complete/createPr", { approvalId: approval.pr! }); setApproval((value) => ({ ...value, pr: undefined })); })}>Create or open approved PR</button> : <button disabled={busy} onClick={() => void act(async () => { const value = await bridge.request("complete/approvePrCreation", { workflowId, fingerprint: state.review.repositoryFingerprint, confirm: true }); setApproval((current) => ({ ...current, pr: value.id })); })}>Approve PR creation</button>}</article><article className="completion-option"><div><strong>Patch export</strong><p>Writes a reviewed patch under .keystone/exports and never applies it.</p></div>{approval.patch ? <button disabled={busy} onClick={() => void act(async () => { await bridge.request("complete/exportPatch", { workflowId, approvalId: approval.patch! }); setApproval((value) => ({ ...value, patch: undefined })); })}>Export approved patch</button> : <button disabled={busy || !state.changeSet || !state.gitCapabilities.diffAvailable || !state.review.summary.completionReady} onClick={() => void act(async () => { const value = await bridge.request("complete/approvePatchExport", { workflowId, fingerprint: state.review.repositoryFingerprint, confirm: true }); setApproval((current) => ({ ...current, patch: value.id })); })}>Approve patch export</button>}</article></div></details>
-        <TaskHandoffActions bridge={bridge} workflowId={workflowId} />
-        {state.completion && <button disabled={busy || state.completion.status === "archived"} onClick={() => void act(() => bridge.request("complete/archive", { workflowId }))}>Archive completed workflow</button>}
-      </>}
+      {error && (
+        <div className="honesty-note" role="alert">
+          {error}
+        </div>
+      )}
+      {!state ? (
+        <p role="status">Loading completion options…</p>
+      ) : (
+        <>
+          <section className="summary-card">
+            <div className="section-heading">
+              <div>
+                <span className="eyebrow">Completion summary</span>
+                <h2>{state.review.summary.title}</h2>
+              </div>
+              <span className="status-pill">
+                {state.completion?.status ??
+                  (state.review.summary.completionReady ? "ready" : "blocked")}
+              </span>
+            </div>
+            <p>
+              Review: {state.review.decision?.status ?? "not approved"} ·{" "}
+              {state.review.readinessBlockers.length} blockers · {state.review.warnings.length}{" "}
+              warnings
+            </p>
+            {state.completion && <pre className="completion-report">{state.completion.report}</pre>}
+          </section>
+          <section className="summary-card">
+            <h2>Completion modes</h2>
+            <div className="completion-options">
+              {state.options.map((option) => (
+                <article key={option.mode} className="completion-option">
+                  <div>
+                    <strong>{option.label}</strong>
+                    <p>{option.explanation}</p>
+                    <small>
+                      Changes: {option.mutation} Approval: {option.approvalRequired}. Capability:{" "}
+                      {option.capabilityRequired}.{" "}
+                      {option.reversible ? "Reversible." : "May not be reversible."}
+                    </small>
+                  </div>
+                  {option.mode === "local" && (
+                    <button
+                      disabled={busy || !option.available || Boolean(state.completion)}
+                      onClick={() =>
+                        void act(() =>
+                          bridge.request("complete/completeLocally", {
+                            workflowId,
+                            reason,
+                            confirm: true,
+                          }),
+                        )
+                      }
+                    >
+                      Complete locally
+                    </button>
+                  )}
+                  {option.mode === "closed-partial" && (
+                    <button
+                      disabled={busy || !option.available || Boolean(state.completion)}
+                      onClick={() =>
+                        void act(() =>
+                          bridge.request("complete/closePartial", {
+                            workflowId,
+                            reason,
+                            confirm: true,
+                          }),
+                        )
+                      }
+                    >
+                      Close partial
+                    </button>
+                  )}
+                  {option.mode === "cancelled-with-changes" && (
+                    <button
+                      disabled={busy || !option.available || Boolean(state.completion)}
+                      onClick={() =>
+                        void act(() =>
+                          bridge.request("complete/cancelWithChanges", {
+                            workflowId,
+                            reason,
+                            confirm: true,
+                          }),
+                        )
+                      }
+                    >
+                      Cancel, retain changes
+                    </button>
+                  )}
+                </article>
+              ))}
+            </div>
+            <label>
+              Final confirmation rationale
+              <textarea value={reason} onChange={(event) => setReason(event.target.value)} />
+            </label>
+          </section>
+          <details className="summary-card">
+            <summary>
+              <strong>Optional Git and PR actions</strong>
+            </summary>
+            <dl className="review-metrics">
+              <div>
+                <dt>Git repository</dt>
+                <dd>{state.gitCapabilities.repositoryDetected ? "Available" : "Unavailable"}</dd>
+              </div>
+              <div>
+                <dt>Commit</dt>
+                <dd>{state.gitCapabilities.commitAvailable ? "Available" : "Unavailable"}</dd>
+              </div>
+              <div>
+                <dt>Push</dt>
+                <dd>{state.gitCapabilities.pushAvailable ? "Available" : "Unavailable"}</dd>
+              </div>
+              <div>
+                <dt>PR provider</dt>
+                <dd>{state.prCapabilities?.integrationMethod ?? "Unavailable"}</dd>
+              </div>
+            </dl>
+            <p>
+              Each approval is single-use and bound to the current reviewed fingerprint. Repository
+              changes invalidate the next mutation.
+            </p>
+            <div className="button-row">
+              <button
+                disabled={busy || !state.gitCapabilities.repositoryDetected}
+                onClick={() =>
+                  void act(() => bridge.request("complete/getChangeSet", { workflowId }))
+                }
+              >
+                {state.changeSet ? "Refresh change set" : "Prepare change set"}
+              </button>
+              <button
+                disabled={busy || !state.changeSet}
+                onClick={() =>
+                  void act(() =>
+                    bridge.request("complete/generateCommitPlan", {
+                      changeSetId: state.changeSet!.id,
+                    }),
+                  )
+                }
+              >
+                {state.commitPlan ? "Regenerate commit plan" : "Generate commit plan"}
+              </button>
+            </div>
+            {state.changeSet && (
+              <p>
+                {state.changeSet.includedFileIds.length} included ·{" "}
+                {state.changeSet.excludedFileIds.length} excluded · sensitive files remain excluded.
+              </p>
+            )}
+            {state.commitPlan && (
+              <ol>
+                {state.commitPlan.commits.map((item) => (
+                  <li key={item.id}>
+                    <strong>{item.title}</strong> · {item.includedFileIds.length} files ·{" "}
+                    {item.risks.length} risks
+                  </li>
+                ))}
+              </ol>
+            )}
+            <div className="completion-options">
+              <article className="completion-option">
+                <div>
+                  <strong>Staging</strong>
+                  <p>Approval records exact reviewed paths. Staging is a separate second action.</p>
+                </div>
+                {approval.stage ? (
+                  <button
+                    disabled={busy}
+                    onClick={() =>
+                      void act(async () => {
+                        await bridge.request("complete/stageChanges", {
+                          approvalId: approval.stage!,
+                        });
+                        setApproval((value) => ({ ...value, stage: undefined }));
+                      })
+                    }
+                  >
+                    Stage approved paths
+                  </button>
+                ) : (
+                  <button
+                    disabled={busy || !state.changeSet || !state.review.summary.completionReady}
+                    onClick={() =>
+                      void act(async () => {
+                        const value = await bridge.request("complete/approveStaging", {
+                          workflowId,
+                          fingerprint: state.review.repositoryFingerprint,
+                          confirm: true,
+                        });
+                        setApproval((current) => ({ ...current, stage: value.id }));
+                      })
+                    }
+                  >
+                    Approve staging
+                  </button>
+                )}
+              </article>
+              <article className="completion-option">
+                <div>
+                  <strong>Commit</strong>
+                  <p>
+                    Approval binds the next proposed commit and message. Commit is a separate second
+                    action.
+                  </p>
+                </div>
+                {approval.commit ? (
+                  <button
+                    disabled={busy}
+                    onClick={() =>
+                      void act(async () => {
+                        await bridge.request("complete/createCommit", {
+                          approvalId: approval.commit!,
+                        });
+                        setApproval((value) => ({ ...value, commit: undefined }));
+                      })
+                    }
+                  >
+                    Create approved commit
+                  </button>
+                ) : (
+                  <button
+                    disabled={busy || !state.commitPlan || !state.review.summary.completionReady}
+                    onClick={() =>
+                      void act(async () => {
+                        const value = await bridge.request("complete/approveCommit", {
+                          workflowId,
+                          fingerprint: state.review.repositoryFingerprint,
+                          confirm: true,
+                        });
+                        setApproval((current) => ({ ...current, commit: value.id }));
+                      })
+                    }
+                  >
+                    Approve next commit
+                  </button>
+                )}
+              </article>
+              <article className="completion-option">
+                <div>
+                  <strong>Push</strong>
+                  <p>
+                    Push never force-pushes and is blocked when behind, conflicted, or detached.
+                  </p>
+                </div>
+                {approval.push ? (
+                  <button
+                    disabled={busy}
+                    onClick={() =>
+                      void act(async () => {
+                        await bridge.request("complete/push", { approvalId: approval.push! });
+                        setApproval((value) => ({ ...value, push: undefined }));
+                      })
+                    }
+                  >
+                    Push approved branch
+                  </button>
+                ) : (
+                  <button
+                    disabled={
+                      busy ||
+                      !state.gitCapabilities.pushAvailable ||
+                      !state.review.summary.completionReady
+                    }
+                    onClick={() =>
+                      void act(async () => {
+                        const value = await bridge.request("complete/approvePush", {
+                          workflowId,
+                          fingerprint: state.review.repositoryFingerprint,
+                          confirm: true,
+                        });
+                        setApproval((current) => ({ ...current, push: value.id }));
+                      })
+                    }
+                  >
+                    Approve push
+                  </button>
+                )}
+              </article>
+              <article className="completion-option">
+                <div>
+                  <strong>Pull request</strong>
+                  <p>
+                    Prepare is non-mutating. Direct or assisted creation requires its own approval
+                    and provider capability.
+                  </p>
+                </div>
+                {!state.prDraft ? (
+                  <button
+                    disabled={busy || !state.review.summary.completionReady}
+                    onClick={() =>
+                      void act(() => bridge.request("complete/preparePr", { workflowId }))
+                    }
+                  >
+                    Prepare PR
+                  </button>
+                ) : approval.pr ? (
+                  <button
+                    disabled={busy}
+                    onClick={() =>
+                      void act(async () => {
+                        await bridge.request("complete/createPr", { approvalId: approval.pr! });
+                        setApproval((value) => ({ ...value, pr: undefined }));
+                      })
+                    }
+                  >
+                    Create or open approved PR
+                  </button>
+                ) : (
+                  <button
+                    disabled={busy}
+                    onClick={() =>
+                      void act(async () => {
+                        const value = await bridge.request("complete/approvePrCreation", {
+                          workflowId,
+                          fingerprint: state.review.repositoryFingerprint,
+                          confirm: true,
+                        });
+                        setApproval((current) => ({ ...current, pr: value.id }));
+                      })
+                    }
+                  >
+                    Approve PR creation
+                  </button>
+                )}
+              </article>
+              <article className="completion-option">
+                <div>
+                  <strong>Patch export</strong>
+                  <p>Writes a reviewed patch under .keystone/exports and never applies it.</p>
+                </div>
+                {approval.patch ? (
+                  <button
+                    disabled={busy}
+                    onClick={() =>
+                      void act(async () => {
+                        await bridge.request("complete/exportPatch", {
+                          workflowId,
+                          approvalId: approval.patch!,
+                        });
+                        setApproval((value) => ({ ...value, patch: undefined }));
+                      })
+                    }
+                  >
+                    Export approved patch
+                  </button>
+                ) : (
+                  <button
+                    disabled={
+                      busy ||
+                      !state.changeSet ||
+                      !state.gitCapabilities.diffAvailable ||
+                      !state.review.summary.completionReady
+                    }
+                    onClick={() =>
+                      void act(async () => {
+                        const value = await bridge.request("complete/approvePatchExport", {
+                          workflowId,
+                          fingerprint: state.review.repositoryFingerprint,
+                          confirm: true,
+                        });
+                        setApproval((current) => ({ ...current, patch: value.id }));
+                      })
+                    }
+                  >
+                    Approve patch export
+                  </button>
+                )}
+              </article>
+            </div>
+          </details>
+          <TaskHandoffActions bridge={bridge} workflowId={workflowId} />
+          {state.completion && (
+            <button
+              disabled={busy || state.completion.status === "archived"}
+              onClick={() => void act(() => bridge.request("complete/archive", { workflowId }))}
+            >
+              Archive completed workflow
+            </button>
+          )}
+        </>
+      )}
     </>
   );
 }
-function WorkbenchContext({
-  state,
-}: {
-  state: WorkbenchWorkflowState;
-}): React.JSX.Element {
+function WorkbenchContext({ state }: { state: WorkbenchWorkflowState }): React.JSX.Element {
   const summary = state.summary;
-  const ready = state.workflow.tasks.find(
-    (task) => task.id === summary.currentReadyTaskId,
-  );
+  const ready = state.workflow.tasks.find((task) => task.id === summary.currentReadyTaskId);
   const blockers = state.stageStates.flatMap((stage) =>
     stage.blockers.map((item) => ({ stage: stage.stage, ...item })),
   );
@@ -3597,8 +4299,8 @@ function WorkbenchContext({
       </details>
       <h3>Reserved context</h3>
       <p>
-        Findings, repository changes, context package, and validation status
-        will appear here as those stages become active.
+        Findings, repository changes, context package, and validation status will appear here as
+        those stages become active.
       </p>
     </aside>
   );
@@ -3633,17 +4335,15 @@ function TaskHandoffActions({
     <section className="summary-card">
       <h2>Task continuity</h2>
       <p>
-        Full Handoff preparation is deferred. Existing eligible task actions and
-        services remain available.
+        Full Handoff preparation is deferred. Existing eligible task actions and services remain
+        available.
       </p>
       {notice && <p role="status">{notice}</p>}
       {workflow?.tasks.map((task) => {
         const assignment = assignments.find(
           (item) =>
             item.taskId === task.id &&
-            ["accepted", "in-progress", "handoff-requested"].includes(
-              item.status,
-            ),
+            ["accepted", "in-progress", "handoff-requested"].includes(item.status),
         );
         const action: TaskActionDescriptor = {
           id: "hand-off",
@@ -3706,10 +4406,7 @@ function ErrorState({ value }: { value: string }): React.JSX.Element {
     <div className="error-banner" role="alert">
       <strong>Workbench action failed</strong>
       <p>{value}</p>
-      <p>
-        Your persisted workflow was preserved. Review the recovery action and
-        retry.
-      </p>
+      <p>Your persisted workflow was preserved. Review the recovery action and retry.</p>
     </div>
   );
 }

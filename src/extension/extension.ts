@@ -17,24 +17,17 @@ import { CpgQueryService } from "../core/intelligence/cpg/CpgQueryService";
 import { CPG_PROVIDER_ID, CPG_PROVIDER_VERSION } from "../shared/contracts/cpg";
 import { UNIVERSAL_ADAPTER_VERSIONS } from "../core/intelligence/adapters/AdapterVersions";
 import { IntelligenceStore } from "../core/persistence/IntelligenceStore";
-import {
-  FileMemento,
-  WorkspaceStateStore,
-} from "../core/persistence/WorkspaceStateStore";
+import { FileMemento, WorkspaceStateStore } from "../core/persistence/WorkspaceStateStore";
 import { DelegationPersistenceStore } from "../core/persistence/DelegationPersistenceStore";
 import { ExecutionPersistenceStore } from "../core/persistence/ExecutionPersistenceStore";
 import { DevelopmentWorkflowService } from "../core/workflows/DevelopmentWorkflowService";
 import { ExecutionRoutingService } from "../core/workflows/ExecutionRoutingService";
 import { CapabilityDrivenCopilotAdapter } from "../core/copilot/CopilotAdapter";
 import { CopilotAgentRegistry } from "../core/copilot/AgentRegistry";
-import {
-  ContextCandidateCollector,
-  TaskContextService,
-} from "../core/context/TaskContextService";
-import {
-  DelegationService,
-  DelegationTrackingService,
-} from "../core/copilot/DelegationService";
+import { TaskContextService } from "../core/context/TaskContextService";
+import { ContextPackageService } from "../core/context/ContextPackageService";
+import { ContextPersistenceStore } from "../core/context/ContextPersistenceStore";
+import { DelegationService, DelegationTrackingService } from "../core/copilot/DelegationService";
 import { KeystoneError } from "../shared/errors/KeystoneError";
 import { KeystoneLogger } from "../shared/logging/KeystoneLogger";
 import { VsCodeGitAdapter } from "./adapters/GitAdapter";
@@ -109,12 +102,11 @@ import {
 import { KeystoneInitializationSchema } from "../shared/contracts/nativeShell";
 import type { IntelligenceServiceRegistry } from "./webview/WebviewMessageRouter";
 import { AppRouteSchema } from "../shared/contracts/domain";
+import { HealthCheckService } from "../core/health/HealthCheckService";
 
 let logger: KeystoneLogger | undefined;
 
-export async function activate(
-  context: vscode.ExtensionContext,
-): Promise<void> {
+export async function activate(context: vscode.ExtensionContext): Promise<void> {
   const startedAt = performance.now();
   const productStartup = new StartupStateService();
   const configuration = new ConfigurationService();
@@ -129,23 +121,17 @@ export async function activate(
     (folder) => folder.uri.scheme === "file",
   )?.uri;
   const repositoryRoot = repositoryUri?.fsPath;
-  const storageRoot = repositoryRoot
-    ? join(repositoryRoot, ".keystone")
-    : undefined;
+  const storageRoot = repositoryRoot ? join(repositoryRoot, ".keystone") : undefined;
   const previousStorageRoot =
-    context.storageUri?.scheme === "file"
-      ? context.storageUri.fsPath
-      : undefined;
+    context.storageUri?.scheme === "file" ? context.storageUri.fsPath : undefined;
   await migrateWorkspaceStorage(previousStorageRoot, storageRoot);
   const scopeMigration = await new ScopeCorrectionMigration(storageRoot).run();
   for (const diagnostic of scopeMigration.diagnostics)
     logger.warning("persistence.scope-correction", diagnostic);
   if (scopeMigration.archived.length)
-    logger.info(
-      "persistence.scope-correction",
-      "Archived obsolete future-roadmap state.",
-      { scopes: scopeMigration.archived },
-    );
+    logger.info("persistence.scope-correction", "Archived obsolete future-roadmap state.", {
+      scopes: scopeMigration.archived,
+    });
   const workspaceState = new WorkspaceStateStore(
     storageRoot
       ? await FileMemento.open(join(storageRoot, "state", "workspace.json"))
@@ -184,12 +170,7 @@ export async function activate(
     undefined,
     semanticWorker,
   );
-  const monitor = new VsCodeRepositoryMonitor(
-    workspace,
-    git,
-    ignorePolicy,
-    logger,
-  );
+  const monitor = new VsCodeRepositoryMonitor(workspace, git, ignorePolicy, logger);
   const startup = new StartupReconciler(workspace, git, intelligenceStore, {
     [TYPESCRIPT_SEMANTIC_PARSER_ID]: TYPESCRIPT_SEMANTIC_PARSER_VERSION,
     [CPG_PROVIDER_ID]: CPG_PROVIDER_VERSION,
@@ -217,9 +198,7 @@ export async function activate(
     cpgQuery,
   );
   const delegationStore = new DelegationPersistenceStore(storageRoot);
-  const copilotIntegrationStore = new CopilotIntegrationPersistenceStore(
-    storageRoot,
-  );
+  const copilotIntegrationStore = new CopilotIntegrationPersistenceStore(storageRoot);
   await copilotIntegrationStore.initialize();
   const workflow = new DevelopmentWorkflowService(
     delegationStore,
@@ -228,19 +207,22 @@ export async function activate(
   );
   const routing = new ExecutionRoutingService();
   await workflow.initialize();
-  const copilot = new CapabilityDrivenCopilotAdapter(
-    new VsCodeCopilotEnvironment(),
-  );
+  const copilot = new CapabilityDrivenCopilotAdapter(new VsCodeCopilotEnvironment());
   const agents = new CopilotAgentRegistry(copilot, delegationStore);
   agents.restore();
   await new ConfiguredAgentLoader(workspace, agents).load();
   const taskContext = new TaskContextService(
-    new ContextCandidateCollector(
+    null,
+    delegationStore,
+    new ContextPersistenceStore(storageRoot),
+  );
+  taskContext.useEngine(
+    new ContextPackageService(
       intelligenceStore,
       intelligenceQuery,
       workspace,
+      new ContextPersistenceStore(storageRoot),
     ),
-    delegationStore,
   );
   const delegation = new DelegationService(
     copilot,
@@ -299,24 +281,16 @@ export async function activate(
   const deliveryStore = new DeliveryPersistenceStore(storageRoot);
   const deliveryRepositoryRoot = repositoryRoot ?? process.cwd();
   const deliveryGit = new VsCodeGitDeliveryAdapter(
-    new GitExecutableDeliveryAdapter(() =>
-      Boolean(vscode.extensions.getExtension("vscode.git")),
-    ),
+    new GitExecutableDeliveryAdapter(() => Boolean(vscode.extensions.getExtension("vscode.git"))),
   );
   const githubProvider = new GitHubPullRequestProvider({
     detected: () =>
-      Promise.resolve(
-        Boolean(
-          vscode.extensions.getExtension("github.vscode-pull-request-github"),
-        ),
-      ),
+      Promise.resolve(Boolean(vscode.extensions.getExtension("github.vscode-pull-request-github"))),
     commands: async () => vscode.commands.getCommands(true),
     openCreate: async () => {
       const commands = await vscode.commands.getCommands(true);
       if (!commands.includes("pr.create"))
-        throw new Error(
-          "The installed GitHub provider does not expose assisted PR creation.",
-        );
+        throw new Error("The installed GitHub provider does not expose assisted PR creation.");
       await vscode.commands.executeCommand("pr.create");
     },
   });
@@ -333,13 +307,19 @@ export async function activate(
     new PullRequestProviderRegistry([githubProvider, clipboardProvider]),
   );
   await delivery.initialize();
+
+  // Initialize HealthCheckService with standard health checks
+  const healthCheck = new HealthCheckService();
+  healthCheck.register(HealthCheckService.createIntelligenceCheck(intelligenceRuntime));
+  healthCheck.register(HealthCheckService.createGitCheck(git));
+  healthCheck.register(HealthCheckService.createWorkspaceCheck(workspace));
+  healthCheck.register(HealthCheckService.createPersistenceCheck(intelligenceStore));
+  healthCheck.register(HealthCheckService.createCopilotCheck(copilotIntegrationStore));
+  healthCheck.register(HealthCheckService.createWorkflowCheck(workflow));
+  healthCheck.register(HealthCheckService.createDeliveryCheck(delivery));
+
   const reviewStore = new ReviewPersistenceStore(storageRoot);
-  const review = new ReviewCompletionService(
-    reviewStore,
-    workflow,
-    executionStore,
-    delivery,
-  );
+  const review = new ReviewCompletionService(reviewStore, workflow, executionStore, delivery);
   await review.initialize();
   workflow.setReviewStateProvider((workflowId) => {
     const state = review.getState(workflowId);
@@ -347,9 +327,7 @@ export async function activate(
       status: state.summary.status,
       completionReady: state.summary.completionReady,
       blockers: state.readinessBlockers,
-      completed: review.persisted.completions.some(
-        (item) => item.workflowId === workflowId,
-      ),
+      completed: review.persisted.completions.some((item) => item.workflowId === workflowId),
     };
   });
   const teamStore = new TeamWorkflowPersistenceStore(storageRoot);
@@ -360,9 +338,7 @@ export async function activate(
       current: () => {
         const snapshot = intelligenceStore.getSnapshot();
         if (!snapshot)
-          throw new Error(
-            "Repository intelligence is unavailable for handoff reconciliation.",
-          );
+          throw new Error("Repository intelligence is unavailable for handoff reconciliation.");
         const relevantFileFingerprints = Object.fromEntries(
           snapshot.files
             .filter((file) => file.contentHash)
@@ -371,9 +347,7 @@ export async function activate(
         );
         return {
           repositoryId: snapshot.repository.id,
-          ...(snapshot.repository.branch
-            ? { branch: snapshot.repository.branch }
-            : {}),
+          ...(snapshot.repository.branch ? { branch: snapshot.repository.branch } : {}),
           ...(snapshot.repository.headCommit
             ? {
                 baseCommit: snapshot.repository.headCommit,
@@ -418,25 +392,17 @@ export async function activate(
     {
       snapshot: (taskId, workflowId) => {
         const executionState = executionStore.snapshot;
-        const sessions = executionState.sessions.filter(
-          (item) => item.taskId === taskId,
-        );
+        const sessions = executionState.sessions.filter((item) => item.taskId === taskId);
         const latest = sessions.at(-1);
-        const runIds = [
-          ...new Set(sessions.flatMap((item) => item.validationRunIds)),
-        ];
-        const runs = executionState.runs.filter((item) =>
-          runIds.includes(item.id),
-        );
+        const runIds = [...new Set(sessions.flatMap((item) => item.validationRunIds))];
+        const runs = executionState.runs.filter((item) => runIds.includes(item.id));
         const latestRun = runs.at(-1);
         const deliveryState = deliveryStore.snapshot;
         const changeSet = deliveryState.changeSets
           .filter((item) => item.workflowId === workflowId)
           .at(-1);
         const commitPlan = changeSet
-          ? deliveryState.commitPlans
-              .filter((item) => item.changeSetId === changeSet.id)
-              .at(-1)
+          ? deliveryState.commitPlans.filter((item) => item.changeSetId === changeSet.id).at(-1)
           : undefined;
         const actionResults = deliveryState.actionResults.filter(
           (item) => item.status === "succeeded",
@@ -455,9 +421,7 @@ export async function activate(
                   ...(latest.promptFingerprint
                     ? { promptFingerprint: latest.promptFingerprint }
                     : {}),
-                  attemptCount: Math.max(
-                    ...sessions.map((item) => item.retryAttempt + 1),
-                  ),
+                  attemptCount: Math.max(...sessions.map((item) => item.retryAttempt + 1)),
                   transferred: true as const,
                   continuationRequiresNewApproval: true as const,
                   observedChangeCount: latest.observedChanges.length,
@@ -478,16 +442,12 @@ export async function activate(
                   ...(latestRun ? { latestStatus: latestRun.status } : {}),
                   passedSteps: runs.reduce(
                     (total, run) =>
-                      total +
-                      run.stepResults.filter((item) => item.status === "passed")
-                        .length,
+                      total + run.stepResults.filter((item) => item.status === "passed").length,
                     0,
                   ),
                   failedSteps: runs.reduce(
                     (total, run) =>
-                      total +
-                      run.stepResults.filter((item) => item.status === "failed")
-                        .length,
+                      total + run.stepResults.filter((item) => item.status === "failed").length,
                     0,
                   ),
                   criterionResults:
@@ -498,18 +458,14 @@ export async function activate(
                     })) ?? [],
                   findingSummaries:
                     latestRun?.findings.map(
-                      (item) =>
-                        `${item.severity}: ${item.title} — ${item.description}`,
+                      (item) => `${item.severity}: ${item.title} — ${item.description}`,
                     ) ?? [],
                   overrideIds: executionState.overrides
-                    .filter((item) =>
-                      runIds.includes(item.validationRunId ?? ""),
-                    )
+                    .filter((item) => runIds.includes(item.validationRunId ?? ""))
                     .map((item) => item.id),
                   repositoryFingerprint: latestRun?.repositoryFingerprint,
                   providerVersions: {
-                    ...(intelligenceStore.getSnapshot()?.manifest
-                      .extractorVersions ?? {}),
+                    ...(intelligenceStore.getSnapshot()?.manifest.extractorVersions ?? {}),
                     [CPG_PROVIDER_ID]: CPG_PROVIDER_VERSION,
                   },
                 },
@@ -524,11 +480,8 @@ export async function activate(
                   commitHashes: actionResults.flatMap((item) =>
                     item.commitHash ? [item.commitHash] : [],
                   ),
-                  pushStatus: actionResults
-                    .filter((item) => item.action === "push")
-                    .at(-1)?.status,
-                  pullRequestStatus:
-                    deliveryState.pullRequestResults.at(-1)?.status,
+                  pushStatus: actionResults.filter((item) => item.action === "push").at(-1)?.status,
+                  pullRequestStatus: deliveryState.pullRequestResults.at(-1)?.status,
                   pullRequestUrl: deliveryState.pullRequestResults.at(-1)?.url,
                 },
               }
@@ -537,8 +490,7 @@ export async function activate(
             latest?.observedChanges.map((item) => ({
               path: item.relativePath,
               kind: item.kind,
-              classification:
-                item.userOverride?.classification ?? item.classification,
+              classification: item.userOverride?.classification ?? item.classification,
               availability: "local-unavailable" as const,
               summary: item.reasons.join(" ").slice(0, 2000),
             })) ?? [],
@@ -549,9 +501,7 @@ export async function activate(
               entityType: item.entityType,
               relativePath: item.relativePath,
               changeKind: item.changeKind,
-              ...(item.afterFingerprint
-                ? { fingerprint: item.afterFingerprint }
-                : {}),
+              ...(item.afterFingerprint ? { fingerprint: item.afterFingerprint } : {}),
               evidenceIds: item.evidenceIds,
             })) ?? [],
         };
@@ -560,11 +510,7 @@ export async function activate(
   );
   await team.initialize();
   const orchestrationStore = new OrchestrationPersistenceStore(storageRoot);
-  const orchestration = new OrchestrationService(
-    orchestrationStore,
-    workflow,
-    routing,
-  );
+  const orchestration = new OrchestrationService(orchestrationStore, workflow, routing);
   await orchestration.initialize();
   const toolRegistry = new CopilotToolRegistry(
     () =>
@@ -626,20 +572,14 @@ export async function activate(
   const repositoryArtifactsEnabled = vscode.workspace
     .getConfiguration("keystone.team")
     .get<boolean>("repositoryArtifactsEnabled", false);
-  if (
-    team.store.snapshot.settings.repositoryArtifactsEnabled !==
-    repositoryArtifactsEnabled
-  )
+  if (team.store.snapshot.settings.repositoryArtifactsEnabled !== repositoryArtifactsEnabled)
     await team.store.update((state) => ({
       ...state,
       settings: { ...state.settings, repositoryArtifactsEnabled },
     }));
 
-  const packageVersion = (
-    context.extension.packageJSON as { version?: unknown }
-  ).version;
-  const extensionVersion =
-    typeof packageVersion === "string" ? packageVersion : "0.0.0";
+  const packageVersion = (context.extension.packageJSON as { version?: unknown }).version;
+  const extensionVersion = typeof packageVersion === "string" ? packageVersion : "0.0.0";
   const nativeStore = new NativeShellPersistenceStore(storageRoot);
   await nativeStore.initialize();
   const nativeSource: NativeShellStateSource = {
@@ -647,9 +587,7 @@ export async function activate(
       available: workspace.getRoots().length > 0,
       name: workspace.getRoots()[0]?.name ?? "No workspace",
       trusted: vscode.workspace.isTrusted,
-      roots: workspace
-        .getRoots()
-        .map((root) => ({ id: root.uri, name: root.name })),
+      roots: workspace.getRoots().map((root) => ({ id: root.uri, name: root.name })),
     }),
     intelligence: () => {
       const state = intelligenceRuntime.getState();
@@ -673,12 +611,8 @@ export async function activate(
       const sessions = executionStore.snapshot.sessions.filter(
         (entry) => entry.workflowId === workflowId,
       );
-      const runIds = new Set(
-        sessions.flatMap((entry) => entry.validationRunIds),
-      );
-      const runs = executionStore.snapshot.runs.filter((entry) =>
-        runIds.has(entry.id),
-      );
+      const runIds = new Set(sessions.flatMap((entry) => entry.validationRunIds));
+      const runs = executionStore.snapshot.runs.filter((entry) => runIds.has(entry.id));
       return {
         passed: runs.filter((entry) => entry.status === "passed").length,
         failed: runs.filter((entry) => entry.status === "failed").length,
@@ -687,18 +621,15 @@ export async function activate(
     copilot: () => copilotIntegrationStore.snapshot.lastCapabilities,
     handoffAttention: () =>
       team.store.snapshot.imports.filter((entry) =>
-        ["reviewable", "read-only", "failed", "interrupted"].includes(
-          entry.status,
-        ),
+        ["reviewable", "read-only", "failed", "interrupted"].includes(entry.status),
       ).length,
     persistenceWarnings: () => scopeMigration.diagnostics,
   };
   const panelState = new KeystonePanelStateService(nativeStore);
   const launchValidation = new KeystoneLaunchValidationService(nativeSource);
-  const dashboardViewModels = new KeystoneDashboardViewModelService(
-    nativeSource,
-  );
+  const dashboardViewModels = new KeystoneDashboardViewModelService(nativeSource);
   const serviceRegistry: IntelligenceServiceRegistry = {
+    healthCheck,
     intelligenceRuntime,
     intelligenceQuery,
     cpgQuery,
@@ -754,9 +685,7 @@ export async function activate(
     launchValidation,
     (pendingNavigation) => {
       const workflows = workflow.list();
-      const active = workflows
-        .filter((entry) => !["cancelled"].includes(entry.status))
-        .at(-1);
+      const active = workflows.filter((entry) => !["cancelled"].includes(entry.status)).at(-1);
       const task = active?.tasks.find((entry) =>
         [
           "ready",
@@ -783,9 +712,7 @@ export async function activate(
               repository: {
                 id: snapshot.repository.id,
                 name: snapshot.repository.displayName,
-                ...(snapshot.repository.branch
-                  ? { branch: snapshot.repository.branch }
-                  : {}),
+                ...(snapshot.repository.branch ? { branch: snapshot.repository.branch } : {}),
                 intelligenceStatus: intelligenceRuntime.getState().phase,
               },
             }
@@ -794,9 +721,7 @@ export async function activate(
           ? {
               workflow: {
                 id: active.id,
-                title:
-                  active.specification?.title ??
-                  active.intent.normalizedObjective,
+                title: active.specification?.title ?? active.intent.normalizedObjective,
                 stage:
                   active.specification?.status !== "approved"
                     ? "define"
@@ -813,9 +738,7 @@ export async function activate(
         },
         restoredRoute: restored.lastRoute,
         restoredContext: {
-          ...(restored.lastWorkflowId
-            ? { workflowId: restored.lastWorkflowId }
-            : {}),
+          ...(restored.lastWorkflowId ? { workflowId: restored.lastWorkflowId } : {}),
           ...(restored.lastTaskId ? { taskId: restored.lastTaskId } : {}),
           ...(restored.lastIntelligenceQuery
             ? { intelligenceQuery: restored.lastIntelligenceQuery }
@@ -826,9 +749,7 @@ export async function activate(
         ...(pendingNavigation
           ? {
               pendingNavigation,
-              ...(pendingNavigation.recovery
-                ? { recovery: pendingNavigation.recovery }
-                : {}),
+              ...(pendingNavigation.recovery ? { recovery: pendingNavigation.recovery } : {}),
             }
           : {}),
         initializedAt: new Date().toISOString(),
@@ -838,9 +759,7 @@ export async function activate(
   const navigation = new KeystoneNavigationService(launchValidation, provider);
   const dashboardReference: { current?: KeystoneDashboardProvider } = {};
   const statusBar = new KeystoneStatusBarService(() =>
-    vscode.workspace
-      .getConfiguration("keystone.shell")
-      .get<boolean>("showStatusBar", true),
+    vscode.workspace.getConfiguration("keystone.shell").get<boolean>("showStatusBar", true),
   );
   const contextKeys = new KeystoneContextKeyService();
   const notifications = new KeystoneNotificationService();
@@ -851,9 +770,7 @@ export async function activate(
       void contextKeys.update(
         dashboard.snapshot,
         Boolean(provider.currentPanel?.visible),
-        Boolean(
-          copilotIntegrationStore.snapshot.lastCapabilities?.chatAvailable,
-        ),
+        Boolean(copilotIntegrationStore.snapshot.lastCapabilities?.chatAvailable),
       );
       void notifications.update(dashboard.snapshot);
     },
@@ -861,35 +778,24 @@ export async function activate(
       .getConfiguration("keystone.shell")
       .get<number>("dashboardRefreshDebounceMs", 150),
   );
-  const dashboard = new KeystoneDashboardProvider(
-    dashboardViewModels,
-    async (id) => {
-      const destination = dashboardReference.current?.destination(id);
-      if (!destination) {
-        if (id === "action:open-folder")
-          await vscode.commands.executeCommand("vscode.openFolder");
-        return;
-      }
-      await navigation.open({
-        schemaVersion: 1,
-        destination,
-        source: "activity-bar",
-        requestedAt: new Date().toISOString(),
-      });
-    },
-  );
+  const dashboard = new KeystoneDashboardProvider(dashboardViewModels, async (id) => {
+    const destination = dashboardReference.current?.destination(id);
+    if (!destination) {
+      if (id === "action:open-folder") await vscode.commands.executeCommand("vscode.openFolder");
+      return;
+    }
+    await navigation.open({
+      schemaVersion: 1,
+      destination,
+      source: "activity-bar",
+      requestedAt: new Date().toISOString(),
+    });
+  });
   dashboardReference.current = dashboard;
-  const intelligencePanel = new KeystoneIntelligencePanel(
-    context.extensionUri,
-    intelligenceStore,
-  );
+  const intelligencePanel = new KeystoneIntelligencePanel(context.extensionUri, intelligenceStore);
   const explorerProvider = new KeystoneExplorerProvider(intelligenceStore);
   const copilotToggle = new CopilotToggleService(context);
-  const graphIndexer = new GraphIndexerWorker(
-    intelligenceStore,
-    intelligenceRuntime,
-    logger,
-  );
+  const graphIndexer = new GraphIndexerWorker(intelligenceStore, intelligenceRuntime, logger);
   const gitHistoryParser = new GitHistoryParser(intelligenceStore, logger);
   const safetyChecker = new SafetyCheckService();
   serviceRegistry.nativeShell = {
@@ -900,10 +806,7 @@ export async function activate(
     },
     openDashboardItem: async (id) => {
       const destination = dashboard.destination(id);
-      if (!destination)
-        throw new Error(
-          "Dashboard action is unavailable or informational only.",
-        );
+      if (!destination) throw new Error("Dashboard action is unavailable or informational only.");
       return navigation.open({
         schemaVersion: 1,
         destination,
@@ -914,21 +817,13 @@ export async function activate(
     panel: () => panelState.snapshot,
     updatePanel: (payload) =>
       panelState.route(AppRouteSchema.parse(payload.route), {
-        ...(typeof payload.workflowId === "string"
-          ? { workflowId: payload.workflowId }
-          : {}),
-        ...(typeof payload.taskId === "string"
-          ? { taskId: payload.taskId }
-          : {}),
+        ...(typeof payload.workflowId === "string" ? { workflowId: payload.workflowId } : {}),
+        ...(typeof payload.taskId === "string" ? { taskId: payload.taskId } : {}),
         ...(typeof payload.intelligenceQuery === "string"
           ? { query: payload.intelligenceQuery }
           : {}),
-        ...(typeof payload.entityId === "string"
-          ? { entityId: payload.entityId }
-          : {}),
-        ...(typeof payload.drawer === "string"
-          ? { drawer: payload.drawer }
-          : {}),
+        ...(typeof payload.entityId === "string" ? { entityId: payload.entityId } : {}),
+        ...(typeof payload.drawer === "string" ? { drawer: payload.drawer } : {}),
       }),
     pending: () => panelState.snapshot.pendingNavigation,
     validate: (request) => launchValidation.validate(request),
@@ -944,14 +839,10 @@ export async function activate(
       );
       const snapshot = intelligenceStore.getSnapshot();
       const editor = vscode.window.activeTextEditor;
-      const resolved = editor
-        ? workspace.resolveFile(editor.document.uri.toString())
-        : undefined;
+      const resolved = editor ? workspace.resolveFile(editor.document.uri.toString()) : undefined;
       const file =
         resolved && snapshot
-          ? snapshot.files.find(
-              (entry) => entry.relativePath === resolved.relativePath,
-            )
+          ? snapshot.files.find((entry) => entry.relativePath === resolved.relativePath)
           : undefined;
       const line = editor?.selection.active.line;
       const symbol =
@@ -983,9 +874,7 @@ export async function activate(
     const resolved = workspace.resolveFile(uri.toString());
     const snapshot = intelligenceStore.getSnapshot();
     if (!resolved || !snapshot) return [];
-    const file = snapshot.files.find(
-      (entry) => entry.relativePath === resolved.relativePath,
-    );
+    const file = snapshot.files.find((entry) => entry.relativePath === resolved.relativePath);
     if (!file) return [];
     return snapshot.symbols
       .filter(
@@ -1009,12 +898,9 @@ export async function activate(
   });
 
   context.subscriptions.push(
-    vscode.window.registerWebviewPanelSerializer(
-      KeystonePanelService.viewType,
-      {
-        deserializeWebviewPanel: (panel) => provider.restore(panel),
-      },
-    ),
+    vscode.window.registerWebviewPanelSerializer(KeystonePanelService.viewType, {
+      deserializeWebviewPanel: (panel) => provider.restore(panel),
+    }),
     vscode.window.registerTreeDataProvider("keystone.dashboard", dashboard),
     vscode.languages.registerCodeLensProvider(
       [
@@ -1026,150 +912,105 @@ export async function activate(
       codeLens,
     ),
     ...commands.register(),
-    vscode.commands.registerCommand(
-      "keystone.panel.metrics",
-      () => provider.metrics,
-    ),
+    vscode.commands.registerCommand("keystone.panel.metrics", () => provider.metrics),
     vscode.commands.registerCommand("keystone.showLogs", () => logger?.show()),
-    vscode.commands.registerCommand("keystone.index.restart", () =>
-      intelligenceRuntime.start(),
-    ),
+    vscode.commands.registerCommand("keystone.index.restart", () => intelligenceRuntime.start()),
     vscode.commands.registerCommand("keystone.intelligence.overview", () =>
       intelligenceQuery.overview(),
     ),
-    vscode.commands.registerCommand(
-      "keystone.intelligence.search",
-      (request: unknown) => intelligenceQuery.search(request as never),
+    vscode.commands.registerCommand("keystone.intelligence.search", (request: unknown) =>
+      intelligenceQuery.search(request as never),
     ),
-    vscode.commands.registerCommand(
-      "keystone.intelligence.entity",
-      (id: string) => intelligenceQuery.entity(id),
+    vscode.commands.registerCommand("keystone.intelligence.entity", (id: string) =>
+      intelligenceQuery.entity(id),
     ),
-    vscode.commands.registerCommand(
-      "keystone.intelligence.neighborhood",
-      (request: unknown) => intelligenceQuery.neighborhood(request),
+    vscode.commands.registerCommand("keystone.intelligence.neighborhood", (request: unknown) =>
+      intelligenceQuery.neighborhood(request),
     ),
     vscode.commands.registerCommand(
       "keystone.intelligence.technologies",
-      (request: unknown = { limit: 50 }) =>
-        intelligenceQuery.technologies(request as never),
+      (request: unknown = { limit: 50 }) => intelligenceQuery.technologies(request as never),
     ),
     vscode.commands.registerCommand(
       "keystone.intelligence.adapterDiagnostics",
-      (request: unknown = { limit: 50 }) =>
-        intelligenceQuery.adapterDiagnostics(request),
+      (request: unknown = { limit: 50 }) => intelligenceQuery.adapterDiagnostics(request),
     ),
-    vscode.commands.registerCommand(
-      "keystone.intelligence.cpg",
-      (request: unknown) => cpgQuery.scope(request as never),
+    vscode.commands.registerCommand("keystone.intelligence.cpg", (request: unknown) =>
+      cpgQuery.scope(request as never),
     ),
-    vscode.commands.registerCommand(
-      "keystone.intelligence.query",
-      (request: unknown) => intelligenceQuery.unified(request),
+    vscode.commands.registerCommand("keystone.intelligence.query", (request: unknown) =>
+      intelligenceQuery.unified(request),
     ),
-    vscode.commands.registerCommand(
-      "keystone.intelligence.open",
-      () => intelligencePanel.show(),
+    vscode.commands.registerCommand("keystone.intelligence.open", () => intelligencePanel.show()),
+    vscode.commands.registerCommand("keystone.intelligence.exported-symbols", () =>
+      intelligencePanel.show(),
     ),
-    vscode.commands.registerCommand(
-      "keystone.intelligence.exported-symbols",
-      () => intelligencePanel.show(),
+    vscode.commands.registerCommand("keystone.intelligence.wildcard-search", () =>
+      intelligencePanel.show(),
     ),
-    vscode.commands.registerCommand(
-      "keystone.intelligence.wildcard-search",
-      () => intelligencePanel.show(),
+    vscode.commands.registerCommand("keystone.intelligence.module-mapping", () =>
+      intelligencePanel.show(),
     ),
-    vscode.commands.registerCommand(
-      "keystone.intelligence.module-mapping",
-      () => intelligencePanel.show(),
+    vscode.commands.registerCommand("keystone.intelligence.circular-dependencies", () =>
+      intelligencePanel.show(),
     ),
-    vscode.commands.registerCommand(
-      "keystone.intelligence.circular-dependencies",
-      () => intelligencePanel.show(),
+    vscode.commands.registerCommand("keystone.intelligence.node-metrics", () =>
+      intelligencePanel.show(),
     ),
-    vscode.commands.registerCommand(
-      "keystone.intelligence.node-metrics",
-      () => intelligencePanel.show(),
+    vscode.commands.registerCommand("keystone.intelligence.dead-code", () =>
+      intelligencePanel.show(),
     ),
-    vscode.commands.registerCommand(
-      "keystone.intelligence.dead-code",
-      () => intelligencePanel.show(),
+    vscode.commands.registerCommand("keystone.intelligence.filtered-subgraph", () =>
+      intelligencePanel.show(),
     ),
-    vscode.commands.registerCommand(
-      "keystone.intelligence.filtered-subgraph",
-      () => intelligencePanel.show(),
+    vscode.commands.registerCommand("keystone.intelligence.cyclomatic-complexity", () =>
+      intelligencePanel.show(),
     ),
-    vscode.commands.registerCommand(
-      "keystone.intelligence.cyclomatic-complexity",
-      () => intelligencePanel.show(),
-    ),
-    vscode.commands.registerCommand(
-      "keystone.copilot.toggle",
-      async () => {
-        const enabled = await copilotToggle.toggle();
-        vscode.window.showInformationMessage(
-          `Keystone Copilot markdown generation ${enabled ? "enabled" : "disabled"}.`,
+    vscode.commands.registerCommand("keystone.copilot.toggle", async () => {
+      const enabled = await copilotToggle.toggle();
+      vscode.window.showInformationMessage(
+        `Keystone Copilot markdown generation ${enabled ? "enabled" : "disabled"}.`,
+      );
+    }),
+    vscode.commands.registerCommand("keystone.graph.index", () => {
+      try {
+        graphIndexer.start();
+        vscode.window.showInformationMessage("Graph indexing started.");
+      } catch (error) {
+        vscode.window.showErrorMessage(
+          `Graph indexing failed: ${error instanceof Error ? error.message : String(error)}`,
         );
-      },
-    ),
-    vscode.commands.registerCommand(
-      "keystone.graph.index",
-      () => {
-        try {
-          graphIndexer.start();
-          vscode.window.showInformationMessage("Graph indexing started.");
-        } catch (error) {
-          vscode.window.showErrorMessage(
-            `Graph indexing failed: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        }
-      },
-    ),
-    vscode.commands.registerCommand(
-      "keystone.graph.cancel",
-      () => {
-        graphIndexer.cancel();
-        vscode.window.showInformationMessage("Graph indexing cancelled.");
-      },
-    ),
-    vscode.commands.registerCommand(
-      "keystone.git.history",
-      async () => {
-        try {
-          const commits = await gitHistoryParser.parseHistory();
-          vscode.window.showInformationMessage(
-            `Parsed ${commits.length} Git commits.`,
-          );
-        } catch (error) {
-          vscode.window.showErrorMessage(
-            `Failed to parse Git history: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        }
-      },
-    ),
-    vscode.commands.registerCommand(
-      "keystone.safety.check",
-      async () => {
-        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-        if (!workspaceFolder) {
-          vscode.window.showErrorMessage("No workspace folder open.");
-          return;
-        }
-
-        const result = await safetyChecker.validateOperation(
-          workspaceFolder.uri.fsPath,
-          "push",
+      }
+    }),
+    vscode.commands.registerCommand("keystone.graph.cancel", () => {
+      graphIndexer.cancel();
+      vscode.window.showInformationMessage("Graph indexing cancelled.");
+    }),
+    vscode.commands.registerCommand("keystone.git.history", async () => {
+      try {
+        const commits = await gitHistoryParser.parseHistory();
+        vscode.window.showInformationMessage(`Parsed ${commits.length} Git commits.`);
+      } catch (error) {
+        vscode.window.showErrorMessage(
+          `Failed to parse Git history: ${error instanceof Error ? error.message : String(error)}`,
         );
+      }
+    }),
+    vscode.commands.registerCommand("keystone.safety.check", async () => {
+      const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+      if (!workspaceFolder) {
+        vscode.window.showErrorMessage("No workspace folder open.");
+        return;
+      }
 
-        if (result.safe) {
-          vscode.window.showInformationMessage(result.message);
-        } else {
-          vscode.window.showWarningMessage(
-            `${result.message} ${result.details ?? ""}`,
-          );
-        }
-      },
-    ),
+      const result = await safetyChecker.validateOperation(workspaceFolder.uri.fsPath, "push");
+
+      if (result.safe) {
+        vscode.window.showInformationMessage(result.message);
+      } else {
+        vscode.window.showWarningMessage(`${result.message} ${result.details ?? ""}`);
+      }
+    }),
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (event.affectsConfiguration("keystone"))
         logger?.info(
@@ -1205,9 +1046,7 @@ export async function activate(
   refresh.request();
   if (
     nativeStore.snapshot.wasOpen &&
-    vscode.workspace
-      .getConfiguration("keystone.panel")
-      .get<boolean>("reopenOnStartup", true)
+    vscode.workspace.getConfiguration("keystone.panel").get<boolean>("reopenOnStartup", true)
   )
     void provider.open(
       {
@@ -1227,37 +1066,25 @@ export async function activate(
       ["ready", "executing", "blocked"].includes(item.status),
     );
     return {
-      ...(active
-        ? { workflowId: active.id, generation: active.intelligenceGeneration }
-        : {}),
+      ...(active ? { workflowId: active.id, generation: active.intelligenceGeneration } : {}),
       ...(task ? { taskId: task.id } : {}),
     };
   });
   productStartup.transition("ready", "ready", "Keystone is ready.");
-  logger.info(
-    "activation.startup-state",
-    productStartup.snapshot.message,
-    productStartup.snapshot,
-  );
+  logger.info("activation.startup-state", productStartup.snapshot.message, productStartup.snapshot);
 
   void intelligenceRuntime
     .initialize()
     .catch((cause: unknown) =>
-      logger?.error(
-        KeystoneError.fromUnknown(cause, "intelligence.runtime.initialize"),
-      ),
+      logger?.error(KeystoneError.fromUnknown(cause, "intelligence.runtime.initialize")),
     );
 
-  logger.info(
-    "extension.activate",
-    "Keystone intelligence foundation activated.",
-    {
-      durationMs: Math.round(performance.now() - startedAt),
-      workspaceRoots: vscode.workspace.workspaceFolders?.length ?? 0,
-      trusted: vscode.workspace.isTrusted,
-      intelligenceStatus: intelligenceRuntime.getState().status,
-    },
-  );
+  logger.info("extension.activate", "Keystone intelligence foundation activated.", {
+    durationMs: Math.round(performance.now() - startedAt),
+    workspaceRoots: vscode.workspace.workspaceFolders?.length ?? 0,
+    trusted: vscode.workspace.isTrusted,
+    intelligenceStatus: intelligenceRuntime.getState().status,
+  });
 }
 
 async function openSource(
@@ -1270,11 +1097,7 @@ async function openSource(
   },
 ): Promise<void> {
   const normalized = relativePath.replace(/\\/g, "/");
-  if (
-    !normalized ||
-    normalized.startsWith("/") ||
-    normalized.split("/").includes("..")
-  )
+  if (!normalized || normalized.startsWith("/") || normalized.split("/").includes(".."))
     throw new Error("Keystone rejected an invalid source path.");
   for (const root of vscode.workspace.workspaceFolders ?? []) {
     const uri = vscode.Uri.joinPath(root.uri, ...normalized.split("/"));
@@ -1290,51 +1113,33 @@ async function openSource(
           range.endLine,
           range.endColumn,
         );
-        editor.selection = new vscode.Selection(
-          selection.start,
-          selection.start,
-        );
-        editor.revealRange(
-          selection,
-          vscode.TextEditorRevealType.InCenterIfOutsideViewport,
-        );
+        editor.selection = new vscode.Selection(selection.start, selection.start);
+        editor.revealRange(selection, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
       }
       return;
     } catch {
       // Try the next workspace root.
     }
   }
-  throw new Error(
-    `Keystone could not open ${normalized} in the active workspace.`,
-  );
+  throw new Error(`Keystone could not open ${normalized} in the active workspace.`);
 }
 
 async function migrateWorkspaceStorage(
   previousRoot: string | undefined,
   repositoryStorageRoot: string | undefined,
 ): Promise<void> {
-  if (
-    !previousRoot ||
-    !repositoryStorageRoot ||
-    previousRoot === repositoryStorageRoot
-  )
-    return;
+  if (!previousRoot || !repositoryStorageRoot || previousRoot === repositoryStorageRoot) return;
   try {
     await stat(repositoryStorageRoot);
     return;
   } catch (cause) {
-    if (!(cause instanceof Error && "code" in cause && cause.code === "ENOENT"))
-      return;
+    if (!(cause instanceof Error && "code" in cause && cause.code === "ENOENT")) return;
   }
   try {
     await stat(previousRoot);
     await rename(previousRoot, repositoryStorageRoot);
   } catch (cause) {
-    if (!(
-      cause instanceof Error &&
-      "code" in cause &&
-      cause.code === "ENOENT"
-    )) {
+    if (!(cause instanceof Error && "code" in cause && cause.code === "ENOENT")) {
       logger?.warning(
         "persistence.repository-migration",
         "Existing VS Code workspace storage could not be moved to .keystone; Keystone will create repository-local state.",
@@ -1348,16 +1153,12 @@ export function deactivate(): void {
   logger?.info("extension.deactivate", "Keystone deactivated.");
 }
 
-async function initializeFoundationState(
-  store: WorkspaceStateStore,
-): Promise<void> {
+async function initializeFoundationState(store: WorkspaceStateStore): Promise<void> {
   try {
     await store.initialize();
   } catch (cause) {
     const error = KeystoneError.fromUnknown(cause, "extension.activate");
     logger?.error(error);
-    void vscode.window.showErrorMessage(
-      `${error.message} ${error.recommendedAction}`,
-    );
+    void vscode.window.showErrorMessage(`${error.message} ${error.recommendedAction}`);
   }
 }

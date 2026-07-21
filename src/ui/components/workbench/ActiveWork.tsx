@@ -6,12 +6,111 @@ import type {
   WorkflowWorkType,
 } from "../../../shared/contracts/workflow";
 import type { DevelopmentWorkflowSnapshot } from "../../../shared/contracts/delegation";
-import type { HostBridge } from "../../services/HostBridge";
+import type { HostBridge } from "../../../services/HostBridge";
 import { Icon } from "../Icon";
 import { toUiError, UiErrorState, type KeystoneUiError } from "../UiState";
+import type { AppRoute } from "../../../shared/contracts/domain";
+import { workbenchRoute } from "../../../shared/navigation";
 
-function snapshotToWorkflow(snapshot: DevelopmentWorkflowSnapshot, workType: WorkflowWorkType): Workflow {
-  // Minimal inline migration: map snapshot fields to the new Workflow shape
+// Define the standard SDLC stages as per the corrective phase
+const SDLC_STAGES: Array<{
+  id: string;
+  displayName: string;
+  type: WorkflowStageType;
+  required: "required" | "optional";
+}> = [
+  { id: "understand", displayName: "Understand", type: "understand", required: "required" },
+  { id: "plan", displayName: "Plan", type: "plan", required: "required" },
+  { id: "development", displayName: "Development", type: "development", required: "required" },
+  { id: "impact-analysis", displayName: "Impact Analysis", type: "impact-analysis", required: "required" },
+  { id: "test-generation", displayName: "Test Generation", type: "test-generation", required: "required" },
+  { id: "test-execution", displayName: "Test Execution", type: "test-execution", required: "required" },
+  { id: "failure-analysis", displayName: "Failure Analysis", type: "failure-analysis", required: "required" },
+  { id: "test-healing", displayName: "Test Healing", type: "test-healing", required: "required" },
+  { id: "security-analysis", displayName: "Security Analysis", type: "security-analysis", required: "required" },
+  { id: "performance-analysis", displayName: "Performance Analysis", type: "performance-analysis", required: "required" },
+  { id: "pr-review", displayName: "PR Review", type: "pr-review", required: "required" },
+  { id: "complete", displayName: "Complete", type: "complete", required: "required" },
+];
+
+// Helper to find stage by id
+function findStageById(id: string) {
+  return SDLC_STAGES.find((stage) => stage.id === id);
+}
+
+// Helper to get stage status based on workflow's current stage
+function getStageStatus(
+  stageId: string,
+  currentStageId: string | undefined,
+  completedStageIds: string[]
+): WorkflowStatus {
+  if (stageId === currentStageId) return "current";
+  if (completedStageIds.includes(stageId)) return "completed";
+  return "pending";
+}
+
+// Helper to get blocked stages (simplified)
+function getBlockedStages(
+  stageId: string,
+  currentStageId: string | undefined,
+  completedStageIds: string[]
+): string[] {
+  if (!currentStageId) return [];
+  const currentIndex = SDLC_STAGES.findIndex((s) => s.id === currentStageId);
+  const stageIndex = SDLC_STAGES.findIndex((s) => s.id === stageId);
+  // Block stages that are not yet reachable (i.e., previous stages not completed)
+  if (stageIndex > currentIndex + 1) {
+    return ["Prerequisite stages not completed"];
+  }
+  // Block if previous stage is not completed (for sequential flow)
+  if (stageIndex > 0 && !completedStageIds.includes(SDLC_STAGES[stageIndex - 1].id)) {
+    return ["Previous stage not completed"];
+  }
+  return [];
+}
+
+function snapshotToWorkflow(
+  snapshot: DevelopmentWorkflowSnapshot,
+  workType: WorkflowWorkType
+): Workflow {
+  // Map tasks to their stages (assuming task has stageId; fallback to first stage)
+  const tasksByStage: Record<string, Array<any>> = {};
+  SDLC_STAGES.forEach((stage) => {
+    tasksByStage[stage.id] = [];
+  });
+
+  snapshot.tasks.forEach((task) => {
+    const stageId = task.stageId ?? SDLC_STAGES[0].id; // fallback to first stage
+    if (tasksByStage[stageId]) {
+      tasksByStage[stageId].push({
+        id: task.id,
+        title: task.title,
+        description: task.description,
+        objective: task.objective,
+        category: task.category,
+        dependencies: task.dependencies,
+        requiredCapabilities: task.requiredCapabilities.map((c) => c),
+        executionRoute: task.executionRoute,
+        risk: task.risk,
+        optional: task.optional,
+        staleReasons: task.staleReasons,
+        baseEntityFingerprints: task.baseEntityFingerprints,
+        originalTaskId: task.id,
+        createdAt: task.createdAt,
+        updatedAt: task.updatedAt,
+      });
+    }
+  });
+
+  // Determine completed stages (simplified: stages before current stage are considered complete)
+  const completedStageIds: string[] = [];
+  if (snapshot.currentStageId) {
+    const currentIndex = SDLC_STAGES.findIndex((s) => s.id === snapshot.currentStageId);
+    for (let i = 0; i < currentIndex; i++) {
+      completedStageIds.push(SDLC_STAGES[i].id);
+    }
+  }
+
   return {
     id: snapshot.id,
     repositoryId: snapshot.repositoryId,
@@ -24,61 +123,86 @@ function snapshotToWorkflow(snapshot: DevelopmentWorkflowSnapshot, workType: Wor
     specificationRevision: snapshot.specification?.revision ?? 1,
     workType,
     sdlcFlowConfigId: snapshot.id,
-    stages: [],
-    workItems: snapshot.tasks.map((task) => ({
-      id: task.id,
-      stageId: "u1",
-      title: task.title,
-      description: task.description,
-      objective: task.objective,
-      category: task.category,
-      dependencies: task.dependencies,
-      requiredCapabilities: task.requiredCapabilities.map((c) => c),
-      executionRoute: task.executionRoute,
-      risk: task.risk,
-      optional: task.optional,
-      staleReasons: task.staleReasons,
-      baseEntityFingerprints: task.baseEntityFingerprints,
-      originalTaskId: task.id,
-      createdAt: task.createdAt,
-      updatedAt: task.updatedAt,
+    stages: SDLC_STAGES.map((stage) => ({
+      ...stage,
+      status: getStageStatus(stage.id, snapshot.currentStageId, completedStageIds),
+      blockedReasons: getBlockedStages(stage.id, snapshot.currentStageId, completedStageIds),
+      executionMode: "approval-required", // placeholder
+      evidenceCount: 0, // placeholder
+      warningCount: 0, // placeholder
+      blockerCount: getBlockedStages(stage.id, snapshot.currentStageId, completedStageIds).length,
+      latestExecutionState: "pending", // placeholder
     })),
-    contextPackages: [],
-    delegationRuns: [],
-    validationRuns: [],
-    reviewFindingIds: [],
+    workItems: snapshot.tasks.flatMap((task) => {
+      const stageId = task.stageId ?? SDLC_STAGES[0].id;
+      return tasksByStage[stageId] || [];
+    }),
+    contextPackages: [], // placeholder
+    delegationRuns: [], // placeholder
+    validationRuns: [], // placeholder
+    reviewFindingIds: [], // placeholder
     completionRecordId: undefined,
-    status: "not-ready",
-    currentStageId: undefined,
-    blockingStageIds: [],
+    status: snapshot.status as WorkflowStatus,
+    currentStageId: snapshot.currentStageId,
+    blockingStageIds: [], // placeholder
     createdAt: snapshot.createdAt,
     updatedAt: snapshot.updatedAt,
-    startedAt: undefined,
-    completedAt: undefined,
+    startedAt: snapshot.startedAt,
+    completedAt: snapshot.completedAt,
   };
 }
 
-export function ActiveWork({ bridge, workflowId, navigate }: { bridge: HostBridge; workflowId?: string; navigate: (route: string) => void }): React.JSX.Element {
+export function ActiveWork({
+  bridge,
+  workflowId,
+  navigate,
+}: {
+  bridge: HostBridge;
+  workflowId?: string;
+  navigate: (route: AppRoute) => void;
+}): React.JSX.Element {
   const [workflow, setWorkflow] = useState<Workflow | undefined>();
-  const [error, setError] = useState<KeystoneUiError>();
+  const [error, setError] = useState<KeystoneUiError | undefined>();
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [currentStageId, setCurrentStageId] = useState<string | undefined>(undefined);
+  const [activeTab, setActiveTab] = useState<string>(\'Objective\');
 
   const loadRef = useRef<() => void>(() => undefined);
   const load = useCallback(async (): Promise<void> => {
-    if (!workflowId) return;
+    setIsLoading(true);
+    setError(undefined);
     try {
-      const result = await bridge.request("workflow/get", { workflowId });
-      if (result) {
-        setWorkflow(snapshotToWorkflow(result, "feature"));
+      let result: DevelopmentWorkflowSnapshot | undefined;
+      if (workflowId) {
+        result = await bridge.request("workflow/get", { workflowId });
+      } else {
+        // Get active workflow
+        const workflows = await bridge.request("workflow/list", {});
+        const activeWorkflow = workflows.find(
+          (w) => ![ "completed", "cancelled" ].includes(w.status)
+        );
+        result = activeWorkflow ?? workflows.at(-1); // fallback to latest
       }
-      setError(undefined);
+      if (result) {
+        // Determine work type from intent (fallback to feature)
+        const workType: WorkflowWorkType = result.intent.workType ?? "feature";
+        setWorkflow(snapshotToWorkflow(result, workType));
+        setCurrentStageId(result.currentStageId);
+      } else {
+        setWorkflow(undefined);
+      }
     } catch (cause) {
-      setError(toUiError(cause, {
-        category: "active-work-load",
-        title: "Active Work is temporarily unavailable",
-        fallbackMessage: "Keystone could not load the current workflow.",
-        retry: () => loadRef.current(),
-        dismiss: () => setError(undefined),
-      }));
+      setError(
+        toUiError(cause, {
+          category: "active-work-load",
+          title: "Active Work is temporarily unavailable",
+          fallbackMessage: "Keystone could not load the current workflow.",
+          retry: () => loadRef.current(),
+          dismiss: () => setError(undefined),
+        })
+      );
+    } finally {
+      setIsLoading(false);
     }
   }, [bridge, workflowId]);
 
@@ -86,312 +210,450 @@ export function ActiveWork({ bridge, workflowId, navigate }: { bridge: HostBridg
     loadRef.current = load;
     queueMicrotask(() => void load());
   }, [load]);
-  if (!workflow) return <section className="page active-work-page"><div className="loading-view"><div className="loader" /></div></section>;
 
-  const stages = workflow.stages;
-  const currentStage = stages.find((s) => s.id === workflow.currentStageId) ?? stages[0];
-  const nextStage = currentStage ? stages.find((s) => s.order === currentStage.order + 1) : undefined;
-  const blockedStages = stages.filter((s) => s.state === "blocked");
-  const blockingStage = blockedStages.find((s) => s.required === "optional");
+  // Handle stage change from UI
+  const handleStageSelect = useCallback(
+    async (stageId: string) => {
+      if (!workflow) return;
+      // Update workflow's current stage (optimistically)
+      const updatedWorkflow = { ...workflow, currentStageId: stageId };
+      setWorkflow(updatedWorkflow);
+      setCurrentStageId(stageId);
+      // Persist change via backend (fire and forget)
+      void bridge
+        .request("workflow/updateStage", { workflowId: workflow.id, stageId })
+        .catch((cause) => {
+          // Revert optimistically on error
+          setWorkflow(workflow);
+          setCurrentStageId(workflow.currentStageId);
+          console.error("Failed to update stage:", cause);
+        });
+    },
+    [bridge, workflow]
+  );
 
-  const workflowTypeLabel: Record<WorkflowWorkType, string> = {
-    feature: "Feature",
-    "bug-fix": "Bug Fix",
-    refactoring: "Refactoring",
-    test: "Test",
-    investigation: "Investigation",
-  };
+  if (isLoading) {
+    return (
+      <section className="page active-work-page">
+        <div className="loading-view">
+          <div className="loader" />
+        </div>
+      </section>
+    );
+  }
 
-  const stageStatusColor: Record<WorkflowStatus, string> = {
-    "not-ready": "#e0e0e0",
-    ready: "#4caf50",
-    "preparing-context": "#2196f3",
-    "awaiting-approval": "#ff9800",
-    delegating: "#2196f3",
-    running: "#f44336",
-    "awaiting-result-review": "#9c27b0",
-    validating: "#ff9800",
-    passed: "#4caf50",
-    failed: "#f44336",
-    blocked: "#f44336",
-    skipped: "#757575",
-    cancelled: "#757575",
-  };
+  if (error) {
+    return <UiErrorState error={error} />;
+  }
+
+  if (!workflow) {
+    return (
+      <section className="page active-work-page">
+        <div className="empty-state">
+          <h1>No active workflow</h1>
+          <p>
+            Start a new workflow to begin working on your engineering goals.
+          </p>
+          <button
+            className="primary-button"
+            onClick={() => navigate("/workbench/new")}
+          >
+            Start new work
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  // Get current stage object
+  const currentStage = workflow.stages.find(
+    (s) => s.id === workflow.currentStageId
+  ) ?? workflow.stages[0];
+
+  // Get work items for current stage
+  const stageWorkItems = workflow.workItems.filter(
+    (item) => item.stageId === workflow.currentStageId
+  );
+
+  // Determine if there are blockers
+  const hasBlockers = workflow.blockingStageIds.length > 0;
 
   return (
     <section className="page active-work-page">
-      <div className="page-header">
-        <div className="header-row">
-          <div className="header-left">
-            <span className="eyebrow">Active Work</span>
-            <h1>
-              {workflowTypeLabel[workflow.workType]} · Specification {workflow.specificationId}
-            </h1>
-            <p>Intent {workflow.intentId}</p>
-          </div>
-          <div className="header-actions">
-            <button
-              className="ghost-button"
-              onClick={() => navigate("/intelligence")}
-            >
-              <Icon name="intelligence" size={15} />
-              Ask repository
-            </button>
-            <button
-              className="ghost-button"
-              onClick={() => navigate("/support/diagnostics")}
-            >
-              <Icon name="pulse" size={15} />
-              Diagnostics
-            </button>
-          </div>
+      {/* Workflow Header */}
+      <div className="workflow-header">
+        <div className="header-left">
+          <span className="eyebrow">
+            {workTypeLabel(workflow.workType)} ·
+            Specification {workflow.specificationId}
+          </span>
+          <h1>{workflow.specification?.title ?? workflow.intent.normalizedObjective}</h1>
+          <p>Intent {workflow.intentId}</p>
         </div>
-        <div className="workflow-meta">
-          <span className="meta-item">{workflow.repositoryId}</span>
-          <span className="meta-divider">·</span>
-          <span className="meta-item">Branch {workflow.branch ?? "unspecified"}</span>
-          <span className="meta-divider">·</span>
-          <span className="meta-item">Intelligence gen {workflow.intelligenceGeneration}</span>
-          <span className="meta-divider">·</span>
-          <span className="meta-item status-badge">{workflow.status.replace("-", " ")}</span>
+        <div className="header-actions">
+          <button
+            className="ghost-button"
+            onClick={() => navigate("/intelligence")}
+            title="Ask repository intelligence"
+          >
+            <Icon name="intelligence" size={15} />
+            Ask repository
+          </button>
+          <button
+            className="ghost-button"
+            onClick={() => navigate("/support/diagnostics")}
+            title="Workspace health"
+          >
+            <Icon name="pulse" size={15} />
+            Diagnostics
+          </button>
+          <button
+            className="ghost-button"
+            onClick={() => {
+              // TODO: Implement handoff
+              alert("Task Handoff not yet implemented");
+            }}
+            title="Hand off current workflow"
+          >
+            <Icon name="cloud-download" size={15} />
+            Hand off
+          </button>
+          <button
+            className="ghost-button"
+            onClick={() => {
+              // TODO: Implement pause/cancel
+              alert("Pause/Cancel not yet implemented");
+            }}
+            title={workflow.currentStageId ? "Pause workflow" : "Cancel workflow"}
+          >
+            {workflow.currentStageId ? (
+              <Icon name="pause" size={15} />
+            ) : (
+              <Icon name="stop" size={15} />
+            )}
+            <span>{workflow.currentStageId ? "Pause" : "Cancel"}</span>
+          </button>
         </div>
       </div>
 
-      {error && <UiErrorState error={error} />}
+      {/* Workflow Meta */}
+      <div className="workflow-meta">
+        <span className="meta-item">{workflow.repositoryId}</span>
+        <span className="meta-divider">·</span>
+        <span className="meta-item">Branch {workflow.branch ?? "unspecified"}</span>
+        <span className="meta-divider">·</span>
+        <span className="meta-item">
+          Intelligence gen {workflow.intelligenceGeneration}
+        </span>
+        <span className="meta-divider">·</span>
+        <span className="meta-item status-badge">
+          {workflow.status.replace("-", " ")}
+        </span>
+        <span className="meta-divider">·</span>
+        <span className="meta-item">
+          Saved {new Date(
+            workflow.updatedAt
+          ).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+        </span>
+      </div>
 
-      <div className="sdlc-flow-container">
-        <h2>SDLC Flow</h2>
-        <div className="flow-stages">
-          {stages.map((stage, index) => {
-            const stageWorkItems = workflow.workItems.filter((wi) => wi.stageId === stage.id);
-            const isCurrent = stage.id === workflow.currentStageId;
-            const isNext = stage.id === nextStage?.id;
-            const isBlocked = stage.state === "blocked";
-            const isSkipped = stage.state === "skipped";
-            const isCancelled = stage.state === "cancelled";
-            const isPassed = stage.state === "passed";
+      {/* Blockers Alert if there are blockers */}
+      {hasBlockers && (
+        <div className="honesty-note" role="alert">
+          <strong>Workflow blocked:</strong> {workflow.blockingStageIds
+            .map((id) => {
+              const stage = workflow.stages.find((s) => s.id === id);
+              return stage ? stage.displayName : id;
+            })
+            .join(", ")} await resolution.
+        </div>
+      )}
 
-            const stageTypeLabel: Record<WorkflowStageType, string> = {
-              understand: "Understand",
-              plan: "Plan",
-              development: "Development",
-              "impact-analysis": "Impact Analysis",
-              "test-generation": "Test Generation",
-              "test-execution": "Test Execution",
-              "failure-analysis": "Failure Analysis",
-              "test-healing": "Test Healing",
-              "security-analysis": "Security Analysis",
-              "performance-analysis": "Performance Analysis",
-              "pr-review": "PR Review",
-              complete: "Complete",
-            };
+      {/* SDLC Stage Rail */}
+      <nav className="workflow-stage-rail" aria-label="SDLC workflow stages">
+        {workflow.stages.map((stage, index) => {
+          const isCurrent = stage.id === workflow.currentStageId;
+          const isCompleted =
+            stage.status === "completed" || stage.status === "passed";
+          const isBlocked = stage.blockerCount > 0;
+          const canNavigate =
+            !isBlocked &&
+            (isCompleted ||
+              stage.id === workflow.stages[0].id ||
+              workflow.stages.some(
+                (s) =>
+                  s.id === stage.id &&
+                  s.status === "ready" &&
+                  workflow.stages
+                    .slice(
+                      0,
+                      workflow.stages.findIndex((st) => st.id === stage.id)
+                    )
+                    .every((s) => s.status === "completed")
+              ));
 
-            const canAdvance = isPassed || isSkipped || isCancelled;
-
-            return (
-              <div
-                key={stage.id}
-                className={`flow-stage ${isCurrent ? "flow-stage-current" : ""} ${isNext && canAdvance ? "flow-stage-next" : ""} ${isBlocked ? "flow-stage-blocked" : ""} ${isSkipped ? "flow-stage-skipped" : ""} ${isCancelled ? "flow-stage-cancelled" : ""}`}
-                aria-current={isCurrent ? "step" : undefined}
-              >
-                <div className="stage-indicator">
-                  <Icon name={isCurrent ? "pulse" : isSkipped ? "check" : isCancelled ? "arrow" : "repo"} size={16} />
-                  <span>{index + 1}</span>
-                </div>
-                <div className="stage-info">
-                  <span className="stage-label">{stageTypeLabel[stage.type]}</span>
-                  {!canAdvance && (
-                    <span className="stage-status" style={{ backgroundColor: stageStatusColor[stage.state] }}>
-                      {stage.state.replace("-", " ")}
-                    </span>
-                  )}
-                </div>
-                <div className="stage-details">
-                  {!canAdvance && (
-                    <span className="details-item">{stage.displayName}</span>
-                  )}
-                  {stage.required === "required" && (
-                    <span className="details-item badge">Required</span>
-                  )}
-                  {stage.required === "optional" && stage.enabled && (
-                    <span className="details-item badge">Optional</span>
-                  )}
-                  <span className="details-item">{stage.executionMode === "approval-required" ? "Approval required" : "Auto"}</span>
-                  {stage.retryLimit > 0 && (
-                    <span className="details-item">Retry: {stage.retryLimit}</span>
-                  )}
-                  {stage.tokenBudget > 0 && (
-                    <span className="details-item">Tokens: {stage.tokenBudget.toLocaleString()}</span>
-                  )}
-                </div>
-                <div className="stage-metrics">
-                  {stageWorkItems.length > 0 && (
-                    <span className="metric-item">
-                      <Icon name="tasks" size={13} />
-                      {stageWorkItems.length} {stageWorkItems.length === 1 ? "task" : "tasks"}
-                    </span>
-                  )}
-                  {(stage.validationRunIds.length + stage.reviewFindingIds.length) > 0 && (
-                    <span className="metric-item">
-                      <Icon name="context" size={13} />
-                      {stage.validationRunIds.length + stage.reviewFindingIds.length} {stage.validationRunIds.length + stage.reviewFindingIds.length === 1 ? "piece" : "pieces"} of evidence
-                    </span>
-                  )}
-                </div>
-                {!canAdvance && (
-                  <button
-                    className="stage-action"
-                    onClick={() => navigate(`/workbench/${workflow.id}/understand`)}
-                  >
-                    Open
-                  </button>
+          return (
+            <button
+              key={stage.id}
+              className={`stage-tab ${isCurrent ? "active" : ""} ${
+                isCompleted ? "completed" : ""
+              } ${isBlocked ? "blocked" : ""} ${!canNavigate ? "disabled" : ""}`}
+              aria-current={isCurrent ? "step" : undefined}
+              disabled={!canNavigate}
+              onClick={() => {
+                if (canNavigate) {
+                  handleStageSelect(stage.id);
+                }
+              }}
+            >
+              <div className="stage-icon">
+                <Icon
+                  name={
+                    isCurrent
+                      ? "pulse"
+                      : isCompleted
+                        ? "check"
+                        : isBlocked
+                          ? "alert"
+                          : "circle"
+                  }
+                  size={16}
+                />
+              </div>
+              <div className="stage-label">
+                <span className="stage-number">{index + 1}</span>
+                <strong>{stage.displayName}</strong>
+              </div>
+              <div className="stage-status">
+                {isBlocked ? (
+                  <span className="status-blocked">{stage.status}</span>
+                ) : (
+                  <span className={statusToClass(stage.status)}>
+                    {stage.status.replace("-", " ")}
+                  </span>
                 )}
               </div>
-            );
-          })}
-        </div>
-      </div>
+              <div className="stage-metrics">
+                {stage.evidenceCount > 0 && (
+                  <span className="metric-item">
+                    <Icon name="context" size={12} />
+                    {stage.evidenceCount} evidence
+                  </span>
+                )}
+                {stage.warningCount > 0 && (
+                  <span className="metric-item">
+                    <Icon name="alert-triangle" size={12} />
+                    {stage.warningCount} warnings
+                  </span>
+                )}
+                {stage.blockerCount > 0 && (
+                  <span className="metric-item">
+                    <Icon name="circle-x" size={12} />
+                    {stage.blockerCount} blockers
+                  </span>
+                )}
+              </div>
+              {!isCurrent && canNavigate && (
+                <span className="stage-hint">Select to view</span>
+              )}
+            </button>
+          );
+        })}
+      </nav>
 
-      {currentStage && (
-        <>
-          <div className="current-stage-section">
-            <h2>Current Stage</h2>
-            <div className="stage-detail-card">
-              <div className="card-header">
-                <h3>{currentStage.displayName}</h3>
-                <span className="stage-badge" style={{ backgroundColor: stageStatusColor[currentStage.state] }}>
-                  {currentStage.state.replace("-", " ")}
-                </span>
-              </div>
-              <div className="card-row">
-                <span className="label">Status</span>
-                <span className="value">{currentStage.state.replace("-", " ")}</span>
-              </div>
-              <div className="card-row">
-                <span className="label">Type</span>
-                <span className="value">{currentStage.type}</span>
-              </div>
-              <div className="card-row">
-                <span className="label">Order</span>
-                <span className="value">{currentStage.order}</span>
-              </div>
-              <div className="card-row">
-                <span className="label">Required</span>
-                <span className="value">{currentStage.required === "required" ? "Yes" : "No"}</span>
-              </div>
-              <div className="card-row">
-                <span className="label">Execution mode</span>
-                <span className="value">{currentStage.executionMode === "approval-required" ? "Approval required" : "Automatic"}</span>
-              </div>
-              <div className="card-row">
-                <span className="label">Retry limit</span>
-                <span className="value">{currentStage.retryLimit}</span>
-              </div>
-              <div className="card-row">
-                <span className="label">Token budget</span>
-                <span className="value">{currentStage.tokenBudget.toLocaleString()}</span>
-              </div>
-              {currentStage.workItemIds.length > 0 && (
-                <div className="card-row">
-                  <span className="label">Work items</span>
-                  <span className="value">{currentStage.workItemIds.length} items</span>
-                </div>
-              )}
-              {currentStage.validationRunIds.length > 0 && (
-                <div className="card-row">
-                  <span className="label">Validation runs</span>
-                  <span className="value">{currentStage.validationRunIds.length} runs</span>
-                </div>
-              )}
-              {currentStage.reviewFindingIds.length > 0 && (
-                <div className="card-row">
-                  <span className="label">Review findings</span>
-                  <span className="value">{currentStage.reviewFindingIds.length} findings</span>
-                </div>
-              )}
-            </div>
+      {/* Current Stage Workspace */}
+      <section className="stage-workspace">
+        <div className="stage-header">
+          <h2>
+            {currentStage.displayName} <span className="stage-type">{currentStage.type}</span>
+          </h2>
+          <div className="stage-meta">
+            <span>Status: {currentStage.status.replace("-", " ")}</span>
+            <span>Mode: {currentStage.executionMode}</span>
+            {currentStage.blockerCount > 0 && (
+              <span className="blocker-indicator">
+                {currentStage.blockerCount} blocker{
+                  currentStage.blockerCount === 1 ? "" : "s"
+                }
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Stage Tabs: Objective, Inputs, Context, Execution, Progress, Results, Evidence, Findings, Controls, Completion Gates */}
+        <div className="stage-tabs">
+      <button
+        className={`tab ${activeTab === 'Objective' ? 'tab-active' : ''}`}
+        onClick={() => setActiveTab('Objective')}
+      >
+        Objective
+      </button>
+      <button
+        className={`tab ${activeTab === 'Inputs' ? 'tab-active' : ''}`}
+        onClick={() => setActiveTab('Inputs')}
+      >
+        Inputs
+      </button>
+      <button
+        className={`tab ${activeTab === 'Context' ? 'tab-active' : ''}`}
+        onClick={() => setActiveTab('Context')}
+      >
+        Context
+      </button>
+      <button
+        className={`tab ${activeTab === 'Execution' ? 'tab-active' : ''}`}
+        onClick={() => setActiveTab('Execution')}
+      >
+        Execution
+      </button>
+      <button
+        className={`tab ${activeTab === 'Progress' ? 'tab-active' : ''}`}
+        onClick={() => setActiveTab('Progress')}
+      >
+        Progress
+      </button>
+      <button
+        className={`tab ${activeTab === 'Results' ? 'tab-active' : ''}`}
+        onClick={() => setActiveTab('Results')}
+      >
+        Results
+      </button>
+      <button
+        className={`tab ${activeTab === 'Evidence' ? 'tab-active' : ''}`}
+        onClick={() => setActiveTab('Evidence')}
+      >
+        Evidence
+      </button>
+      <button
+        className={`tab ${activeTab === 'Findings' ? 'tab-active' : ''}`}
+        onClick={() => setActiveTab('Findings')}
+      >
+        Findings
+      </button>
+      <button
+        className={`tab ${activeTab === 'Controls' ? 'tab-active' : ''}`}
+        onClick={() => setActiveTab('Controls')}
+      >
+        Controls
+      </button>
+      <button
+        className={`tab ${activeTab === 'Completion Gates' ? 'tab-active' : ''}`}
+        onClick={() => setActiveTab('Completion Gates')}
+      >
+        Completion Gates
+      </button>
+    </div>
+
+        {/* Stage Content - placeholder for now */}
+        <div className="stage-content">
+          <div className="stage-objective">
+            <h3>Objective</h3>
+            <p>
+              {currentStage.displayName} stage objectives go here.
+              This is where you would define what needs to be accomplished in this stage.
+            </p>
           </div>
 
-          <div className="next-stage-section">
-            <h2>Next Stage</h2>
-            {nextStage ? (
-              <div className="stage-preview-card">
-                <div className="card-header">
-                  <h3>{nextStage.displayName}</h3>
-                  <span className="stage-badge" style={{ backgroundColor: stageStatusColor[nextStage.state] }}>
-                    {nextStage.state.replace("-", " ")}
-                  </span>
-                </div>
-                <div className="card-row">
-                  <span className="label">Type</span>
-                  <span className="value">{nextStage.type}</span>
-                </div>
-                <div className="card-row">
-                  <span className="label">Order</span>
-                  <span className="value">{nextStage.order}</span>
-                </div>
-                <div className="card-row">
-                  <span className="label">Required</span>
-                  <span className="value">{nextStage.required === "required" ? "Yes" : "No"}</span>
-                </div>
-                <div className="card-row">
-                  <span className="label">Execution mode</span>
-                  <span className="value">{nextStage.executionMode === "approval-required" ? "Approval required" : "Automatic"}</span>
-                </div>
-                <div className="card-row">
-                  <span className="label">Retry limit</span>
-                  <span className="value">{nextStage.retryLimit}</span>
-                </div>
-                <div className="card-row">
-                  <span className="label">Token budget</span>
-                  <span className="value">{nextStage.tokenBudget.toLocaleString()}</span>
-                </div>
-                <button
-                  className="primary-button"
-                  onClick={() => navigate(`/workbench/${workflow.id}/understand`)}
-                >
-                  Open {nextStage.displayName}
-                </button>
-              </div>
-            ) : (
-              <div className="no-next-stage">
-                <Icon name="check" size={24} />
-                <p>All stages completed</p>
+          <div className="stage-inputs">
+            <h3>Inputs</h3>
+            <p>Inputs from previous stages and specification would appear here.</p>
+          </div>
+
+          <div className="stage-context">
+            <h3>Context</h3>
+            <p>
+              Context package for this stage, including token reduction metrics.
+            </p>
+            {stageWorkItems.length > 0 && (
+              <div className="work-items">
+                <h4>Work Items ({stageWorkItems.length})</h4>
+                <ul>
+                  {stageWorkItems.map((item) => (
+                    <li key={item.id}>
+                      <strong>{item.title}</strong>
+                      <p>{item.description}</p>
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
           </div>
-        </>
-      )}
 
-      <div className="blockers-section">
-        <h2>Blockers</h2>
-        {blockingStage ? (
-          <div className="blocker-card">
-            <div className="blocker-header">
-              <Icon name="lock" size={18} />
-              <span>Stage not ready</span>
-            </div>
-            <p>{blockingStage.displayName} cannot proceed.</p>
+          <div className="stage-execution">
+            <hecution">
+            <h3>Execution</h3>
             <p>
-              <small>This stage is blocked because required predecessor stages have not been completed.</small>
+              Execution controls for this stage would appear here.
+              This includes delegation, approvals, and execution monitoring.
             </p>
           </div>
-        ) : blockedStages.length > 0 ? (
-          <div className="blockers-list">
-            {blockedStages.map((stage) => (
-              <div key={stage.id} className="blocker-item">
-                <Icon name="lock" size={14} />
-                <span>{stage.displayName}</span>
-              </div>
-            ))}
+
+          <div className="stage-progress">
+            <h3>Progress</h3>
+            <p>Progress indicators for this stage would be shown here.</p>
           </div>
-        ) : (
-          <div className="no-blockers">
-            <Icon name="check" size={20} />
-            <p>No blockers</p>
+
+          <div className="stage-results">
+            <h3>Results</h3>
+            <p>Results from stage execution would appear here.</p>
           </div>
-        )}
-      </div>
+
+          <div className="stage-evidence">
+            <h3>Evidence</h3>
+            <p>Evidence collected during this stage would be displayed here.</p>
+          </div>
+
+          <div className="stage-findings">
+            <h3>Findings</h3>
+            <p>Findings from analysis would be listed here.</p>
+          </div>
+
+          <div className="stage-controls">
+            <h3>Controls</h3>
+            <p>Stage-specific controls and actions would be available here.</p>
+          </div>
+
+          <div className="stage-completion-gates">
+            <h3>Completion Gates</h3>
+            <p>Criteria that must be met to complete this stage.</p>
+          </div>
+        </div>
+      </section>
     </section>
   );
+}
+
+// Helper functions
+function workTypeLabel(value: WorkflowWorkType): string {
+  return (
+    {
+      feature: "Feature",
+      "bug-fix": "Bug Fix",
+      refactoring: "Refactoring",
+      test: "Test",
+      investigation: "Investigation",
+    } as const
+  )[value];
+}
+
+function statusToClass(status: WorkflowStatus): string {
+  switch (status) {
+    case "completed":
+    case "passed":
+      return "status-completed";
+    case "current":
+      return "status-current";
+    case "pending":
+    case "ready":
+      return "status-pending";
+    case "blocked":
+      return "status-blocked";
+    case "failed":
+      return "status-failed";
+    case "cancelled":
+      return "status-cancelled";
+    case "not-ready":
+    default:
+      return "status-default";
+  }
 }

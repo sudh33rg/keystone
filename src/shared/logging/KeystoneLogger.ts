@@ -8,7 +8,7 @@ const priority: Record<LogLevel, number> = { debug: 10, info: 20, warning: 30, e
 export class KeystoneLogger {
   constructor(
     private readonly output: vscode.OutputChannel,
-    private readonly minimumLevel: () => LogLevel
+    private readonly minimumLevel: () => LogLevel,
   ) {}
 
   debug(operation: string, message: string, details?: unknown): void {
@@ -38,6 +38,8 @@ export class KeystoneLogger {
   private write(level: LogLevel, operation: string, message: string, details?: unknown): void {
     if (priority[level] < priority[this.minimumLevel()]) return;
     const suffix = details === undefined ? "" : ` ${redact(details)}`;
-    this.output.appendLine(`${new Date().toISOString()} [${level.toUpperCase()}] [${operation}] ${redact(message)}${suffix}`);
+    this.output.appendLine(
+      `${new Date().toISOString()} [${level.toUpperCase()}] [${operation}] ${redact(message)}${suffix}`,
+    );
   }
 }

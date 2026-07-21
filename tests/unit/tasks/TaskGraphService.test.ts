@@ -14,7 +14,7 @@ function criterion(id: string, description: string): AcceptanceCriterion {
     expectedEvidenceType: "manual-observation",
     coveringTaskIds: [],
     result: "unverified",
-    evidenceReferences: []
+    evidenceReferences: [],
   };
 }
 
@@ -25,7 +25,7 @@ describe("TaskGraphService", () => {
     const store = {
       get: vi.fn(),
       update: vi.fn(),
-      reset: vi.fn()
+      reset: vi.fn(),
     } as unknown as WorkspaceStateStore;
 
     service = new TaskGraphService(store);
@@ -42,10 +42,7 @@ describe("TaskGraphService", () => {
   });
 
   it("should perform topological sort", () => {
-    const criteria = [
-      criterion("c1", "A"),
-      criterion("c2", "B")
-    ];
+    const criteria = [criterion("c1", "A"), criterion("c2", "B")];
 
     const graph = service.generateFromSpecification("spec-1", 1, criteria);
 
@@ -66,7 +63,6 @@ describe("TaskGraphService", () => {
     const graph = service.generateFromSpecification("spec-1", 1, criteria);
     const taskId = graph.taskIds[0]!;
 
-    expect(() => service.transitionTask(taskId, "pending", "passed"))
-      .toThrow(KeystoneError);
+    expect(() => service.transitionTask(taskId, "pending", "passed")).toThrow(KeystoneError);
   });
 });

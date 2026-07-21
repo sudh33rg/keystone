@@ -83,7 +83,11 @@ export class GraphIndexerWorker {
       if (error instanceof Error && error.name === "AbortError") {
         this.setStatus("idle", 0, "Indexing cancelled.");
       } else {
-        this.setStatus("error", this.status.progress, `Indexing failed: ${error instanceof Error ? error.message : String(error)}`);
+        this.setStatus(
+          "error",
+          this.status.progress,
+          `Indexing failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
         this.status.errors.push(error instanceof Error ? error.message : String(error));
       }
     }
@@ -93,7 +97,11 @@ export class GraphIndexerWorker {
     this.abortController?.abort();
   }
 
-  private setStatus(phase: GraphIndexerWorkerStatus["phase"], progress: number, message: string): void {
+  private setStatus(
+    phase: GraphIndexerWorkerStatus["phase"],
+    progress: number,
+    message: string,
+  ): void {
     this.status = { ...this.status, phase, progress, message };
     this.logger.info("graph-indexer.status", message, { phase, progress });
   }
@@ -194,6 +202,8 @@ export class GraphIndexerWorker {
       }
     }
 
-    this.logger.info("graph-indexer.cycles", `Detected ${cycles.length} cycles.`, { cycles: cycles.length });
+    this.logger.info("graph-indexer.cycles", `Detected ${cycles.length} cycles.`, {
+      cycles: cycles.length,
+    });
   }
 }

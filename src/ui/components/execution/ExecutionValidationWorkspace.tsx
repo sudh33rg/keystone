@@ -26,8 +26,7 @@ export function ExecutionValidationWorkspace({
   const [decision, setDecision] = useState<CompletionDecision>();
   const [report, setReport] = useState<WorkflowCompletionReport>();
   const [activeRunId, setActiveRunId] = useState<string>();
-  const [testMode, setTestMode] =
-    useState<ValidationPlan["testMode"]>("impacted");
+  const [testMode, setTestMode] = useState<ValidationPlan["testMode"]>("impacted");
   const [excludedTestIds, setExcludedTestIds] = useState<string[]>([]);
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
@@ -40,9 +39,7 @@ export function ExecutionValidationWorkspace({
     void bridge
       .request("execution/list", {})
       .then((items) => {
-        const scoped = workflowId
-          ? items.filter((item) => item.workflowId === workflowId)
-          : items;
+        const scoped = workflowId ? items.filter((item) => item.workflowId === workflowId) : items;
         setSessions(scoped);
         setSelectedId(scoped.at(-1)?.id);
       })
@@ -53,24 +50,15 @@ export function ExecutionValidationWorkspace({
     return bridge.subscribe((message) => {
       if (message.type === "validation/started" && message.payload.runId)
         setActiveRunId(message.payload.runId);
-      if (
-        message.type === "validation/completed" ||
-        message.type === "validation/cancelled"
-      )
+      if (message.type === "validation/completed" || message.type === "validation/cancelled")
         setActiveRunId(undefined);
     });
   }, [bridge]);
   const applySession = (value: TaskExecutionSession): void => {
-    setSessions((items) => [
-      ...items.filter((item) => item.id !== value.id),
-      value,
-    ]);
+    setSessions((items) => [...items.filter((item) => item.id !== value.id), value]);
     setSelectedId(value.id);
   };
-  const act = async <T,>(
-    operation: () => Promise<T>,
-    apply: (value: T) => void,
-  ): Promise<void> => {
+  const act = async <T,>(operation: () => Promise<T>, apply: (value: T) => void): Promise<void> => {
     setBusy(true);
     setError(undefined);
     try {
@@ -86,9 +74,8 @@ export function ExecutionValidationWorkspace({
       <div className="eyebrow">Evidence before completion</div>
       <h1>{workflowId ? "Workflow validation" : "Execution and validation"}</h1>
       <p>
-        Repository changes and agent claims remain observations. Only mapped
-        acceptance criteria, safe validation evidence, resolved findings, and
-        explicit confirmation can complete a task.
+        Repository changes and agent claims remain observations. Only mapped acceptance criteria,
+        safe validation evidence, resolved findings, and explicit confirmation can complete a task.
       </p>
       {error && (
         <div className="error-banner" role="alert">
@@ -99,23 +86,30 @@ export function ExecutionValidationWorkspace({
         <div className="ui-state ui-empty">
           <div>
             <strong>No validation session for this workflow</strong>
-            <p>Start execution tracking from an approved task in Build. Validation configuration remains attached to that task.</p>
+            <p>
+              Start execution tracking from an approved task in Build. Validation configuration
+              remains attached to that task.
+            </p>
           </div>
-          {onReturnToBuild && <button className="primary-button" onClick={onReturnToBuild}>Return to Build</button>}
+          {onReturnToBuild && (
+            <button className="primary-button" onClick={onReturnToBuild}>
+              Return to Build
+            </button>
+          )}
         </div>
       ) : (
         <>
-          {onReturnToBuild && <button className="ghost-button" onClick={onReturnToBuild}>Return to Build</button>}
+          {onReturnToBuild && (
+            <button className="ghost-button" onClick={onReturnToBuild}>
+              Return to Build
+            </button>
+          )}
           <label className="workflow-picker">
             Execution session
-            <select
-              value={session.id}
-              onChange={(event) => setSelectedId(event.target.value)}
-            >
+            <select value={session.id} onChange={(event) => setSelectedId(event.target.value)}>
               {sessions.map((item) => (
                 <option key={item.id} value={item.id}>
-                  {item.taskId.slice(0, 8)} · {item.status} · attempt{" "}
-                  {item.retryAttempt + 1}
+                  {item.taskId.slice(0, 8)} · {item.status} · attempt {item.retryAttempt + 1}
                 </option>
               ))}
             </select>
@@ -137,10 +131,7 @@ export function ExecutionValidationWorkspace({
               Confirm execution start
             </button>
             <button
-              disabled={
-                busy ||
-                !["executing", "repository-changed"].includes(session.status)
-              }
+              disabled={busy || !["executing", "repository-changed"].includes(session.status)}
               onClick={() =>
                 void act(
                   () =>
@@ -154,10 +145,7 @@ export function ExecutionValidationWorkspace({
               Observe changes
             </button>
             <button
-              disabled={
-                busy ||
-                !["executing", "repository-changed"].includes(session.status)
-              }
+              disabled={busy || !["executing", "repository-changed"].includes(session.status)}
               onClick={() =>
                 void act(
                   () =>
@@ -182,9 +170,7 @@ export function ExecutionValidationWorkspace({
                       sessionId: session.id,
                       relativePath,
                       classification,
-                      reason:
-                        notes.trim() ||
-                        "User reviewed and corrected repository attribution.",
+                      reason: notes.trim() || "User reviewed and corrected repository attribution.",
                     }),
                   applySession,
                 )
@@ -224,9 +210,7 @@ export function ExecutionValidationWorkspace({
               Test scope
               <select
                 value={testMode}
-                onChange={(event) =>
-                  setTestMode(event.target.value as ValidationPlan["testMode"])
-                }
+                onChange={(event) => setTestMode(event.target.value as ValidationPlan["testMode"])}
               >
                 <option value="impacted">Evidence-ranked impacted tests</option>
                 <option value="affected-suite">Affected suite</option>
@@ -356,8 +340,7 @@ export function ExecutionValidationWorkspace({
                 disabled={busy}
                 onClick={() =>
                   void act(
-                    () =>
-                      bridge.request("retry/start", { sessionId: session.id }),
+                    () => bridge.request("retry/start", { sessionId: session.id }),
                     applySession,
                   )
                 }
@@ -367,9 +350,7 @@ export function ExecutionValidationWorkspace({
             )}
           </div>
           {run?.acceptanceCriteriaResults.some((item) =>
-            ["requires-manual-review", "not-verifiable", "not-run"].includes(
-              item.status,
-            ),
+            ["requires-manual-review", "not-verifiable", "not-run"].includes(item.status),
           ) && (
             <div className="button-row">
               {run.acceptanceCriteriaResults
@@ -435,9 +416,7 @@ export function ExecutionValidationWorkspace({
                   (result) => {
                     setDecision(result.decision);
                     if (result.report) setReport(result.report);
-                    const current = sessions.find(
-                      (item) => item.id === session.id,
-                    );
+                    const current = sessions.find((item) => item.id === session.id);
                     if (current)
                       applySession({
                         ...current,
@@ -466,11 +445,7 @@ export function ExecutionValidationWorkspace({
     </section>
   );
 }
-function ExecutionSummary({
-  session,
-}: {
-  session: TaskExecutionSession;
-}): React.JSX.Element {
+function ExecutionSummary({ session }: { session: TaskExecutionSession }): React.JSX.Element {
   return (
     <div className="summary-card">
       <h2>{session.status}</h2>
@@ -520,8 +495,8 @@ function ExecutionSummary({
         </div>
       </dl>
       <p>
-        Opening Copilot did not start this session. Completion is not inferred
-        from changed files or stopped chat activity.
+        Opening Copilot did not start this session. Completion is not inferred from changed files or
+        stopped chat activity.
       </p>
     </div>
   );
@@ -592,9 +567,7 @@ function ChangeList({
               </header>
               <p>
                 {item.entityType} · {Math.round(item.confidence * 100)}%
-                {item.limitations.length
-                  ? ` · ${item.limitations.join(" ")}`
-                  : ""}
+                {item.limitations.length ? ` · ${item.limitations.join(" ")}` : ""}
               </p>
             </article>
           ))}
@@ -616,9 +589,8 @@ function PlanView({
     <div className="context-preview">
       <h2>Validation plan</h2>
       <p>
-        Test mode: {plan.testMode}.{" "}
-        {plan.testSelections.filter((item) => item.selected).length} selected
-        from {plan.testSelections.length} evidence-ranked candidate(s).
+        Test mode: {plan.testMode}. {plan.testSelections.filter((item) => item.selected).length}{" "}
+        selected from {plan.testSelections.length} evidence-ranked candidate(s).
       </p>
       {plan.testSelections.map((item) => (
         <article key={item.testEntityId}>
@@ -653,8 +625,7 @@ function PlanView({
           <header>
             <strong>{step.type}</strong>
             <span>
-              {step.required ? "required" : "optional"} ·{" "}
-              {step.command?.safety ?? "static"}
+              {step.required ? "required" : "optional"} · {step.command?.safety ?? "static"}
             </span>
           </header>
           <p>{step.description}</p>
@@ -673,11 +644,9 @@ function RunView({ run }: { run: ValidationRunV2 }): React.JSX.Element {
     <div className="context-preview">
       <h2>Validation report · {run.status}</h2>
       <p>
-        {run.summary.requiredStepsPassed} required passed ·{" "}
-        {run.summary.requiredStepsFailed} failed ·{" "}
-        {run.summary.blockingFindings} blocking findings ·{" "}
-        {run.summary.cacheReuseCount} reused · {run.summary.staleInvalidations}{" "}
-        stale
+        {run.summary.requiredStepsPassed} required passed · {run.summary.requiredStepsFailed} failed
+        · {run.summary.blockingFindings} blocking findings · {run.summary.cacheReuseCount} reused ·{" "}
+        {run.summary.staleInvalidations} stale
       </p>
       {run.stepResults.map((item) => (
         <article key={item.stepId}>
@@ -729,23 +698,18 @@ function RunView({ run }: { run: ValidationRunV2 }): React.JSX.Element {
     </div>
   );
 }
-function WorkflowReportView({
-  report,
-}: {
-  report: WorkflowCompletionReport;
-}): React.JSX.Element {
+function WorkflowReportView({ report }: { report: WorkflowCompletionReport }): React.JSX.Element {
   return (
     <div className="summary-card">
       <h2>Workflow completion report</h2>
       <p>
-        Specification revision {report.specificationRevision} ·{" "}
-        {report.attempts} attempt(s) · generation{" "}
-        {report.intelligenceGeneration}
+        Specification revision {report.specificationRevision} · {report.attempts} attempt(s) ·
+        generation {report.intelligenceGeneration}
       </p>
       <p>
         {report.filesChanged.length} files · {report.symbolsChanged.length}
-        symbols · {report.apiChanges.length} API changes ·{" "}
-        {report.dataChanges.length} data changes · {report.testsChanged.length}
+        symbols · {report.apiChanges.length} API changes · {report.dataChanges.length} data changes
+        · {report.testsChanged.length}
         test changes
       </p>
       {report.validationOutcomes.map((item) => (
@@ -798,6 +762,5 @@ function CompletionView({
   );
 }
 function display(setter: (value: string) => void): (cause: unknown) => void {
-  return (cause) =>
-    setter(cause instanceof Error ? cause.message : String(cause));
+  return (cause) => setter(cause instanceof Error ? cause.message : String(cause));
 }

@@ -4,9 +4,17 @@ import type { RepositoryMonitor } from "../../../extension/intelligence/VsCodeRe
 import type { IntelligenceStore } from "../../persistence/IntelligenceStore";
 import type { KeystoneLogger } from "../../../shared/logging/KeystoneLogger";
 import { KeystoneError } from "../../../shared/errors/KeystoneError";
-import type { IntelligenceRuntimeOverview, IntelligenceRuntimePhase, IntelligenceStatus } from "../../../shared/contracts/intelligence";
+import type {
+  IntelligenceRuntimeOverview,
+  IntelligenceRuntimePhase,
+  IntelligenceStatus,
+} from "../../../shared/contracts/intelligence";
 import type { RepositoryIndexService } from "../RepositoryIndexService";
-import { ChangeCollector, type RepositoryChangeBatch, type RepositoryChangeReason } from "./ChangeCollector";
+import {
+  ChangeCollector,
+  type RepositoryChangeBatch,
+  type RepositoryChangeReason,
+} from "./ChangeCollector";
 import { IngestionScheduler, ingestionPriority } from "./IngestionScheduler";
 import type { WorkerPoolManager } from "./WorkerPoolManager";
 import { StartupReconciler } from "./StartupReconciler";
@@ -45,13 +53,17 @@ export class IntelligenceRuntime {
     private readonly monitor: RepositoryMonitor,
     private readonly logger: KeystoneLogger,
     startup?: StartupReconciler,
-    health?: IntelligenceHealthService
+    health?: IntelligenceHealthService,
   ) {
     this.startup = startup ?? new StartupReconciler(workspace, git, store);
     this.health = health ?? new IntelligenceHealthService(store);
     this.scheduler = new IngestionScheduler((cause, job) => {
       const error = KeystoneError.fromUnknown(cause, `intelligence.job.${job.reason}`);
-      if (error.code !== "INTELLIGENCE_SCAN_STALE" && error.code !== "INTELLIGENCE_SOURCE_STALE" && error.code !== "INTELLIGENCE_SEMANTIC_STALE") {
+      if (
+        error.code !== "INTELLIGENCE_SCAN_STALE" &&
+        error.code !== "INTELLIGENCE_SOURCE_STALE" &&
+        error.code !== "INTELLIGENCE_SEMANTIC_STALE"
+      ) {
         this.phase = "failed";
         this.logger.error(error);
       }
@@ -69,29 +81,50 @@ export class IntelligenceRuntime {
     this.disposables.push(
       this.index.onDidChange(() => this.emit()),
       this.scheduler.onDidChange((state) => {
-        if (state.activeJob && this.phase === "failed") this.phase = state.activeJob.reason === "storage-recovery" ? "recovering" : "reconciling";
+        if (state.activeJob && this.phase === "failed")
+          this.phase = state.activeJob.reason === "storage-recovery" ? "recovering" : "reconciling";
         this.emit();
       }),
       this.workers.onDidChange(() => this.emit()),
       this.health.onDidChange((state) => {
-        if (state.status !== "healthy" && state.status !== "recovering" && (this.phase === "ready" || this.phase === "stale") && !this.disposed) this.enqueueFull("storage-recovery");
+        if (
+          state.status !== "healthy" &&
+          state.status !== "recovering" &&
+          (this.phase === "ready" || this.phase === "stale") &&
+          !this.disposed
+        )
+          this.enqueueFull("storage-recovery");
         this.emit();
       }),
       this.monitor.onDidChange((change) => this.collector.add(change)),
       this.monitor.onDidGitChange((event) => {
         if (event.fullRebuild) this.enqueueFull("git");
-        else if (event.changes.length > 0) this.enqueueBatch({ changes: event.changes, reason: "git", createdAt: new Date().toISOString() });
+        else if (event.changes.length > 0)
+          this.enqueueBatch({
+            changes: event.changes,
+            reason: "git",
+            createdAt: new Date().toISOString(),
+          });
       }),
-      this.monitor.onDidChangeWorkspaceRoots(() => this.enqueueFull("workspace"))
+      this.monitor.onDidChangeWorkspaceRoots(() => this.enqueueFull("workspace")),
     );
     await this.monitor.start();
     const configuration = this.workspace.getIndexingConfiguration();
     if (configuration.enabled && configuration.onWorkspaceOpen && this.workspace.isTrusted()) {
       const reconciliation = await this.startup.reconcile();
       this.phase = reconciliation.phase;
-      this.logger.info("intelligence.startup.reconcile", reconciliation.message, { action: reconciliation.action, changedFiles: reconciliation.changes.length });
-      if (reconciliation.action === "incremental") this.enqueueBatch({ changes: reconciliation.changes, reason: reconciliation.reason, createdAt: new Date().toISOString() });
-      else if (reconciliation.action === "rebuild" || reconciliation.action === "recover") this.enqueueFull(reconciliation.reason);
+      this.logger.info("intelligence.startup.reconcile", reconciliation.message, {
+        action: reconciliation.action,
+        changedFiles: reconciliation.changes.length,
+      });
+      if (reconciliation.action === "incremental")
+        this.enqueueBatch({
+          changes: reconciliation.changes,
+          reason: reconciliation.reason,
+          createdAt: new Date().toISOString(),
+        });
+      else if (reconciliation.action === "rebuild" || reconciliation.action === "recover")
+        this.enqueueFull(reconciliation.reason);
     }
     this.emit();
   }
@@ -128,23 +161,39 @@ export class IntelligenceRuntime {
     const workers = this.workers.getStatus();
     const health = this.health.getState();
     const snapshot = this.store.getSnapshot();
-    const schedulerIdle = scheduler.queueDepth === 0 && scheduler.activeJob === undefined && workers.active === 0;
-    const generationIdle = schedulerIdle && health.status === "healthy" && snapshot !== undefined && !indexing.error;
+    const schedulerIdle =
+      scheduler.queueDepth === 0 && scheduler.activeJob === undefined && workers.active === 0;
+    const generationIdle =
+      schedulerIdle && health.status === "healthy" && snapshot !== undefined && !indexing.error;
     const effectivePhase: IntelligenceRuntimePhase = scheduler.paused
       ? "paused"
       : generationIdle
         ? "ready"
-        : this.phase === "rebuilding" || this.phase === "recovering" || this.phase === "failed" || this.phase === "stale"
+        : this.phase === "rebuilding" ||
+            this.phase === "recovering" ||
+            this.phase === "failed" ||
+            this.phase === "stale"
           ? this.phase
           : "reconciling";
-    const currentFiles = generationIdle ? [] : indexing.progress?.currentFiles.length ? indexing.progress.currentFiles : scheduler.currentFiles;
+    const currentFiles = generationIdle
+      ? []
+      : indexing.progress?.currentFiles.length
+        ? indexing.progress.currentFiles
+        : scheduler.currentFiles;
     const isFirstBuild = !this.store.getSnapshot() && health.status === "missing";
-    const displayHealth = isFirstBuild && ["rebuilding", "reconciling"].includes(this.phase) ? "building" : isFirstBuild && this.phase === "failed" ? "failed" : health.status;
+    const displayHealth =
+      isFirstBuild && ["rebuilding", "reconciling"].includes(this.phase)
+        ? "building"
+        : isFirstBuild && this.phase === "failed"
+          ? "failed"
+          : health.status;
     return {
       ...indexing,
       status: generationIdle ? snapshot.manifest.status : indexing.status,
       phase: effectivePhase,
-      pendingUpdate: generationIdle ? false : indexing.pendingUpdate || scheduler.queueDepth > 0 || scheduler.activeJob !== undefined,
+      pendingUpdate: generationIdle
+        ? false
+        : indexing.pendingUpdate || scheduler.queueDepth > 0 || scheduler.activeJob !== undefined,
       queueDepth: scheduler.queueDepth,
       activeWorkers: workers.active,
       workerCapacity: workers.capacity,
@@ -157,9 +206,13 @@ export class IntelligenceRuntime {
       currentFiles: currentFiles.slice(0, 20),
       health: displayHealth,
       ...(indexing.error ? { error: indexing.error } : {}),
-      ...(isFirstBuild && displayHealth === "building" ? { healthMessage: "Creating the first complete local generation." } : health.message ? { healthMessage: health.message } : {}),
+      ...(isFirstBuild && displayHealth === "building"
+        ? { healthMessage: "Creating the first complete local generation." }
+        : health.message
+          ? { healthMessage: health.message }
+          : {}),
       ...(scheduler.activeJob && !indexing.trigger ? { trigger: scheduler.activeJob.reason } : {}),
-      ...(generationIdle ? { progress: undefined, trigger: undefined } : {})
+      ...(generationIdle ? { progress: undefined, trigger: undefined } : {}),
     };
   }
 
@@ -202,7 +255,11 @@ export class IntelligenceRuntime {
           await this.health.refresh();
         } catch (cause) {
           const error = KeystoneError.fromUnknown(cause, "intelligence.reconcile");
-          if (!signal.aborted && (error.code === "INTELLIGENCE_SOURCE_STALE" || error.code === "INTELLIGENCE_SEMANTIC_STALE")) {
+          if (
+            !signal.aborted &&
+            (error.code === "INTELLIGENCE_SOURCE_STALE" ||
+              error.code === "INTELLIGENCE_SEMANTIC_STALE")
+          ) {
             this.staleResultsDiscarded += 1;
             this.phase = "stale";
             this.collector.addAll(batch.changes);
@@ -213,10 +270,11 @@ export class IntelligenceRuntime {
           }
           throw cause;
         } finally {
-          if (!signal.aborted) this.pendingFiles = Math.max(0, this.pendingFiles - batch.changes.length);
+          if (!signal.aborted)
+            this.pendingFiles = Math.max(0, this.pendingFiles - batch.changes.length);
           this.emit();
         }
-      }
+      },
     });
   }
 
@@ -241,7 +299,7 @@ export class IntelligenceRuntime {
         this.pendingFiles = 0;
         await this.health.refresh();
         this.phase = "ready";
-      }
+      },
     });
   }
 

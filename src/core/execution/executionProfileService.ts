@@ -5,11 +5,11 @@
  * that define how each SDLC stage should be configured for execution.
  */
 
-import { BUILT_IN_EXECUTION_PROFILES } from './executionProfile';
-import type { BuiltInExecutionProfile, ExecutionProfile } from './executionProfile';
-import type { CapabilityDiscoveryService } from './capabilityDiscoveryService';
-import type { AgentCapability, InstructionCapability, SkillCapability } from './capability';
-import type { KeystoneLogger } from '../../shared/logging/KeystoneLogger';
+import { BUILT_IN_EXECUTION_PROFILES } from "./executionProfile";
+import type { BuiltInExecutionProfile, ExecutionProfile } from "./executionProfile";
+import type { CapabilityDiscoveryService } from "./capabilityDiscoveryService";
+import type { AgentCapability, InstructionCapability, SkillCapability } from "./capability";
+import type { KeystoneLogger } from "../../shared/logging/KeystoneLogger";
 
 /**
  * Service for managing execution profiles in the Keystone system.
@@ -51,7 +51,7 @@ export class ExecutionProfileService {
    * @returns The profile if found, otherwise undefined
    */
   getExecutionProfileById(id: string): ExecutionProfile | undefined {
-    return this.profiles.find(profile => profile.id === id);
+    return this.profiles.find((profile) => profile.id === id);
   }
 
   /**
@@ -60,19 +60,22 @@ export class ExecutionProfileService {
    * @param profile The profile to create
    * @returns The created profile
    */
-  createExecutionProfile(profile: Omit<ExecutionProfile, 'metadata'>): ExecutionProfile {
+  createExecutionProfile(profile: Omit<ExecutionProfile, "metadata">): ExecutionProfile {
     const newProfile: ExecutionProfile = {
       ...profile,
       metadata: {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         source: "user",
-        version: 1
-      }
+        version: 1,
+      },
     };
 
     this.profiles.push(newProfile);
-    this.logger.info('executionProfileService.createExecutionProfile', `Created execution profile: ${newProfile.name}`);
+    this.logger.info(
+      "executionProfileService.createExecutionProfile",
+      `Created execution profile: ${newProfile.name}`,
+    );
     return newProfile;
   }
 
@@ -83,8 +86,11 @@ export class ExecutionProfileService {
    * @param updates The updates to apply
    * @returns The updated profile or undefined if not found
    */
-  updateExecutionProfile(id: string, updates: Partial<ExecutionProfile>): ExecutionProfile | undefined {
-    const index = this.profiles.findIndex(profile => profile.id === id);
+  updateExecutionProfile(
+    id: string,
+    updates: Partial<ExecutionProfile>,
+  ): ExecutionProfile | undefined {
+    const index = this.profiles.findIndex((profile) => profile.id === id);
     if (index === -1) {
       return undefined;
     }
@@ -99,12 +105,15 @@ export class ExecutionProfileService {
       ...updates,
       metadata: {
         ...existing.metadata,
-        updatedAt: new Date().toISOString()
-      }
+        updatedAt: new Date().toISOString(),
+      },
     };
 
     this.profiles[index] = updatedProfile;
-    this.logger.info('executionProfileService.updateExecutionProfile', `Updated execution profile: ${updatedProfile.name}`);
+    this.logger.info(
+      "executionProfileService.updateExecutionProfile",
+      `Updated execution profile: ${updatedProfile.name}`,
+    );
     return updatedProfile;
   }
 
@@ -115,13 +124,16 @@ export class ExecutionProfileService {
    * @returns Whether deletion was successful
    */
   deleteExecutionProfile(id: string): boolean {
-    const index = this.profiles.findIndex(profile => profile.id === id);
+    const index = this.profiles.findIndex((profile) => profile.id === id);
     if (index === -1) {
       return false;
     }
 
     this.profiles.splice(index, 1);
-    this.logger.info('executionProfileService.deleteExecutionProfile', `Deleted execution profile: ${id}`);
+    this.logger.info(
+      "executionProfileService.deleteExecutionProfile",
+      `Deleted execution profile: ${id}`,
+    );
     return true;
   }
 
@@ -132,7 +144,7 @@ export class ExecutionProfileService {
    * @returns The created profile or undefined if not found
    */
   createProfileFromBuiltIn(builtInProfileId: string): ExecutionProfile | undefined {
-    const builtInProfile = this.builtInProfiles.find(p => p.id === builtInProfileId);
+    const builtInProfile = this.builtInProfiles.find((p) => p.id === builtInProfileId);
     if (!builtInProfile) {
       return undefined;
     }
@@ -146,7 +158,7 @@ export class ExecutionProfileService {
         agentId: "",
         invocationMode: "manual",
         fallbackAgentId: builtInProfile.fallbackBehavior.fallbackAgentId,
-        fallbackMode: builtInProfile.fallbackBehavior.fallbackMode
+        fallbackMode: builtInProfile.fallbackBehavior.fallbackMode,
       },
       skills: [],
       instructions: [],
@@ -158,26 +170,29 @@ export class ExecutionProfileService {
         includeAcceptanceCriteria: true,
         includeStageHistory: true,
         includeValidationEvidence: true,
-        includeUserPinnedContext: true
+        includeUserPinnedContext: true,
       },
       control: {
         approvalRequired: builtInProfile.approvalRequired,
         allowAutomaticInvocation: true,
         retryLimit: 3,
         requirePromptPreview: builtInProfile.requirePromptPreview,
-        requireOutputReview: true
+        requireOutputReview: true,
       },
       output: builtInProfile.expectedOutputContract,
       metadata: {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         source: "user",
-        version: 1
-      }
+        version: 1,
+      },
     };
 
     this.profiles.push(newProfile);
-    this.logger.info('executionProfileService.createProfileFromBuiltIn', `Created profile from built-in template: ${newProfile.name}`);
+    this.logger.info(
+      "executionProfileService.createProfileFromBuiltIn",
+      `Created profile from built-in template: ${newProfile.name}`,
+    );
     return newProfile;
   }
 
@@ -189,7 +204,7 @@ export class ExecutionProfileService {
    * @returns The applied profile or undefined if not found or applicable
    */
   applyBuiltInProfileToStage(stageType: string, profileId: string): ExecutionProfile | undefined {
-    const builtInProfile = this.builtInProfiles.find(p => p.id === profileId);
+    const builtInProfile = this.builtInProfiles.find((p) => p.id === profileId);
     if (!builtInProfile) {
       return undefined;
     }
@@ -223,7 +238,10 @@ export class ExecutionProfileService {
     // Validate that the selected agent exists
     if (!this.capabilityService.isCapabilityAvailable(profile.executor.agentId)) {
       // This might be okay if it's a fallback or the capability will be discovered later
-      this.logger.warning('executionProfileService.validateProfile', `Selected agent ${profile.executor.agentId} is not currently available`);
+      this.logger.warning(
+        "executionProfileService.validateProfile",
+        `Selected agent ${profile.executor.agentId} is not currently available`,
+      );
     }
 
     // Validate token budget
@@ -248,7 +266,7 @@ export class ExecutionProfileService {
    * @returns List of available agent capabilities
    */
   getAvailableAgents(): AgentCapability[] {
-    return this.capabilityService.getCapabilitiesByType('agent') as AgentCapability[];
+    return this.capabilityService.getCapabilitiesByType("agent") as AgentCapability[];
   }
 
   /**
@@ -257,7 +275,7 @@ export class ExecutionProfileService {
    * @returns List of available skill capabilities
    */
   getAvailableSkills(): SkillCapability[] {
-    return this.capabilityService.getCapabilitiesByType('skill') as SkillCapability[];
+    return this.capabilityService.getCapabilitiesByType("skill") as SkillCapability[];
   }
 
   /**
@@ -266,6 +284,6 @@ export class ExecutionProfileService {
    * @returns List of available instruction capabilities
    */
   getAvailableInstructions(): InstructionCapability[] {
-    return this.capabilityService.getCapabilitiesByType('instruction') as InstructionCapability[];
+    return this.capabilityService.getCapabilitiesByType("instruction") as InstructionCapability[];
   }
 }

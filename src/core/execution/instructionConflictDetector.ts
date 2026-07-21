@@ -5,9 +5,9 @@
  * contradict each other or lead to problematic execution scenarios.
  */
 
-import type { InstructionCapability } from './capability';
-import type { ExecutionProfile } from './executionProfile';
-import type { KeystoneLogger } from '../../shared/logging/KeystoneLogger';
+import type { InstructionCapability } from "./capability";
+import type { ExecutionProfile } from "./executionProfile";
+import type { KeystoneLogger } from "../../shared/logging/KeystoneLogger";
 
 /**
  * Instruction conflict detection result
@@ -26,7 +26,7 @@ export interface InstructionConflict {
   /**
    * Severity of the conflict (low, medium, high)
    */
-  severity: 'low' | 'medium' | 'high';
+  severity: "low" | "medium" | "high";
 
   /**
    * The instructions involved in the conflict
@@ -36,7 +36,7 @@ export interface InstructionConflict {
   /**
    * The type of conflict (e.g., contradictory, incompatible)
    */
-  conflictType: 'contradictory' | 'incompatible' | 'ambiguous';
+  conflictType: "contradictory" | "incompatible" | "ambiguous";
 
   /**
    * Whether this conflict blocks execution
@@ -68,7 +68,10 @@ export class InstructionConflictDetector {
   detectConflicts(instructions: InstructionCapability[]): InstructionConflict[] {
     const conflicts: InstructionConflict[] = [];
 
-    this.logger.info('instructionConflictDetector.detectConflicts', `Detecting conflicts in ${instructions.length} instructions`);
+    this.logger.info(
+      "instructionConflictDetector.detectConflicts",
+      `Detecting conflicts in ${instructions.length} instructions`,
+    );
 
     // Check for contradictory instructions
     const contradictoryConflicts = this.detectContradictoryInstructions(instructions);
@@ -82,7 +85,10 @@ export class InstructionConflictDetector {
     const ambiguousConflicts = this.detectAmbiguousInstructions(instructions);
     conflicts.push(...ambiguousConflicts);
 
-    this.logger.info('instructionConflictDetector.detectConflicts', `Detected ${conflicts.length} instruction conflicts`);
+    this.logger.info(
+      "instructionConflictDetector.detectConflicts",
+      `Detected ${conflicts.length} instruction conflicts`,
+    );
 
     return conflicts;
   }
@@ -93,32 +99,32 @@ export class InstructionConflictDetector {
    * @param instructions The instructions to analyze
    * @returns List of contradictory conflicts
    */
-  private detectContradictoryInstructions(instructions: InstructionCapability[]): InstructionConflict[] {
+  private detectContradictoryInstructions(
+    instructions: InstructionCapability[],
+  ): InstructionConflict[] {
     const conflicts: InstructionConflict[] = [];
 
     // In a real implementation, we would analyze the actual content of instructions
     // For now, we'll simulate some conflicts based on instruction IDs
 
     // Simulate checking for specific instruction patterns
-    const testModificationAllowed = instructions.find(i =>
-      i.name.toLowerCase().includes('test') &&
-      i.name.toLowerCase().includes('allow')
+    const testModificationAllowed = instructions.find(
+      (i) => i.name.toLowerCase().includes("test") && i.name.toLowerCase().includes("allow"),
     );
 
-    const testModificationProhibited = instructions.find(i =>
-      i.name.toLowerCase().includes('test') &&
-      i.name.toLowerCase().includes('prohibit')
+    const testModificationProhibited = instructions.find(
+      (i) => i.name.toLowerCase().includes("test") && i.name.toLowerCase().includes("prohibit"),
     );
 
     if (testModificationAllowed && testModificationProhibited) {
       conflicts.push({
         id: `conflict-test-modification-${Date.now()}`,
-        description: 'Conflicting test file modification policies',
-        severity: 'high',
+        description: "Conflicting test file modification policies",
+        severity: "high",
         conflictingInstructions: [testModificationAllowed, testModificationProhibited],
-        conflictType: 'contradictory',
+        conflictType: "contradictory",
         blocking: true,
-        suggestedResolution: 'Select one policy and remove the conflicting instruction'
+        suggestedResolution: "Select one policy and remove the conflicting instruction",
       });
     }
 
@@ -131,29 +137,32 @@ export class InstructionConflictDetector {
    * @param instructions The instructions to analyze
    * @returns List of incompatible conflicts
    */
-  private detectIncompatibleInstructions(instructions: InstructionCapability[]): InstructionConflict[] {
+  private detectIncompatibleInstructions(
+    instructions: InstructionCapability[],
+  ): InstructionConflict[] {
     const conflicts: InstructionConflict[] = [];
 
     // Simulate checking for incompatible instruction patterns
-    const boundedModification = instructions.find(i =>
-      i.name.toLowerCase().includes('bounded') || i.name.toLowerCase().includes('limited')
+    const boundedModification = instructions.find(
+      (i) => i.name.toLowerCase().includes("bounded") || i.name.toLowerCase().includes("limited"),
     );
 
-    const unboundedRefactoring = instructions.find(i =>
-      i.name.toLowerCase().includes('unbounded') ||
-      i.name.toLowerCase().includes('refactor') ||
-      i.name.toLowerCase().includes('complete')
+    const unboundedRefactoring = instructions.find(
+      (i) =>
+        i.name.toLowerCase().includes("unbounded") ||
+        i.name.toLowerCase().includes("refactor") ||
+        i.name.toLowerCase().includes("complete"),
     );
 
     if (boundedModification && unboundedRefactoring) {
       conflicts.push({
         id: `conflict-bounded-refactor-${Date.now()}`,
-        description: 'Incompatible modification approaches',
-        severity: 'high',
+        description: "Incompatible modification approaches",
+        severity: "high",
         conflictingInstructions: [boundedModification, unboundedRefactoring],
-        conflictType: 'incompatible',
+        conflictType: "incompatible",
         blocking: true,
-        suggestedResolution: 'Select either bounded or unbounded approach, not both'
+        suggestedResolution: "Select either bounded or unbounded approach, not both",
       });
     }
 
@@ -166,28 +175,28 @@ export class InstructionConflictDetector {
    * @param instructions The instructions to analyze
    * @returns List of ambiguous conflicts
    */
-  private detectAmbiguousInstructions(instructions: InstructionCapability[]): InstructionConflict[] {
+  private detectAmbiguousInstructions(
+    instructions: InstructionCapability[],
+  ): InstructionConflict[] {
     const conflicts: InstructionConflict[] = [];
 
     // Example: instructions that are ambiguous or unclear
-    const ambiguousInstructions = instructions.filter(i => {
+    const ambiguousInstructions = instructions.filter((i) => {
       // Simulate checking for ambiguous instruction names
-      const ambiguousKeywords = ['unclear', 'ambiguous', 'vague', 'undefined'];
-      return ambiguousKeywords.some(keyword =>
-        i.name.toLowerCase().includes(keyword)
-      );
+      const ambiguousKeywords = ["unclear", "ambiguous", "vague", "undefined"];
+      return ambiguousKeywords.some((keyword) => i.name.toLowerCase().includes(keyword));
     });
 
     // If any ambiguous instructions are found, report them
     if (ambiguousInstructions.length > 0) {
       conflicts.push({
         id: `conflict-ambiguous-${Date.now()}`,
-        description: 'Ambiguous instruction found',
-        severity: 'medium',
+        description: "Ambiguous instruction found",
+        severity: "medium",
         conflictingInstructions: ambiguousInstructions,
-        conflictType: 'ambiguous',
+        conflictType: "ambiguous",
         blocking: false,
-        suggestedResolution: 'Clarify the instruction content or replace with a more specific one'
+        suggestedResolution: "Clarify the instruction content or replace with a more specific one",
       });
     }
 
@@ -230,16 +239,16 @@ export class InstructionConflictDetector {
     return {
       id,
       name: `Instruction-${id}`,
-      type: 'instruction',
-      source: 'mock-source',
+      type: "instruction",
+      source: "mock-source",
       description: `Mock instruction for ID ${id}`,
-      state: 'available',
+      state: "available",
       lastDiscovered: new Date().toISOString(),
       filePath: undefined,
-      scope: 'user',
+      scope: "user",
       precedence: 5,
       enabled: true,
-      contentHash: undefined
+      contentHash: undefined,
     };
   }
 }

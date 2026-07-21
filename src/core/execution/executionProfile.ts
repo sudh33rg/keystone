@@ -36,12 +36,7 @@ export interface ExecutionProfile {
     /**
      * How the agent should be invoked
      */
-    invocationMode:
-      | "direct"
-      | "chat-handoff"
-      | "clipboard-handoff"
-      | "manual"
-      | "deterministic";
+    invocationMode: "direct" | "chat-handoff" | "clipboard-handoff" | "manual" | "deterministic";
 
     /**
      * Fallback agent ID when preferred agent is unavailable
@@ -274,7 +269,7 @@ export interface BuiltInExecutionProfile {
   /**
    * Expected output contract
    */
-  expectedOutputContract: ExecutionProfile['output'];
+  expectedOutputContract: ExecutionProfile["output"];
 
   /**
    * Approval behavior
@@ -310,14 +305,14 @@ export const BUILT_IN_EXECUTION_PROFILES: BuiltInExecutionProfile[] = [
     expectedOutputContract: {
       contractType: "analysis",
       expectedArtifacts: ["repository-map.md", "architecture-diagram.svg"],
-      requireStructuredResult: true
+      requireStructuredResult: true,
     },
     approvalRequired: false,
     requirePromptPreview: true,
     fallbackBehavior: {
       fallbackAgentId: "keystone-agent",
-      fallbackMode: "manual"
-    }
+      fallbackMode: "manual",
+    },
   },
   {
     id: "implementation-profile",
@@ -330,14 +325,14 @@ export const BUILT_IN_EXECUTION_PROFILES: BuiltInExecutionProfile[] = [
     expectedOutputContract: {
       contractType: "implementation",
       expectedArtifacts: ["implementation-changes", "test-updates"],
-      requireStructuredResult: true
+      requireStructuredResult: true,
     },
     approvalRequired: true,
     requirePromptPreview: true,
     fallbackBehavior: {
       fallbackAgentId: "keystone-agent",
-      fallbackMode: "chat-handoff"
-    }
+      fallbackMode: "chat-handoff",
+    },
   },
   {
     id: "impact-analysis-profile",
@@ -350,14 +345,14 @@ export const BUILT_IN_EXECUTION_PROFILES: BuiltInExecutionProfile[] = [
     expectedOutputContract: {
       contractType: "analysis",
       expectedArtifacts: ["impact-report.md"],
-      requireStructuredResult: true
+      requireStructuredResult: true,
     },
     approvalRequired: false,
     requirePromptPreview: true,
     fallbackBehavior: {
       fallbackAgentId: "keystone-agent",
-      fallbackMode: "manual"
-    }
+      fallbackMode: "manual",
+    },
   },
   {
     id: "test-generation-profile",
@@ -370,14 +365,14 @@ export const BUILT_IN_EXECUTION_PROFILES: BuiltInExecutionProfile[] = [
     expectedOutputContract: {
       contractType: "test-plan",
       expectedArtifacts: ["test-plan.md", "test-suite"],
-      requireStructuredResult: true
+      requireStructuredResult: true,
     },
     approvalRequired: true,
     requirePromptPreview: true,
     fallbackBehavior: {
       fallbackAgentId: "keystone-agent",
-      fallbackMode: "chat-handoff"
-    }
+      fallbackMode: "chat-handoff",
+    },
   },
   {
     id: "test-failure-analysis-profile",
@@ -390,14 +385,14 @@ export const BUILT_IN_EXECUTION_PROFILES: BuiltInExecutionProfile[] = [
     expectedOutputContract: {
       contractType: "test-changes",
       expectedArtifacts: ["failure-analysis.md"],
-      requireStructuredResult: true
+      requireStructuredResult: true,
     },
     approvalRequired: false,
     requirePromptPreview: true,
     fallbackBehavior: {
       fallbackAgentId: "keystone-agent",
-      fallbackMode: "manual"
-    }
+      fallbackMode: "manual",
+    },
   },
   {
     id: "test-healing-profile",
@@ -410,14 +405,14 @@ export const BUILT_IN_EXECUTION_PROFILES: BuiltInExecutionProfile[] = [
     expectedOutputContract: {
       contractType: "test-changes",
       expectedArtifacts: ["healed-tests"],
-      requireStructuredResult: true
+      requireStructuredResult: true,
     },
     approvalRequired: true,
     requirePromptPreview: true,
     fallbackBehavior: {
       fallbackAgentId: "keystone-agent",
-      fallbackMode: "chat-handoff"
-    }
+      fallbackMode: "chat-handoff",
+    },
   },
   {
     id: "security-analysis-profile",
@@ -430,14 +425,14 @@ export const BUILT_IN_EXECUTION_PROFILES: BuiltInExecutionProfile[] = [
     expectedOutputContract: {
       contractType: "review-findings",
       expectedArtifacts: ["security-findings.md"],
-      requireStructuredResult: true
+      requireStructuredResult: true,
     },
     approvalRequired: true,
     requirePromptPreview: true,
     fallbackBehavior: {
       fallbackAgentId: "keystone-agent",
-      fallbackMode: "manual"
-    }
+      fallbackMode: "manual",
+    },
   },
   {
     id: "performance-analysis-profile",
@@ -450,14 +445,14 @@ export const BUILT_IN_EXECUTION_PROFILES: BuiltInExecutionProfile[] = [
     expectedOutputContract: {
       contractType: "review-findings",
       expectedArtifacts: ["performance-findings.md"],
-      requireStructuredResult: true
+      requireStructuredResult: true,
     },
     approvalRequired: false,
     requirePromptPreview: true,
     fallbackBehavior: {
       fallbackAgentId: "keystone-agent",
-      fallbackMode: "manual"
-    }
+      fallbackMode: "manual",
+    },
   },
   {
     id: "pr-review-profile",
@@ -470,13 +465,13 @@ export const BUILT_IN_EXECUTION_PROFILES: BuiltInExecutionProfile[] = [
     expectedOutputContract: {
       contractType: "review-findings",
       expectedArtifacts: ["pr-review-report.md"],
-      requireStructuredResult: true
+      requireStructuredResult: true,
     },
     approvalRequired: true,
     requirePromptPreview: true,
     fallbackBehavior: {
       fallbackAgentId: "keystone-agent",
-      fallbackMode: "manual"
-    }
-  }
+      fallbackMode: "manual",
+    },
+  },
 ];

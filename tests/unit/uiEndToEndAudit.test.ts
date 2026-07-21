@@ -12,18 +12,24 @@ describe("final UI architecture audit", () => {
     expect(navigation).toContain('label: "Active Work"');
     expect(navigation).toContain('label: "Intelligence"');
     expect(navigation).toContain('label: "History"');
-    for (const obsolete of ["Intent & Specs", "Active Workflow", "Validation & QA", 'label: "Delivery"', 'label: "Task Handoff"'])
+    for (const obsolete of [
+      "Intent & Specs",
+      "Active Workflow",
+      "Validation & QA",
+      'label: "Delivery"',
+      'label: "Task Handoff"',
+    ])
       expect(navigation).not.toContain(obsolete);
   });
 
   it("lazy-loads the three heavy secondary routes", () => {
     const app = read("src/ui/App.tsx");
-    expect(app).toContain('lazy(async () =>');
+    expect(app).toContain("lazy(async () =>");
     expect(app).toContain('import("./components/workbench/SDLCWorkbench")');
     expect(app).toContain('import("./components/intelligence/IntelligenceOverview")');
     expect(app).toContain('import("./components/history/HistoryWorkspace")');
-    expect(app).not.toContain('import { SDLCWorkbench } from');
-    expect(app).not.toContain('import { IntelligenceOverview } from');
+    expect(app).not.toContain("import { SDLCWorkbench } from");
+    expect(app).not.toContain("import { IntelligenceOverview } from");
   });
 
   it("retains accessible narrow, high-contrast, and reduced-motion contracts", () => {
@@ -48,8 +54,16 @@ describe("final UI architecture audit", () => {
   });
 
   it("contains no obsolete contributed view", () => {
-    const manifest = JSON.parse(read("package.json")) as { contributes: { viewsContainers: { activitybar: unknown[] }; views: Record<string, Array<{ id: string }>> } };
+    const manifest = JSON.parse(read("package.json")) as {
+      contributes: {
+        viewsContainers: { activitybar: unknown[] };
+        views: Record<string, Array<{ id: string }>>;
+      };
+    };
     expect(manifest.contributes.viewsContainers.activitybar).toHaveLength(1);
-    expect((manifest.contributes.views.keystone ?? []).map((view) => view.id)).toEqual(["keystone.dashboard", "keystone.explorer"]);
+    expect((manifest.contributes.views.keystone ?? []).map((view) => view.id)).toEqual([
+      "keystone.dashboard",
+      "keystone.explorer",
+    ]);
   });
 });

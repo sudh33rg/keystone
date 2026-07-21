@@ -9,20 +9,55 @@ import type { HostBridge } from "../../src/ui/services/HostBridge";
 
 describe("HomeDashboard", () => {
   it("projects real workflow, coordination, intelligence, and Copilot state", async () => {
-    const workflowId = crypto.randomUUID(); const intentId = crypto.randomUUID(); const taskId = crypto.randomUUID();
+    const workflowId = crypto.randomUUID();
+    const intentId = crypto.randomUUID();
+    const taskId = crypto.randomUUID();
     const request = vi.fn((type: string) => {
-      if (type === "workflow/list") return Promise.resolve([{ id: workflowId, status: "planned", intent: { id: intentId, normalizedObjective: "Improve repository health" }, specification: { title: "Repository health" }, tasks: [{ id: taskId, title: "Implement health checks", status: "ready" }] }]);
-      if (type === "orchestration/list") return Promise.resolve([{ intentId, branch: "main", currentStage: "task-validation", progress: { pendingApprovals: 2, blockingFindings: 1, failedTasks: 3 } }]);
-      if (type === "copilot/capabilities") return Promise.resolve({ extensionDetected: true, directInvocationAvailable: false });
+      if (type === "workflow/list")
+        return Promise.resolve([
+          {
+            id: workflowId,
+            status: "planned",
+            intent: { id: intentId, normalizedObjective: "Improve repository health" },
+            specification: { title: "Repository health" },
+            tasks: [{ id: taskId, title: "Implement health checks", status: "ready" }],
+          },
+        ]);
+      if (type === "orchestration/list")
+        return Promise.resolve([
+          {
+            intentId,
+            branch: "main",
+            currentStage: "task-validation",
+            progress: { pendingApprovals: 2, blockingFindings: 1, failedTasks: 3 },
+          },
+        ]);
+      if (type === "copilot/capabilities")
+        return Promise.resolve({ extensionDetected: true, directInvocationAvailable: false });
       if (type === "handoff/import") return Promise.resolve(undefined);
       return Promise.resolve(undefined);
     });
     const navigate = vi.fn();
-    const bootstrap = { workspace: { name: "keystone", indexStatus: "ready" } } as unknown as BootstrapSnapshot;
+    const bootstrap = {
+      workspace: { name: "keystone", indexStatus: "ready" },
+    } as unknown as BootstrapSnapshot;
     const overview = emptyIntelligenceOverview("ready");
-    overview.repository = { id: "repository:fixture", displayName: "keystone", workspaceRoots: [], branch: "main", headCommit: "abc" };
+    overview.repository = {
+      id: "repository:fixture",
+      displayName: "keystone",
+      workspaceRoots: [],
+      branch: "main",
+      headCommit: "abc",
+    };
     overview.generation = 7;
-    render(<HomeDashboard bootstrap={bootstrap} overview={overview} bridge={{ request } as unknown as HostBridge} navigate={navigate}/>);
+    render(
+      <HomeDashboard
+        bootstrap={bootstrap}
+        overview={overview}
+        bridge={{ request } as unknown as HostBridge}
+        navigate={navigate}
+      />,
+    );
 
     expect(await screen.findByText("Repository health")).toBeTruthy();
     expect(screen.getByText("Implement health checks")).toBeTruthy();

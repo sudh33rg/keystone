@@ -16,8 +16,10 @@ function createBridge() {
     request,
     subscribe(callback: (message: HostMessage) => void) {
       listener = callback;
-      return () => { listener = undefined; };
-    }
+      return () => {
+        listener = undefined;
+      };
+    },
   } as unknown as HostBridge;
   return { bridge, request, emit: (message: HostMessage) => listener?.(message) };
 }
@@ -25,24 +27,61 @@ function createBridge() {
 describe("App", () => {
   it("bootstraps, renders honest phase status, and persists navigation", async () => {
     const fake = createBridge();
-    render(<App bridge={fake.bridge}/>);
+    render(<App bridge={fake.bridge} />);
     expect(fake.request).toHaveBeenCalledWith("app/bootstrap", {});
 
     act(() => {
       const snapshot: BootstrapSnapshot = {
         extensionVersion: "0.1.0",
-        workspace: { name: "fixture-repository", rootCount: 1, trust: "trusted", indexStatus: "not-indexed" },
-        state: { schemaVersion: 1, revision: 0, activeSection: "home", activeRoute: "/", workflowCount: 0, updatedAt: new Date().toISOString() },
-        activity: { operation: "Foundation ready", detail: "Ready", status: "completed", progress: 100, cancellable: false, updatedAt: new Date().toISOString() },
-        implementation: { phase: 1, phaseName: "Extension foundation", completedTasks: ["T-101", "T-102"], nextTask: "T-201 · Workspace adapters" }
+        workspace: {
+          name: "fixture-repository",
+          rootCount: 1,
+          trust: "trusted",
+          indexStatus: "not-indexed",
+        },
+        state: {
+          schemaVersion: 1,
+          revision: 0,
+          activeSection: "home",
+          activeRoute: "/",
+          workflowCount: 0,
+          updatedAt: new Date().toISOString(),
+        },
+        activity: {
+          operation: "Foundation ready",
+          detail: "Ready",
+          status: "completed",
+          progress: 100,
+          cancellable: false,
+          updatedAt: new Date().toISOString(),
+        },
+        implementation: {
+          phase: 1,
+          phaseName: "Extension foundation",
+          completedTasks: ["T-101", "T-102"],
+          nextTask: "T-201 · Workspace adapters",
+        },
       };
       fake.emit(hostMessage("bootstrap/ready", snapshot));
     });
 
     expect(screen.getByText(/Active repository · fixture-repository/)).toBeTruthy();
     expect(screen.getByText(/Engineering work/)).toBeTruthy();
-    expect(["Home", "Active Work", "Intelligence", "History"].every((name) => screen.getByRole("button", { name }))).toBe(true);
-    for (const removed of ["Intent & Specs", "Tasks", "Active Workflow", "Validation & QA", "Delivery", "Task Handoff", "Diagnostics"]) expect(screen.queryByRole("button", { name: removed })).toBeNull();
+    expect(
+      ["Home", "Active Work", "Intelligence", "History"].every((name) =>
+        screen.getByRole("button", { name }),
+      ),
+    ).toBe(true);
+    for (const removed of [
+      "Intent & Specs",
+      "Tasks",
+      "Active Workflow",
+      "Validation & QA",
+      "Delivery",
+      "Task Handoff",
+      "Diagnostics",
+    ])
+      expect(screen.queryByRole("button", { name: removed })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Workspace health" }));
     expect(screen.getByRole("heading", { name: "Diagnostics" })).toBeTruthy();
@@ -53,12 +92,29 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Intelligence" }));
     expect(fake.request).toHaveBeenCalledWith("navigation/set", { route: "/intelligence" });
-    act(() => fake.emit(hostMessage("intelligence/updated", emptyIntelligenceOverview("not-indexed"))));
+    act(() =>
+      fake.emit(hostMessage("intelligence/updated", emptyIntelligenceOverview("not-indexed"))),
+    );
     expect(await screen.findByText("No local intelligence snapshot exists yet.")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Scan repository" })).toBeTruthy();
 
     const scanning = emptyIntelligenceOverview("scanning", true);
-    scanning.runtime = { phase: "reconciling", queueDepth: 1, activeWorkers: 1, workerCapacity: 3, pendingFiles: 5, completedJobs: 2, failedJobs: 0, staleResultsDiscarded: 1, workerRestarts: 0, throughputFilesPerSecond: 3.5, currentFiles: ["src/index.ts"], health: "healthy", trigger: "file", progress: { stage: "inventory", fileCount: 2, totalFiles: 5, currentFiles: ["src/index.ts"] } };
+    scanning.runtime = {
+      phase: "reconciling",
+      queueDepth: 1,
+      activeWorkers: 1,
+      workerCapacity: 3,
+      pendingFiles: 5,
+      completedJobs: 2,
+      failedJobs: 0,
+      staleResultsDiscarded: 1,
+      workerRestarts: 0,
+      throughputFilesPerSecond: 3.5,
+      currentFiles: ["src/index.ts"],
+      health: "healthy",
+      trigger: "file",
+      progress: { stage: "inventory", fileCount: 2, totalFiles: 5, currentFiles: ["src/index.ts"] },
+    };
     act(() => fake.emit(hostMessage("intelligence/updated", scanning)));
     expect(screen.getByText("inventory 2 / 5")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Pause ingestion" }));

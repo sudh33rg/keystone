@@ -1,7 +1,12 @@
-import type { IntelligenceIndexes, IntelligenceSnapshot } from "../../../shared/contracts/intelligence";
+import type {
+  IntelligenceIndexes,
+  IntelligenceSnapshot,
+} from "../../../shared/contracts/intelligence";
 
 export class SemanticGraphBuilder {
-  buildIndexes(snapshot: Pick<IntelligenceSnapshot, "files" | "symbols" | "relationships">): IntelligenceIndexes {
+  buildIndexes(
+    snapshot: Pick<IntelligenceSnapshot, "files" | "symbols" | "relationships">,
+  ): IntelligenceIndexes {
     const indexes = emptyIndexes();
     for (const file of snapshot.files) {
       add(indexes.byPath, file.relativePath.toLowerCase(), file.id);
@@ -17,15 +22,21 @@ export class SemanticGraphBuilder {
     for (const relationship of snapshot.relationships) {
       add(indexes.outgoing, relationship.sourceId, relationship.id);
       add(indexes.incoming, relationship.targetId, relationship.id);
-      if (relationship.type === "keystone.core.TESTS") add(indexes.testTargets, relationship.targetId, relationship.sourceId);
-      if (relationship.type === "keystone.core.READS_CONFIGURATION") add(indexes.configurationUsage, relationship.targetId, relationship.sourceId);
-      if (relationship.type === "keystone.core.ROUTES_TO") add(indexes.routeHandlers, relationship.sourceId, relationship.targetId);
+      if (relationship.type === "keystone.core.TESTS")
+        add(indexes.testTargets, relationship.targetId, relationship.sourceId);
+      if (relationship.type === "keystone.core.READS_CONFIGURATION")
+        add(indexes.configurationUsage, relationship.targetId, relationship.sourceId);
+      if (relationship.type === "keystone.core.ROUTES_TO")
+        add(indexes.routeHandlers, relationship.sourceId, relationship.targetId);
     }
     sortIndexes(indexes);
     return indexes;
   }
 
-  async buildIndexesYielding(snapshot: Pick<IntelligenceSnapshot, "files" | "symbols" | "relationships">, signal?: AbortSignal): Promise<IntelligenceIndexes> {
+  async buildIndexesYielding(
+    snapshot: Pick<IntelligenceSnapshot, "files" | "symbols" | "relationships">,
+    signal?: AbortSignal,
+  ): Promise<IntelligenceIndexes> {
     const indexes = emptyIndexes();
     let processed = 0;
     for (const file of snapshot.files) {
@@ -51,7 +62,19 @@ export class SemanticGraphBuilder {
 }
 
 export function emptyIndexes(): IntelligenceIndexes {
-  return { byName: stringIndex(), byQualifiedName: stringIndex(), byPath: stringIndex(), byType: stringIndex(), byLanguage: stringIndex(), incoming: stringIndex(), outgoing: stringIndex(), routeHandlers: stringIndex(), testTargets: stringIndex(), packageMembership: stringIndex(), configurationUsage: stringIndex() };
+  return {
+    byName: stringIndex(),
+    byQualifiedName: stringIndex(),
+    byPath: stringIndex(),
+    byType: stringIndex(),
+    byLanguage: stringIndex(),
+    incoming: stringIndex(),
+    outgoing: stringIndex(),
+    routeHandlers: stringIndex(),
+    testTargets: stringIndex(),
+    packageMembership: stringIndex(),
+    configurationUsage: stringIndex(),
+  };
 }
 
 function add(index: Record<string, string[]>, key: string, id: string): void {
@@ -60,21 +83,34 @@ function add(index: Record<string, string[]>, key: string, id: string): void {
   if (!values.includes(id)) values.push(id);
 }
 
-function stringIndex(): Record<string, string[]> { return Object.create(null) as Record<string, string[]>; }
+function stringIndex(): Record<string, string[]> {
+  return Object.create(null) as Record<string, string[]>;
+}
 
-function addRelationshipIndexes(indexes: IntelligenceIndexes, relationship: IntelligenceSnapshot["relationships"][number]): void {
+function addRelationshipIndexes(
+  indexes: IntelligenceIndexes,
+  relationship: IntelligenceSnapshot["relationships"][number],
+): void {
   add(indexes.outgoing, relationship.sourceId, relationship.id);
   add(indexes.incoming, relationship.targetId, relationship.id);
-  if (relationship.type === "keystone.core.TESTS") add(indexes.testTargets, relationship.targetId, relationship.sourceId);
-  if (relationship.type === "keystone.core.READS_CONFIGURATION") add(indexes.configurationUsage, relationship.targetId, relationship.sourceId);
-  if (relationship.type === "keystone.core.ROUTES_TO") add(indexes.routeHandlers, relationship.sourceId, relationship.targetId);
+  if (relationship.type === "keystone.core.TESTS")
+    add(indexes.testTargets, relationship.targetId, relationship.sourceId);
+  if (relationship.type === "keystone.core.READS_CONFIGURATION")
+    add(indexes.configurationUsage, relationship.targetId, relationship.sourceId);
+  if (relationship.type === "keystone.core.ROUTES_TO")
+    add(indexes.routeHandlers, relationship.sourceId, relationship.targetId);
 }
 
 async function yieldForIndex(signal?: AbortSignal): Promise<void> {
-  if (signal?.aborted) { const error = new Error("Semantic index construction was cancelled."); error.name = "AbortError"; throw error; }
+  if (signal?.aborted) {
+    const error = new Error("Semantic index construction was cancelled.");
+    error.name = "AbortError";
+    throw error;
+  }
   await new Promise<void>((resolve) => setImmediate(resolve));
 }
 
 function sortIndexes(indexes: IntelligenceIndexes): void {
-  for (const index of Object.values(indexes)) for (const values of Object.values(index)) values.sort();
+  for (const index of Object.values(indexes))
+    for (const values of Object.values(index)) values.sort();
 }

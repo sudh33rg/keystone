@@ -23,14 +23,7 @@ const DestinationSchema = z.discriminatedUnion("type", [
     .object({
       type: z.literal("new-workflow"),
       workType: z
-        .enum([
-          "feature",
-          "bug",
-          "refactor",
-          "test",
-          "modernization",
-          "investigation",
-        ])
+        .enum(["feature", "bug", "refactor", "test", "modernization", "investigation"])
         .optional(),
     })
     .strict(),
@@ -84,14 +77,10 @@ const DestinationSchema = z.discriminatedUnion("type", [
       seedEntityId: Id.optional(),
     })
     .strict(),
-  z
-    .object({ type: z.literal("impact"), repositoryId: Id, entityId: Id })
-    .strict(),
+  z.object({ type: z.literal("impact"), repositoryId: Id, entityId: Id }).strict(),
   z.object({ type: z.literal("import-handoff") }).strict(),
   z.object({ type: z.literal("history") }).strict(),
-  z
-    .object({ type: z.literal("diagnostics"), diagnosticId: Id.optional() })
-    .strict(),
+  z.object({ type: z.literal("diagnostics"), diagnosticId: Id.optional() }).strict(),
   z
     .object({
       type: z.literal("settings"),
@@ -199,14 +188,10 @@ export const KeystoneDashboardStateSchema = z
     sections: z.array(DashboardSectionSchema).max(4),
     generatedAt: z.string().datetime(),
     refreshDurationMs: z.number().nonnegative(),
-    diagnostics: z
-      .array(z.object({ id: Id, message: z.string().max(2000) }).strict())
-      .max(20),
+    diagnostics: z.array(z.object({ id: Id, message: z.string().max(2000) }).strict()).max(20),
   })
   .strict();
-export type KeystoneDashboardState = z.infer<
-  typeof KeystoneDashboardStateSchema
->;
+export type KeystoneDashboardState = z.infer<typeof KeystoneDashboardStateSchema>;
 
 export const KeystonePanelStateSchema = z
   .object({
@@ -256,9 +241,7 @@ export const KeystoneInitializationSchema = z
       })
       .strict()
       .optional(),
-    capabilities: z
-      .object({ copilotAvailable: z.boolean(), toolsAvailable: z.boolean() })
-      .strict(),
+    capabilities: z.object({ copilotAvailable: z.boolean(), toolsAvailable: z.boolean() }).strict(),
     restoredRoute: AppRouteSchema,
     restoredContext: z
       .object({
@@ -275,9 +258,7 @@ export const KeystoneInitializationSchema = z
     initializedAt: z.string().datetime(),
   })
   .strict();
-export type KeystoneInitialization = z.infer<
-  typeof KeystoneInitializationSchema
->;
+export type KeystoneInitialization = z.infer<typeof KeystoneInitializationSchema>;
 
 export const WebviewReadyPayloadSchema = z
   .object({ instanceId: z.string().uuid(), protocolVersion: z.literal(1) })

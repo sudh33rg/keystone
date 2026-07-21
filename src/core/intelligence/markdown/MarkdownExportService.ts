@@ -94,7 +94,9 @@ export class MarkdownExportService {
 
     return {
       knowledgeGraphPath: knowledgeGraphGenerated ? knowledgeGraphPath : undefined,
-      intelligenceOverviewPath: intelligenceOverviewGenerated ? intelligenceOverviewPath : undefined,
+      intelligenceOverviewPath: intelligenceOverviewGenerated
+        ? intelligenceOverviewPath
+        : undefined,
       knowledgeGraphGenerated,
       intelligenceOverviewGenerated,
     };

@@ -3,13 +3,17 @@ import { WorkerPoolManager } from "../../../../src/core/intelligence/runtime/Wor
 
 describe("WorkerPoolManager", () => {
   const pools: WorkerPoolManager[] = [];
-  afterEach(async () => { await Promise.all(pools.splice(0).map((pool) => pool.dispose())); });
+  afterEach(async () => {
+    await Promise.all(pools.splice(0).map((pool) => pool.dispose()));
+  });
 
   it("keeps persistent worker capacity for hashing and JSON parsing", async () => {
     const pool = new WorkerPoolManager(2, 1);
     pools.push(pool);
     expect(pool.getStatus().capacity).toBe(3);
-    expect(await pool.sha256(new TextEncoder().encode("keystone"))).toMatch(/^sha256:[a-f0-9]{64}$/);
+    expect(await pool.sha256(new TextEncoder().encode("keystone"))).toMatch(
+      /^sha256:[a-f0-9]{64}$/,
+    );
     await expect(pool.parseJson('{"generation":2}')).resolves.toEqual({ generation: 2 });
     expect(pool.getStatus()).toMatchObject({ active: 0, queued: 0, capacity: 3 });
   });
@@ -34,7 +38,12 @@ describe("WorkerPoolManager", () => {
     pools.push(pool);
     let hostTurnRan = false;
     const hashing = pool.sha256(new Uint8Array(8 * 1024 * 1024));
-    await new Promise<void>((resolve) => setImmediate(() => { hostTurnRan = true; resolve(); }));
+    await new Promise<void>((resolve) =>
+      setImmediate(() => {
+        hostTurnRan = true;
+        resolve();
+      }),
+    );
     expect(hostTurnRan).toBe(true);
     await hashing;
 

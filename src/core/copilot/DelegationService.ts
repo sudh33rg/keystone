@@ -19,9 +19,9 @@ import {
   type DevelopmentWorkflowSnapshot,
   type PreparedDelegation,
   type RepositoryBaseline,
-  type TaskContextPackage,
   type TaskEligibility,
 } from "../../shared/contracts/delegation";
+import type { ContextPackage } from "../../shared/contracts/contextPackage";
 
 export class TaskEligibilityService {
   check(input: {
@@ -29,7 +29,7 @@ export class TaskEligibilityService {
     task: DevelopmentTask;
     specification: DevelopmentSpecification;
     agent?: CopilotAgentDescriptor;
-    context?: TaskContextPackage;
+    context?: ContextPackage;
     prepared?: PreparedDelegation;
     activeSessions?: DelegationSession[];
     currentGeneration: number;
@@ -41,20 +41,11 @@ export class TaskEligibilityService {
       reasons.push({ code, message, blocking: true });
     };
     if (input.specification.status !== "approved")
-      block(
-        "specification-not-approved",
-        "The specification revision is not approved.",
-      );
+      block("specification-not-approved", "The specification revision is not approved.");
     if (input.task.specificationRevision !== input.specification.revision)
-      block(
-        "task-specification-stale",
-        "The task targets another specification revision.",
-      );
+      block("task-specification-stale", "The task targets another specification revision.");
     if (input.task.status === "stale" || input.task.staleReasons.length)
-      block(
-        "task-stale",
-        input.task.staleReasons.join(" ") || "The task is stale.",
-      );
+      block("task-stale", input.task.staleReasons.join(" ") || "The task is stale.");
     const dependencies = input.task.dependencies.map((id) =>
       input.workflow.tasks.find((item) => item.id === id),
     );
@@ -63,15 +54,8 @@ export class TaskEligibilityService {
         "dependencies-incomplete",
         "One or more task dependencies are not complete. This milestone never fabricates dependency completion.",
       );
-    if (
-      input.specification.decisions.some(
-        (item) => item.blocking && !item.resolution?.trim(),
-      )
-    )
-      block(
-        "decisions-unresolved",
-        "Blocking specification decisions remain unresolved.",
-      );
+    if (input.specification.decisions.some((item) => item.blocking && !item.resolution?.trim()))
+      block("decisions-unresolved", "Blocking specification decisions remain unresolved.");
     if (
       input.currentBranch &&
       input.specification.branch &&
@@ -90,22 +74,19 @@ export class TaskEligibilityService {
       block("criteria-missing", "The task has no acceptance criteria.");
     if (!input.task.validationSteps.length)
       block("validation-missing", "The task has no validation steps.");
-    if (!input.agent)
-      block("agent-missing", "No valid agent selection exists.");
+    if (!input.agent) block("agent-missing", "No valid agent selection exists.");
     else if (input.agent.availability === "unavailable")
       block("agent-unavailable", "The selected agent is unavailable.");
     if (!input.context) block("context-missing", "No context package exists.");
     else {
-      if (!input.context.reviewed)
-        block(
-          "context-unreviewed",
-          "The exact context package has not been approved.",
-        );
-      if (input.context.completeness === "blocked")
+      if (input.context.metadata.status !== "approved")
+        block("context-unreviewed", "The exact context package has not been approved.");
+      if (input.context.metadata.status === "blocked")
         block("context-blocked", "Context diagnostics block delegation.");
       if (
-        input.context.specificationRevision !== input.specification.revision ||
-        input.context.intelligenceGeneration !== input.currentGeneration
+        Number(input.context.sourceSnapshot.specificationRevision) !==
+          input.specification.revision ||
+        Number(input.context.sourceSnapshot.intelligenceRevision) !== input.currentGeneration
       )
         block(
           "context-stale",
@@ -130,9 +111,7 @@ export class TaskEligibilityService {
       (session) =>
         !["cancelled", "failed", "stale"].includes(session.status) &&
         session.taskId !== input.task.id &&
-        session.expectedFiles.some((file) =>
-          input.task.expectedFiles.includes(file),
-        ),
+        session.expectedFiles.some((file) => input.task.expectedFiles.includes(file)),
     );
     if (overlap.length && !input.overlapOverride)
       block(
@@ -142,8 +121,7 @@ export class TaskEligibilityService {
     if (overlap.length && input.overlapOverride)
       reasons.push({
         code: "overlap-override",
-        message:
-          "The user explicitly accepted the overlapping delegation risk.",
+        message: "The user explicitly accepted the overlapping delegation risk.",
         blocking: false,
       });
     return TaskEligibilitySchema.parse({
@@ -160,12 +138,12 @@ export class DelegationPromptBuilder {
     task: DevelopmentTask,
     specification: DevelopmentSpecification,
     agent: CopilotAgentDescriptor,
-    context: TaskContextPackage,
+    context: ContextPackage,
     userSections: Record<string, string> = {},
   ): Promise<{ prompt: string; fingerprint: string; diagnostics: string[] }> {
     const itemLines = context.items.map(
       (item) =>
-        `### ${item.title}\nReason: ${item.reason}\nSource: ${item.relativePath ?? item.sourceEntityId ?? item.id}\n\n${item.content}`,
+        `### ${item.title}\nReason: ${item.reasons.join("; ")}\nSource: ${item.sourceReference.filePath ?? item.sourceReference.symbolId ?? item.id}\n\n${item.content}`,
     );
     const prompt = [
       "You are executing one approved Keystone development task.",
@@ -182,26 +160,20 @@ export class DelegationPromptBuilder {
         "Acceptance criteria",
         specification.acceptanceCriteria
           .filter((item) => task.acceptanceCriterionIds.includes(item.id))
-          .map(
-            (item) =>
-              `${item.id}: ${item.description}\nValidation: ${item.validationMethod}`,
-          ),
+          .map((item) => `${item.id}: ${item.description}\nValidation: ${item.validationMethod}`),
       ),
       section("Engineering constraints", specification.constraints),
       section(
         "Expected repository areas",
         task.expectedFiles.length
           ? task.expectedFiles
-          : [
-              "No file path is assumed; inspect supplied canonical entities before choosing files.",
-            ],
+          : ["No file path is assumed; inspect supplied canonical entities before choosing files."],
       ),
       section("Relevant repository context", itemLines),
       section(
         "Tests and validation",
         task.validationSteps.map(
-          (item) =>
-            item.command ?? item.manualCheck ?? "Report applicable validation.",
+          (item) => item.command ?? item.manualCheck ?? "Report applicable validation.",
         ),
       ),
       section("Prohibited changes", [
@@ -243,9 +215,7 @@ export class DelegationFallbackService {
   }
   instructions(mode: DelegationSession["mode"]): string[] {
     if (mode === "direct")
-      return [
-        "Keystone will use the supported direct invocation and require a real handle.",
-      ];
+      return ["Keystone will use the supported direct invocation and require a real handle."];
     if (mode === "assisted")
       return [
         "Keystone will open Copilot and insert the approved prompt.",
@@ -297,48 +267,41 @@ export class DelegationTrackingService {
   ): Promise<RepositoryBaseline> {
     return this.baselines.capture(expectedFiles, entityFingerprints);
   }
-  async detect(
-    session: DelegationSession,
-  ): Promise<DelegationSession["changes"]> {
+  async detect(session: DelegationSession): Promise<DelegationSession["changes"]> {
     const root = this.workspace.getRoots()[0];
     if (!root) return [];
-    const current = normalized(
-      await this.git.getChangedFiles(root.uri),
-      root.uri,
-    );
+    const current = normalized(await this.git.getChangedFiles(root.uri), root.uri);
     const baseline = new Set([
       ...session.repositoryStateAtDelegation.dirtyFiles,
       ...session.repositoryStateAtDelegation.stagedFiles,
       ...session.repositoryStateAtDelegation.untrackedFiles,
     ]);
-    return current
-      .slice(0, 5000)
-      .map((relativePath) =>
-        baseline.has(relativePath)
+    return current.slice(0, 5000).map((relativePath) =>
+      baseline.has(relativePath)
+        ? {
+            relativePath,
+            classification: "pre-existing" as const,
+            reason: "The file was already changed at delegation baseline.",
+          }
+        : session.expectedFiles.includes(relativePath)
           ? {
               relativePath,
-              classification: "pre-existing" as const,
-              reason: "The file was already changed at delegation baseline.",
+              classification: "expected" as const,
+              reason: "The file is explicitly expected by the approved task.",
             }
-          : session.expectedFiles.includes(relativePath)
+          : session.expectedFiles.some((file) => sameArea(file, relativePath))
             ? {
                 relativePath,
-                classification: "expected" as const,
-                reason: "The file is explicitly expected by the approved task.",
+                classification: "related" as const,
+                reason:
+                  "The file is in an expected repository area; attribution remains unconfirmed.",
               }
-            : session.expectedFiles.some((file) => sameArea(file, relativePath))
-              ? {
-                  relativePath,
-                  classification: "related" as const,
-                  reason:
-                    "The file is in an expected repository area; attribution remains unconfirmed.",
-                }
-              : {
-                  relativePath,
-                  classification: "unexpected" as const,
-                  reason: "The file was not in the approved expected set.",
-                },
-      );
+            : {
+                relativePath,
+                classification: "unexpected" as const,
+                reason: "The file was not in the approved expected set.",
+              },
+    );
   }
 }
 
@@ -353,17 +316,11 @@ export class DelegationSessionService {
   async save(session: DelegationSession): Promise<DelegationSession> {
     await this.persistence.update((state) => ({
       ...state,
-      sessions: [
-        ...state.sessions.filter((item) => item.id !== session.id),
-        session,
-      ].slice(-200),
+      sessions: [...state.sessions.filter((item) => item.id !== session.id), session].slice(-200),
     }));
     return session;
   }
-  async update(
-    id: string,
-    patch: Partial<DelegationSession>,
-  ): Promise<DelegationSession> {
+  async update(id: string, patch: Partial<DelegationSession>): Promise<DelegationSession> {
     let output: DelegationSession | undefined;
     await this.persistence.update((state) => ({
       ...state,
@@ -415,28 +372,24 @@ export class DelegationService {
 
   async captureBuildBaseline(task: DevelopmentTask): Promise<RepositoryBaseline> {
     const baseline = await this.tracking.capture(task.expectedFiles, task.baseEntityFingerprints);
-    await this.persistence.update((state) => ({ ...state, buildBaselines: { ...state.buildBaselines, [task.id]: baseline } }));
+    await this.persistence.update((state) => ({
+      ...state,
+      buildBaselines: { ...state.buildBaselines, [task.id]: baseline },
+    }));
     return baseline;
   }
-  getBuildBaseline(taskId: string): RepositoryBaseline | undefined { return this.persistence.snapshot.buildBaselines[taskId]; }
+  getBuildBaseline(taskId: string): RepositoryBaseline | undefined {
+    return this.persistence.snapshot.buildBaselines[taskId];
+  }
 
   async prepare(
     workflowId: string,
     taskId: string,
-    context: TaskContextPackage,
+    context: ContextPackage,
     userSections: Record<string, string> = {},
   ): Promise<PreparedDelegation> {
-    const { workflow, task, specification, agent } = this.resolve(
-      workflowId,
-      taskId,
-    );
-    const built = await this.prompts.build(
-      task,
-      specification,
-      agent,
-      context,
-      userSections,
-    );
+    const { workflow, task, specification, agent } = this.resolve(workflowId, taskId);
+    const built = await this.prompts.build(task, specification, agent, context, userSections);
     const current = this.snapshots.getSnapshot();
     const prepared = PreparedDelegationSchema.parse({
       taskId,
@@ -460,18 +413,13 @@ export class DelegationService {
     });
     await this.persistence.update((state) => ({
       ...state,
-      prepared: [
-        ...state.prepared.filter((item) => item.taskId !== taskId),
-        prepared,
-      ].slice(-200),
+      prepared: [...state.prepared.filter((item) => item.taskId !== taskId), prepared].slice(-200),
     }));
     return prepared;
   }
 
   getPrepared(taskId: string): PreparedDelegation | undefined {
-    return this.persistence.snapshot.prepared.find(
-      (item) => item.taskId === taskId,
-    );
+    return this.persistence.snapshot.prepared.find((item) => item.taskId === taskId);
   }
   validateExecutionStart(session: DelegationSession): string[] {
     const prepared = this.getPrepared(session.taskId);
@@ -479,18 +427,12 @@ export class DelegationService {
       (item) => item.id === session.contextPackageId,
     );
     const blockers: string[] = [];
-    if (!prepared?.approved)
-      blockers.push("The delegated prompt is no longer approved.");
-    if (!context?.reviewed)
-      blockers.push("The delegated context package is no longer reviewed.");
+    if (!prepared?.approved) blockers.push("The delegated prompt is no longer approved.");
+    if (!context?.reviewed) blockers.push("The delegated context package is no longer reviewed.");
     if (prepared && prepared.promptFingerprint !== session.promptFingerprint)
-      blockers.push(
-        "The delegated prompt fingerprint no longer matches the approved prompt.",
-      );
+      blockers.push("The delegated prompt fingerprint no longer matches the approved prompt.");
     if (prepared && prepared.contextFingerprint !== session.contextFingerprint)
-      blockers.push(
-        "The prepared prompt references another context fingerprint.",
-      );
+      blockers.push("The prepared prompt references another context fingerprint.");
     if (context && context.contentFingerprint !== session.contextFingerprint)
       blockers.push(
         "The delegated context fingerprint no longer matches canonical persisted context.",
@@ -518,8 +460,7 @@ export class DelegationService {
         return output;
       }),
     }));
-    if (!output)
-      throw new Error(`No prepared delegation exists for task ${taskId}.`);
+    if (!output) throw new Error(`No prepared delegation exists for task ${taskId}.`);
     return output;
   }
   async invalidate(taskId: string, reason: string): Promise<void> {
@@ -552,7 +493,7 @@ export class DelegationService {
   async start(
     workflowId: string,
     taskId: string,
-    context: TaskContextPackage,
+    context: ContextPackage,
     overlapOverride = false,
     signal?: AbortSignal,
   ): Promise<DelegationSession> {
@@ -561,10 +502,7 @@ export class DelegationService {
       throw new Error(
         "Explicit delegation approval is required before transmission, insertion, or clipboard copy.",
       );
-    const { workflow, task, specification, agent } = this.resolve(
-      workflowId,
-      taskId,
-    );
+    const { workflow, task, specification, agent } = this.resolve(workflowId, taskId);
     const current = this.snapshots.getSnapshot();
     const eligibility = this.eligibility.check({
       workflow,
@@ -586,13 +524,9 @@ export class DelegationService {
           .join(" ")}`,
       );
     const capabilities =
-      this.adapter.getCapabilities() ??
-      (await this.adapter.refreshCapabilities(signal));
+      this.adapter.getCapabilities() ?? (await this.adapter.refreshCapabilities(signal));
     const mode = this.fallback.mode(capabilities, agent);
-    const baseline = await this.tracking.capture(
-      task.expectedFiles,
-      task.baseEntityFingerprints,
-    );
+    const baseline = await this.tracking.capture(task.expectedFiles, task.baseEntityFingerprints);
     const now = new Date().toISOString();
     let session = DelegationSessionSchema.parse({
       schemaVersion: 1,
@@ -636,22 +570,14 @@ export class DelegationService {
         session = await this.sessions.update(session.id, {
           status: "awaiting-external-start",
         });
-        await this.execution.transition(
-          workflowId,
-          taskId,
-          "awaiting-external-start",
-        );
+        await this.execution.transition(workflowId, taskId, "awaiting-external-start");
       } else {
         await this.adapter.copyPrompt(prepared.prompt);
         if (capabilities.chatAvailable) await this.adapter.openCopilot();
         session = await this.sessions.update(session.id, {
           status: "awaiting-external-start",
         });
-        await this.execution.transition(
-          workflowId,
-          taskId,
-          "awaiting-external-start",
-        );
+        await this.execution.transition(workflowId, taskId, "awaiting-external-start");
       }
       return session;
     } catch (cause) {
@@ -671,10 +597,7 @@ export class DelegationService {
     }
   }
 
-  async confirmStarted(
-    workflowId: string,
-    sessionId: string,
-  ): Promise<DelegationSession> {
+  async confirmStarted(workflowId: string, sessionId: string): Promise<DelegationSession> {
     const session = await this.sessions.update(sessionId, {
       status: "executing",
       startedAt: new Date().toISOString(),
@@ -689,18 +612,14 @@ export class DelegationService {
   }
   async refreshChanges(sessionId: string): Promise<DelegationSession> {
     const session = this.sessions.get(sessionId);
-    if (!session)
-      throw new Error(`Delegation session ${sessionId} was not found.`);
+    if (!session) throw new Error(`Delegation session ${sessionId} was not found.`);
     const changes = await this.tracking.detect(session);
     return this.sessions.update(sessionId, {
       changes,
       ...(changes.length ? { status: "result-detected" as const } : {}),
     });
   }
-  async cancel(
-    workflowId: string,
-    sessionId: string,
-  ): Promise<DelegationSession> {
+  async cancel(workflowId: string, sessionId: string): Promise<DelegationSession> {
     const session = await this.sessions.update(sessionId, {
       status: "cancelled",
       diagnostics: [
@@ -708,8 +627,7 @@ export class DelegationService {
         {
           code: "tracking-cancelled",
           severity: "info",
-          message:
-            "Keystone stopped tracking. Unsupported external execution may continue.",
+          message: "Keystone stopped tracking. Unsupported external execution may continue.",
         },
       ],
     });
@@ -730,16 +648,11 @@ export class DelegationService {
     if (!workflow) throw new Error(`Workflow ${workflowId} was not found.`);
     const task = workflow.tasks.find((item) => item.id === taskId);
     if (!task) throw new Error(`Task ${taskId} was not found.`);
-    if (!workflow.specification)
-      throw new Error("The workflow has no specification.");
-    const agentId =
-      task.assignedAgentId ?? this.registry.selections.get(taskId);
+    if (!workflow.specification) throw new Error("The workflow has no specification.");
+    const agentId = task.assignedAgentId ?? this.registry.selections.get(taskId);
     if (!agentId) throw new Error("The task has no confirmed agent selection.");
     const agent = this.registry.getProfile(agentId);
-    if (!agent)
-      throw new Error(
-        `Selected agent ${agentId} is not in the current registry.`,
-      );
+    if (!agent) throw new Error(`Selected agent ${agentId} is not in the current registry.`);
     return { workflow, task, specification: workflow.specification, agent };
   }
 }
@@ -770,9 +683,6 @@ function sameArea(left: string, right: string): boolean {
   );
 }
 async function digest(value: string): Promise<string> {
-  const hash = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(value),
-  );
+  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return `sha256:${Array.from(new Uint8Array(hash), (item) => item.toString(16).padStart(2, "0")).join("")}`;
 }

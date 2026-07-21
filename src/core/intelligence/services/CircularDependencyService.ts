@@ -41,23 +41,34 @@ export class CircularDependencyService {
       throw new Error("Intelligence snapshot unavailable.");
     }
 
-    const dependencyEdges = snapshot.relationships.filter(
-      (r) => this.dependencyTypes.has(r.type),
-    );
+    const dependencyEdges = snapshot.relationships.filter((r) => this.dependencyTypes.has(r.type));
 
-    const fileCycles = await this.findCyclesAtLevel(dependencyEdges, snapshot.files, "file", signal);
+    const fileCycles = await this.findCyclesAtLevel(
+      dependencyEdges,
+      snapshot.files,
+      "file",
+      signal,
+    );
     const moduleCycles = await this.findCyclesAtLevel(
       dependencyEdges,
       snapshot.files.filter((f) => f.moduleId),
       "module",
       signal,
     );
-    const symbolCycles = await this.findCyclesAtLevel(dependencyEdges, snapshot.symbols, "symbol", signal);
+    const symbolCycles = await this.findCyclesAtLevel(
+      dependencyEdges,
+      snapshot.symbols,
+      "symbol",
+      signal,
+    );
 
     const allCycles = [...fileCycles, ...moduleCycles, ...symbolCycles];
-    const affectedFiles = new Set(allCycles.flatMap((c) => c.level === "file" ? c.nodes : [])).size;
-    const affectedModules = new Set(allCycles.flatMap((c) => c.level === "module" ? c.nodes : [])).size;
-    const affectedSymbols = new Set(allCycles.flatMap((c) => c.level === "symbol" ? c.nodes : [])).size;
+    const affectedFiles = new Set(allCycles.flatMap((c) => (c.level === "file" ? c.nodes : [])))
+      .size;
+    const affectedModules = new Set(allCycles.flatMap((c) => (c.level === "module" ? c.nodes : [])))
+      .size;
+    const affectedSymbols = new Set(allCycles.flatMap((c) => (c.level === "symbol" ? c.nodes : [])))
+      .size;
 
     return {
       generation: snapshot.manifest.generation,
@@ -69,18 +80,13 @@ export class CircularDependencyService {
     };
   }
 
-  async detectAtLevel(
-    level: "file" | "module" | "symbol",
-    signal?: AbortSignal,
-  ): Promise<Cycle[]> {
+  async detectAtLevel(level: "file" | "module" | "symbol", signal?: AbortSignal): Promise<Cycle[]> {
     const snapshot = this.store.getSnapshot();
     if (!snapshot) {
       throw new Error("Intelligence snapshot unavailable.");
     }
 
-    const dependencyEdges = snapshot.relationships.filter(
-      (r) => this.dependencyTypes.has(r.type),
-    );
+    const dependencyEdges = snapshot.relationships.filter((r) => this.dependencyTypes.has(r.type));
 
     switch (level) {
       case "file":
@@ -179,7 +185,17 @@ export class CircularDependencyService {
     const neighbors = adjacency.get(nodeId) ?? [];
     for (const neighbor of neighbors) {
       if (!visited.has(neighbor)) {
-        this.dfsFindCycles(neighbor, adjacency, visited, onStack, stack, edges, cycles, seenCycleKeys, level);
+        this.dfsFindCycles(
+          neighbor,
+          adjacency,
+          visited,
+          onStack,
+          stack,
+          edges,
+          cycles,
+          seenCycleKeys,
+          level,
+        );
       } else if (onStack.has(neighbor)) {
         // Found a cycle - extract it from the stack
         const cycleStartIdx = stack.indexOf(neighbor);

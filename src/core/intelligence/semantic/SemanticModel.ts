@@ -4,7 +4,7 @@ import type {
   IntelligenceEvidenceRecord,
   IntelligenceFileRecord,
   IntelligenceRelationshipRecord,
-  IntelligenceSymbolRecord
+  IntelligenceSymbolRecord,
 } from "../../../shared/contracts/intelligence";
 import type { CpgDelta } from "../../../shared/contracts/cpg";
 import type { AdapterOutput, AdapterRegistryState } from "../../../shared/contracts/adapters";
@@ -40,7 +40,22 @@ export interface SemanticProjectResult {
   parserId: string;
   parserVersion: string;
   sourceHashes: Record<string, string>;
-  fileUpdates: Array<Pick<IntelligenceFileRecord, "id" | "structuralHash" | "parserId" | "parserVersion" | "packageId" | "moduleId" | "sourceRoot" | "exported" | "isTest" | "parseStatus" | "shardReferences">>;
+  fileUpdates: Array<
+    Pick<
+      IntelligenceFileRecord,
+      | "id"
+      | "structuralHash"
+      | "parserId"
+      | "parserVersion"
+      | "packageId"
+      | "moduleId"
+      | "sourceRoot"
+      | "exported"
+      | "isTest"
+      | "parseStatus"
+      | "shardReferences"
+    >
+  >;
   entities: IntelligenceSymbolRecord[];
   relationships: IntelligenceRelationshipRecord[];
   evidence: IntelligenceEvidenceRecord[];

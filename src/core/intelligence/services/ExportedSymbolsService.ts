@@ -33,10 +33,7 @@ export interface ExportedSymbolsResult {
 export class ExportedSymbolsService {
   constructor(private readonly store: IntelligenceSnapshotReader) {}
 
-  async listFileExports(
-    fileId: string,
-    signal?: AbortSignal,
-  ): Promise<ExportedSymbolsResult> {
+  async listFileExports(fileId: string, signal?: AbortSignal): Promise<ExportedSymbolsResult> {
     const snapshot = this.store.getSnapshot();
     if (!snapshot) {
       throw new Error("Intelligence snapshot unavailable.");
@@ -69,12 +66,8 @@ export class ExportedSymbolsService {
       }
     }
 
-    exported.sort((a, b) =>
-      a.qualifiedName.localeCompare(b.qualifiedName),
-    );
-    defaultExports.sort((a, b) =>
-      a.qualifiedName.localeCompare(b.qualifiedName),
-    );
+    exported.sort((a, b) => a.qualifiedName.localeCompare(b.qualifiedName));
+    defaultExports.sort((a, b) => a.qualifiedName.localeCompare(b.qualifiedName));
 
     return {
       generation: snapshot.manifest.generation,

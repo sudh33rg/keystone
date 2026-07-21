@@ -28,9 +28,9 @@
 function normalizeName(name: string): string {
   return name
     .toLowerCase()
-    .replace(/[/\\]+/g, '-')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
+    .replace(/[/\\]+/g, "-")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
     .trim();
 }
 
@@ -44,7 +44,7 @@ function normalizeName(name: string): string {
  * @returns The relative path component
  */
 function extractOwningFile(keystoneId: string): string {
-  const parts = keystoneId.split(':');
+  const parts = keystoneId.split(":");
   // parts[1] = language, parts[2] = relativePath
   if (parts.length < 3) {
     throw new Error(`Invalid keystone_id format: ${keystoneId}`);
@@ -59,7 +59,7 @@ function extractOwningFile(keystoneId: string): string {
  * @returns The symbol name component
  */
 function extractSymbolName(keystoneId: string): string {
-  const parts = keystoneId.split(':');
+  const parts = keystoneId.split(":");
   // parts[3] = symbolName
   if (parts.length < 4) {
     throw new Error(`Invalid keystone_id format: ${keystoneId}`);
@@ -85,12 +85,8 @@ function extractSymbolName(keystoneId: string): string {
  * @param language - The programming language (e.g., "typescript", "javascript")
  * @returns The OKF concept path (e.g., "code/classes/OrderService.create.md")
  */
-export function generateOkfPath(
-  keystoneId: string,
-  entityType: string,
-  language: string
-): string {
-  if (!keystoneId.startsWith('entity:')) {
+export function generateOkfPath(keystoneId: string, entityType: string, language: string): string {
+  if (!keystoneId.startsWith("entity:")) {
     throw new Error(`Invalid keystone_id format: ${keystoneId}`);
   }
 
@@ -104,80 +100,80 @@ export function generateOkfPath(
   let subcategory: string;
 
   switch (entityType) {
-    case 'Repository':
-      category = 'repository';
-      subcategory = 'overview';
+    case "Repository":
+      category = "repository";
+      subcategory = "overview";
       break;
-    case 'File':
-      category = 'code';
-      subcategory = 'files';
+    case "File":
+      category = "code";
+      subcategory = "files";
       break;
-    case 'Class':
-    case 'Interface':
-    case 'Component':
-      category = 'code';
-      subcategory = 'classes';
+    case "Class":
+    case "Interface":
+    case "Component":
+      category = "code";
+      subcategory = "classes";
       break;
-    case 'Function':
-    case 'Method':
-    case 'Hook':
-    case 'Route':
-    case 'Middleware':
-    case 'Endpoint':
-      category = 'code';
-      subcategory = 'functions';
+    case "Function":
+    case "Method":
+    case "Hook":
+    case "Route":
+    case "Middleware":
+    case "Endpoint":
+      category = "code";
+      subcategory = "functions";
       break;
-    case 'Module':
-      category = 'code';
-      subcategory = 'modules';
+    case "Module":
+      category = "code";
+      subcategory = "modules";
       break;
-    case 'Package':
-      category = 'code';
-      subcategory = 'packages';
+    case "Package":
+      category = "code";
+      subcategory = "packages";
       break;
-    case 'Database':
-    case 'Table':
-    case 'ORM Entity':
-    case 'ORM Field':
-      category = 'data';
-      subcategory = 'tables';
+    case "Database":
+    case "Table":
+    case "ORM Entity":
+    case "ORM Field":
+      category = "data";
+      subcategory = "tables";
       break;
-    case 'Test Suite':
-    case 'Test Case':
-      category = 'tests';
-      subcategory = 'suites';
+    case "Test Suite":
+    case "Test Case":
+      category = "tests";
+      subcategory = "suites";
       break;
-    case 'Build Target':
-    case 'Pipeline':
-      category = 'build';
-      subcategory = 'targets';
+    case "Build Target":
+    case "Pipeline":
+      category = "build";
+      subcategory = "targets";
       break;
-    case 'Container':
-    case 'Kubernetes Resource':
-    case 'Terraform Resource':
-      category = 'infrastructure';
-      subcategory = 'containers';
+    case "Container":
+    case "Kubernetes Resource":
+    case "Terraform Resource":
+      category = "infrastructure";
+      subcategory = "containers";
       break;
-    case 'Configuration':
-      category = 'configuration';
-      subcategory = 'files';
+    case "Configuration":
+      category = "configuration";
+      subcategory = "files";
       break;
-    case 'Document':
-    case 'ADR':
-    case 'RFC':
-    case 'Runbook':
-    case 'Guide':
-      category = 'documentation';
-      subcategory = 'files';
+    case "Document":
+    case "ADR":
+    case "RFC":
+    case "Runbook":
+    case "Guide":
+      category = "documentation";
+      subcategory = "files";
       break;
     default:
       // Default to code/classes for unknown types
-      category = 'code';
-      subcategory = 'classes';
+      category = "code";
+      subcategory = "classes";
   }
 
   // Build the path: category/subcategory/symbol.md
-  const namePart = normalizedFileName === '.' ? 'index' : normalizedFileName;
+  const namePart = normalizedFileName === "." ? "index" : normalizedFileName;
   return `${category}/${subcategory}/${namePart}.${normalizedExtension}`;
 }
 
@@ -192,24 +188,26 @@ export function validateKeystoneId(keystoneId: string, language: string): void {
   const normalizedId = keystoneId.toLowerCase();
   const normalizedLanguage = language.toLowerCase();
 
-  if (!normalizedId.startsWith('entity:')) {
+  if (!normalizedId.startsWith("entity:")) {
     throw new Error(`Invalid keystone_id format: must start with "entity:"`);
   }
 
-  const parts = normalizedId.split(':');
+  const parts = normalizedId.split(":");
   if (parts.length < 4) {
     throw new Error(`Invalid keystone_id format: missing components in "${keystoneId}"`);
   }
 
   if (parts[1] !== normalizedLanguage) {
     throw new Error(
-      `Invalid keystone_id language: expected "${normalizedLanguage}", got "${parts[1]}" in "${keystoneId}"`
+      `Invalid keystone_id language: expected "${normalizedLanguage}", got "${parts[1]}" in "${keystoneId}"`,
     );
   }
 
   const relativePath = parts[2];
-  if (!relativePath || relativePath.startsWith('/') || relativePath.startsWith('..')) {
-    throw new Error(`Invalid keystone_id path: must be relative to workspace root in "${keystoneId}"`);
+  if (!relativePath || relativePath.startsWith("/") || relativePath.startsWith("..")) {
+    throw new Error(
+      `Invalid keystone_id path: must be relative to workspace root in "${keystoneId}"`,
+    );
   }
 }
 
@@ -243,11 +241,11 @@ export function createCanonicalId(keystoneId: string, path: string): string {
 export function generateConceptId(
   keystoneId: string,
   entityType: string,
-  repositoryId: string
+  repositoryId: string,
 ): string {
   const sha256 = (input: string) => {
-    const buffer = Buffer.from(input, 'utf8');
-    return buffer.toString('hex');
+    const buffer = Buffer.from(input, "utf8");
+    return buffer.toString("hex");
   };
 
   const input = `${keystoneId}|${entityType}|${repositoryId}`;

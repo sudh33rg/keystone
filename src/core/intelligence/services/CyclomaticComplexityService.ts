@@ -132,9 +132,7 @@ export class CyclomaticComplexityService {
     signal?: AbortSignal,
   ): Promise<ComplexityResult[]> {
     const result = await this.analyze(signal);
-    return result.results.filter(
-      (r) => r.cyclomaticComplexity >= threshold,
-    );
+    return result.results.filter((r) => r.cyclomaticComplexity >= threshold);
   }
 
   private getComplexityLevel(complexity: number): ComplexityLevel {

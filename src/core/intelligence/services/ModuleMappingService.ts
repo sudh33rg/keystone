@@ -116,9 +116,10 @@ export class ModuleMappingService {
     for (const moduleDeps of depMap.values()) {
       dependencies.push(...moduleDeps.values());
     }
-    dependencies.sort((a, b) =>
-      a.moduleName.localeCompare(b.moduleName) ||
-      a.dependencyModuleName.localeCompare(b.dependencyModuleName),
+    dependencies.sort(
+      (a, b) =>
+        a.moduleName.localeCompare(b.moduleName) ||
+        a.dependencyModuleName.localeCompare(b.dependencyModuleName),
     );
 
     return {
@@ -130,20 +131,12 @@ export class ModuleMappingService {
     };
   }
 
-  async getModuleDependencies(
-    moduleId: string,
-    signal?: AbortSignal,
-  ): Promise<ModuleDependency[]> {
+  async getModuleDependencies(moduleId: string, signal?: AbortSignal): Promise<ModuleDependency[]> {
     const result = await this.mapModules(signal);
-    return result.dependencies.filter(
-      (d) => d.moduleId === moduleId,
-    );
+    return result.dependencies.filter((d) => d.moduleId === moduleId);
   }
 
-  async getModuleInfo(
-    moduleId: string,
-    signal?: AbortSignal,
-  ): Promise<ModuleInfo | undefined> {
+  async getModuleInfo(moduleId: string, signal?: AbortSignal): Promise<ModuleInfo | undefined> {
     const result = await this.mapModules(signal);
     return result.modules.find((m) => m.moduleId === moduleId);
   }

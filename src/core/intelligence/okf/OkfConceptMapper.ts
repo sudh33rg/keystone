@@ -12,26 +12,26 @@
  * - User annotations are preserved across regenerations
  */
 
-import { generateOkfPath, validateKeystoneId } from './OkfConceptIdFactory';
-import { OkfConceptBodySchema, OkfConceptFrontmatterSchema, type OkfConcept } from './OkfConcept';
+import { generateOkfPath, validateKeystoneId } from "./OkfConceptIdFactory";
+import { OkfConceptBodySchema, OkfConceptFrontmatterSchema, type OkfConcept } from "./OkfConcept";
 
 /**
  * Relationship kind for OKF concepts
  */
 export type OkfRelationshipKind =
-  | 'calls'
-  | 'called_by'
-  | 'imports'
-  | 'exports'
-  | 'references'
-  | 'reads'
-  | 'writes'
-  | 'routes'
-  | 'middleware'
-  | 'tests'
-  | 'covered_by'
-  | 'configuration'
-  | 'belongs_to';
+  | "calls"
+  | "called_by"
+  | "imports"
+  | "exports"
+  | "references"
+  | "reads"
+  | "writes"
+  | "routes"
+  | "middleware"
+  | "tests"
+  | "covered_by"
+  | "configuration"
+  | "belongs_to";
 
 /**
  * Relationship metadata
@@ -42,7 +42,8 @@ export interface OkfRelationshipMetadata {
   title: string;
   path: string;
   confidence: number;
-  derivation: 'extracted' | 'resolved' | 'calculated' | 'framework-rule' | 'convention' | 'candidate';
+  derivation:
+    "extracted" | "resolved" | "calculated" | "framework-rule" | "convention" | "candidate";
   evidence: string;
 }
 
@@ -85,22 +86,51 @@ export function mapEntityToConcept(
     parserId?: string;
     parserVersion?: string;
   },
-  relationships: Record<OkfRelationshipKind, Array<{
-    targetId: string;
-    targetTitle: string;
-    targetPath: string;
-    kind: 'import' | 'require' | 're-export' | 'external' | 'read' | 'write' | 'call' | 'instantiate' | 'file' | 'database' | 'configuration' | 'environment' | 'other' | 'suite' | 'case' | 'hook' | 'fixture' | 'method' | 'class' | 'interface' | 'module' | 'package' | 'route' | 'middleware' | 'endpoint';
-    confidence: number;
-    derivation: 'extracted' | 'resolved' | 'calculated' | 'framework-rule' | 'convention' | 'candidate';
-    evidence: string;
-  }>>,
-  userAnnotations?: Record<string, string>
+  relationships: Record<
+    OkfRelationshipKind,
+    Array<{
+      targetId: string;
+      targetTitle: string;
+      targetPath: string;
+      kind:
+        | "import"
+        | "require"
+        | "re-export"
+        | "external"
+        | "read"
+        | "write"
+        | "call"
+        | "instantiate"
+        | "file"
+        | "database"
+        | "configuration"
+        | "environment"
+        | "other"
+        | "suite"
+        | "case"
+        | "hook"
+        | "fixture"
+        | "method"
+        | "class"
+        | "interface"
+        | "module"
+        | "package"
+        | "route"
+        | "middleware"
+        | "endpoint";
+      confidence: number;
+      derivation:
+        "extracted" | "resolved" | "calculated" | "framework-rule" | "convention" | "candidate";
+      evidence: string;
+    }>
+  >,
+  userAnnotations?: Record<string, string>,
 ): OkfMappedConcept {
   // Validate keystone_id format
-  validateKeystoneId(keystoneId, entityData.language || 'typescript');
+  validateKeystoneId(keystoneId, entityData.language || "typescript");
 
   // Generate the OKF path
-  const okfPath = generateOkfPath(keystoneId, entityType, entityData.language || 'typescript');
+  const okfPath = generateOkfPath(keystoneId, entityType, entityData.language || "typescript");
 
   // Create the concept
   const concept: OkfMappedConcept = {
@@ -116,12 +146,17 @@ export function mapEntityToConcept(
       qualified_name: entityData.qualifiedName,
       module: entityData.moduleName,
       visibility: entityData.visibility,
-      source: entityData.sourcePath !== undefined && entityData.sourceStartLine !== undefined && entityData.sourceEndLine !== undefined ? {
-        path: entityData.sourcePath,
-        start_line: entityData.sourceStartLine,
-        end_line: entityData.sourceEndLine,
-      } : undefined,
-      derivation: 'extracted',
+      source:
+        entityData.sourcePath !== undefined &&
+        entityData.sourceStartLine !== undefined &&
+        entityData.sourceEndLine !== undefined
+          ? {
+              path: entityData.sourcePath,
+              start_line: entityData.sourceStartLine,
+              end_line: entityData.sourceEndLine,
+            }
+          : undefined,
+      derivation: "extracted",
       confidence: entityData.confidence,
       content_hash: entityData.contentHash,
       parser_id: entityData.parserId,
@@ -131,25 +166,32 @@ export function mapEntityToConcept(
     }),
     body: OkfConceptBodySchema.parse({
       signature: generateSignature(entityType, entityData),
-      declaration: [generateEvidence(entityData), generateChanges(entityData), generateLimitations(entityData)].filter(Boolean).join('\n\n'),
+      declaration: [
+        generateEvidence(entityData),
+        generateChanges(entityData),
+        generateLimitations(entityData),
+      ]
+        .filter(Boolean)
+        .join("\n\n"),
     }),
     path: okfPath,
-    contentHash: entityData.contentHash || generateContentHash(keystoneId, entityType, entityData.confidence),
+    contentHash:
+      entityData.contentHash || generateContentHash(keystoneId, entityType, entityData.confidence),
     hasUserAnnotations: userAnnotations !== undefined && Object.keys(userAnnotations).length > 0,
     relationships: {
-      calls: extractRelationships(relationships.calls, 'calls'),
-      called_by: extractRelationships(relationships.called_by, 'called_by'),
-      imports: extractRelationships(relationships.imports, 'imports'),
-      exports: extractRelationships(relationships.exports, 'exports'),
-      references: extractRelationships(relationships.references, 'references'),
-      reads: extractRelationships(relationships.reads, 'reads'),
-      writes: extractRelationships(relationships.writes, 'writes'),
-      routes: extractRelationships(relationships.routes, 'routes'),
-      middleware: extractRelationships(relationships.middleware, 'middleware'),
-      tests: extractRelationships(relationships.tests, 'tests'),
-      covered_by: extractRelationships(relationships.covered_by, 'covered_by'),
-      configuration: extractRelationships(relationships.configuration, 'configuration'),
-      belongs_to: extractRelationships(relationships.belongs_to, 'belongs_to'),
+      calls: extractRelationships(relationships.calls, "calls"),
+      called_by: extractRelationships(relationships.called_by, "called_by"),
+      imports: extractRelationships(relationships.imports, "imports"),
+      exports: extractRelationships(relationships.exports, "exports"),
+      references: extractRelationships(relationships.references, "references"),
+      reads: extractRelationships(relationships.reads, "reads"),
+      writes: extractRelationships(relationships.writes, "writes"),
+      routes: extractRelationships(relationships.routes, "routes"),
+      middleware: extractRelationships(relationships.middleware, "middleware"),
+      tests: extractRelationships(relationships.tests, "tests"),
+      covered_by: extractRelationships(relationships.covered_by, "covered_by"),
+      configuration: extractRelationships(relationships.configuration, "configuration"),
+      belongs_to: extractRelationships(relationships.belongs_to, "belongs_to"),
     },
   };
 
@@ -163,18 +205,21 @@ export function mapEntityToConcept(
  * @param entityData - Entity data
  * @returns A signature string
  */
-function generateSignature(entityType: string, entityData: {
-  title: string;
-  qualifiedName?: string;
-  moduleName?: string;
-  visibility?: string;
-  sourcePath?: string;
-  sourceStartLine?: number;
-  sourceEndLine?: number;
-}): string {
+function generateSignature(
+  entityType: string,
+  entityData: {
+    title: string;
+    qualifiedName?: string;
+    moduleName?: string;
+    visibility?: string;
+    sourcePath?: string;
+    sourceStartLine?: number;
+    sourceEndLine?: number;
+  },
+): string {
   const title = entityData.title;
 
-  if (entityType === 'Method') {
+  if (entityType === "Method") {
     return `## Signature
 
 \`\`\`ts
@@ -182,7 +227,7 @@ ${title}
 \`\`\``;
   }
 
-  if (entityType === 'Function') {
+  if (entityType === "Function") {
     return `## Signature
 
 \`\`\`ts
@@ -190,7 +235,7 @@ ${title}
 \`\`\``;
   }
 
-  if (entityType === 'Class') {
+  if (entityType === "Class") {
     return `## Signature
 
 \`\`\`ts
@@ -198,7 +243,7 @@ ${title}
 \`\`\``;
   }
 
-  if (entityType === 'Component') {
+  if (entityType === "Component") {
     return `## Signature
 
 \`\`\`tsx
@@ -206,7 +251,7 @@ ${title}
 \`\`\``;
   }
 
-  if (entityType === 'Hook') {
+  if (entityType === "Hook") {
     return `## Signature
 
 \`\`\`ts
@@ -214,7 +259,7 @@ ${title}
 \`\`\``;
   }
 
-  if (entityType === 'Route') {
+  if (entityType === "Route") {
     return `## Signature
 
 \`\`\`ts
@@ -222,7 +267,7 @@ ${title}
 \`\`\``;
   }
 
-  if (entityType === 'Middleware') {
+  if (entityType === "Middleware") {
     return `## Signature
 
 \`\`\`ts
@@ -230,7 +275,7 @@ ${title}
 \`\`\``;
   }
 
-  if (entityType === 'Interface') {
+  if (entityType === "Interface") {
     return `## Signature
 
 \`\`\`ts
@@ -238,7 +283,7 @@ ${title}
 \`\`\``;
   }
 
-  return '';
+  return "";
 }
 
 /**
@@ -265,9 +310,11 @@ function generateEvidence(entityData: {
     parts.push(`- **Range**: \`${lineRange}\``);
   }
 
-  return parts.length > 0 ? `## Evidence
+  return parts.length > 0
+    ? `## Evidence
 
-${parts.join('\\n')}` : '';
+${parts.join("\\n")}`
+    : "";
 }
 
 /**
@@ -292,7 +339,7 @@ function generateChanges(entityData: {
 
   return `## Changes
 
-${parts.join('\\n')}`;
+${parts.join("\\n")}`;
 }
 
 /**
@@ -311,28 +358,24 @@ function generateLimitations(entityData: {
 
   // Check for low confidence
   if (entityData.confidence < 0.7) {
-    limitations.push(
-      `Confidence is limited because mapping uses naming convention.`
-    );
+    limitations.push(`Confidence is limited because mapping uses naming convention.`);
   }
 
   // Check for unresolved imports
   if (entityData.qualifiedName) {
     const unresolved = entityData.qualifiedName.match(/:unresolved:/);
     if (unresolved) {
-      limitations.push(
-        `Imports include unresolved references.`
-      );
+      limitations.push(`Imports include unresolved references.`);
     }
   }
 
   if (limitations.length > 0) {
     return `## Limitations
 
-${limitations.join('\\n')}`;
+${limitations.join("\\n")}`;
   }
 
-  return '';
+  return "";
 }
 
 /**
@@ -349,20 +392,21 @@ function extractRelationships(
     targetPath: string;
     kind: string;
     confidence: number;
-    derivation: 'extracted' | 'resolved' | 'calculated' | 'framework-rule' | 'convention' | 'candidate';
+    derivation:
+      "extracted" | "resolved" | "calculated" | "framework-rule" | "convention" | "candidate";
     evidence: string;
   }>,
-  relationshipKind: OkfRelationshipKind
+  relationshipKind: OkfRelationshipKind,
 ): OkfRelationshipMetadata[] {
-  return (allRelationships ?? []).map(r => ({
-      kind: relationshipKind,
-      id: r.targetId,
-      title: r.targetTitle,
-      path: r.targetPath,
-      confidence: r.confidence,
-      derivation: r.derivation,
-      evidence: r.evidence,
-    }));
+  return (allRelationships ?? []).map((r) => ({
+    kind: relationshipKind,
+    id: r.targetId,
+    title: r.targetTitle,
+    path: r.targetPath,
+    confidence: r.confidence,
+    derivation: r.derivation,
+    evidence: r.evidence,
+  }));
 }
 
 /**
@@ -375,8 +419,8 @@ function extractRelationships(
  */
 function generateContentHash(keystoneId: string, entityType: string, confidence: number): string {
   const sha256 = (input: string) => {
-    const buffer = Buffer.from(input, 'utf8');
-    return buffer.toString('hex');
+    const buffer = Buffer.from(input, "utf8");
+    return buffer.toString("hex");
   };
 
   return sha256(`${keystoneId}|${entityType}|${confidence}`);

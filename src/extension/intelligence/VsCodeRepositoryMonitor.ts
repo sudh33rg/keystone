@@ -1,10 +1,7 @@
 import * as vscode from "vscode";
 import { posix } from "node:path";
 import type { GitAdapter, GitMetadata } from "../adapters/GitAdapter";
-import type {
-  WorkspaceAdapter,
-  WorkspaceRootReference,
-} from "../adapters/WorkspaceAdapter";
+import type { WorkspaceAdapter, WorkspaceRootReference } from "../adapters/WorkspaceAdapter";
 import type { RepositoryChange } from "../../core/intelligence/runtime/ChangeCollector";
 import { normalizeRelativePath } from "../../core/intelligence/StableId";
 import type { KeystoneLogger } from "../../shared/logging/KeystoneLogger";
@@ -31,12 +28,8 @@ export interface RepositoryMonitor {
 
 export class VsCodeRepositoryMonitor implements RepositoryMonitor {
   private readonly disposables: vscode.Disposable[] = [];
-  private readonly changeListeners = new Set<
-    (change: RepositoryChange) => void
-  >();
-  private readonly gitListeners = new Set<
-    (event: GitReconciliationEvent) => void
-  >();
+  private readonly changeListeners = new Set<(change: RepositoryChange) => void>();
+  private readonly gitListeners = new Set<(event: GitReconciliationEvent) => void>();
   private readonly rootListeners = new Set<() => void>();
   private readonly gitState = new Map<string, GitMetadata>();
   private gitCheckRevision = 0;
@@ -75,12 +68,7 @@ export class VsCodeRepositoryMonitor implements RepositoryMonitor {
     this.started = true;
     for (const root of this.workspace.getRoots())
       this.gitState.set(root.uri, await this.git.getMetadata(root.uri));
-    const watcher = vscode.workspace.createFileSystemWatcher(
-      "**/*",
-      false,
-      false,
-      false,
-    );
+    const watcher = vscode.workspace.createFileSystemWatcher("**/*", false, false, false);
     this.disposables.push(
       watcher,
       watcher.onDidCreate((uri) => this.emitUri(uri, "added", "file")),
@@ -136,12 +124,9 @@ export class VsCodeRepositoryMonitor implements RepositoryMonitor {
     const root = findRoot(this.workspace.getRoots(), uri);
     if (!root) return undefined;
     const rootUri = vscode.Uri.parse(root.uri);
-    const relativePath = normalizeRelativePath(
-      posix.relative(rootUri.path, uri.path),
-    );
+    const relativePath = normalizeRelativePath(posix.relative(rootUri.path, uri.path));
     if (!relativePath || relativePath.startsWith("../")) return undefined;
-    if (relativePath === ".keystone" || relativePath.startsWith(".keystone/"))
-      return undefined;
+    if (relativePath === ".keystone" || relativePath.startsWith(".keystone/")) return undefined;
     if (!this.ignorePolicy.decide(relativePath).included) return undefined;
     return {
       kind,
@@ -180,10 +165,7 @@ export class VsCodeRepositoryMonitor implements RepositoryMonitor {
       const current = await this.git.getMetadata(root.uri);
       if (!this.started || revision !== this.gitCheckRevision) return;
       this.gitState.set(root.uri, current);
-      if (
-        previous?.branch === current.branch &&
-        previous?.headCommit === current.headCommit
-      )
+      if (previous?.branch === current.branch && previous?.headCommit === current.headCommit)
         continue;
       if (
         !this.workspace.getIndexingConfiguration().onBranchChange &&
@@ -201,11 +183,7 @@ export class VsCodeRepositoryMonitor implements RepositoryMonitor {
           );
           for (const value of values) {
             if (value.originalUri) {
-              const removed = this.toChange(
-                vscode.Uri.parse(value.originalUri),
-                "deleted",
-                "git",
-              );
+              const removed = this.toChange(vscode.Uri.parse(value.originalUri), "deleted", "git");
               if (removed) changes.push(removed);
             }
             let kind: RepositoryChange["kind"] =
@@ -221,11 +199,7 @@ export class VsCodeRepositoryMonitor implements RepositoryMonitor {
                 kind = "deleted";
               }
             }
-            const change = this.toChange(
-              vscode.Uri.parse(value.uri),
-              kind,
-              "git",
-            );
+            const change = this.toChange(vscode.Uri.parse(value.uri), kind, "git");
             if (change) changes.push(change);
           }
           fullRebuild = changes.length === 0;
@@ -245,8 +219,7 @@ export class VsCodeRepositoryMonitor implements RepositoryMonitor {
       requiresFullRebuild ||= fullRebuild;
       batchedChanges.push(...changes);
     }
-    if (!requiresFullRebuild && batchedChanges.length === 0 && !firstCurrent)
-      return;
+    if (!requiresFullRebuild && batchedChanges.length === 0 && !firstCurrent) return;
     const event: GitReconciliationEvent = {
       changes: requiresFullRebuild ? [] : deduplicateChanges(batchedChanges),
       fullRebuild: requiresFullRebuild,
@@ -257,15 +230,10 @@ export class VsCodeRepositoryMonitor implements RepositoryMonitor {
   }
 }
 
-function deduplicateChanges(
-  changes: readonly RepositoryChange[],
-): RepositoryChange[] {
+function deduplicateChanges(changes: readonly RepositoryChange[]): RepositoryChange[] {
   const values = new Map<string, RepositoryChange>();
   for (const change of changes)
-    values.set(
-      `${change.rootUri}\u001f${change.relativePath}\u001f${change.kind}`,
-      change,
-    );
+    values.set(`${change.rootUri}\u001f${change.relativePath}\u001f${change.kind}`, change);
   return [...values.values()].sort(
     (left, right) =>
       left.rootUri.localeCompare(right.rootUri) ||
@@ -283,13 +251,11 @@ function findRoot(
       return (
         rootUri.scheme === uri.scheme &&
         rootUri.authority === uri.authority &&
-        (uri.path === rootUri.path ||
-          uri.path.startsWith(`${rootUri.path.replace(/\/$/, "")}/`))
+        (uri.path === rootUri.path || uri.path.startsWith(`${rootUri.path.replace(/\/$/, "")}/`))
       );
     })
     .sort(
       (left, right) =>
-        vscode.Uri.parse(right.uri).path.length -
-        vscode.Uri.parse(left.uri).path.length,
+        vscode.Uri.parse(right.uri).path.length - vscode.Uri.parse(left.uri).path.length,
     )[0];
 }

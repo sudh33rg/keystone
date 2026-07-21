@@ -32,8 +32,7 @@ export function IntelligenceOverview({
 }: IntelligenceOverviewProps): React.JSX.Element {
   const [insight, setInsight] = useState<Insight>();
   const [error, setError] = useState<string>();
-  const [diagnostics, setDiagnostics] =
-    useState<IntelligenceDiagnosticsResult>();
+  const [diagnostics, setDiagnostics] = useState<IntelligenceDiagnosticsResult>();
   if (!overview) {
     return (
       <section className="page intelligence-page">
@@ -56,14 +55,10 @@ export function IntelligenceOverview({
       })
       .then((value) =>
         setDiagnostics((previous) =>
-          cursor && previous
-            ? { ...value, items: [...previous.items, ...value.items] }
-            : value,
+          cursor && previous ? { ...value, items: [...previous.items, ...value.items] } : value,
         ),
       )
-      .catch((cause: unknown) =>
-        setError(cause instanceof Error ? cause.message : String(cause)),
-      );
+      .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)));
   };
   return (
     <section className="page intelligence-page">
@@ -107,10 +102,7 @@ export function IntelligenceOverview({
       {overview.runtime.error && (
         <article className="diagnostic error ingestion-failure" role="alert">
           <strong>Ingestion failed · {overview.runtime.error.code}</strong>
-          <span>
-            {overview.runtime.error.technicalDetails ??
-              overview.runtime.error.message}
-          </span>
+          <span>{overview.runtime.error.technicalDetails ?? overview.runtime.error.message}</span>
           <small>
             {overview.runtime.error.recommendedAction ??
               "Review Keystone logs and retry after correcting the reported cause."}
@@ -118,10 +110,7 @@ export function IntelligenceOverview({
         </article>
       )}
 
-      <article
-        className="runtime-summary"
-        aria-label="Continuous ingestion runtime"
-      >
+      <article className="runtime-summary" aria-label="Continuous ingestion runtime">
         <div>
           <small>WORKERS</small>
           <strong>
@@ -140,9 +129,7 @@ export function IntelligenceOverview({
           <small>PROGRESS</small>
           <strong
             title={
-              overview.runtime.trigger
-                ? `Triggered by ${overview.runtime.trigger}`
-                : undefined
+              overview.runtime.trigger ? `Triggered by ${overview.runtime.trigger}` : undefined
             }
           >
             {formatProgress(overview)}
@@ -150,9 +137,7 @@ export function IntelligenceOverview({
         </div>
         <div>
           <small>HEALTH</small>
-          <strong title={overview.runtime.healthMessage}>
-            {overview.runtime.health}
-          </strong>
+          <strong title={overview.runtime.healthMessage}>{overview.runtime.health}</strong>
         </div>
         <div>
           <small>COMPLETED JOBS</small>
@@ -168,9 +153,7 @@ export function IntelligenceOverview({
         </div>
         <div>
           <small>THROUGHPUT</small>
-          <strong>
-            {overview.runtime.throughputFilesPerSecond.toLocaleString()} files/s
-          </strong>
+          <strong>{overview.runtime.throughputFilesPerSecond.toLocaleString()} files/s</strong>
         </div>
       </article>
 
@@ -207,9 +190,7 @@ export function IntelligenceOverview({
           <div>
             <small>LAST UPDATE</small>
             <strong>
-              {overview.updatedAt
-                ? new Date(overview.updatedAt).toLocaleTimeString()
-                : "Never"}
+              {overview.updatedAt ? new Date(overview.updatedAt).toLocaleTimeString() : "Never"}
             </strong>
           </div>
           <div>
@@ -232,99 +213,66 @@ export function IntelligenceOverview({
         <Metric
           label="Files"
           value={overview.counts.files}
-          onClick={() =>
-            setInsight(metricInsight("Files", overview.counts.files))
-          }
+          onClick={() => setInsight(metricInsight("Files", overview.counts.files))}
         />
         <Metric
           label="Symbols"
           value={overview.counts.symbols}
-          onClick={() =>
-            setInsight(metricInsight("Symbols", overview.counts.symbols))
-          }
+          onClick={() => setInsight(metricInsight("Symbols", overview.counts.symbols))}
         />
         <Metric
           label="Relationships"
           value={overview.counts.relationships}
-          onClick={() =>
-            setInsight(
-              metricInsight("Relationships", overview.counts.relationships),
-            )
-          }
+          onClick={() => setInsight(metricInsight("Relationships", overview.counts.relationships))}
         />
         <Metric
           label="Evidence"
           value={overview.counts.evidence}
-          onClick={() =>
-            setInsight(metricInsight("Evidence", overview.counts.evidence))
-          }
+          onClick={() => setInsight(metricInsight("Evidence", overview.counts.evidence))}
         />
         <Metric
           label="Packages"
           value={overview.counts.packages}
-          onClick={() =>
-            setInsight(metricInsight("Packages", overview.counts.packages))
-          }
+          onClick={() => setInsight(metricInsight("Packages", overview.counts.packages))}
         />
         <Metric
           label="Tests"
           value={overview.counts.tests}
-          onClick={() =>
-            setInsight(metricInsight("Tests", overview.counts.tests))
-          }
+          onClick={() => setInsight(metricInsight("Tests", overview.counts.tests))}
         />
         <Metric
           label="Routes"
           value={overview.counts.routes}
-          onClick={() =>
-            setInsight(metricInsight("Routes", overview.counts.routes))
-          }
+          onClick={() => setInsight(metricInsight("Routes", overview.counts.routes))}
         />
         <Metric
           label="Dependencies"
           value={overview.counts.externalDependencies}
           onClick={() =>
-            setInsight(
-              metricInsight(
-                "Dependencies",
-                overview.counts.externalDependencies,
-              ),
-            )
+            setInsight(metricInsight("Dependencies", overview.counts.externalDependencies))
           }
         />
         <Metric
           label="Parse failures"
           value={overview.counts.parseFailures}
-          onClick={() =>
-            setInsight(
-              metricInsight("Parse failures", overview.counts.parseFailures),
-            )
-          }
+          onClick={() => setInsight(metricInsight("Parse failures", overview.counts.parseFailures))}
         />
         <Metric
           label="Unresolved"
           value={overview.counts.unresolvedReferences}
           onClick={() =>
-            setInsight(
-              metricInsight("Unresolved", overview.counts.unresolvedReferences),
-            )
+            setInsight(metricInsight("Unresolved", overview.counts.unresolvedReferences))
           }
         />
         <Metric
           label="Excluded"
           value={overview.counts.excluded}
-          onClick={() =>
-            setInsight(metricInsight("Excluded", overview.counts.excluded))
-          }
+          onClick={() => setInsight(metricInsight("Excluded", overview.counts.excluded))}
         />
         <Metric
           label="Sensitive metadata"
           value={overview.counts.sensitive}
-          onClick={() =>
-            setInsight(
-              metricInsight("Sensitive metadata", overview.counts.sensitive),
-            )
-          }
+          onClick={() => setInsight(metricInsight("Sensitive metadata", overview.counts.sensitive))}
         />
       </div>
 
@@ -346,41 +294,29 @@ export function IntelligenceOverview({
         <Breakdown
           title="Languages"
           items={overview.languages}
-          onSelect={(item) =>
-            setInsight(breakdownInsight("Languages", item.key, item.count))
-          }
+          onSelect={(item) => setInsight(breakdownInsight("Languages", item.key, item.count))}
         />
         <Breakdown
           title="File categories"
           items={overview.categories}
-          onSelect={(item) =>
-            setInsight(
-              breakdownInsight("File categories", item.key, item.count),
-            )
-          }
+          onSelect={(item) => setInsight(breakdownInsight("File categories", item.key, item.count))}
         />
         <Breakdown
           title="Symbol types"
           items={overview.symbolTypes}
-          onSelect={(item) =>
-            setInsight(breakdownInsight("Symbol types", item.key, item.count))
-          }
+          onSelect={(item) => setInsight(breakdownInsight("Symbol types", item.key, item.count))}
         />
         <Breakdown
           title="Relationship types"
           items={overview.relationshipTypes}
           onSelect={(item) =>
-            setInsight(
-              breakdownInsight("Relationship types", item.key, item.count),
-            )
+            setInsight(breakdownInsight("Relationship types", item.key, item.count))
           }
         />
         <Breakdown
           title="Confidence"
           items={overview.confidence}
-          onSelect={(item) =>
-            setInsight(breakdownInsight("Confidence", item.key, item.count))
-          }
+          onSelect={(item) => setInsight(breakdownInsight("Confidence", item.key, item.count))}
         />
       </div>
 
@@ -389,11 +325,7 @@ export function IntelligenceOverview({
           className="runtime-summary actionable-summary"
           aria-label="Progressive code analysis metrics"
         >
-          <button
-            onClick={() =>
-              setInsight(cpgInsight("CPG scopes", overview.cpg!.scopes))
-            }
-          >
+          <button onClick={() => setInsight(cpgInsight("CPG scopes", overview.cpg!.scopes))}>
             <small>CPG SCOPES</small>
             <strong>{overview.cpg.scopes}</strong>
           </button>
@@ -414,9 +346,7 @@ export function IntelligenceOverview({
           </button>
           <button
             onClick={() =>
-              setInsight(
-                cpgInsight("Build time", Math.round(overview.cpg!.buildTimeMs)),
-              )
+              setInsight(cpgInsight("Build time", Math.round(overview.cpg!.buildTimeMs)))
             }
           >
             <small>BUILD TIME</small>
@@ -424,31 +354,20 @@ export function IntelligenceOverview({
           </button>
           <button
             onClick={() =>
-              setInsight(
-                cpgInsight(
-                  "Shard size",
-                  Math.round(overview.cpg!.shardBytes / 1024),
-                ),
-              )
+              setInsight(cpgInsight("Shard size", Math.round(overview.cpg!.shardBytes / 1024)))
             }
           >
             <small>SHARD SIZE</small>
             <strong>{Math.round(overview.cpg.shardBytes / 1024)} KiB</strong>
           </button>
           <button
-            onClick={() =>
-              setInsight(
-                cpgInsight("Approximate", overview.cpg!.approximateResults),
-              )
-            }
+            onClick={() => setInsight(cpgInsight("Approximate", overview.cpg!.approximateResults))}
           >
             <small>APPROXIMATE</small>
             <strong>{overview.cpg.approximateResults}</strong>
           </button>
           <button
-            onClick={() =>
-              setInsight(cpgInsight("Failures", overview.cpg!.analysisFailures))
-            }
+            onClick={() => setInsight(cpgInsight("Failures", overview.cpg!.analysisFailures))}
           >
             <small>FAILURES</small>
             <strong>{overview.cpg.analysisFailures}</strong>
@@ -457,23 +376,18 @@ export function IntelligenceOverview({
       )}
 
       {overview.diagnostics.total > 0 && (
-        <section
-          className="diagnostic-list"
-          aria-label="Intelligence diagnostics"
-        >
+        <section className="diagnostic-list" aria-label="Intelligence diagnostics">
           <h2>
             Diagnostics <span>{overview.diagnostics.total}</span>
           </h2>
-          {(diagnostics?.items ?? overview.diagnostics.items).map(
-            (item, index) => (
-              <DiagnosticDetails
-                key={`${item.code}-${item.relativePath ?? "repository"}-${index}`}
-                diagnostic={item}
-                bridge={bridge}
-                onError={setError}
-              />
-            ),
-          )}
+          {(diagnostics?.items ?? overview.diagnostics.items).map((item, index) => (
+            <DiagnosticDetails
+              key={`${item.code}-${item.relativePath ?? "repository"}-${index}`}
+              diagnostic={item}
+              bridge={bridge}
+              onError={setError}
+            />
+          ))}
           {!diagnostics && overview.diagnostics.truncated && (
             <button className="ghost-button" onClick={() => loadDiagnostics()}>
               Browse all diagnostics
@@ -510,11 +424,7 @@ function Metric({
   onClick: () => void;
 }): React.JSX.Element {
   return (
-    <button
-      className="metric"
-      onClick={onClick}
-      aria-label={`Inspect ${label}`}
-    >
+    <button className="metric" onClick={onClick} aria-label={`Inspect ${label}`}>
       <strong>{value.toLocaleString()}</strong>
       <span>{label}</span>
       <small>View details</small>
@@ -620,9 +530,7 @@ function InsightPanel({
               void bridge
                 .request("settings/open", {})
                 .catch((cause: unknown) =>
-                  onError(
-                    cause instanceof Error ? cause.message : String(cause),
-                  ),
+                  onError(cause instanceof Error ? cause.message : String(cause)),
                 )
             }
           >
@@ -636,9 +544,7 @@ function InsightPanel({
               void bridge
                 .request("intelligence/scan/start", {})
                 .catch((cause: unknown) =>
-                  onError(
-                    cause instanceof Error ? cause.message : String(cause),
-                  ),
+                  onError(cause instanceof Error ? cause.message : String(cause)),
                 )
             }
           >
@@ -655,29 +561,21 @@ function metricInsight(label: string, value: number): Insight {
     Files: ["keystone.core.File"],
     Packages: ["keystone.core.Package"],
     Tests: ["keystone.core.TestSuite", "keystone.core.TestCase"],
-    Routes: [
-      "keystone.core.Route",
-      "keystone.core.Endpoint",
-      "keystone.core.Command",
-    ],
+    Routes: ["keystone.core.Route", "keystone.core.Endpoint", "keystone.core.Command"],
     Dependencies: ["keystone.core.ExternalDependency"],
   };
   const meanings: Record<string, string> = {
     Files: "Canonical files in the promoted generation.",
     Symbols: "Evidence-backed named entities extracted from included files.",
     Relationships: "Evidence-backed graph edges between canonical entities.",
-    Evidence:
-      "Trace records that explain where entities and relationships came from.",
+    Evidence: "Trace records that explain where entities and relationships came from.",
     Packages: "Detected repository packages.",
-    Tests:
-      "Detected test suites and test cases; this is not a coverage percentage.",
+    Tests: "Detected test suites and test cases; this is not a coverage percentage.",
     Routes: "Detected routes, endpoints, and commands.",
     Dependencies: "External dependency entities used by the repository.",
     "Parse failures": "Files for which deterministic parsing failed.",
-    Unresolved:
-      "References observed in source whose targets could not be proved.",
-    Excluded:
-      "Inventory files intentionally not deeply ingested by classification rules.",
+    Unresolved: "References observed in source whose targets could not be proved.",
+    Excluded: "Inventory files intentionally not deeply ingested by classification rules.",
     "Sensitive metadata": "Sensitive files recorded without secret values.",
   };
   const diagnostic = label === "Parse failures" || label === "Unresolved";
@@ -709,8 +607,7 @@ function breakdownInsight(group: string, key: string, count: number): Insight {
       title: displayKey(key),
       value: count,
       meaning: `Included files and entities classified as ${displayKey(key)}.`,
-      calculation:
-        "Language is determined from extension and deterministic provider metadata.",
+      calculation: "Language is determined from extension and deterministic provider metadata.",
       browse: { query: "", languages: [key] },
     };
   if (group === "Symbol types")
@@ -718,8 +615,7 @@ function breakdownInsight(group: string, key: string, count: number): Insight {
       title: displayKey(key),
       value: count,
       meaning: `Canonical entities with ontology type ${key}.`,
-      calculation:
-        "Counted from the symbol type index in the promoted generation.",
+      calculation: "Counted from the symbol type index in the promoted generation.",
       browse: { query: "", entityTypes: [key] },
     };
   if (group === "File categories")
@@ -727,8 +623,7 @@ function breakdownInsight(group: string, key: string, count: number): Insight {
       title: displayKey(key),
       value: count,
       meaning: `Inventory files classified in the ${displayKey(key)} category.`,
-      calculation:
-        "Category is assigned by deterministic inclusion and classification rules.",
+      calculation: "Category is assigned by deterministic inclusion and classification rules.",
       browse: { query: "" },
     };
   if (group === "Relationship types")
@@ -756,31 +651,24 @@ function cpgInsight(label: string, value: number): Insight {
       "Executable TypeScript/JavaScript scopes with persisted progressive code-property graphs.",
     "Built / reused":
       "Scopes newly compiled or safely reused by structural hash in this generation.",
-    "Build time":
-      "Measured total CPG construction time for the promoted generation.",
+    "Build time": "Measured total CPG construction time for the promoted generation.",
     "Shard size": "Compressed local CPG shard storage under .keystone/.",
     Approximate:
       "CPG results that crossed a precision boundary and are explicitly marked approximate.",
-    Failures:
-      "Executable scopes whose deterministic CPG analysis did not complete.",
+    Failures: "Executable scopes whose deterministic CPG analysis did not complete.",
   };
   return {
     title: label,
     value,
     meaning: text[label] ?? "Progressive code analysis metric.",
-    calculation:
-      "Read from the current generation CPG manifest and its recorded build metrics.",
+    calculation: "Read from the current generation CPG manifest and its recorded build metrics.",
     action:
       label === "Failures" && value
         ? "Inspect analysis diagnostics on the affected executable entity; do not assume the source code itself is defective."
         : undefined,
     browse: {
       query: "",
-      entityTypes: [
-        "keystone.core.Function",
-        "keystone.core.Method",
-        "keystone.core.Constructor",
-      ],
+      entityTypes: ["keystone.core.Function", "keystone.core.Method", "keystone.core.Constructor"],
     },
   };
 }
@@ -791,8 +679,7 @@ function displayKey(value: string): string {
 
 function formatProgress(overview: IntelligenceOverviewModel): string {
   const progress = overview.runtime.progress;
-  if (progress)
-    return `${progress.stage} ${progress.fileCount} / ${progress.totalFiles}`;
+  if (progress) return `${progress.stage} ${progress.fileCount} / ${progress.totalFiles}`;
   return overview.runtime.trigger?.replace("-", " ") ?? "Idle";
 }
 
@@ -803,8 +690,7 @@ function statusDescription(overview: IntelligenceOverviewModel): string {
     return "Local intelligence storage is being reconstructed while the last in-memory generation remains available.";
   if (overview.status === "storage-unavailable")
     return "Open a saved local workspace to enable extension-managed intelligence storage.";
-  if (overview.status === "not-indexed")
-    return "No local intelligence snapshot exists yet.";
+  if (overview.status === "not-indexed") return "No local intelligence snapshot exists yet.";
   if (overview.status === "scanning")
     return overview.generation > 0
       ? "Reconciling changes in the background while the last complete generation remains available."

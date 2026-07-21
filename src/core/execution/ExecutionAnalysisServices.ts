@@ -59,8 +59,7 @@ export class RepositoryBaselineService {
       this.git.getUntrackedFiles(root.uri),
     ]);
     const relative = (value: string): string =>
-      this.workspace.resolveFile(value)?.relativePath ??
-      normalize(value, root.uri);
+      this.workspace.resolveFile(value)?.relativePath ?? normalize(value, root.uri);
     const dirtyFiles = unique(dirty.map(relative));
     const stagedFiles = unique(staged.map(relative));
     const untrackedFiles = unique(untracked.map(relative));
@@ -74,8 +73,7 @@ export class RepositoryBaselineService {
       repositoryId: snapshot?.repository.id ?? "unknown",
       intelligenceGeneration: snapshot?.manifest.generation ?? 0,
       branch: metadata.branch ?? snapshot?.repository.branch ?? "unknown",
-      headCommit:
-        metadata.headCommit ?? snapshot?.repository.headCommit ?? "unknown",
+      headCommit: metadata.headCommit ?? snapshot?.repository.headCommit ?? "unknown",
       dirtyFiles,
       stagedFiles,
       untrackedFiles,
@@ -97,40 +95,23 @@ export class ChangedEntityResolver {
     if (!current) return [];
     const retained = (await this.snapshots.getRetainedSnapshots?.()) ?? [];
     const previous = retained.find(
-      (item) =>
-        item.manifest.generation ===
-        session.repositoryBaseline.intelligenceGeneration,
+      (item) => item.manifest.generation === session.repositoryBaseline.intelligenceGeneration,
     );
     const results: ChangedEntity[] = [];
     for (const change of session.observedChanges.slice(0, 5000)) {
-      const currentFile = current.files.find(
-        (item) => item.relativePath === change.relativePath,
-      );
+      const currentFile = current.files.find((item) => item.relativePath === change.relativePath);
       const previousFile = previous?.files.find(
-        (item) =>
-          item.relativePath === (change.originalPath ?? change.relativePath),
+        (item) => item.relativePath === (change.originalPath ?? change.relativePath),
       );
       results.push(fileChange(change.kind, currentFile, previousFile, change));
       const currentSymbols = symbolsFor(current, currentFile?.id);
       const previousSymbols = symbolsFor(previous, previousFile?.id);
-      const currentByKey = new Map(
-        currentSymbols.map((item) => [symbolKey(item), item]),
-      );
-      const previousByKey = new Map(
-        previousSymbols.map((item) => [symbolKey(item), item]),
-      );
-      for (const key of new Set([
-        ...currentByKey.keys(),
-        ...previousByKey.keys(),
-      ])) {
+      const currentByKey = new Map(currentSymbols.map((item) => [symbolKey(item), item]));
+      const previousByKey = new Map(previousSymbols.map((item) => [symbolKey(item), item]));
+      for (const key of new Set([...currentByKey.keys(), ...previousByKey.keys()])) {
         const after = currentByKey.get(key);
         const before = previousByKey.get(key);
-        if (
-          before &&
-          after &&
-          symbolFingerprint(before) === symbolFingerprint(after)
-        )
-          continue;
+        if (before && after && symbolFingerprint(before) === symbolFingerprint(after)) continue;
         results.push(symbolChange(after, before, change.relativePath));
       }
       if (!previous && !currentSymbols.length && change.kind !== "deleted") {
@@ -160,9 +141,7 @@ export class RepairContextService {
     run: ValidationRunV2,
     plan?: ValidationPlan,
   ): RetryPlan["repairContext"] {
-    const failedSteps = run.stepResults.filter(
-      (item) => item.status !== "passed",
-    );
+    const failedSteps = run.stepResults.filter((item) => item.status !== "passed");
     const commands = failedSteps.flatMap((result) => {
       const step = plan?.steps.find((item) => item.id === result.stepId);
       return step?.command
@@ -201,12 +180,8 @@ export class RepairContextService {
       {
         title: "Changed files and entities",
         content: [
-          ...session.observedChanges.map(
-            (item) => `${item.classification}: ${item.relativePath}`,
-          ),
-          ...session.changedEntities.map(
-            (item) => `${item.changeKind}: ${item.qualifiedName}`,
-          ),
+          ...session.observedChanges.map((item) => `${item.classification}: ${item.relativePath}`),
+          ...session.changedEntities.map((item) => `${item.changeKind}: ${item.qualifiedName}`),
         ].join("\n"),
         reason: "Repository changes from this attempt.",
       },
@@ -233,13 +208,9 @@ export class RetryPlanningService {
       ...(selectedAgentId ? { selectedAgentId } : {}),
       reason,
       failedCriterionIds: run.acceptanceCriteriaResults
-        .filter(
-          (item) => item.status !== "passed" && item.status !== "overridden",
-        )
+        .filter((item) => item.status !== "passed" && item.status !== "overridden")
         .map((item) => item.criterionId),
-      findingIds: run.findings
-        .filter((item) => item.retryRelevant)
-        .map((item) => item.id),
+      findingIds: run.findings.filter((item) => item.retryRelevant).map((item) => item.id),
       repairContext: this.repair.build(session, run, plan),
       createdAt: new Date().toISOString(),
       status: "planned",
@@ -248,9 +219,7 @@ export class RetryPlanningService {
 }
 
 export class ExecutionDiagnosticsService {
-  interrupted(
-    status: TaskExecutionSession["status"],
-  ): TaskExecutionSession["diagnostics"][number] {
+  interrupted(status: TaskExecutionSession["status"]): TaskExecutionSession["diagnostics"][number] {
     return {
       code: "interrupted-execution-recovered",
       severity: "warning",
@@ -264,9 +233,7 @@ export function commandFingerprint(value: {
   args: string[];
   workingDirectory: string;
 }): string {
-  return stableHash(
-    JSON.stringify([value.executable, value.args, value.workingDirectory]),
-  );
+  return stableHash(JSON.stringify([value.executable, value.args, value.workingDirectory]));
 }
 
 export function failureFingerprint(output: string, error: string): string {
@@ -290,9 +257,7 @@ function hashesFor(
 }
 
 function diagnosticFingerprints(snapshot?: IntelligenceSnapshot): string[] {
-  return (snapshot?.diagnostics ?? [])
-    .slice(0, 1000)
-    .map(intelligenceDiagnosticFingerprint);
+  return (snapshot?.diagnostics ?? []).slice(0, 1000).map(intelligenceDiagnosticFingerprint);
 }
 
 export function intelligenceDiagnosticFingerprint(value: {
@@ -303,13 +268,7 @@ export function intelligenceDiagnosticFingerprint(value: {
   message: string;
 }): string {
   return stableHash(
-    JSON.stringify([
-      value.code,
-      value.severity,
-      value.relativePath,
-      value.entityId,
-      value.message,
-    ]),
+    JSON.stringify([value.code, value.severity, value.relativePath, value.entityId, value.message]),
   );
 }
 
@@ -341,9 +300,7 @@ function fileChange(
       : {}),
     confidence: file ? 1 : 0.5,
     evidenceIds: file?.evidenceIds ?? evidence.evidenceIds,
-    limitations: file
-      ? []
-      : ["The file is not available in the current or retained inventory."],
+    limitations: file ? [] : ["The file is not available in the current or retained inventory."],
   });
 }
 
@@ -369,9 +326,7 @@ function symbolChange(
     evidenceIds: symbol.evidenceIds,
     limitations:
       !before || !after
-        ? [
-            "Rename continuity is not claimed without a retained stable identity match.",
-          ]
+        ? ["Rename continuity is not claimed without a retained stable identity match."]
         : [],
   });
 }
@@ -384,30 +339,23 @@ function semanticChangeKind(
   if (/Route|Endpoint/.test(after.type)) return "route-change";
   if (/Contract|RequestModel|ResponseModel|GraphQL|OpenAPI/.test(after.type))
     return "contract-change";
-  if (/Schema|Table|Column|Migration|Orm|Entity|Model/.test(after.type))
-    return "schema-change";
+  if (/Schema|Table|Column|Migration|Orm|Entity|Model/.test(after.type)) return "schema-change";
   if (/Configuration|EnvironmentVariable|FeatureFlag/.test(after.type))
     return "configuration-change";
   if (/Test|Fixture|Mock/.test(after.type)) return "test-change";
   if (/Build|Pipeline|Artifact/.test(after.type)) return "build-change";
-  if (/Infrastructure|Container|Deployment/.test(after.type))
-    return "infrastructure-change";
+  if (/Infrastructure|Container|Deployment/.test(after.type)) return "infrastructure-change";
   if (/Package|ExternalDependency/.test(after.type)) return "dependency-change";
-  if (/Module|Layer|Service|PublicAPI|InternalAPI/.test(after.type))
-    return "architecture-change";
+  if (/Module|Layer|Service|PublicAPI|InternalAPI/.test(after.type)) return "architecture-change";
   return "symbol-modified";
 }
 
-function fileSpecificKind(
-  file?: IntelligenceFileRecord,
-): ChangedEntity["changeKind"] {
+function fileSpecificKind(file?: IntelligenceFileRecord): ChangedEntity["changeKind"] {
   if (!file) return "file-modified";
   if (file.isTest || file.category === "test") return "test-change";
-  if (file.category === "schema" || file.category === "migration")
-    return "schema-change";
+  if (file.category === "schema" || file.category === "migration") return "schema-change";
   if (file.category === "configuration") return "configuration-change";
-  if (file.category === "manifest" || file.category === "ci")
-    return "build-change";
+  if (file.category === "manifest" || file.category === "ci") return "build-change";
   if (file.category === "infrastructure") return "infrastructure-change";
   return "file-modified";
 }
@@ -417,10 +365,8 @@ function fileType(file?: IntelligenceFileRecord): string {
   if (file.category === "test") return "keystone.core.TestFile";
   if (file.category === "schema") return "keystone.core.SchemaFile";
   if (file.category === "migration") return "keystone.core.MigrationFile";
-  if (file.category === "configuration")
-    return "keystone.core.ConfigurationFile";
-  if (file.category === "infrastructure")
-    return "keystone.core.InfrastructureFile";
+  if (file.category === "configuration") return "keystone.core.ConfigurationFile";
+  if (file.category === "infrastructure") return "keystone.core.InfrastructureFile";
   return "keystone.core.File";
 }
 
@@ -428,9 +374,7 @@ function symbolsFor(
   snapshot: IntelligenceSnapshot | undefined,
   fileId?: string,
 ): IntelligenceSymbolRecord[] {
-  return fileId
-    ? (snapshot?.symbols ?? []).filter((item) => item.fileId === fileId)
-    : [];
+  return fileId ? (snapshot?.symbols ?? []).filter((item) => item.fileId === fileId) : [];
 }
 
 function symbolKey(symbol: IntelligenceSymbolRecord): string {
@@ -455,10 +399,7 @@ function stableHash(value: string): string {
 
 function normalize(value: string, root: string): string {
   const decoded = decodeURIComponent(value.replace(/^file:\/\//, ""));
-  const base = decodeURIComponent(root.replace(/^file:\/\//, "")).replace(
-    /\/$/,
-    "",
-  );
+  const base = decodeURIComponent(root.replace(/^file:\/\//, "")).replace(/\/$/, "");
   return decoded.replace(base, "").replace(/^\//, "");
 }
 
@@ -468,8 +409,7 @@ function unique(values: string[]): string[] {
 
 function deduplicate(values: ChangedEntity[]): ChangedEntity[] {
   const output = new Map<string, ChangedEntity>();
-  for (const value of values)
-    output.set(`${value.entityId}:${value.changeKind}`, value);
+  for (const value of values) output.set(`${value.entityId}:${value.changeKind}`, value);
   return [...output.values()].sort(
     (left, right) =>
       left.relativePath.localeCompare(right.relativePath) ||

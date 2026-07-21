@@ -1,9 +1,6 @@
 import type { WorkspaceAdapter } from "../../extension/adapters/WorkspaceAdapter";
 import type { RepositoryIndexService } from "../intelligence/RepositoryIndexService";
-import {
-  type IntentRecord,
-  IntentRecordSchema
-} from "../../shared/contracts/domain";
+import { type IntentRecord, IntentRecordSchema } from "../../shared/contracts/domain";
 import { KeystoneError } from "../../shared/errors/KeystoneError";
 
 export interface IntentAnalysis {
@@ -22,7 +19,7 @@ export class IntentEngine {
 
   constructor(
     private readonly workspace: WorkspaceAdapter,
-    private readonly index: RepositoryIndexService
+    private readonly index: RepositoryIndexService,
   ) {}
 
   registerIntent(intent: IntentRecord): void {
@@ -33,7 +30,11 @@ export class IntentEngine {
     return this.intents.get(intentId);
   }
 
-  analyze(text: string, mode: "quick" | "guided" | "spec-driven", workspaceRoot?: string): IntentAnalysis {
+  analyze(
+    text: string,
+    mode: "quick" | "guided" | "spec-driven",
+    workspaceRoot?: string,
+  ): IntentAnalysis {
     void workspaceRoot;
     const workflowId = `wf-${++this.workflowIdCounter}`;
     const intentId = crypto.randomUUID();
@@ -62,10 +63,10 @@ export class IntentEngine {
       riskLevel: risk,
       recommendedWorkflow: {
         mode: this.recommendMode(text, risk),
-        approvalPolicy: risk === "high" || risk === "critical" || mode === "spec-driven"
+        approvalPolicy: risk === "high" || risk === "critical" || mode === "spec-driven",
       },
       recommendedAgents: recommendedAgents,
-      requiredDecisions
+      requiredDecisions,
     };
 
     const validated = IntentRecordSchema.safeParse(record);
@@ -76,7 +77,7 @@ export class IntentEngine {
         message: "Generated intent record failed validation.",
         operation: "intent.analyze",
         recoverable: false,
-        recommendedAction: "Review the intent input and retry."
+        recommendedAction: "Review the intent input and retry.",
       });
     }
 
@@ -86,8 +87,8 @@ export class IntentEngine {
       recommendations: {
         mode: this.recommendMode(text, risk),
         agents: recommendedAgents.map((a) => a.agentId),
-        risk
-      }
+        risk,
+      },
     };
   }
 
@@ -117,7 +118,15 @@ export class IntentEngine {
 
   private assessRisk(text: string): "low" | "medium" | "high" | "critical" {
     const lower = text.toLowerCase();
-    const criticalPatterns = [/security/i, /auth/i, /credential/i, /permission/i, /deploy/i, /migration/i, /database/i];
+    const criticalPatterns = [
+      /security/i,
+      /auth/i,
+      /credential/i,
+      /permission/i,
+      /deploy/i,
+      /migration/i,
+      /database/i,
+    ];
     const highPatterns = [/(?:refactor|restructure)/i, /api/i, /config/i, /architecture/i];
     const mediumPatterns = [/(?:add|implement|feature)/i];
 
@@ -137,7 +146,9 @@ export class IntentEngine {
     const areas: { reference: string; reason: string }[] = [];
 
     // Extract file mentions
-    const fileMentions = text.match(/\b(?:src\/|lib\/|app\/|packages\/|src\/|lib\/|app\/)[\w/.-]+\.(?:ts|tsx|js|jsx|py|go|rs|java|c|h|cpp)\b/g);
+    const fileMentions = text.match(
+      /\b(?:src\/|lib\/|app\/|packages\/|src\/|lib\/|app\/)[\w/.-]+\.(?:ts|tsx|js|jsx|py|go|rs|java|c|h|cpp)\b/g,
+    );
     if (fileMentions) {
       for (const file of fileMentions) {
         areas.push({ reference: file, reason: "mentioned in intent" });
@@ -163,21 +174,21 @@ export class IntentEngine {
     if (/\?(?:.*)$/.test(text.trim())) {
       ambiguities.push({
         question: "The request appears to be a question rather than a directive.",
-        impact: "Clarification needed before proceeding."
+        impact: "Clarification needed before proceeding.",
       });
     }
 
     if (lower.includes("maybe") || lower.includes("perhaps") || lower.includes("consider")) {
       ambiguities.push({
         question: "The request uses uncertain language.",
-        impact: "Scope and intent may change."
+        impact: "Scope and intent may change.",
       });
     }
 
     if (lower.includes("and") && text.split("and").length > 3) {
       ambiguities.push({
         question: "The request appears to cover multiple distinct tasks.",
-        impact: "Consider breaking into separate requests."
+        impact: "Consider breaking into separate requests.",
       });
     }
 
@@ -188,24 +199,28 @@ export class IntentEngine {
     const constraints: { description: string; provenance: string }[] = [];
     const lower = text.toLowerCase();
 
-    if (lower.includes("without breaking") || lower.includes("backward compatible") || lower.includes("api compatible")) {
+    if (
+      lower.includes("without breaking") ||
+      lower.includes("backward compatible") ||
+      lower.includes("api compatible")
+    ) {
       constraints.push({
         description: "Must maintain backward compatibility.",
-        provenance: "user"
+        provenance: "user",
       });
     }
 
     if (lower.includes("performance") || lower.includes("fast") || lower.includes("latency")) {
       constraints.push({
         description: "Performance is a concern.",
-        provenance: "user"
+        provenance: "user",
       });
     }
 
     if (lower.includes("security") || lower.includes("auth")) {
       constraints.push({
         description: "Security is a concern.",
-        provenance: "user"
+        provenance: "user",
       });
     }
 
@@ -219,7 +234,10 @@ export class IntentEngine {
     return [];
   }
 
-  private identifyRequiredDecisions(text: string, risk: string): { id: string; question: string; blocking: boolean }[] {
+  private identifyRequiredDecisions(
+    text: string,
+    risk: string,
+  ): { id: string; question: string; blocking: boolean }[] {
     const decisions: { id: string; question: string; blocking: boolean }[] = [];
     const lower = text.toLowerCase();
 
@@ -227,7 +245,7 @@ export class IntentEngine {
       decisions.push({
         id: crypto.randomUUID(),
         question: "This request has significant scope. Confirm the approach before proceeding.",
-        blocking: true
+        blocking: true,
       });
     }
 
@@ -235,7 +253,7 @@ export class IntentEngine {
       decisions.push({
         id: crypto.randomUUID(),
         question: "This may affect the public API. Confirm the breaking change scope.",
-        blocking: true
+        blocking: true,
       });
     }
 
@@ -245,13 +263,17 @@ export class IntentEngine {
   private extractExpectedOutcome(text: string): string {
     const lower = text.toLowerCase();
     if (lower.includes("fix")) return "Fix the reported issue.";
-    if (lower.includes("add") || lower.includes("implement") || lower.includes("create")) return "Implement the requested feature.";
+    if (lower.includes("add") || lower.includes("implement") || lower.includes("create"))
+      return "Implement the requested feature.";
     if (lower.includes("refactor")) return "Refactor the code as described.";
     if (lower.includes("test")) return "Add tests for the specified functionality.";
     return "Address the described request.";
   }
 
-  private recommendMode(text: string, risk: "low" | "medium" | "high" | "critical"): "quick" | "guided" | "spec-driven" {
+  private recommendMode(
+    text: string,
+    risk: "low" | "medium" | "high" | "critical",
+  ): "quick" | "guided" | "spec-driven" {
     if (risk === "critical" || risk === "high") return "spec-driven";
     if (risk === "medium") return "guided";
     return "quick";

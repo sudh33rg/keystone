@@ -6,15 +6,16 @@ The project is being implemented progressively from the approved specification i
 
 ## Verification Status
 
-**All gates passed — repository verified and ready for use.**
+**All quality gates pass as of 2026-07-20** (typecheck, lint, unit tests, and build verified via `npm run verify`).
 
 | Check | Result |
 |-------|--------|
 | Type checking | ✅ Passed |
 | Linting | ✅ Passed |
-| Unit tests | ✅ 414 tests passed |
-| Extension tests | ✅ Passed on VS Code 1.95.0 |
-| Build | ✅ Extension + semantic worker |
+| Unit tests | ✅ 458 tests passed |
+| Build | ✅ Extension + webview |
+
+Run `npm run verify` to verify the current state.
 
 Run `npm run verify` to verify the current state.
 
@@ -26,7 +27,9 @@ There is no backend, external database, centralized intelligence service, or act
 
 ## Release Notes
 
-### v0.2.0 — Intelligence Services, UI, and Copilot Markdown (2026-07-19)
+### v0.2.0 — (planned) Intelligence Services, UI, and Copilot Markdown
+
+> **Note:** The package version is currently `0.1.0` (see `package.json`). The v0.2.0 release described below has not yet been cut.
 
 **Major updates:**
 - Added 10 core intelligence services for dependency analysis, cycle detection, node metrics, dead code, cyclomatic complexity, exported symbols, file dependencies, filtered subgraphs, module mapping, and wildcard search
@@ -37,10 +40,10 @@ There is no backend, external database, centralized intelligence service, or act
 - Added background workers: `GraphIndexerWorker` for repository indexing and `GitHistoryParser` for Git history ingestion
 - All commands prefixed with `keystone.` to avoid conflicts; all data stored under `.keystone/` with `.gitignore`
 
-**Repository state:**
-- 60 test files, 458 tests
+**Repository state (as of 2026-07-20 remediation):**
+- 59 test files, 458 tests
 - 10 new service files, 4 markdown generation services, 2 new webview providers, 2 new workers
-- All gates passed — repository verified and ready for use
+- All quality gates pass (`npm run verify`: typecheck, lint, tests, build)
 
 ### v0.1.0 — Verified and Ready (2026-07-18)
 

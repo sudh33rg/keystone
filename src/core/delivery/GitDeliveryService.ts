@@ -29,20 +29,43 @@ import {
 } from "../../shared/contracts/delivery";
 
 export interface GitRuntimeChange {
-  path: string; previousPath?: string; status: DeliveryFileChange["status"]; staged: boolean;
-  additions?: number; deletions?: number; binary: boolean; sourceKind?: DeliveryFileChange["sourceKind"];
+  path: string;
+  previousPath?: string;
+  status: DeliveryFileChange["status"];
+  staged: boolean;
+  additions?: number;
+  deletions?: number;
+  binary: boolean;
+  sourceKind?: DeliveryFileChange["sourceKind"];
 }
-export interface BoundedGitDiff { path: string; text: string; binary: boolean; truncated: boolean; totalBytes: number; }
+export interface BoundedGitDiff {
+  path: string;
+  text: string;
+  binary: boolean;
+  truncated: boolean;
+  totalBytes: number;
+}
 export interface GitRuntimeAdapter {
   capabilities(root: string): Promise<GitCapabilities>;
   state(root: string): Promise<GitRepositoryState>;
   changes(root: string, baseCommit?: string): Promise<GitRuntimeChange[]>;
-  diff(root: string, path: string, mode: "working-head" | "index-head" | "working-index", maxBytes: number, signal?: AbortSignal): Promise<BoundedGitDiff>;
+  diff(
+    root: string,
+    path: string,
+    mode: "working-head" | "index-head" | "working-index",
+    maxBytes: number,
+    signal?: AbortSignal,
+  ): Promise<BoundedGitDiff>;
   stage(root: string, paths: string[]): Promise<{ output: string }>;
   unstage(root: string, paths: string[]): Promise<{ output: string }>;
   createBranch(root: string, branch: string): Promise<{ output: string }>;
   commit(root: string, message: string): Promise<{ hash: string; files: string[]; output: string }>;
-  push(root: string, remote: string, branch: string, setUpstream: boolean): Promise<{ output: string; verified: boolean }>;
+  push(
+    root: string,
+    remote: string,
+    branch: string,
+    setUpstream: boolean,
+  ): Promise<{ output: string; verified: boolean }>;
   recentCommitSubjects?(root: string, limit: number): Promise<string[]>;
 }
 
@@ -55,113 +78,1223 @@ export interface PullRequestProvider {
 }
 
 export class GitCapabilityService {
-  constructor(private readonly adapter: GitRuntimeAdapter, private readonly persistence: DeliveryPersistenceStore) {}
-  async refresh(root: string): Promise<GitCapabilities> { const value = GitCapabilitiesSchema.parse(await this.adapter.capabilities(root)); await this.persistence.update((state) => ({ ...state, capabilities: [...state.capabilities.filter((item) => item.repositoryRoot !== root), value].slice(-20) })); return value; }
+  constructor(
+    private readonly adapter: GitRuntimeAdapter,
+    private readonly persistence: DeliveryPersistenceStore,
+  ) {}
+  async refresh(root: string): Promise<GitCapabilities> {
+    const value = GitCapabilitiesSchema.parse(await this.adapter.capabilities(root));
+    await this.persistence.update((state) => ({
+      ...state,
+      capabilities: [
+        ...state.capabilities.filter((item) => item.repositoryRoot !== root),
+        value,
+      ].slice(-20),
+    }));
+    return value;
+  }
 }
-export class GitRepositoryService { constructor(private readonly adapter: GitRuntimeAdapter, private readonly persistence: DeliveryPersistenceStore) {} async getState(root: string): Promise<GitRepositoryState> { const value = await this.adapter.state(root); await this.persistence.update((state) => ({ ...state, repositoryStates: [...state.repositoryStates.filter((item) => item.repositoryRoot !== root), value].slice(-20) })); return value; } }
+export class GitRepositoryService {
+  constructor(
+    private readonly adapter: GitRuntimeAdapter,
+    private readonly persistence: DeliveryPersistenceStore,
+  ) {}
+  async getState(root: string): Promise<GitRepositoryState> {
+    const value = await this.adapter.state(root);
+    await this.persistence.update((state) => ({
+      ...state,
+      repositoryStates: [
+        ...state.repositoryStates.filter((item) => item.repositoryRoot !== root),
+        value,
+      ].slice(-20),
+    }));
+    return value;
+  }
+}
 export class GitStateService extends GitRepositoryService {}
-export class GitRemoteService { sanitize(url: string): string { return sanitizeRemoteUrl(url); } }
-export class GitBranchService { validate(name: string): string[] { const errors: string[] = []; if (!name || name.length > 200 || !/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(name) || /^[-./]|[/.]$|\.\.|\s|[~^:?*[\\]/.test(name) || name.endsWith(".lock")) errors.push("Branch name is not a legal bounded Git reference."); return errors; } suggest(category: string, title: string): string { const prefix = category === "bug" ? "fix" : category === "refactor" ? "refactor" : "feature"; return `${prefix}/${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80)}`; } }
+export class GitRemoteService {
+  sanitize(url: string): string {
+    return sanitizeRemoteUrl(url);
+  }
+}
+export class GitBranchService {
+  validate(name: string): string[] {
+    const errors: string[] = [];
+    if (
+      !name ||
+      name.length > 200 ||
+      !/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(name) ||
+      /^[-./]|[/.]$|\.\.|\s|[~^:?*[\\]/.test(name) ||
+      name.endsWith(".lock")
+    )
+      errors.push("Branch name is not a legal bounded Git reference.");
+    return errors;
+  }
+  suggest(category: string, title: string): string {
+    const prefix = category === "bug" ? "fix" : category === "refactor" ? "refactor" : "feature";
+    return `${prefix}/${title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 80)}`;
+  }
+}
 
 export class SourceControlReadinessService {
-  constructor(private readonly workflows: DevelopmentWorkflowService, private readonly executions: ExecutionPersistenceStore) {}
-  evaluate(workflowId: string, repository: GitRepositoryState, changeSet?: DeliveryChangeSet): DeliveryReadiness {
-    const started = performance.now(); const workflow = this.workflows.get(workflowId); const blockers: string[] = []; const warnings: string[] = []; const recommendations: string[] = [];
-    if (!workflow?.specification || workflow.specification.status !== "approved") blockers.push("The active specification is unavailable or not approved.");
-    if (!workflow || workflow.tasks.some((item) => item.status !== "completed")) blockers.push("Every workflow task must be explicitly completed.");
+  constructor(
+    private readonly workflows: DevelopmentWorkflowService,
+    private readonly executions: ExecutionPersistenceStore,
+  ) {}
+  evaluate(
+    workflowId: string,
+    repository: GitRepositoryState,
+    changeSet?: DeliveryChangeSet,
+  ): DeliveryReadiness {
+    const started = performance.now();
+    const workflow = this.workflows.get(workflowId);
+    const blockers: string[] = [];
+    const warnings: string[] = [];
+    const recommendations: string[] = [];
+    if (!workflow?.specification || workflow.specification.status !== "approved")
+      blockers.push("The active specification is unavailable or not approved.");
+    if (!workflow || workflow.tasks.some((item) => item.status !== "completed"))
+      blockers.push("Every workflow task must be explicitly completed.");
     if (repository.detachedHead) blockers.push("Detached HEAD blocks normal delivery.");
-    if (repository.conflictedFiles.length) blockers.push("Repository conflicts must be resolved manually.");
-    if (repository.operation !== "none") blockers.push(`Git ${repository.operation} is in progress.`);
-    if (workflow?.branch && repository.branch !== workflow.branch) blockers.push(`Repository branch ${repository.branch ?? "detached"} does not match workflow branch ${workflow.branch}.`);
-    const sessions = this.executions.snapshot.sessions.filter((item) => item.workflowId === workflowId && item.status === "completed");
-    const runIds = sessions.flatMap((item) => item.validationRunIds); const runs = this.executions.snapshot.runs.filter((item) => runIds.includes(item.id));
-    if (!runs.length) blockers.push("No completed validation evidence is attached to the workflow.");
-    if (runs.some((item) => ["failed", "running", "cancelled", "stale"].includes(item.status))) blockers.push("A workflow validation run is failed, active, cancelled, or stale.");
-    if (runs.some((item) => item.acceptanceCriteriaResults.some((criterion) => !["passed", "overridden"].includes(criterion.status)))) blockers.push("Required acceptance criteria remain unverified.");
-    if (runs.some((item) => item.findings.some((finding) => finding.severity === "blocking" && !finding.override))) blockers.push("Blocking validation findings remain unresolved.");
-    if (changeSet?.files.some((item) => item.sensitive && item.included)) blockers.push("Sensitive files cannot be included in delivery.");
-    if (changeSet?.files.some((item) => item.attribution === "unexpected" && item.included)) blockers.push("Unexpected files require explicit attribution or exclusion.");
-    if (changeSet?.files.some((item) => /migration|schema|\.sql$/i.test(item.path) && item.included) && !changeSet.files.some((item) => /(?:test|spec)/i.test(item.path) && item.included)) warnings.push("Schema or migration changes have no included test change; verify existing coverage explicitly.");
-    if (!repository.remotes.length) warnings.push("No Git remote is configured; push and PR creation are unavailable.");
-    if (repository.behind > 0) warnings.push(`The branch is ${repository.behind} commit(s) behind its upstream; Keystone will not pull, merge, or rebase automatically.`);
-    if (repository.branch === repository.defaultBranch) recommendations.push("Create a feature branch before committing to the default branch.");
-    return DeliveryReadinessSchema.parse({ workflowId, ready: blockers.length === 0, blockers, warnings, recommendations, repositoryStateFingerprint: repository.fingerprint, validationRunIds: runIds, durationMs: performance.now() - started, evaluatedAt: new Date().toISOString() });
+    if (repository.conflictedFiles.length)
+      blockers.push("Repository conflicts must be resolved manually.");
+    if (repository.operation !== "none")
+      blockers.push(`Git ${repository.operation} is in progress.`);
+    if (workflow?.branch && repository.branch !== workflow.branch)
+      blockers.push(
+        `Repository branch ${repository.branch ?? "detached"} does not match workflow branch ${workflow.branch}.`,
+      );
+    const sessions = this.executions.snapshot.sessions.filter(
+      (item) => item.workflowId === workflowId && item.status === "completed",
+    );
+    const runIds = sessions.flatMap((item) => item.validationRunIds);
+    const runs = this.executions.snapshot.runs.filter((item) => runIds.includes(item.id));
+    if (!runs.length)
+      blockers.push("No completed validation evidence is attached to the workflow.");
+    if (runs.some((item) => ["failed", "running", "cancelled", "stale"].includes(item.status)))
+      blockers.push("A workflow validation run is failed, active, cancelled, or stale.");
+    if (
+      runs.some((item) =>
+        item.acceptanceCriteriaResults.some(
+          (criterion) => !["passed", "overridden"].includes(criterion.status),
+        ),
+      )
+    )
+      blockers.push("Required acceptance criteria remain unverified.");
+    if (
+      runs.some((item) =>
+        item.findings.some((finding) => finding.severity === "blocking" && !finding.override),
+      )
+    )
+      blockers.push("Blocking validation findings remain unresolved.");
+    if (changeSet?.files.some((item) => item.sensitive && item.included))
+      blockers.push("Sensitive files cannot be included in delivery.");
+    if (changeSet?.files.some((item) => item.attribution === "unexpected" && item.included))
+      blockers.push("Unexpected files require explicit attribution or exclusion.");
+    if (
+      changeSet?.files.some(
+        (item) => /migration|schema|\.sql$/i.test(item.path) && item.included,
+      ) &&
+      !changeSet.files.some((item) => /(?:test|spec)/i.test(item.path) && item.included)
+    )
+      warnings.push(
+        "Schema or migration changes have no included test change; verify existing coverage explicitly.",
+      );
+    if (!repository.remotes.length)
+      warnings.push("No Git remote is configured; push and PR creation are unavailable.");
+    if (repository.behind > 0)
+      warnings.push(
+        `The branch is ${repository.behind} commit(s) behind its upstream; Keystone will not pull, merge, or rebase automatically.`,
+      );
+    if (repository.branch === repository.defaultBranch)
+      recommendations.push("Create a feature branch before committing to the default branch.");
+    return DeliveryReadinessSchema.parse({
+      workflowId,
+      ready: blockers.length === 0,
+      blockers,
+      warnings,
+      recommendations,
+      repositoryStateFingerprint: repository.fingerprint,
+      validationRunIds: runIds,
+      durationMs: performance.now() - started,
+      evaluatedAt: new Date().toISOString(),
+    });
   }
 }
 
 export class ChangeSelectionService {
-  apply(changeSet: DeliveryChangeSet, fileId: string, included: boolean, explanation?: string): DeliveryChangeSet { const files = changeSet.files.map((item) => item.id === fileId ? { ...item, included: item.sensitive ? false : included, ...(explanation ? { explanation } : {}), ...(!included ? { exclusionReason: explanation || "Excluded by user review." } : { exclusionReason: undefined }) } : item); return refreshChangeSet(changeSet, files); }
-  restore(changeSet: DeliveryChangeSet): DeliveryChangeSet { return refreshChangeSet(changeSet, changeSet.files.map((item) => ({ ...item, included: defaultIncluded(item), ...(defaultIncluded(item) ? { exclusionReason: undefined } : { exclusionReason: defaultExclusion(item) }) }))); }
+  apply(
+    changeSet: DeliveryChangeSet,
+    fileId: string,
+    included: boolean,
+    explanation?: string,
+  ): DeliveryChangeSet {
+    const files = changeSet.files.map((item) =>
+      item.id === fileId
+        ? {
+            ...item,
+            included: item.sensitive ? false : included,
+            ...(explanation ? { explanation } : {}),
+            ...(!included
+              ? { exclusionReason: explanation || "Excluded by user review." }
+              : { exclusionReason: undefined }),
+          }
+        : item,
+    );
+    return refreshChangeSet(changeSet, files);
+  }
+  restore(changeSet: DeliveryChangeSet): DeliveryChangeSet {
+    return refreshChangeSet(
+      changeSet,
+      changeSet.files.map((item) => ({
+        ...item,
+        included: defaultIncluded(item),
+        ...(defaultIncluded(item)
+          ? { exclusionReason: undefined }
+          : { exclusionReason: defaultExclusion(item) }),
+      })),
+    );
+  }
 }
 
 export class GitChangeSetService {
   readonly selection = new ChangeSelectionService();
-  constructor(private readonly adapter: GitRuntimeAdapter, private readonly workflows: DevelopmentWorkflowService, private readonly executions: ExecutionPersistenceStore, private readonly snapshots: IntelligenceSnapshotReader, private readonly persistence: DeliveryPersistenceStore) {}
-  async create(workflowId: string, root: string, repository: GitRepositoryState): Promise<DeliveryChangeSet> {
-    const workflow = this.workflows.get(workflowId); const specification = workflow?.specification; if (!workflow || !specification) throw new Error("Workflow specification unavailable.");
-    const sessions = this.executions.snapshot.sessions.filter((item) => item.workflowId === workflowId); const raw = (await this.adapter.changes(root, specification.baseCommit)).slice(0, 5000); const snapshot = this.snapshots.getSnapshot();
-    const files = raw.map((change): DeliveryFileChange => { const attributed = sessions.flatMap((item) => item.observedChanges).find((item) => item.relativePath === change.path); const record = snapshot?.files.find((item) => item.relativePath === change.path); const attribution = attributed?.classification ?? "ambiguous"; const sensitive = record?.classification.sensitive ?? /(^|\/)(?:\.env|.*(?:credential|secret|private.?key))/i.test(change.path); const generated = record?.classification.generated ?? false; const base = { id: fileId(change.path), path: change.path, ...(change.previousPath ? { previousPath: change.previousPath } : {}), status: change.status, staged: change.staged, sourceKind: change.sourceKind ?? "file", attribution, relatedTaskIds: workflow.tasks.filter((task) => task.expectedFiles.includes(change.path)).map((task) => task.id), relatedRequirementIds: workflow.tasks.filter((task) => task.expectedFiles.includes(change.path)).flatMap((task) => task.requirementIds), relatedAcceptanceCriterionIds: workflow.tasks.filter((task) => task.expectedFiles.includes(change.path)).flatMap((task) => task.acceptanceCriterionIds), changedEntityIds: sessions.flatMap((item) => item.changedEntities).filter((item) => item.relativePath === change.path).map((item) => item.entityId), ...(change.additions !== undefined ? { additions: change.additions } : {}), ...(change.deletions !== undefined ? { deletions: change.deletions } : {}), binary: change.binary, generated, sensitive, included: false, diagnostics: change.sourceKind && change.sourceKind !== "file" ? [`${change.sourceKind} changes require explicit review and are excluded by default.`] : [] }; return { ...base, included: defaultIncluded(base), ...(!defaultIncluded(base) ? { exclusionReason: defaultExclusion(base) } : {}) }; });
-    const now = new Date().toISOString(); const runIds = sessions.flatMap((item) => item.validationRunIds); const value = refreshChangeSet(DeliveryChangeSetSchema.parse({ schemaVersion: 1, id: crypto.randomUUID(), workflowId, specificationId: specification.id, specificationRevision: specification.revision, repositoryId: repository.repositoryId, branch: repository.branch ?? "detached", baseCommit: specification.baseCommit ?? repository.headCommit ?? "unknown", currentHead: repository.headCommit ?? "unknown", repositoryStateFingerprint: repository.fingerprint, intelligenceGeneration: snapshot?.manifest.generation ?? workflow.intelligenceGeneration, files, entities: sessions.flatMap((item) => item.changedEntities).map((item) => ({ entityId: item.entityId, qualifiedName: item.qualifiedName, changeKind: item.changeKind, evidenceIds: item.evidenceIds })), includedFileIds: [], excludedFileIds: [], validationRunIds: runIds, findings: this.executions.snapshot.runs.filter((run) => runIds.includes(run.id)).flatMap((run) => run.findings.map((item) => `${item.severity}: ${item.title}`)), status: "reviewing", fingerprint: "pending", createdAt: now, updatedAt: now }), files);
-    await this.persistence.update((state) => { const replaced = state.changeSets.filter((item) => item.workflowId === workflowId).map((item) => item.id); return { ...state, changeSets: [...state.changeSets.filter((item) => item.workflowId !== workflowId), value].slice(-100), commitPlans: state.commitPlans.map((item) => replaced.includes(item.changeSetId) ? { ...item, status: "stale" as const } : item), pullRequestDrafts: state.pullRequestDrafts.map((item) => replaced.includes(item.changeSetId) ? { ...item, status: "stale" as const } : item) }; }); return value;
+  constructor(
+    private readonly adapter: GitRuntimeAdapter,
+    private readonly workflows: DevelopmentWorkflowService,
+    private readonly executions: ExecutionPersistenceStore,
+    private readonly snapshots: IntelligenceSnapshotReader,
+    private readonly persistence: DeliveryPersistenceStore,
+  ) {}
+  async create(
+    workflowId: string,
+    root: string,
+    repository: GitRepositoryState,
+  ): Promise<DeliveryChangeSet> {
+    const workflow = this.workflows.get(workflowId);
+    const specification = workflow?.specification;
+    if (!workflow || !specification) throw new Error("Workflow specification unavailable.");
+    const sessions = this.executions.snapshot.sessions.filter(
+      (item) => item.workflowId === workflowId,
+    );
+    const raw = (await this.adapter.changes(root, specification.baseCommit)).slice(0, 5000);
+    const snapshot = this.snapshots.getSnapshot();
+    const files = raw.map((change): DeliveryFileChange => {
+      const attributed = sessions
+        .flatMap((item) => item.observedChanges)
+        .find((item) => item.relativePath === change.path);
+      const record = snapshot?.files.find((item) => item.relativePath === change.path);
+      const attribution = attributed?.classification ?? "ambiguous";
+      const sensitive =
+        record?.classification.sensitive ??
+        /(^|\/)(?:\.env|.*(?:credential|secret|private.?key))/i.test(change.path);
+      const generated = record?.classification.generated ?? false;
+      const base = {
+        id: fileId(change.path),
+        path: change.path,
+        ...(change.previousPath ? { previousPath: change.previousPath } : {}),
+        status: change.status,
+        staged: change.staged,
+        sourceKind: change.sourceKind ?? "file",
+        attribution,
+        relatedTaskIds: workflow.tasks
+          .filter((task) => task.expectedFiles.includes(change.path))
+          .map((task) => task.id),
+        relatedRequirementIds: workflow.tasks
+          .filter((task) => task.expectedFiles.includes(change.path))
+          .flatMap((task) => task.requirementIds),
+        relatedAcceptanceCriterionIds: workflow.tasks
+          .filter((task) => task.expectedFiles.includes(change.path))
+          .flatMap((task) => task.acceptanceCriterionIds),
+        changedEntityIds: sessions
+          .flatMap((item) => item.changedEntities)
+          .filter((item) => item.relativePath === change.path)
+          .map((item) => item.entityId),
+        ...(change.additions !== undefined ? { additions: change.additions } : {}),
+        ...(change.deletions !== undefined ? { deletions: change.deletions } : {}),
+        binary: change.binary,
+        generated,
+        sensitive,
+        included: false,
+        diagnostics:
+          change.sourceKind && change.sourceKind !== "file"
+            ? [`${change.sourceKind} changes require explicit review and are excluded by default.`]
+            : [],
+      };
+      return {
+        ...base,
+        included: defaultIncluded(base),
+        ...(!defaultIncluded(base) ? { exclusionReason: defaultExclusion(base) } : {}),
+      };
+    });
+    const now = new Date().toISOString();
+    const runIds = sessions.flatMap((item) => item.validationRunIds);
+    const value = refreshChangeSet(
+      DeliveryChangeSetSchema.parse({
+        schemaVersion: 1,
+        id: crypto.randomUUID(),
+        workflowId,
+        specificationId: specification.id,
+        specificationRevision: specification.revision,
+        repositoryId: repository.repositoryId,
+        branch: repository.branch ?? "detached",
+        baseCommit: specification.baseCommit ?? repository.headCommit ?? "unknown",
+        currentHead: repository.headCommit ?? "unknown",
+        repositoryStateFingerprint: repository.fingerprint,
+        intelligenceGeneration: snapshot?.manifest.generation ?? workflow.intelligenceGeneration,
+        files,
+        entities: sessions
+          .flatMap((item) => item.changedEntities)
+          .map((item) => ({
+            entityId: item.entityId,
+            qualifiedName: item.qualifiedName,
+            changeKind: item.changeKind,
+            evidenceIds: item.evidenceIds,
+          })),
+        includedFileIds: [],
+        excludedFileIds: [],
+        validationRunIds: runIds,
+        findings: this.executions.snapshot.runs
+          .filter((run) => runIds.includes(run.id))
+          .flatMap((run) => run.findings.map((item) => `${item.severity}: ${item.title}`)),
+        status: "reviewing",
+        fingerprint: "pending",
+        createdAt: now,
+        updatedAt: now,
+      }),
+      files,
+    );
+    await this.persistence.update((state) => {
+      const replaced = state.changeSets
+        .filter((item) => item.workflowId === workflowId)
+        .map((item) => item.id);
+      return {
+        ...state,
+        changeSets: [
+          ...state.changeSets.filter((item) => item.workflowId !== workflowId),
+          value,
+        ].slice(-100),
+        commitPlans: state.commitPlans.map((item) =>
+          replaced.includes(item.changeSetId) ? { ...item, status: "stale" as const } : item,
+        ),
+        pullRequestDrafts: state.pullRequestDrafts.map((item) =>
+          replaced.includes(item.changeSetId) ? { ...item, status: "stale" as const } : item,
+        ),
+      };
+    });
+    return value;
   }
-  async save(value: DeliveryChangeSet): Promise<DeliveryChangeSet> { await this.persistence.update((state) => ({ ...state, changeSets: state.changeSets.map((item) => item.id === value.id ? value : item) })); return value; }
+  async save(value: DeliveryChangeSet): Promise<DeliveryChangeSet> {
+    await this.persistence.update((state) => ({
+      ...state,
+      changeSets: state.changeSets.map((item) => (item.id === value.id ? value : item)),
+    }));
+    return value;
+  }
 }
 
 export class CommitMessageService {
-  generate(type: ProposedCommit["commitType"], scope: string | undefined, summary: string, details: string[], convention: CommitPlan["convention"]): { title: string; description: string } { const imperative = summary.replace(/[.!]$/, ""); const title = convention === "conventional" || convention === "repository" ? `${type}${scope ? `(${scope})` : ""}: ${imperative.charAt(0).toLowerCase()}${imperative.slice(1)}` : `${imperative.charAt(0).toUpperCase()}${imperative.slice(1)}`; return { title: title.slice(0, 200), description: details.slice(0, 20).map((item) => `- ${item}`).join("\n").slice(0, 20_000) }; }
-  detect(history: string[]): { convention: CommitPlan["convention"]; confidence: number; evidence: string[] } { const conventional = history.filter((item) => /^(feat|fix|refactor|test|docs|build|chore)(\(.+\))?!?: /.test(item)); return history.length >= 3 && conventional.length / history.length >= 0.6 ? { convention: "repository", confidence: conventional.length / history.length, evidence: conventional.slice(0, 5) } : { convention: "plain", confidence: history.length >= 3 ? 0.6 : 0.2, evidence: history.slice(0, 5) }; }
+  generate(
+    type: ProposedCommit["commitType"],
+    scope: string | undefined,
+    summary: string,
+    details: string[],
+    convention: CommitPlan["convention"],
+  ): { title: string; description: string } {
+    const imperative = summary.replace(/[.!]$/, "");
+    const title =
+      convention === "conventional" || convention === "repository"
+        ? `${type}${scope ? `(${scope})` : ""}: ${imperative.charAt(0).toLowerCase()}${imperative.slice(1)}`
+        : `${imperative.charAt(0).toUpperCase()}${imperative.slice(1)}`;
+    return {
+      title: title.slice(0, 200),
+      description: details
+        .slice(0, 20)
+        .map((item) => `- ${item}`)
+        .join("\n")
+        .slice(0, 20_000),
+    };
+  }
+  detect(history: string[]): {
+    convention: CommitPlan["convention"];
+    confidence: number;
+    evidence: string[];
+  } {
+    const conventional = history.filter((item) =>
+      /^(feat|fix|refactor|test|docs|build|chore)(\(.+\))?!?: /.test(item),
+    );
+    return history.length >= 3 && conventional.length / history.length >= 0.6
+      ? {
+          convention: "repository",
+          confidence: conventional.length / history.length,
+          evidence: conventional.slice(0, 5),
+        }
+      : {
+          convention: "plain",
+          confidence: history.length >= 3 ? 0.6 : 0.2,
+          evidence: history.slice(0, 5),
+        };
+  }
 }
-export class CommitGroupingService { group(files: DeliveryFileChange[]): Array<{ key: string; files: DeliveryFileChange[]; type: ProposedCommit["commitType"] }> { const groups = new Map<string, { key: string; files: DeliveryFileChange[]; type: ProposedCommit["commitType"] }>(); for (const file of files.filter((item) => item.included)) { const [key, type] = groupFor(file.path); const existing = groups.get(key) ?? { key, files: [], type }; existing.files.push(file); groups.set(key, existing); } return [...groups.values()].sort((a, b) => groupOrder(a.key) - groupOrder(b.key)); } }
+export class CommitGroupingService {
+  group(
+    files: DeliveryFileChange[],
+  ): Array<{ key: string; files: DeliveryFileChange[]; type: ProposedCommit["commitType"] }> {
+    const groups = new Map<
+      string,
+      { key: string; files: DeliveryFileChange[]; type: ProposedCommit["commitType"] }
+    >();
+    for (const file of files.filter((item) => item.included)) {
+      const [key, type] = groupFor(file.path);
+      const existing = groups.get(key) ?? { key, files: [], type };
+      existing.files.push(file);
+      groups.set(key, existing);
+    }
+    return [...groups.values()].sort((a, b) => groupOrder(a.key) - groupOrder(b.key));
+  }
+}
 
 export class CommitPlanningService {
-  readonly messages = new CommitMessageService(); readonly grouping = new CommitGroupingService();
+  readonly messages = new CommitMessageService();
+  readonly grouping = new CommitGroupingService();
   constructor(private readonly persistence: DeliveryPersistenceStore) {}
-  async create(changeSet: DeliveryChangeSet, convention?: CommitPlan["convention"], history: string[] = []): Promise<CommitPlan> { const detected = this.messages.detect(history); const selected = convention ?? detected.convention; const groups = this.grouping.group(changeSet.files); if (!groups.length) throw new Error("At least one reviewed file is required."); const commits = groups.map((group, order) => { const msg = this.messages.generate(group.type, scopeFor(group.files), summaryFor(group.key), group.files.map((item) => `${item.status} ${item.path}`), selected); return { id: crypto.randomUUID(), order, ...msg, includedFileIds: group.files.map((item) => item.id), relatedTaskIds: unique(group.files.flatMap((item) => item.relatedTaskIds)), relatedRequirementIds: unique(group.files.flatMap((item) => item.relatedRequirementIds)), relatedAcceptanceCriterionIds: unique(group.files.flatMap((item) => item.relatedAcceptanceCriterionIds)), dependencies: order ? [] : [], commitType: group.type, ...(scopeFor(group.files) ? { scope: scopeFor(group.files) } : {}), breaking: false, validationRunIds: changeSet.validationRunIds, risks: changeSet.findings, userNotes: "", actualFiles: [] }; }); const now = new Date().toISOString(); const value = CommitPlanSchema.parse({ schemaVersion: 1, id: crypto.randomUUID(), changeSetId: changeSet.id, convention: selected, commits, status: "draft", fingerprint: planFingerprint(changeSet.fingerprint, commits), diagnostics: convention ? [] : [`Commit convention detected as ${detected.convention} with confidence ${detected.confidence.toFixed(2)} from ${detected.evidence.length} bounded history samples.`], createdAt: now, updatedAt: now }); await this.save(value); return value; }
-  async save(value: CommitPlan): Promise<CommitPlan> { await this.persistence.update((state) => ({ ...state, commitPlans: [...state.commitPlans.filter((item) => item.id !== value.id), value].slice(-100) })); return value; }
-  async single(plan: CommitPlan): Promise<CommitPlan> { const all = unique(plan.commits.flatMap((item) => item.includedFileIds)); const first = plan.commits[0]!; return this.save(refreshPlan(plan, [{ ...first, includedFileIds: all, relatedTaskIds: unique(plan.commits.flatMap((item) => item.relatedTaskIds)), relatedRequirementIds: unique(plan.commits.flatMap((item) => item.relatedRequirementIds)), relatedAcceptanceCriterionIds: unique(plan.commits.flatMap((item) => item.relatedAcceptanceCriterionIds)), description: plan.commits.map((item) => item.description).filter(Boolean).join("\n"), dependencies: [], order: 0 }])); }
-  async merge(plan: CommitPlan, ids: string[]): Promise<CommitPlan> { const selected = plan.commits.filter((item) => ids.includes(item.id)); if (selected.length < 2) throw new Error("Select at least two commits to merge."); const merged = { ...selected[0]!, includedFileIds: unique(selected.flatMap((item) => item.includedFileIds)), description: selected.map((item) => item.description).join("\n"), relatedTaskIds: unique(selected.flatMap((item) => item.relatedTaskIds)) }; return this.save(refreshPlan(plan, [...plan.commits.filter((item) => !ids.includes(item.id)), merged])); }
-  async moveFile(plan: CommitPlan, fileIdValue: string, targetCommitId: string): Promise<CommitPlan> { if (!plan.commits.some((item) => item.id === targetCommitId)) throw new Error("Target commit not found."); const commits = plan.commits.map((item) => ({ ...item, includedFileIds: item.id === targetCommitId ? unique([...item.includedFileIds, fileIdValue]) : item.includedFileIds.filter((id) => id !== fileIdValue) })).filter((item) => item.includedFileIds.length); return this.save(refreshPlan(plan, commits)); }
-  async split(plan: CommitPlan, commitId: string, fileIds: string[], title: string): Promise<CommitPlan> { const source = plan.commits.find((item) => item.id === commitId); if (!source || fileIds.some((id) => !source.includedFileIds.includes(id)) || fileIds.length >= source.includedFileIds.length) throw new Error("Split must move a proper non-empty subset of one commit."); const retained = { ...source, includedFileIds: source.includedFileIds.filter((id) => !fileIds.includes(id)) }; const created = { ...source, id: crypto.randomUUID(), title, includedFileIds: unique(fileIds), dependencies: [] }; return this.save(refreshPlan(plan, plan.commits.flatMap((item) => item.id === commitId ? [retained, created] : [item]))); }
-  async reorder(plan: CommitPlan, commitIds: string[]): Promise<CommitPlan> { if (commitIds.length !== plan.commits.length || unique(commitIds).length !== plan.commits.length || commitIds.some((id) => !plan.commits.some((item) => item.id === id))) throw new Error("Commit reorder must contain every commit exactly once."); return this.save(refreshPlan(plan, commitIds.map((id) => plan.commits.find((item) => item.id === id)!))); }
+  async create(
+    changeSet: DeliveryChangeSet,
+    convention?: CommitPlan["convention"],
+    history: string[] = [],
+  ): Promise<CommitPlan> {
+    const detected = this.messages.detect(history);
+    const selected = convention ?? detected.convention;
+    const groups = this.grouping.group(changeSet.files);
+    if (!groups.length) throw new Error("At least one reviewed file is required.");
+    const commits = groups.map((group, order) => {
+      const msg = this.messages.generate(
+        group.type,
+        scopeFor(group.files),
+        summaryFor(group.key),
+        group.files.map((item) => `${item.status} ${item.path}`),
+        selected,
+      );
+      return {
+        id: crypto.randomUUID(),
+        order,
+        ...msg,
+        includedFileIds: group.files.map((item) => item.id),
+        relatedTaskIds: unique(group.files.flatMap((item) => item.relatedTaskIds)),
+        relatedRequirementIds: unique(group.files.flatMap((item) => item.relatedRequirementIds)),
+        relatedAcceptanceCriterionIds: unique(
+          group.files.flatMap((item) => item.relatedAcceptanceCriterionIds),
+        ),
+        dependencies: order ? [] : [],
+        commitType: group.type,
+        ...(scopeFor(group.files) ? { scope: scopeFor(group.files) } : {}),
+        breaking: false,
+        validationRunIds: changeSet.validationRunIds,
+        risks: changeSet.findings,
+        userNotes: "",
+        actualFiles: [],
+      };
+    });
+    const now = new Date().toISOString();
+    const value = CommitPlanSchema.parse({
+      schemaVersion: 1,
+      id: crypto.randomUUID(),
+      changeSetId: changeSet.id,
+      convention: selected,
+      commits,
+      status: "draft",
+      fingerprint: planFingerprint(changeSet.fingerprint, commits),
+      diagnostics: convention
+        ? []
+        : [
+            `Commit convention detected as ${detected.convention} with confidence ${detected.confidence.toFixed(2)} from ${detected.evidence.length} bounded history samples.`,
+          ],
+      createdAt: now,
+      updatedAt: now,
+    });
+    await this.save(value);
+    return value;
+  }
+  async save(value: CommitPlan): Promise<CommitPlan> {
+    await this.persistence.update((state) => ({
+      ...state,
+      commitPlans: [...state.commitPlans.filter((item) => item.id !== value.id), value].slice(-100),
+    }));
+    return value;
+  }
+  async single(plan: CommitPlan): Promise<CommitPlan> {
+    const all = unique(plan.commits.flatMap((item) => item.includedFileIds));
+    const first = plan.commits[0]!;
+    return this.save(
+      refreshPlan(plan, [
+        {
+          ...first,
+          includedFileIds: all,
+          relatedTaskIds: unique(plan.commits.flatMap((item) => item.relatedTaskIds)),
+          relatedRequirementIds: unique(plan.commits.flatMap((item) => item.relatedRequirementIds)),
+          relatedAcceptanceCriterionIds: unique(
+            plan.commits.flatMap((item) => item.relatedAcceptanceCriterionIds),
+          ),
+          description: plan.commits
+            .map((item) => item.description)
+            .filter(Boolean)
+            .join("\n"),
+          dependencies: [],
+          order: 0,
+        },
+      ]),
+    );
+  }
+  async merge(plan: CommitPlan, ids: string[]): Promise<CommitPlan> {
+    const selected = plan.commits.filter((item) => ids.includes(item.id));
+    if (selected.length < 2) throw new Error("Select at least two commits to merge.");
+    const merged = {
+      ...selected[0]!,
+      includedFileIds: unique(selected.flatMap((item) => item.includedFileIds)),
+      description: selected.map((item) => item.description).join("\n"),
+      relatedTaskIds: unique(selected.flatMap((item) => item.relatedTaskIds)),
+    };
+    return this.save(
+      refreshPlan(plan, [...plan.commits.filter((item) => !ids.includes(item.id)), merged]),
+    );
+  }
+  async moveFile(
+    plan: CommitPlan,
+    fileIdValue: string,
+    targetCommitId: string,
+  ): Promise<CommitPlan> {
+    if (!plan.commits.some((item) => item.id === targetCommitId))
+      throw new Error("Target commit not found.");
+    const commits = plan.commits
+      .map((item) => ({
+        ...item,
+        includedFileIds:
+          item.id === targetCommitId
+            ? unique([...item.includedFileIds, fileIdValue])
+            : item.includedFileIds.filter((id) => id !== fileIdValue),
+      }))
+      .filter((item) => item.includedFileIds.length);
+    return this.save(refreshPlan(plan, commits));
+  }
+  async split(
+    plan: CommitPlan,
+    commitId: string,
+    fileIds: string[],
+    title: string,
+  ): Promise<CommitPlan> {
+    const source = plan.commits.find((item) => item.id === commitId);
+    if (
+      !source ||
+      fileIds.some((id) => !source.includedFileIds.includes(id)) ||
+      fileIds.length >= source.includedFileIds.length
+    )
+      throw new Error("Split must move a proper non-empty subset of one commit.");
+    const retained = {
+      ...source,
+      includedFileIds: source.includedFileIds.filter((id) => !fileIds.includes(id)),
+    };
+    const created = {
+      ...source,
+      id: crypto.randomUUID(),
+      title,
+      includedFileIds: unique(fileIds),
+      dependencies: [],
+    };
+    return this.save(
+      refreshPlan(
+        plan,
+        plan.commits.flatMap((item) => (item.id === commitId ? [retained, created] : [item])),
+      ),
+    );
+  }
+  async reorder(plan: CommitPlan, commitIds: string[]): Promise<CommitPlan> {
+    if (
+      commitIds.length !== plan.commits.length ||
+      unique(commitIds).length !== plan.commits.length ||
+      commitIds.some((id) => !plan.commits.some((item) => item.id === id))
+    )
+      throw new Error("Commit reorder must contain every commit exactly once.");
+    return this.save(
+      refreshPlan(
+        plan,
+        commitIds.map((id) => plan.commits.find((item) => item.id === id)!),
+      ),
+    );
+  }
 }
 
 export class GitMutationApprovalService {
   constructor(private readonly persistence: DeliveryPersistenceStore) {}
-  async approve(input: Omit<GitMutationApproval, "id" | "approvedBy" | "approvedAt">): Promise<GitMutationApproval> { const value = GitMutationApprovalSchema.parse({ ...input, id: crypto.randomUUID(), approvedBy: "user", approvedAt: new Date().toISOString() }); await this.persistence.update((state) => ({ ...state, approvals: [...state.approvals, value].slice(-500) })); return value; }
-  require(id: string, action: GitMutationApproval["action"]): GitMutationApproval { const value = this.persistence.snapshot.approvals.find((item) => item.id === id); if (!value || value.action !== action || value.consumedAt) throw new Error(`A current explicit ${action} approval is required.`); return value; }
-  async consume(id: string): Promise<void> { await this.persistence.update((state) => ({ ...state, approvals: state.approvals.map((item) => item.id === id ? { ...item, consumedAt: new Date().toISOString() } : item) })); }
+  async approve(
+    input: Omit<GitMutationApproval, "id" | "approvedBy" | "approvedAt">,
+  ): Promise<GitMutationApproval> {
+    const value = GitMutationApprovalSchema.parse({
+      ...input,
+      id: crypto.randomUUID(),
+      approvedBy: "user",
+      approvedAt: new Date().toISOString(),
+    });
+    await this.persistence.update((state) => ({
+      ...state,
+      approvals: [...state.approvals, value].slice(-500),
+    }));
+    return value;
+  }
+  require(id: string, action: GitMutationApproval["action"]): GitMutationApproval {
+    const value = this.persistence.snapshot.approvals.find((item) => item.id === id);
+    if (!value || value.action !== action || value.consumedAt)
+      throw new Error(`A current explicit ${action} approval is required.`);
+    return value;
+  }
+  async consume(id: string): Promise<void> {
+    await this.persistence.update((state) => ({
+      ...state,
+      approvals: state.approvals.map((item) =>
+        item.id === id ? { ...item, consumedAt: new Date().toISOString() } : item,
+      ),
+    }));
+  }
 }
 
 class OperationUncertainError extends Error {}
 
 export class GitMutationService {
-  constructor(private readonly adapter: GitRuntimeAdapter, private readonly approvals: GitMutationApprovalService, private readonly persistence: DeliveryPersistenceStore) {}
-  async stage(root: string, approvalId: string, changeSet: DeliveryChangeSet): Promise<GitActionResult> { const approval = this.verify(approvalId, "stage", changeSet); const allowed = changeSet.files.filter((item) => item.included && !item.sensitive).map((item) => item.path); if (approval.paths.some((path) => !allowed.includes(path))) throw new Error("Staging approval contains a path outside the reviewed included change set."); return this.run(approval, async () => { const before = await this.adapter.state(root); if (before.fingerprint !== approval.message) throw new Error("Repository changed after staging approval; review is stale."); await this.adapter.stage(root, approval.paths); const state = await this.adapter.state(root); const missing = approval.paths.filter((path) => !state.stagedFiles.includes(path)); if (missing.length) throw new Error(`Staged content verification failed for ${missing.join(", ")}.`); return { output: "Approved paths staged and verified.", paths: approval.paths }; }); }
-  async unstage(root: string, approvalId: string, changeSet: DeliveryChangeSet): Promise<GitActionResult> { const approval = this.verify(approvalId, "unstage", changeSet); return this.run(approval, async () => { const before = await this.adapter.state(root); if (before.fingerprint !== approval.message) throw new Error("Repository changed after unstaging approval; review is stale."); await this.adapter.unstage(root, approval.paths); const state = await this.adapter.state(root); if (approval.paths.some((path) => state.stagedFiles.includes(path))) throw new Error("Unstage verification failed."); return { output: "Approved paths unstaged and verified.", paths: approval.paths }; }); }
-  async createBranch(root: string, approvalId: string): Promise<GitActionResult> { const approval = this.approvals.require(approvalId, "create-branch"); const branch = approval.remoteBranch; if (!branch || new GitBranchService().validate(branch).length) throw new Error("Approved branch name is invalid."); return this.run(approval, async () => { const before = await this.adapter.state(root); if (approval.message !== before.fingerprint) throw new Error("Repository state changed after branch approval."); await this.adapter.createBranch(root, branch); const state = await this.adapter.state(root); if (state.branch !== branch) throw new OperationUncertainError("Branch command completed but the resulting branch could not be verified."); return { output: `Created and verified ${branch}.`, paths: [] }; }); }
-  async commit(root: string, approvalId: string, changeSet: DeliveryChangeSet, plan: CommitPlan): Promise<GitActionResult> { const approval = this.verify(approvalId, "commit", changeSet); const proposed = plan.commits.find((item) => item.id === approval.proposedCommitId); if (!proposed || !approval.message?.trim()) throw new Error("Approved commit proposal and message are required."); if (proposed.includedFileIds.some((id) => !changeSet.includedFileIds.includes(id) || changeSet.files.find((item) => item.id === id)?.sensitive)) throw new Error("Commit proposal contains an excluded, sensitive, or unknown file."); const expected = proposed.includedFileIds.map((id) => changeSet.files.find((item) => item.id === id)?.path).filter((item): item is string => Boolean(item)).sort(); return this.run(approval, async () => { const state = await this.adapter.state(root); if (state.conflictedFiles.length || state.branch !== approval.branch) throw new Error("Repository branch/conflict state changed after approval."); if (JSON.stringify([...state.stagedFiles].sort()) !== JSON.stringify(expected)) throw new Error("Staged files do not exactly match the approved commit proposal."); const result = await this.adapter.commit(root, approval.message!); if (JSON.stringify([...result.files].sort()) !== JSON.stringify(expected)) throw new OperationUncertainError("Commit exists but its actual files differ from the approved proposal; inspect HEAD before retrying."); return { output: result.output, paths: result.files, commitHash: result.hash }; }); }
-  async push(root: string, approvalId: string): Promise<GitActionResult> { const approval = this.approvals.require(approvalId, "push"); if (!approval.remote || !approval.remoteBranch) throw new Error("Approved remote and branch are required."); return this.run(approval, async () => { const state = await this.adapter.state(root); if (state.detachedHead || state.conflictedFiles.length || state.behind > 0 || state.branch !== approval.branch) throw new Error("Push is blocked by detached, conflicted, behind-upstream, or wrong-branch state."); const result = await this.adapter.push(root, approval.remote!, approval.remoteBranch!, !state.upstreamBranch); if (!result.verified) throw new OperationUncertainError("Push command completed but remote state could not be verified; inspect the remote before retrying."); return { output: result.output, paths: [] }; }); }
-  private verify(id: string, action: GitMutationApproval["action"], changeSet: DeliveryChangeSet): GitMutationApproval { const approval = this.approvals.require(id, action); if (approval.changeSetFingerprint !== changeSet.fingerprint) throw new Error("Repository/change-set fingerprint changed after approval."); return approval; }
-  private async run(approval: GitMutationApproval, operation: () => Promise<{ output: string; paths: string[]; commitHash?: string }>): Promise<GitActionResult> { const started = performance.now(); let value: GitActionResult; try { const result = await operation(); value = GitActionResultSchema.parse({ id: crypto.randomUUID(), approvalId: approval.id, action: approval.action, status: "succeeded", durationMs: performance.now() - started, ...(result.commitHash ? { commitHash: result.commitHash } : {}), affectedPaths: result.paths, sanitizedOutput: sanitizeOutput(result.output), retrySafe: false, createdAt: new Date().toISOString() }); } catch (cause) { value = GitActionResultSchema.parse({ id: crypto.randomUUID(), approvalId: approval.id, action: approval.action, status: cause instanceof OperationUncertainError ? "uncertain" : "failed", durationMs: performance.now() - started, affectedPaths: [], sanitizedOutput: sanitizeOutput(cause instanceof Error ? cause.message : String(cause)), retrySafe: cause instanceof OperationUncertainError ? false : approval.safelyRetryable, createdAt: new Date().toISOString() }); } await this.approvals.consume(approval.id); await this.persistence.update((state) => ({ ...state, actionResults: [...state.actionResults, value].slice(-500) })); return value; }
+  constructor(
+    private readonly adapter: GitRuntimeAdapter,
+    private readonly approvals: GitMutationApprovalService,
+    private readonly persistence: DeliveryPersistenceStore,
+  ) {}
+  async stage(
+    root: string,
+    approvalId: string,
+    changeSet: DeliveryChangeSet,
+  ): Promise<GitActionResult> {
+    const approval = this.verify(approvalId, "stage", changeSet);
+    const allowed = changeSet.files
+      .filter((item) => item.included && !item.sensitive)
+      .map((item) => item.path);
+    if (approval.paths.some((path) => !allowed.includes(path)))
+      throw new Error("Staging approval contains a path outside the reviewed included change set.");
+    return this.run(approval, async () => {
+      const before = await this.adapter.state(root);
+      if (before.fingerprint !== approval.message)
+        throw new Error("Repository changed after staging approval; review is stale.");
+      await this.adapter.stage(root, approval.paths);
+      const state = await this.adapter.state(root);
+      const missing = approval.paths.filter((path) => !state.stagedFiles.includes(path));
+      if (missing.length)
+        throw new Error(`Staged content verification failed for ${missing.join(", ")}.`);
+      return { output: "Approved paths staged and verified.", paths: approval.paths };
+    });
+  }
+  async unstage(
+    root: string,
+    approvalId: string,
+    changeSet: DeliveryChangeSet,
+  ): Promise<GitActionResult> {
+    const approval = this.verify(approvalId, "unstage", changeSet);
+    return this.run(approval, async () => {
+      const before = await this.adapter.state(root);
+      if (before.fingerprint !== approval.message)
+        throw new Error("Repository changed after unstaging approval; review is stale.");
+      await this.adapter.unstage(root, approval.paths);
+      const state = await this.adapter.state(root);
+      if (approval.paths.some((path) => state.stagedFiles.includes(path)))
+        throw new Error("Unstage verification failed.");
+      return { output: "Approved paths unstaged and verified.", paths: approval.paths };
+    });
+  }
+  async createBranch(root: string, approvalId: string): Promise<GitActionResult> {
+    const approval = this.approvals.require(approvalId, "create-branch");
+    const branch = approval.remoteBranch;
+    if (!branch || new GitBranchService().validate(branch).length)
+      throw new Error("Approved branch name is invalid.");
+    return this.run(approval, async () => {
+      const before = await this.adapter.state(root);
+      if (approval.message !== before.fingerprint)
+        throw new Error("Repository state changed after branch approval.");
+      await this.adapter.createBranch(root, branch);
+      const state = await this.adapter.state(root);
+      if (state.branch !== branch)
+        throw new OperationUncertainError(
+          "Branch command completed but the resulting branch could not be verified.",
+        );
+      return { output: `Created and verified ${branch}.`, paths: [] };
+    });
+  }
+  async commit(
+    root: string,
+    approvalId: string,
+    changeSet: DeliveryChangeSet,
+    plan: CommitPlan,
+  ): Promise<GitActionResult> {
+    const approval = this.verify(approvalId, "commit", changeSet);
+    const proposed = plan.commits.find((item) => item.id === approval.proposedCommitId);
+    if (!proposed || !approval.message?.trim())
+      throw new Error("Approved commit proposal and message are required.");
+    if (
+      proposed.includedFileIds.some(
+        (id) =>
+          !changeSet.includedFileIds.includes(id) ||
+          changeSet.files.find((item) => item.id === id)?.sensitive,
+      )
+    )
+      throw new Error("Commit proposal contains an excluded, sensitive, or unknown file.");
+    const expected = proposed.includedFileIds
+      .map((id) => changeSet.files.find((item) => item.id === id)?.path)
+      .filter((item): item is string => Boolean(item))
+      .sort();
+    return this.run(approval, async () => {
+      const state = await this.adapter.state(root);
+      if (state.conflictedFiles.length || state.branch !== approval.branch)
+        throw new Error("Repository branch/conflict state changed after approval.");
+      if (JSON.stringify([...state.stagedFiles].sort()) !== JSON.stringify(expected))
+        throw new Error("Staged files do not exactly match the approved commit proposal.");
+      const result = await this.adapter.commit(root, approval.message!);
+      if (JSON.stringify([...result.files].sort()) !== JSON.stringify(expected))
+        throw new OperationUncertainError(
+          "Commit exists but its actual files differ from the approved proposal; inspect HEAD before retrying.",
+        );
+      return { output: result.output, paths: result.files, commitHash: result.hash };
+    });
+  }
+  async push(root: string, approvalId: string): Promise<GitActionResult> {
+    const approval = this.approvals.require(approvalId, "push");
+    if (!approval.remote || !approval.remoteBranch)
+      throw new Error("Approved remote and branch are required.");
+    return this.run(approval, async () => {
+      const state = await this.adapter.state(root);
+      if (
+        state.detachedHead ||
+        state.conflictedFiles.length ||
+        state.behind > 0 ||
+        state.branch !== approval.branch
+      )
+        throw new Error(
+          "Push is blocked by detached, conflicted, behind-upstream, or wrong-branch state.",
+        );
+      const result = await this.adapter.push(
+        root,
+        approval.remote!,
+        approval.remoteBranch!,
+        !state.upstreamBranch,
+      );
+      if (!result.verified)
+        throw new OperationUncertainError(
+          "Push command completed but remote state could not be verified; inspect the remote before retrying.",
+        );
+      return { output: result.output, paths: [] };
+    });
+  }
+  private verify(
+    id: string,
+    action: GitMutationApproval["action"],
+    changeSet: DeliveryChangeSet,
+  ): GitMutationApproval {
+    const approval = this.approvals.require(id, action);
+    if (approval.changeSetFingerprint !== changeSet.fingerprint)
+      throw new Error("Repository/change-set fingerprint changed after approval.");
+    return approval;
+  }
+  private async run(
+    approval: GitMutationApproval,
+    operation: () => Promise<{ output: string; paths: string[]; commitHash?: string }>,
+  ): Promise<GitActionResult> {
+    const started = performance.now();
+    let value: GitActionResult;
+    try {
+      const result = await operation();
+      value = GitActionResultSchema.parse({
+        id: crypto.randomUUID(),
+        approvalId: approval.id,
+        action: approval.action,
+        status: "succeeded",
+        durationMs: performance.now() - started,
+        ...(result.commitHash ? { commitHash: result.commitHash } : {}),
+        affectedPaths: result.paths,
+        sanitizedOutput: sanitizeOutput(result.output),
+        retrySafe: false,
+        createdAt: new Date().toISOString(),
+      });
+    } catch (cause) {
+      value = GitActionResultSchema.parse({
+        id: crypto.randomUUID(),
+        approvalId: approval.id,
+        action: approval.action,
+        status: cause instanceof OperationUncertainError ? "uncertain" : "failed",
+        durationMs: performance.now() - started,
+        affectedPaths: [],
+        sanitizedOutput: sanitizeOutput(cause instanceof Error ? cause.message : String(cause)),
+        retrySafe: cause instanceof OperationUncertainError ? false : approval.safelyRetryable,
+        createdAt: new Date().toISOString(),
+      });
+    }
+    await this.approvals.consume(approval.id);
+    await this.persistence.update((state) => ({
+      ...state,
+      actionResults: [...state.actionResults, value].slice(-500),
+    }));
+    return value;
+  }
 }
 export class GitStagingService extends GitMutationService {}
 export class GitCommitService extends GitMutationService {}
 export class GitPushService extends GitMutationService {}
 
-export class PullRequestProviderRegistry { constructor(private readonly providers: PullRequestProvider[]) {} async detect(root: string, state: GitRepositoryState): Promise<{ capability: PullRequestProviderCapability; provider?: PullRequestProvider }> { for (const provider of this.providers) { const capability = await provider.detect(root, state); if (capability.detected) return { capability, provider }; } return { capability: { provider: "unknown", detected: false, authenticated: "unknown", draftCreationAvailable: false, directCreationAvailable: false, reviewerSelectionAvailable: false, labelSelectionAvailable: false, templateDiscoveryAvailable: false, resultTrackingAvailable: false, diagnostics: [{ code: "pr-provider-unavailable", severity: "warning", message: "No supported pull-request provider integration is available; assisted clipboard preparation remains available." }] } }; } }
-export class PullRequestCapabilityService { constructor(private readonly registry: PullRequestProviderRegistry) {} detect(root: string, state: GitRepositoryState) { return this.registry.detect(root, state); } }
-export class GitHubPullRequestProvider implements PullRequestProvider { constructor(private readonly environment: { detected(): Promise<boolean>; commands(): Promise<string[]>; openCreate?(draft: PullRequestDraft): Promise<void>; create?(draft: PullRequestDraft): Promise<{ number: number; url: string; evidence: string[] }> }) {} async detect(): Promise<PullRequestProviderCapability> { const detected = await this.environment.detected(); const commands = detected ? await this.environment.commands() : []; const direct = Object.hasOwn(this.environment, "create"); return { provider: "github", detected, authenticated: "unknown", draftCreationAvailable: true, directCreationAvailable: direct, reviewerSelectionAvailable: false, labelSelectionAvailable: false, templateDiscoveryAvailable: true, resultTrackingAvailable: false, integrationMethod: direct ? "supported-provider-api" : commands.includes("pr.create") ? "supported-assisted-command" : "clipboard", diagnostics: direct ? [] : [{ code: "github-direct-unavailable", severity: "warning", message: "GitHub authentication/direct PR creation is not proven; Keystone will not claim direct creation." }] }; } async discoverTemplates(root: string): Promise<Array<{ id: string; name: string; body: string }>> { const paths = [join(root, ".github", "pull_request_template.md"), join(root, "pull_request_template.md")]; try { const entries = await readdir(join(root, ".github", "PULL_REQUEST_TEMPLATE"), { withFileTypes: true }); paths.push(...entries.filter((item) => item.isFile() && item.name.toLowerCase().endsWith(".md")).slice(0, 20).map((item) => join(root, ".github", "PULL_REQUEST_TEMPLATE", item.name))); } catch { /* Optional template directory. */ } const output: Array<{ id: string; name: string; body: string }> = []; for (const path of paths) { try { const body = (await readFile(path, "utf8")).slice(0, 20_000); output.push({ id: hash(path), name: basename(path, ".md"), body }); } catch { /* Optional template file. */ } } return output; } openAssisted(draft: PullRequestDraft): Promise<void> { if (!this.environment.openCreate) throw new Error("Assisted GitHub creation is unavailable."); return this.environment.openCreate(draft); } create(draft: PullRequestDraft) { if (!this.environment.create) throw new Error("Direct GitHub PR creation is unavailable."); return this.environment.create(draft); } }
-export class ClipboardPullRequestProvider implements PullRequestProvider { constructor(private readonly copy: (value: string) => Promise<void>) {} detect(): Promise<PullRequestProviderCapability> { return Promise.resolve({ provider: "unknown", detected: true, authenticated: "unknown", draftCreationAvailable: true, directCreationAvailable: false, reviewerSelectionAvailable: false, labelSelectionAvailable: false, templateDiscoveryAvailable: false, resultTrackingAvailable: false, integrationMethod: "clipboard", diagnostics: [{ code: "clipboard-only", severity: "warning", message: "No authoritative remote PR provider is proven; Keystone can copy a reviewed draft but cannot claim creation." }] }); } discoverTemplates(): Promise<Array<{ id: string; name: string; body: string }>> { return Promise.resolve([]); } openAssisted(draft: PullRequestDraft): Promise<void> { return this.copy(`${draft.title}\n\n${draft.body}`); } }
+export class PullRequestProviderRegistry {
+  constructor(private readonly providers: PullRequestProvider[]) {}
+  async detect(
+    root: string,
+    state: GitRepositoryState,
+  ): Promise<{ capability: PullRequestProviderCapability; provider?: PullRequestProvider }> {
+    for (const provider of this.providers) {
+      const capability = await provider.detect(root, state);
+      if (capability.detected) return { capability, provider };
+    }
+    return {
+      capability: {
+        provider: "unknown",
+        detected: false,
+        authenticated: "unknown",
+        draftCreationAvailable: false,
+        directCreationAvailable: false,
+        reviewerSelectionAvailable: false,
+        labelSelectionAvailable: false,
+        templateDiscoveryAvailable: false,
+        resultTrackingAvailable: false,
+        diagnostics: [
+          {
+            code: "pr-provider-unavailable",
+            severity: "warning",
+            message:
+              "No supported pull-request provider integration is available; assisted clipboard preparation remains available.",
+          },
+        ],
+      },
+    };
+  }
+}
+export class PullRequestCapabilityService {
+  constructor(private readonly registry: PullRequestProviderRegistry) {}
+  detect(root: string, state: GitRepositoryState) {
+    return this.registry.detect(root, state);
+  }
+}
+export class GitHubPullRequestProvider implements PullRequestProvider {
+  constructor(
+    private readonly environment: {
+      detected(): Promise<boolean>;
+      commands(): Promise<string[]>;
+      openCreate?(draft: PullRequestDraft): Promise<void>;
+      create?(
+        draft: PullRequestDraft,
+      ): Promise<{ number: number; url: string; evidence: string[] }>;
+    },
+  ) {}
+  async detect(): Promise<PullRequestProviderCapability> {
+    const detected = await this.environment.detected();
+    const commands = detected ? await this.environment.commands() : [];
+    const direct = Object.hasOwn(this.environment, "create");
+    return {
+      provider: "github",
+      detected,
+      authenticated: "unknown",
+      draftCreationAvailable: true,
+      directCreationAvailable: direct,
+      reviewerSelectionAvailable: false,
+      labelSelectionAvailable: false,
+      templateDiscoveryAvailable: true,
+      resultTrackingAvailable: false,
+      integrationMethod: direct
+        ? "supported-provider-api"
+        : commands.includes("pr.create")
+          ? "supported-assisted-command"
+          : "clipboard",
+      diagnostics: direct
+        ? []
+        : [
+            {
+              code: "github-direct-unavailable",
+              severity: "warning",
+              message:
+                "GitHub authentication/direct PR creation is not proven; Keystone will not claim direct creation.",
+            },
+          ],
+    };
+  }
+  async discoverTemplates(
+    root: string,
+  ): Promise<Array<{ id: string; name: string; body: string }>> {
+    const paths = [
+      join(root, ".github", "pull_request_template.md"),
+      join(root, "pull_request_template.md"),
+    ];
+    try {
+      const entries = await readdir(join(root, ".github", "PULL_REQUEST_TEMPLATE"), {
+        withFileTypes: true,
+      });
+      paths.push(
+        ...entries
+          .filter((item) => item.isFile() && item.name.toLowerCase().endsWith(".md"))
+          .slice(0, 20)
+          .map((item) => join(root, ".github", "PULL_REQUEST_TEMPLATE", item.name)),
+      );
+    } catch {
+      /* Optional template directory. */
+    }
+    const output: Array<{ id: string; name: string; body: string }> = [];
+    for (const path of paths) {
+      try {
+        const body = (await readFile(path, "utf8")).slice(0, 20_000);
+        output.push({ id: hash(path), name: basename(path, ".md"), body });
+      } catch {
+        /* Optional template file. */
+      }
+    }
+    return output;
+  }
+  openAssisted(draft: PullRequestDraft): Promise<void> {
+    if (!this.environment.openCreate) throw new Error("Assisted GitHub creation is unavailable.");
+    return this.environment.openCreate(draft);
+  }
+  create(draft: PullRequestDraft) {
+    if (!this.environment.create) throw new Error("Direct GitHub PR creation is unavailable.");
+    return this.environment.create(draft);
+  }
+}
+export class ClipboardPullRequestProvider implements PullRequestProvider {
+  constructor(private readonly copy: (value: string) => Promise<void>) {}
+  detect(): Promise<PullRequestProviderCapability> {
+    return Promise.resolve({
+      provider: "unknown",
+      detected: true,
+      authenticated: "unknown",
+      draftCreationAvailable: true,
+      directCreationAvailable: false,
+      reviewerSelectionAvailable: false,
+      labelSelectionAvailable: false,
+      templateDiscoveryAvailable: false,
+      resultTrackingAvailable: false,
+      integrationMethod: "clipboard",
+      diagnostics: [
+        {
+          code: "clipboard-only",
+          severity: "warning",
+          message:
+            "No authoritative remote PR provider is proven; Keystone can copy a reviewed draft but cannot claim creation.",
+        },
+      ],
+    });
+  }
+  discoverTemplates(): Promise<Array<{ id: string; name: string; body: string }>> {
+    return Promise.resolve([]);
+  }
+  openAssisted(draft: PullRequestDraft): Promise<void> {
+    return this.copy(`${draft.title}\n\n${draft.body}`);
+  }
+}
 
 export class PullRequestDraftService {
-  constructor(private readonly workflows: DevelopmentWorkflowService, private readonly executions: ExecutionPersistenceStore, private readonly persistence: DeliveryPersistenceStore) {}
-  async create(changeSet: DeliveryChangeSet, plan: CommitPlan, capability: PullRequestProviderCapability, baseBranch: string): Promise<PullRequestDraft> { const workflow = this.workflows.get(changeSet.workflowId); const specification = workflow?.specification; if (!workflow || !specification) throw new Error("Workflow unavailable."); const sessions = this.executions.snapshot.sessions.filter((item) => item.workflowId === workflow.id); const changed = sessions.flatMap((item) => item.changedEntities); const sections: string[] = [`## Summary\n\n${specification.title}`, `## Scope\n\n${changeSet.files.filter((item) => item.included).map((item) => `- ${item.status} ${item.path}`).join("\n")}`, `## Validation\n\n${changeSet.validationRunIds.map((id) => `- Validation run ${id}: retained evidence`).join("\n")}`]; if (changed.some((item) => ["route-change", "contract-change"].includes(item.changeKind))) sections.push(`## API or contract changes\n\n${changed.filter((item) => ["route-change", "contract-change"].includes(item.changeKind)).map((item) => `- ${item.changeKind}: ${item.qualifiedName}`).join("\n")}`); if (changed.some((item) => item.changeKind === "schema-change")) sections.push(`## Data and migration changes\n\n${changed.filter((item) => item.changeKind === "schema-change").map((item) => `- ${item.qualifiedName}`).join("\n")}`); const security = changeSet.findings.filter((item) => /security/i.test(item)); if (security.length) sections.push(`## Security considerations\n\n${security.map((item) => `- ${item}`).join("\n")}`); const performance = changeSet.findings.filter((item) => /performance/i.test(item)); if (performance.length) sections.push(`## Performance considerations\n\n${performance.map((item) => `- ${item}`).join("\n")}`); const risks = unique([...changeSet.findings, ...plan.commits.flatMap((item) => item.risks)]); if (risks.length) sections.push(`## Risks and limitations\n\n${risks.map((item) => `- ${item}`).join("\n")}`); const guidance = reviewGuidance(changed.map((item) => item.changeKind)); if (guidance.length) sections.push(`## Review guidance\n\n${guidance.map((item) => `- ${item}`).join("\n")}`); sections.push(`## Related specification and tasks\n\n- Specification ${specification.id} revision ${specification.revision}\n${workflow.tasks.map((item) => `- Task ${item.id}: ${item.title}`).join("\n")}`); const now = new Date().toISOString(); const value = PullRequestDraftSchema.parse({ schemaVersion: 1, id: crypto.randomUUID(), workflowId: workflow.id, changeSetId: changeSet.id, provider: capability.provider, repository: changeSet.repositoryId, baseBranch, headBranch: changeSet.branch, title: specification.title.slice(0, 256), body: sections.filter((item) => !/\n\n$/.test(item)).join("\n\n").slice(0, 20_000), isDraft: true, reviewers: [], labels: [], linkedTasks: workflow.tasks.map((item) => item.id), linkedRequirements: unique(workflow.tasks.flatMap((item) => item.requirementIds)), linkedAcceptanceCriteria: unique(workflow.tasks.flatMap((item) => item.acceptanceCriterionIds)), validationSummary: changeSet.validationRunIds.map((id) => `Validation run ${id}`), riskSummary: risks, reviewGuidance: guidance, status: "draft", fingerprint: hash(JSON.stringify([changeSet.fingerprint, plan.fingerprint, baseBranch, changeSet.branch])), createdAt: now, updatedAt: now }); await this.persistence.update((state) => ({ ...state, pullRequestDrafts: [...state.pullRequestDrafts.filter((item) => item.workflowId !== workflow.id), value].slice(-100) })); return value; }
+  constructor(
+    private readonly workflows: DevelopmentWorkflowService,
+    private readonly executions: ExecutionPersistenceStore,
+    private readonly persistence: DeliveryPersistenceStore,
+  ) {}
+  async create(
+    changeSet: DeliveryChangeSet,
+    plan: CommitPlan,
+    capability: PullRequestProviderCapability,
+    baseBranch: string,
+  ): Promise<PullRequestDraft> {
+    const workflow = this.workflows.get(changeSet.workflowId);
+    const specification = workflow?.specification;
+    if (!workflow || !specification) throw new Error("Workflow unavailable.");
+    const sessions = this.executions.snapshot.sessions.filter(
+      (item) => item.workflowId === workflow.id,
+    );
+    const changed = sessions.flatMap((item) => item.changedEntities);
+    const sections: string[] = [
+      `## Summary\n\n${specification.title}`,
+      `## Scope\n\n${changeSet.files
+        .filter((item) => item.included)
+        .map((item) => `- ${item.status} ${item.path}`)
+        .join("\n")}`,
+      `## Validation\n\n${changeSet.validationRunIds.map((id) => `- Validation run ${id}: retained evidence`).join("\n")}`,
+    ];
+    if (changed.some((item) => ["route-change", "contract-change"].includes(item.changeKind)))
+      sections.push(
+        `## API or contract changes\n\n${changed
+          .filter((item) => ["route-change", "contract-change"].includes(item.changeKind))
+          .map((item) => `- ${item.changeKind}: ${item.qualifiedName}`)
+          .join("\n")}`,
+      );
+    if (changed.some((item) => item.changeKind === "schema-change"))
+      sections.push(
+        `## Data and migration changes\n\n${changed
+          .filter((item) => item.changeKind === "schema-change")
+          .map((item) => `- ${item.qualifiedName}`)
+          .join("\n")}`,
+      );
+    const security = changeSet.findings.filter((item) => /security/i.test(item));
+    if (security.length)
+      sections.push(
+        `## Security considerations\n\n${security.map((item) => `- ${item}`).join("\n")}`,
+      );
+    const performance = changeSet.findings.filter((item) => /performance/i.test(item));
+    if (performance.length)
+      sections.push(
+        `## Performance considerations\n\n${performance.map((item) => `- ${item}`).join("\n")}`,
+      );
+    const risks = unique([...changeSet.findings, ...plan.commits.flatMap((item) => item.risks)]);
+    if (risks.length)
+      sections.push(`## Risks and limitations\n\n${risks.map((item) => `- ${item}`).join("\n")}`);
+    const guidance = reviewGuidance(changed.map((item) => item.changeKind));
+    if (guidance.length)
+      sections.push(`## Review guidance\n\n${guidance.map((item) => `- ${item}`).join("\n")}`);
+    sections.push(
+      `## Related specification and tasks\n\n- Specification ${specification.id} revision ${specification.revision}\n${workflow.tasks.map((item) => `- Task ${item.id}: ${item.title}`).join("\n")}`,
+    );
+    const now = new Date().toISOString();
+    const value = PullRequestDraftSchema.parse({
+      schemaVersion: 1,
+      id: crypto.randomUUID(),
+      workflowId: workflow.id,
+      changeSetId: changeSet.id,
+      provider: capability.provider,
+      repository: changeSet.repositoryId,
+      baseBranch,
+      headBranch: changeSet.branch,
+      title: specification.title.slice(0, 256),
+      body: sections
+        .filter((item) => !/\n\n$/.test(item))
+        .join("\n\n")
+        .slice(0, 20_000),
+      isDraft: true,
+      reviewers: [],
+      labels: [],
+      linkedTasks: workflow.tasks.map((item) => item.id),
+      linkedRequirements: unique(workflow.tasks.flatMap((item) => item.requirementIds)),
+      linkedAcceptanceCriteria: unique(
+        workflow.tasks.flatMap((item) => item.acceptanceCriterionIds),
+      ),
+      validationSummary: changeSet.validationRunIds.map((id) => `Validation run ${id}`),
+      riskSummary: risks,
+      reviewGuidance: guidance,
+      status: "draft",
+      fingerprint: hash(
+        JSON.stringify([changeSet.fingerprint, plan.fingerprint, baseBranch, changeSet.branch]),
+      ),
+      createdAt: now,
+      updatedAt: now,
+    });
+    await this.persistence.update((state) => ({
+      ...state,
+      pullRequestDrafts: [
+        ...state.pullRequestDrafts.filter((item) => item.workflowId !== workflow.id),
+        value,
+      ].slice(-100),
+    }));
+    return value;
+  }
 }
-export class PullRequestValidationService { validate(draft: PullRequestDraft, capability: PullRequestProviderCapability, state: GitRepositoryState): { ready: boolean; blockers: string[]; warnings: string[] } { const blockers: string[] = []; const warnings: string[] = []; if (draft.baseBranch === draft.headBranch) blockers.push("Base and head branches must differ."); if (!state.upstreamBranch || state.ahead > 0) blockers.push("Head branch is not verified as fully pushed."); if (state.conflictedFiles.length || state.operation !== "none") blockers.push("Repository conflict/operation state blocks PR creation."); if (!capability.detected) blockers.push("No pull-request provider is detected."); if (!capability.directCreationAvailable) warnings.push("Direct PR creation is unavailable; use assisted or clipboard mode."); if (!draft.title.trim() || !draft.body.trim()) blockers.push("PR title and body are required."); if (/(?:ghp_|github_pat_|AKIA|-----BEGIN .*PRIVATE KEY-----)/.test(`${draft.title}\n${draft.body}`)) blockers.push("Potential secret material was detected in the PR draft."); return { ready: blockers.length === 0, blockers, warnings }; } }
-export class PullRequestCreationService { constructor(private readonly approvals: GitMutationApprovalService, private readonly persistence: DeliveryPersistenceStore) {} async create(approvalId: string, draft: PullRequestDraft, provider: PullRequestProvider, capability: PullRequestProviderCapability) { const approval = this.approvals.require(approvalId, "create-pr"); if (!capability.directCreationAvailable || !provider.create) throw new Error("Direct PR creation capability is unavailable."); if (approval.message !== draft.fingerprint) throw new Error("PR draft changed after approval."); const duplicate = this.persistence.snapshot.pullRequestResults.find((item) => item.draftId === draft.id && item.status === "created"); if (duplicate) return duplicate; let value; try { const result = await provider.create(draft); value = PullRequestCreationResultSchema.parse({ id: crypto.randomUUID(), draftId: draft.id, provider: capability.provider, status: "created", number: result.number, url: result.url, baseBranch: draft.baseBranch, headBranch: draft.headBranch, isDraft: draft.isDraft, evidence: result.evidence, createdAt: new Date().toISOString() }); } catch (cause) { value = PullRequestCreationResultSchema.parse({ id: crypto.randomUUID(), draftId: draft.id, provider: capability.provider, status: "failed", baseBranch: draft.baseBranch, headBranch: draft.headBranch, isDraft: draft.isDraft, evidence: [sanitizeOutput(cause instanceof Error ? cause.message : String(cause))], createdAt: new Date().toISOString() }); } await this.approvals.consume(approval.id); await this.persistence.update((state) => ({ ...state, pullRequestResults: [...state.pullRequestResults, value].slice(-100), pullRequestDrafts: state.pullRequestDrafts.map((item) => item.id === draft.id ? { ...item, status: value.status === "created" ? "created" : "failed" } : item) })); return value; } async assisted(approvalId: string, draft: PullRequestDraft, provider?: PullRequestProvider) { const approval = this.approvals.require(approvalId, "create-pr"); if (approval.message !== draft.fingerprint) throw new Error("PR draft changed after approval."); const existing = this.persistence.snapshot.pullRequestResults.find((item) => item.draftId === draft.id && item.status === "awaiting-external-creation"); if (existing) return existing; await provider?.openAssisted?.(draft); const value = PullRequestCreationResultSchema.parse({ id: crypto.randomUUID(), draftId: draft.id, provider: draft.provider, status: "awaiting-external-creation", baseBranch: draft.baseBranch, headBranch: draft.headBranch, isDraft: draft.isDraft, evidence: ["Keystone prepared the draft but did not observe authoritative creation."], createdAt: new Date().toISOString() }); await this.approvals.consume(approval.id); await this.persistence.update((state) => ({ ...state, pullRequestResults: [...state.pullRequestResults, value].slice(-100), pullRequestDrafts: state.pullRequestDrafts.map((item) => item.id === draft.id ? { ...item, status: "awaiting-external-creation" } : item) })); return value; } async confirmExternal(draft: PullRequestDraft, url: string) { const value = PullRequestCreationResultSchema.parse({ id: crypto.randomUUID(), draftId: draft.id, provider: draft.provider, status: "created", url, baseBranch: draft.baseBranch, headBranch: draft.headBranch, isDraft: draft.isDraft, evidence: ["User explicitly confirmed externally completed PR creation."], createdAt: new Date().toISOString() }); await this.persistence.update((state) => ({ ...state, pullRequestResults: [...state.pullRequestResults, value].slice(-100), pullRequestDrafts: state.pullRequestDrafts.map((item) => item.id === draft.id ? { ...item, status: "created" } : item) })); return value; } }
-export class PullRequestTrackingService { constructor(private readonly persistence: DeliveryPersistenceStore) {} get(draftId: string) { return this.persistence.snapshot.pullRequestResults.find((item) => item.draftId === draftId); } }
-export class GitDiagnosticsService { sanitize(value: string): string { return sanitizeOutput(value); } }
-export class DeliveryReportService { constructor(private readonly persistence: DeliveryPersistenceStore, private readonly workflows: DevelopmentWorkflowService, private readonly executions: ExecutionPersistenceStore) {} async create(changeSet: DeliveryChangeSet, plan: CommitPlan, branch: string, remote?: string) { const workflow = this.workflows.get(changeSet.workflowId); if (!workflow?.specification) throw new Error("Workflow unavailable."); const report = DeliveryReportSchema.parse({ id: crypto.randomUUID(), workflowId: workflow.id, specificationId: workflow.specification.id, specificationRevision: workflow.specification.revision, changeSetFingerprint: changeSet.fingerprint, includedFiles: changeSet.files.filter((item) => item.included).map((item) => item.path), excludedFiles: changeSet.files.filter((item) => !item.included).map((item) => item.path), commitHashes: plan.commits.flatMap((item) => item.createdCommitHash ? [item.createdCommitHash] : []), branch, ...(remote ? { remote } : {}), validationSummary: changeSet.validationRunIds.map((id) => `Validation run ${id}`), overrides: this.executions.snapshot.overrides.filter((item) => this.executions.snapshot.sessions.some((session) => session.workflowId === workflow.id && session.id === item.executionSessionId)).map((item) => `${item.targetType}:${item.targetId}: ${item.reason}`), warnings: changeSet.findings, limitations: ["Remote checks and PR tracking are capability-dependent."], intelligenceGeneration: changeSet.intelligenceGeneration, createdAt: new Date().toISOString() }); await this.persistence.update((state) => ({ ...state, reports: [...state.reports.filter((item) => item.workflowId !== workflow.id), report].slice(-100) })); return report; } }
+export class PullRequestValidationService {
+  validate(
+    draft: PullRequestDraft,
+    capability: PullRequestProviderCapability,
+    state: GitRepositoryState,
+  ): { ready: boolean; blockers: string[]; warnings: string[] } {
+    const blockers: string[] = [];
+    const warnings: string[] = [];
+    if (draft.baseBranch === draft.headBranch) blockers.push("Base and head branches must differ.");
+    if (!state.upstreamBranch || state.ahead > 0)
+      blockers.push("Head branch is not verified as fully pushed.");
+    if (state.conflictedFiles.length || state.operation !== "none")
+      blockers.push("Repository conflict/operation state blocks PR creation.");
+    if (!capability.detected) blockers.push("No pull-request provider is detected.");
+    if (!capability.directCreationAvailable)
+      warnings.push("Direct PR creation is unavailable; use assisted or clipboard mode.");
+    if (!draft.title.trim() || !draft.body.trim()) blockers.push("PR title and body are required.");
+    if (
+      /(?:ghp_|github_pat_|AKIA|-----BEGIN .*PRIVATE KEY-----)/.test(
+        `${draft.title}\n${draft.body}`,
+      )
+    )
+      blockers.push("Potential secret material was detected in the PR draft.");
+    return { ready: blockers.length === 0, blockers, warnings };
+  }
+}
+export class PullRequestCreationService {
+  constructor(
+    private readonly approvals: GitMutationApprovalService,
+    private readonly persistence: DeliveryPersistenceStore,
+  ) {}
+  async create(
+    approvalId: string,
+    draft: PullRequestDraft,
+    provider: PullRequestProvider,
+    capability: PullRequestProviderCapability,
+  ) {
+    const approval = this.approvals.require(approvalId, "create-pr");
+    if (!capability.directCreationAvailable || !provider.create)
+      throw new Error("Direct PR creation capability is unavailable.");
+    if (approval.message !== draft.fingerprint) throw new Error("PR draft changed after approval.");
+    const duplicate = this.persistence.snapshot.pullRequestResults.find(
+      (item) => item.draftId === draft.id && item.status === "created",
+    );
+    if (duplicate) return duplicate;
+    let value;
+    try {
+      const result = await provider.create(draft);
+      value = PullRequestCreationResultSchema.parse({
+        id: crypto.randomUUID(),
+        draftId: draft.id,
+        provider: capability.provider,
+        status: "created",
+        number: result.number,
+        url: result.url,
+        baseBranch: draft.baseBranch,
+        headBranch: draft.headBranch,
+        isDraft: draft.isDraft,
+        evidence: result.evidence,
+        createdAt: new Date().toISOString(),
+      });
+    } catch (cause) {
+      value = PullRequestCreationResultSchema.parse({
+        id: crypto.randomUUID(),
+        draftId: draft.id,
+        provider: capability.provider,
+        status: "failed",
+        baseBranch: draft.baseBranch,
+        headBranch: draft.headBranch,
+        isDraft: draft.isDraft,
+        evidence: [sanitizeOutput(cause instanceof Error ? cause.message : String(cause))],
+        createdAt: new Date().toISOString(),
+      });
+    }
+    await this.approvals.consume(approval.id);
+    await this.persistence.update((state) => ({
+      ...state,
+      pullRequestResults: [...state.pullRequestResults, value].slice(-100),
+      pullRequestDrafts: state.pullRequestDrafts.map((item) =>
+        item.id === draft.id
+          ? { ...item, status: value.status === "created" ? "created" : "failed" }
+          : item,
+      ),
+    }));
+    return value;
+  }
+  async assisted(approvalId: string, draft: PullRequestDraft, provider?: PullRequestProvider) {
+    const approval = this.approvals.require(approvalId, "create-pr");
+    if (approval.message !== draft.fingerprint) throw new Error("PR draft changed after approval.");
+    const existing = this.persistence.snapshot.pullRequestResults.find(
+      (item) => item.draftId === draft.id && item.status === "awaiting-external-creation",
+    );
+    if (existing) return existing;
+    await provider?.openAssisted?.(draft);
+    const value = PullRequestCreationResultSchema.parse({
+      id: crypto.randomUUID(),
+      draftId: draft.id,
+      provider: draft.provider,
+      status: "awaiting-external-creation",
+      baseBranch: draft.baseBranch,
+      headBranch: draft.headBranch,
+      isDraft: draft.isDraft,
+      evidence: ["Keystone prepared the draft but did not observe authoritative creation."],
+      createdAt: new Date().toISOString(),
+    });
+    await this.approvals.consume(approval.id);
+    await this.persistence.update((state) => ({
+      ...state,
+      pullRequestResults: [...state.pullRequestResults, value].slice(-100),
+      pullRequestDrafts: state.pullRequestDrafts.map((item) =>
+        item.id === draft.id ? { ...item, status: "awaiting-external-creation" } : item,
+      ),
+    }));
+    return value;
+  }
+  async confirmExternal(draft: PullRequestDraft, url: string) {
+    const value = PullRequestCreationResultSchema.parse({
+      id: crypto.randomUUID(),
+      draftId: draft.id,
+      provider: draft.provider,
+      status: "created",
+      url,
+      baseBranch: draft.baseBranch,
+      headBranch: draft.headBranch,
+      isDraft: draft.isDraft,
+      evidence: ["User explicitly confirmed externally completed PR creation."],
+      createdAt: new Date().toISOString(),
+    });
+    await this.persistence.update((state) => ({
+      ...state,
+      pullRequestResults: [...state.pullRequestResults, value].slice(-100),
+      pullRequestDrafts: state.pullRequestDrafts.map((item) =>
+        item.id === draft.id ? { ...item, status: "created" } : item,
+      ),
+    }));
+    return value;
+  }
+}
+export class PullRequestTrackingService {
+  constructor(private readonly persistence: DeliveryPersistenceStore) {}
+  get(draftId: string) {
+    return this.persistence.snapshot.pullRequestResults.find((item) => item.draftId === draftId);
+  }
+}
+export class GitDiagnosticsService {
+  sanitize(value: string): string {
+    return sanitizeOutput(value);
+  }
+}
+export class DeliveryReportService {
+  constructor(
+    private readonly persistence: DeliveryPersistenceStore,
+    private readonly workflows: DevelopmentWorkflowService,
+    private readonly executions: ExecutionPersistenceStore,
+  ) {}
+  async create(changeSet: DeliveryChangeSet, plan: CommitPlan, branch: string, remote?: string) {
+    const workflow = this.workflows.get(changeSet.workflowId);
+    if (!workflow?.specification) throw new Error("Workflow unavailable.");
+    const report = DeliveryReportSchema.parse({
+      id: crypto.randomUUID(),
+      workflowId: workflow.id,
+      specificationId: workflow.specification.id,
+      specificationRevision: workflow.specification.revision,
+      changeSetFingerprint: changeSet.fingerprint,
+      includedFiles: changeSet.files.filter((item) => item.included).map((item) => item.path),
+      excludedFiles: changeSet.files.filter((item) => !item.included).map((item) => item.path),
+      commitHashes: plan.commits.flatMap((item) =>
+        item.createdCommitHash ? [item.createdCommitHash] : [],
+      ),
+      branch,
+      ...(remote ? { remote } : {}),
+      validationSummary: changeSet.validationRunIds.map((id) => `Validation run ${id}`),
+      overrides: this.executions.snapshot.overrides
+        .filter((item) =>
+          this.executions.snapshot.sessions.some(
+            (session) =>
+              session.workflowId === workflow.id && session.id === item.executionSessionId,
+          ),
+        )
+        .map((item) => `${item.targetType}:${item.targetId}: ${item.reason}`),
+      warnings: changeSet.findings,
+      limitations: ["Remote checks and PR tracking are capability-dependent."],
+      intelligenceGeneration: changeSet.intelligenceGeneration,
+      createdAt: new Date().toISOString(),
+    });
+    await this.persistence.update((state) => ({
+      ...state,
+      reports: [...state.reports.filter((item) => item.workflowId !== workflow.id), report].slice(
+        -100,
+      ),
+    }));
+    return report;
+  }
+}
 
 export class DeliveryCoordinator {
   readonly capabilities: GitCapabilityService;
@@ -176,34 +1309,260 @@ export class DeliveryCoordinator {
   readonly draftValidation = new PullRequestValidationService();
   readonly creation: PullRequestCreationService;
   readonly reports: DeliveryReportService;
-  constructor(readonly root: string, readonly adapter: GitRuntimeAdapter, readonly persistence: DeliveryPersistenceStore, workflows: DevelopmentWorkflowService, executions: ExecutionPersistenceStore, snapshots: IntelligenceSnapshotReader, readonly providers: PullRequestProviderRegistry) {
-    this.capabilities = new GitCapabilityService(adapter, persistence); this.repositories = new GitRepositoryService(adapter, persistence); this.readiness = new SourceControlReadinessService(workflows, executions); this.changes = new GitChangeSetService(adapter, workflows, executions, snapshots, persistence); this.commits = new CommitPlanningService(persistence); this.approvals = new GitMutationApprovalService(persistence); this.mutations = new GitMutationService(adapter, this.approvals, persistence); this.pullRequests = new PullRequestCapabilityService(providers); this.drafts = new PullRequestDraftService(workflows, executions, persistence); this.creation = new PullRequestCreationService(this.approvals, persistence); this.reports = new DeliveryReportService(persistence, workflows, executions);
+  constructor(
+    readonly root: string,
+    readonly adapter: GitRuntimeAdapter,
+    readonly persistence: DeliveryPersistenceStore,
+    workflows: DevelopmentWorkflowService,
+    executions: ExecutionPersistenceStore,
+    snapshots: IntelligenceSnapshotReader,
+    readonly providers: PullRequestProviderRegistry,
+  ) {
+    this.capabilities = new GitCapabilityService(adapter, persistence);
+    this.repositories = new GitRepositoryService(adapter, persistence);
+    this.readiness = new SourceControlReadinessService(workflows, executions);
+    this.changes = new GitChangeSetService(adapter, workflows, executions, snapshots, persistence);
+    this.commits = new CommitPlanningService(persistence);
+    this.approvals = new GitMutationApprovalService(persistence);
+    this.mutations = new GitMutationService(adapter, this.approvals, persistence);
+    this.pullRequests = new PullRequestCapabilityService(providers);
+    this.drafts = new PullRequestDraftService(workflows, executions, persistence);
+    this.creation = new PullRequestCreationService(this.approvals, persistence);
+    this.reports = new DeliveryReportService(persistence, workflows, executions);
   }
-  initialize() { return this.persistence.initialize(); }
-  getChangeSet(id: string) { return this.persistence.snapshot.changeSets.find((item) => item.id === id); }
-  getCommitPlan(id: string) { return this.persistence.snapshot.commitPlans.find((item) => item.id === id); }
-  getDraft(id: string) { return this.persistence.snapshot.pullRequestDrafts.find((item) => item.id === id); }
-  async evaluate(workflowId: string) { const state = await this.repositories.getState(this.root); const changeSet = this.persistence.snapshot.changeSets.find((item) => item.workflowId === workflowId); return this.readiness.evaluate(workflowId, state, changeSet); }
-  async createChangeSet(workflowId: string) { const state = await this.repositories.getState(this.root); return this.changes.create(workflowId, this.root, state); }
-  async decideFile(id: string, fileIdValue: string, included: boolean, explanation?: string) { const current = this.getChangeSet(id); if (!current) throw new Error("Delivery change set not found."); return this.changes.save(this.changes.selection.apply(current, fileIdValue, included, explanation)); }
-  async attributeFile(id: string, fileIdValue: string, attribution: DeliveryFileChange["attribution"], explanation?: string) { const current = this.getChangeSet(id); if (!current) throw new Error("Delivery change set not found."); const files = current.files.map((item) => item.id === fileIdValue ? { ...item, attribution, ...(explanation ? { explanation } : {}), included: item.sensitive ? false : item.included } : item); return this.changes.save(refreshChangeSet(current, files)); }
-  async updateDraft(draft: PullRequestDraft) { const current = this.getDraft(draft.id); if (!current) throw new Error("Pull-request draft not found."); const value = PullRequestDraftSchema.parse({ ...draft, status: "draft", fingerprint: hash(JSON.stringify([draft.changeSetId, draft.baseBranch, draft.headBranch, draft.title, draft.body, draft.isDraft, draft.reviewers, draft.labels])), updatedAt: new Date().toISOString() }); await this.persistence.update((state) => ({ ...state, pullRequestDrafts: state.pullRequestDrafts.map((item) => item.id === value.id ? value : item) })); return value; }
-  async createCommitPlan(changeSetId: string, convention?: CommitPlan["convention"]) { const value = this.getChangeSet(changeSetId); if (!value) throw new Error("Delivery change set not found."); const history = await this.adapter.recentCommitSubjects?.(this.root, 50) ?? []; return this.commits.create(value, convention, history); }
+  initialize() {
+    return this.persistence.initialize();
+  }
+  getChangeSet(id: string) {
+    return this.persistence.snapshot.changeSets.find((item) => item.id === id);
+  }
+  getCommitPlan(id: string) {
+    return this.persistence.snapshot.commitPlans.find((item) => item.id === id);
+  }
+  getDraft(id: string) {
+    return this.persistence.snapshot.pullRequestDrafts.find((item) => item.id === id);
+  }
+  async evaluate(workflowId: string) {
+    const state = await this.repositories.getState(this.root);
+    const changeSet = this.persistence.snapshot.changeSets.find(
+      (item) => item.workflowId === workflowId,
+    );
+    return this.readiness.evaluate(workflowId, state, changeSet);
+  }
+  async createChangeSet(workflowId: string) {
+    const state = await this.repositories.getState(this.root);
+    return this.changes.create(workflowId, this.root, state);
+  }
+  async decideFile(id: string, fileIdValue: string, included: boolean, explanation?: string) {
+    const current = this.getChangeSet(id);
+    if (!current) throw new Error("Delivery change set not found.");
+    return this.changes.save(
+      this.changes.selection.apply(current, fileIdValue, included, explanation),
+    );
+  }
+  async attributeFile(
+    id: string,
+    fileIdValue: string,
+    attribution: DeliveryFileChange["attribution"],
+    explanation?: string,
+  ) {
+    const current = this.getChangeSet(id);
+    if (!current) throw new Error("Delivery change set not found.");
+    const files = current.files.map((item) =>
+      item.id === fileIdValue
+        ? {
+            ...item,
+            attribution,
+            ...(explanation ? { explanation } : {}),
+            included: item.sensitive ? false : item.included,
+          }
+        : item,
+    );
+    return this.changes.save(refreshChangeSet(current, files));
+  }
+  async updateDraft(draft: PullRequestDraft) {
+    const current = this.getDraft(draft.id);
+    if (!current) throw new Error("Pull-request draft not found.");
+    const value = PullRequestDraftSchema.parse({
+      ...draft,
+      status: "draft",
+      fingerprint: hash(
+        JSON.stringify([
+          draft.changeSetId,
+          draft.baseBranch,
+          draft.headBranch,
+          draft.title,
+          draft.body,
+          draft.isDraft,
+          draft.reviewers,
+          draft.labels,
+        ]),
+      ),
+      updatedAt: new Date().toISOString(),
+    });
+    await this.persistence.update((state) => ({
+      ...state,
+      pullRequestDrafts: state.pullRequestDrafts.map((item) =>
+        item.id === value.id ? value : item,
+      ),
+    }));
+    return value;
+  }
+  async createCommitPlan(changeSetId: string, convention?: CommitPlan["convention"]) {
+    const value = this.getChangeSet(changeSetId);
+    if (!value) throw new Error("Delivery change set not found.");
+    const history = (await this.adapter.recentCommitSubjects?.(this.root, 50)) ?? [];
+    return this.commits.create(value, convention, history);
+  }
 }
 
-function refreshChangeSet(value: DeliveryChangeSet, files: DeliveryFileChange[]): DeliveryChangeSet { const includedFileIds = files.filter((item) => item.included).map((item) => item.id); const excludedFileIds = files.filter((item) => !item.included).map((item) => item.id); const fingerprint = hash(JSON.stringify([value.repositoryStateFingerprint, value.baseCommit, value.currentHead, value.specificationRevision, value.validationRunIds, files.map((item) => [item.path, item.previousPath, item.status, item.additions, item.deletions, item.included, item.staged])])); return DeliveryChangeSetSchema.parse({ ...value, files, includedFileIds, excludedFileIds, fingerprint, status: includedFileIds.length ? "reviewing" : "draft", updatedAt: new Date().toISOString() }); }
-function defaultIncluded(value: Pick<DeliveryFileChange, "sensitive" | "binary" | "generated" | "attribution" | "sourceKind">): boolean { return !value.sensitive && !value.binary && !value.generated && value.sourceKind === "file" && ["expected", "related"].includes(value.attribution); }
-function defaultExclusion(value: Pick<DeliveryFileChange, "sensitive" | "binary" | "generated" | "attribution" | "sourceKind">): string { if (value.sensitive) return "Sensitive changes are blocked."; if (value.sourceKind !== "file") return `${value.sourceKind} changes require explicit review.`; if (value.binary) return "Binary changes require explicit review."; if (value.generated) return "Generated output is excluded by default."; return `${value.attribution} changes are excluded by default.`; }
-function refreshPlan(plan: CommitPlan, commits: ProposedCommit[]): CommitPlan { const ordered = commits.map((item, order) => ({ ...item, order })); return CommitPlanSchema.parse({ ...plan, commits: ordered, status: "draft", fingerprint: hash(JSON.stringify(ordered)), updatedAt: new Date().toISOString() }); }
-function planFingerprint(changeSet: string, commits: unknown): string { return hash(JSON.stringify([changeSet, commits])); }
-function fileId(path: string): string { return `delivery-file:${hash(path).slice(7, 39)}`; }
-function hash(value: string): string { return `sha256:${createHash("sha256").update(value).digest("hex")}`; }
-function unique<T>(values: T[]): T[] { return [...new Set(values)]; }
-function groupFor(path: string): [string, ProposedCommit["commitType"]] { if (/migration|schema|prisma|\.sql$/i.test(path)) return ["schema", "migration"]; if (/(^|\/)(?:test|tests|__tests__)\/|\.(?:test|spec)\./i.test(path)) return ["implementation", "test"]; if (/\.md$|(^|\/)docs\//i.test(path)) return ["documentation", "docs"]; if (/package(?:-lock)?\.json|pnpm-lock|yarn\.lock|tsconfig|vite|webpack|\.github\//i.test(path)) return ["build", "build"]; return ["implementation", "feat"]; }
-function groupOrder(key: string): number { return { schema: 1, implementation: 2, documentation: 3, build: 4 }[key] ?? 10; }
-function summaryFor(key: string): string { return { schema: "update data schema and migrations", implementation: "implement the approved workflow changes", documentation: "document the delivered behavior", build: "update build and dependency configuration" }[key] ?? "deliver approved changes"; }
-function scopeFor(files: DeliveryFileChange[]): string | undefined { const value = files[0]?.path.split("/").filter((item) => !["src", "lib", "test", "tests"].includes(item))[0]; return value?.replace(/\.[^.]+$/, "").slice(0, 100); }
-function reviewGuidance(kinds: string[]): string[] { const output: string[] = []; if (kinds.some((item) => ["route-change", "contract-change"].includes(item))) output.push("Review endpoint and contract compatibility."); if (kinds.includes("schema-change")) output.push("Verify migration direction, rollback, and data compatibility."); if (kinds.includes("configuration-change")) output.push("Confirm no unintended configuration behavior."); if (kinds.includes("architecture-change")) output.push("Review module and dependency boundaries."); return output; }
-export function sanitizeRemoteUrl(value: string): string { try { const url = new URL(value); url.username = ""; url.password = ""; return url.toString().replace(/\/$/, ""); } catch { return value.replace(/(?:https?:\/\/)?[^@\s]+@/g, "").replace(/[?&](?:token|access_token|password)=[^&\s]+/gi, ""); } }
-function sanitizeOutput(value: string): string { return stripControls(value.replace(/ghp_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+|AKIA[0-9A-Z]{16}|-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?-----END [^-]*PRIVATE KEY-----/g, "[REDACTED]")).slice(-20_000); }
-function stripControls(value: string): string { return [...value].filter((character) => { const code = character.charCodeAt(0); return code === 9 || code === 10 || code === 13 || (code >= 32 && code !== 127); }).join(""); }
+function refreshChangeSet(
+  value: DeliveryChangeSet,
+  files: DeliveryFileChange[],
+): DeliveryChangeSet {
+  const includedFileIds = files.filter((item) => item.included).map((item) => item.id);
+  const excludedFileIds = files.filter((item) => !item.included).map((item) => item.id);
+  const fingerprint = hash(
+    JSON.stringify([
+      value.repositoryStateFingerprint,
+      value.baseCommit,
+      value.currentHead,
+      value.specificationRevision,
+      value.validationRunIds,
+      files.map((item) => [
+        item.path,
+        item.previousPath,
+        item.status,
+        item.additions,
+        item.deletions,
+        item.included,
+        item.staged,
+      ]),
+    ]),
+  );
+  return DeliveryChangeSetSchema.parse({
+    ...value,
+    files,
+    includedFileIds,
+    excludedFileIds,
+    fingerprint,
+    status: includedFileIds.length ? "reviewing" : "draft",
+    updatedAt: new Date().toISOString(),
+  });
+}
+function defaultIncluded(
+  value: Pick<
+    DeliveryFileChange,
+    "sensitive" | "binary" | "generated" | "attribution" | "sourceKind"
+  >,
+): boolean {
+  return (
+    !value.sensitive &&
+    !value.binary &&
+    !value.generated &&
+    value.sourceKind === "file" &&
+    ["expected", "related"].includes(value.attribution)
+  );
+}
+function defaultExclusion(
+  value: Pick<
+    DeliveryFileChange,
+    "sensitive" | "binary" | "generated" | "attribution" | "sourceKind"
+  >,
+): string {
+  if (value.sensitive) return "Sensitive changes are blocked.";
+  if (value.sourceKind !== "file") return `${value.sourceKind} changes require explicit review.`;
+  if (value.binary) return "Binary changes require explicit review.";
+  if (value.generated) return "Generated output is excluded by default.";
+  return `${value.attribution} changes are excluded by default.`;
+}
+function refreshPlan(plan: CommitPlan, commits: ProposedCommit[]): CommitPlan {
+  const ordered = commits.map((item, order) => ({ ...item, order }));
+  return CommitPlanSchema.parse({
+    ...plan,
+    commits: ordered,
+    status: "draft",
+    fingerprint: hash(JSON.stringify(ordered)),
+    updatedAt: new Date().toISOString(),
+  });
+}
+function planFingerprint(changeSet: string, commits: unknown): string {
+  return hash(JSON.stringify([changeSet, commits]));
+}
+function fileId(path: string): string {
+  return `delivery-file:${hash(path).slice(7, 39)}`;
+}
+function hash(value: string): string {
+  return `sha256:${createHash("sha256").update(value).digest("hex")}`;
+}
+function unique<T>(values: T[]): T[] {
+  return [...new Set(values)];
+}
+function groupFor(path: string): [string, ProposedCommit["commitType"]] {
+  if (/migration|schema|prisma|\.sql$/i.test(path)) return ["schema", "migration"];
+  if (/(^|\/)(?:test|tests|__tests__)\/|\.(?:test|spec)\./i.test(path))
+    return ["implementation", "test"];
+  if (/\.md$|(^|\/)docs\//i.test(path)) return ["documentation", "docs"];
+  if (/package(?:-lock)?\.json|pnpm-lock|yarn\.lock|tsconfig|vite|webpack|\.github\//i.test(path))
+    return ["build", "build"];
+  return ["implementation", "feat"];
+}
+function groupOrder(key: string): number {
+  return { schema: 1, implementation: 2, documentation: 3, build: 4 }[key] ?? 10;
+}
+function summaryFor(key: string): string {
+  return (
+    {
+      schema: "update data schema and migrations",
+      implementation: "implement the approved workflow changes",
+      documentation: "document the delivered behavior",
+      build: "update build and dependency configuration",
+    }[key] ?? "deliver approved changes"
+  );
+}
+function scopeFor(files: DeliveryFileChange[]): string | undefined {
+  const value = files[0]?.path
+    .split("/")
+    .filter((item) => !["src", "lib", "test", "tests"].includes(item))[0];
+  return value?.replace(/\.[^.]+$/, "").slice(0, 100);
+}
+function reviewGuidance(kinds: string[]): string[] {
+  const output: string[] = [];
+  if (kinds.some((item) => ["route-change", "contract-change"].includes(item)))
+    output.push("Review endpoint and contract compatibility.");
+  if (kinds.includes("schema-change"))
+    output.push("Verify migration direction, rollback, and data compatibility.");
+  if (kinds.includes("configuration-change"))
+    output.push("Confirm no unintended configuration behavior.");
+  if (kinds.includes("architecture-change"))
+    output.push("Review module and dependency boundaries.");
+  return output;
+}
+export function sanitizeRemoteUrl(value: string): string {
+  try {
+    const url = new URL(value);
+    url.username = "";
+    url.password = "";
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return value
+      .replace(/(?:https?:\/\/)?[^@\s]+@/g, "")
+      .replace(/[?&](?:token|access_token|password)=[^&\s]+/gi, "");
+  }
+}
+function sanitizeOutput(value: string): string {
+  return stripControls(
+    value.replace(
+      /ghp_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+|AKIA[0-9A-Z]{16}|-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?-----END [^-]*PRIVATE KEY-----/g,
+      "[REDACTED]",
+    ),
+  ).slice(-20_000);
+}
+function stripControls(value: string): string {
+  return [...value]
+    .filter((character) => {
+      const code = character.charCodeAt(0);
+      return code === 9 || code === 10 || code === 13 || (code >= 32 && code !== 127);
+    })
+    .join("");
+}

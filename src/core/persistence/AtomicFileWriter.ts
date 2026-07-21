@@ -44,7 +44,7 @@ const nodeOperations: AtomicFileOperations = {
     } catch {
       // Some platforms do not permit fsync on directory handles.
     }
-  }
+  },
 };
 
 export class AtomicFileWriter {
@@ -54,7 +54,11 @@ export class AtomicFileWriter {
     await this.write(path, serializeJsonYielding(value), beforeCommit);
   }
 
-  async write(path: string, value: AsyncIterable<string | Uint8Array>, beforeCommit?: () => void): Promise<void> {
+  async write(
+    path: string,
+    value: AsyncIterable<string | Uint8Array>,
+    beforeCommit?: () => void,
+  ): Promise<void> {
     const directory = dirname(path);
     const temporaryPath = `${path}.${randomUUID()}.pending`;
     await this.operations.mkdir(directory);
@@ -74,7 +78,7 @@ export class AtomicFileWriter {
         recoverable: true,
         recommendedAction: "Check extension storage permissions and retry the repository scan.",
         retryable: true,
-        cause
+        cause,
       });
     }
   }
@@ -98,7 +102,8 @@ async function* serializeJsonYielding(value: unknown): AsyncGenerator<string> {
       yield "{";
       let first = true;
       for (const [key, child] of Object.entries(item)) {
-        if (child === undefined || typeof child === "function" || typeof child === "symbol") continue;
+        if (child === undefined || typeof child === "function" || typeof child === "symbol")
+          continue;
         if (!first) yield ",";
         first = false;
         yield JSON.stringify(key);

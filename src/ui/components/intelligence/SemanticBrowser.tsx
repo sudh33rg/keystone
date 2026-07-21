@@ -12,11 +12,7 @@ import { QueryWorkspace } from "./QueryWorkspace";
 const EXPLORER_GROUPS = [
   {
     label: "APIs and contracts",
-    types: [
-      "keystone.core.ApiContract",
-      "keystone.core.Endpoint",
-      "keystone.core.Schema",
-    ],
+    types: ["keystone.core.ApiContract", "keystone.core.Endpoint", "keystone.core.Schema"],
   },
   {
     label: "Data",
@@ -33,19 +29,11 @@ const EXPLORER_GROUPS = [
   },
   {
     label: "Build",
-    types: [
-      "keystone.core.Package",
-      "keystone.core.BuildTarget",
-      "keystone.core.BuildCommand",
-    ],
+    types: ["keystone.core.Package", "keystone.core.BuildTarget", "keystone.core.BuildCommand"],
   },
   {
     label: "Delivery",
-    types: [
-      "keystone.core.Pipeline",
-      "keystone.core.Job",
-      "keystone.core.Step",
-    ],
+    types: ["keystone.core.Pipeline", "keystone.core.Job", "keystone.core.Step"],
   },
   {
     label: "Infrastructure",
@@ -65,10 +53,7 @@ const EXPLORER_GROUPS = [
   },
   {
     label: "Configuration",
-    types: [
-      "keystone.core.ConfigurationKey",
-      "keystone.core.EnvironmentVariable",
-    ],
+    types: ["keystone.core.ConfigurationKey", "keystone.core.EnvironmentVariable"],
   },
 ];
 
@@ -110,9 +95,7 @@ export function SemanticBrowser({
       })
       .then((next) =>
         setResult((previous) =>
-          cursor && previous
-            ? { ...next, items: [...previous.items, ...next.items] }
-            : next,
+          cursor && previous ? { ...next, items: [...previous.items, ...next.items] } : next,
         ),
       )
       .catch(showError(setError))
@@ -196,39 +179,22 @@ export function SemanticBrowser({
       );
     };
     window.addEventListener("keystone:intelligence-browse", listener);
-    return () =>
-      window.removeEventListener("keystone:intelligence-browse", listener);
+    return () => window.removeEventListener("keystone:intelligence-browse", listener);
   }, [bridge]);
 
   return (
-    <section
-      className="semantic-browser"
-      aria-label="Semantic intelligence browser"
-    >
-      <QueryWorkspace
-        key={initialQuery}
-        bridge={bridge}
-        initialInput={initialQuery}
-      />
+    <section className="semantic-browser" aria-label="Semantic intelligence browser">
+      <QueryWorkspace key={initialQuery} bridge={bridge} initialInput={initialQuery} />
       <TechnologyCoverage bridge={bridge} />
-      <nav
-        className="intelligence-explorer-groups"
-        aria-label="Intelligence explorer groups"
-      >
+      <nav className="intelligence-explorer-groups" aria-label="Intelligence explorer groups">
         {EXPLORER_GROUPS.map((group) => (
-          <button
-            key={group.label}
-            className="ghost-button"
-            onClick={() => browse(group.types)}
-          >
+          <button key={group.label} className="ghost-button" onClick={() => browse(group.types)}>
             {group.label}
           </button>
         ))}
       </nav>
       <div className="semantic-search">
-        <label htmlFor="intelligence-search">
-          Search semantic intelligence
-        </label>
+        <label htmlFor="intelligence-search">Search semantic intelligence</label>
         <div>
           <input
             id="intelligence-search"
@@ -250,9 +216,7 @@ export function SemanticBrowser({
             <option value="keystone.core.Component">Components</option>
             <option value="keystone.core.TestCase">Tests</option>
             <option value="keystone.core.Route">Routes</option>
-            <option value="keystone.core.ConfigurationKey">
-              Configuration
-            </option>
+            <option value="keystone.core.ConfigurationKey">Configuration</option>
           </select>
           <select
             aria-label="Language"
@@ -265,11 +229,7 @@ export function SemanticBrowser({
             <option value="javascript">JavaScript</option>
             <option value="javascriptreact">JSX</option>
           </select>
-          <button
-            className="primary-button"
-            onClick={() => search()}
-            disabled={loading}
-          >
+          <button className="primary-button" onClick={() => search()} disabled={loading}>
             Search
           </button>
         </div>
@@ -281,10 +241,7 @@ export function SemanticBrowser({
       )}
       {result && (
         <div className="semantic-layout">
-          <section
-            className="semantic-results"
-            aria-label="Semantic search results"
-          >
+          <section className="semantic-results" aria-label="Semantic search results">
             <h2>
               Results <span>{result.total}</span>
             </h2>
@@ -299,8 +256,8 @@ export function SemanticBrowser({
                 >
                   <strong>{item.name}</strong>
                   <span>
-                    {displayType(item.type)} · {item.language} ·{" "}
-                    {Math.round(item.confidence * 100)}%
+                    {displayType(item.type)} · {item.language} · {Math.round(item.confidence * 100)}
+                    %
                   </span>
                   <small>
                     {item.qualifiedName}
@@ -331,9 +288,7 @@ export function SemanticBrowser({
                 void bridge
                   .request("intelligence/source/open", {
                     relativePath: entity.entity.relativePath,
-                    ...(entity.entity.sourceRange
-                      ? { range: entity.entity.sourceRange }
-                      : {}),
+                    ...(entity.entity.sourceRange ? { range: entity.entity.sourceRange } : {}),
                   })
                   .catch(showError(setError));
               }}
@@ -372,15 +327,11 @@ function EntityInspector({
       {entity.entity.signature && <pre>{entity.entity.signature}</pre>}
       <p>
         {entity.entity.relativePath}
-        {entity.entity.sourceRange
-          ? `:${entity.entity.sourceRange.startLine + 1}`
-          : ""}
+        {entity.entity.sourceRange ? `:${entity.entity.sourceRange.startLine + 1}` : ""}
       </p>
       <p className="entity-freshness">
         Generation {entity.generation}
-        {entity.entity.parentId
-          ? ` · Parent ${shortId(entity.entity.parentId)}`
-          : ""}
+        {entity.entity.parentId ? ` · Parent ${shortId(entity.entity.parentId)}` : ""}
       </p>
       <div className="entity-actions">
         <button className="primary-button" onClick={onOpen}>
@@ -421,8 +372,7 @@ function EntityInspector({
         <section className="scoped-neighborhood">
           <h3>Scoped neighborhood</h3>
           <p>
-            {neighborhood.nodes.length} nodes ·{" "}
-            {neighborhood.relationships.length} relationships
+            {neighborhood.nodes.length} nodes · {neighborhood.relationships.length} relationships
             {neighborhood.truncated ? " · bounded" : ""}
           </p>
           <ul>
@@ -476,9 +426,6 @@ function displayType(value: string): string {
 function shortId(value: string): string {
   return value.split(":").at(-1)?.slice(0, 8) ?? value;
 }
-function showError(
-  setError: (value: string) => void,
-): (cause: unknown) => void {
-  return (cause) =>
-    setError(cause instanceof Error ? cause.message : String(cause));
+function showError(setError: (value: string) => void): (cause: unknown) => void {
+  return (cause) => setError(cause instanceof Error ? cause.message : String(cause));
 }
