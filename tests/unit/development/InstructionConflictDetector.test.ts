@@ -15,7 +15,9 @@ describe("InstructionConflictDetector", () => {
     ]);
     expect(conflicts.map((item) => item.category)).toEqual(expect.arrayContaining(["test-requirement", "output-format", "file-scope"]));
     expect(conflicts.every((item) => item.sourcePaths.every((path) => path !== "mock-source"))).toBe(true);
-    expect(conflicts[0]).toMatchObject({ confidence: "inferred", evidence: expect.any(Array), recommendedResolution: expect.any(String) });
+    expect(conflicts[0]?.confidence).toBe("inferred");
+    expect(Array.isArray(conflicts[0]?.evidence)).toBe(true);
+    expect(typeof conflicts[0]?.recommendedResolution).toBe("string");
   });
   it("reports unresolved unavailable instructions", () => {
     expect(detector.unresolved([{ id: "missing", workspaceRelativePath: "missing.md", availability: "missing" }])) .toMatchObject([{ state: "unresolved", sourcePaths: ["missing.md"] }]);

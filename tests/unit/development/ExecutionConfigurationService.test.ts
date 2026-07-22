@@ -6,10 +6,10 @@ const capability = { id: "clipboard", kind: "clipboard-handoff" as const, displa
 const instruction = { id: "instruction:a", name: "a.md", workspaceRelativePath: ".github/a.md", uri: "file:///repo/.github/a.md", sourceType: "repository" as const, contentHash: "a".repeat(64), sizeBytes: 20, availability: "available" as const };
 const skill = { id: "keystone-development", name: "Development", description: "Implement", applicableStageTypes: ["development"], promptFragment: "Implement and list files changed.", expectedOutput: { summaryRequired: true, changedFilesRequired: true, testsRequired: true, assumptionsRequired: true }, source: "keystone-built-in" as const, contentHash: "b".repeat(64), version: 1 };
 
-function fixture() {
+function fixture(agents: Array<{ id: string; displayName: string; supportedInvocationModes: Array<"chat-command-handoff" | "direct-agent-invocation">; availability: "available" | "unavailable" }> = []) {
   let stored: unknown; let invalidations = 0;
   const service = new ExecutionConfigurationService({ read: async () => stored, write: async (value) => { stored = structuredClone(value); } }, {
-    discoverCapabilities: async () => ({ capabilities: [capability], agents: [], manualAgents: [], diagnostics: [] }),
+    discoverCapabilities: async () => ({ capabilities: [capability], agents, manualAgents: [], diagnostics: [] }),
     discoverInstructions: async () => ({ sources: [instruction], diagnostics: [] }),
     previewInstruction: async () => ({ ...instruction, content: "Run tests." }),
     listSkills: () => [skill],
@@ -20,11 +20,15 @@ function fixture() {
 }
 
 describe("ExecutionConfigurationService", () => {
+  it("refuses prompt context before a valid profile is saved", async () => {
+    const { service } = fixture(); await service.initialize();
+    await expect(service.promptContext(workflowId, workItemId)).rejects.toMatchObject({ code: "execution-profile-invalid" });
+  });
   it("persists and restores a valid authoritative profile", async () => {
     const { service, read } = fixture(); await service.initialize();
     const saved = await service.saveProfile({ workflowId, workItemId, executionCapabilityId: capability.id, skillId: skill.id, instructionIds: [instruction.id] }, "save");
     expect(saved.profile).toMatchObject({ workflowId, workItemId, status: "valid", executionCapabilityId: capability.id, skillId: skill.id, instructionIds: [instruction.id] });
-    const restarted = fixture().service; const persisted = read();
+    const persisted = read();
     const restored = new ExecutionConfigurationService({ read: async () => persisted, write: async () => undefined }, service.dependencies);
     await restored.initialize();
     expect((await restored.load(workflowId, workItemId)).profile?.contentHash).toBe(saved.profile?.contentHash);
@@ -48,5 +52,12 @@ describe("ExecutionConfigurationService", () => {
     const { service } = fixture(); await service.initialize();
     const created = await service.createManualAgent({ displayName: "My local helper", chatCommandId: "missing.chat", usageNote: "Clipboard only" }, "agent");
     expect(created.manualAgents[0]).toMatchObject({ displayName: "My local helper", commandAvailable: false });
+  });
+
+  it("persists an existing discovered agent selected from the agent dropdown", async () => {
+    const discovered = { id: "existing-agent", displayName: "Existing Agent", supportedInvocationModes: ["chat-command-handoff" as const], availability: "available" as const };
+    const { service } = fixture([discovered]); await service.initialize();
+    const saved = await service.saveProfile({ workflowId, workItemId, executionCapabilityId: capability.id, agentConfigurationId: discovered.id, skillId: skill.id, instructionIds: [] }, "discovered-agent");
+    expect(saved.profile?.agentConfigurationId).toBe(discovered.id);
   });
 });

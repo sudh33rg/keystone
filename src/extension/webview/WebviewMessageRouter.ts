@@ -4,6 +4,7 @@ import { WorkflowService, WorkflowServiceError } from "../../core/workflow/Workf
 import { DevelopmentService, DevelopmentServiceError } from "../../core/development/DevelopmentService";
 import { SourceScopeService, SourceScopeError } from "../../core/development/SourceScopeService";
 import type { VsCodeDevelopmentAdapter } from "../development/VsCodeDevelopmentAdapter";
+import type { ExecutionConfigurationService } from "../../core/development/ExecutionConfigurationService";
 import type { DevelopmentScopeItem } from "../../shared/contracts/development";
 import type { IntelligenceQueryService } from "../../core/intelligence/IntelligenceQueryService";
 import type { IntelligenceRuntime } from "../../core/intelligence/runtime/IntelligenceRuntime";
@@ -70,6 +71,7 @@ export interface IntelligenceServiceRegistry {
   development: DevelopmentService;
   developmentScope?: SourceScopeService;
   developmentHost?: VsCodeDevelopmentAdapter;
+  executionConfiguration: ExecutionConfigurationService;
   intelligenceRuntime: IntelligenceRuntime;
   intelligenceQuery: IntelligenceQueryService;
   cpgQuery: CpgQueryService;
@@ -364,6 +366,32 @@ export class WebviewMessageRouter {
         await this.sendSuccess(request.requestId, await this.services.development.reviewResult(request.payload.workflowId, request.payload.workItemId, request.payload.resultId, request.payload.decision, request.payload.correlationId)); return;
       case "development.complete":
         await this.sendSuccess(request.requestId, await this.services.development.completeDevelopment(request.payload.workflowId, request.payload.workItemId, request.payload.correlationId)); return;
+      case "executionConfiguration.load":
+      case "executionConfiguration.discoverInstructions":
+      case "executionConfiguration.listSkills":
+      case "executionConfiguration.validateProfile":
+        await this.sendSuccess(request.requestId, await this.services.executionConfiguration.load(request.payload.workflowId, request.payload.workItemId)); return;
+      case "executionConfiguration.detectConflicts":
+        await this.sendSuccess(request.requestId, await this.services.executionConfiguration.detectSelection(request.payload.workflowId, request.payload.workItemId, request.payload.instructionIds)); return;
+      case "executionConfiguration.refresh":
+        await this.sendSuccess(request.requestId, await this.services.executionConfiguration.refresh(request.payload.workflowId, request.payload.workItemId)); return;
+      case "executionConfiguration.createManualAgent":
+        await this.sendSuccess(request.requestId, await this.services.executionConfiguration.createManualAgent({ displayName: request.payload.displayName, ...(request.payload.chatCommandId !== undefined ? { chatCommandId: request.payload.chatCommandId } : {}), ...(request.payload.usageNote !== undefined ? { usageNote: request.payload.usageNote } : {}) }, request.payload.correlationId)); return;
+      case "executionConfiguration.updateManualAgent":
+        await this.sendSuccess(request.requestId, await this.services.executionConfiguration.updateManualAgent(request.payload.agentId, { displayName: request.payload.displayName, ...(request.payload.chatCommandId !== undefined ? { chatCommandId: request.payload.chatCommandId } : {}), ...(request.payload.usageNote !== undefined ? { usageNote: request.payload.usageNote } : {}) }, request.payload.correlationId)); return;
+      case "executionConfiguration.deleteManualAgent":
+        await this.sendSuccess(request.requestId, await this.services.executionConfiguration.deleteManualAgent(request.payload.agentId, request.payload.correlationId)); return;
+      case "executionConfiguration.addInstructionFile": {
+        const path = await this.requireDevelopmentHost().pickInstructionPath();
+        const result = path ? await this.services.executionConfiguration.addInstructionPath(path, request.payload.workflowId, request.payload.workItemId, request.payload.correlationId) : await this.services.executionConfiguration.load(request.payload.workflowId, request.payload.workItemId);
+        await this.sendSuccess(request.requestId, result); return;
+      }
+      case "executionConfiguration.previewInstruction":
+        await this.sendSuccess(request.requestId, await this.services.executionConfiguration.previewInstruction(request.payload.instructionId)); return;
+      case "executionConfiguration.previewSkill":
+        await this.sendSuccess(request.requestId, this.services.executionConfiguration.skill(request.payload.skillId)); return;
+      case "executionConfiguration.saveProfile":
+        await this.sendSuccess(request.requestId, await this.services.executionConfiguration.saveProfile({ workflowId: request.payload.workflowId, workItemId: request.payload.workItemId, executionCapabilityId: request.payload.executionCapabilityId, ...(request.payload.agentConfigurationId ? { agentConfigurationId: request.payload.agentConfigurationId } : {}), skillId: request.payload.skillId, instructionIds: request.payload.instructionIds }, request.payload.correlationId)); return;
       case "home/getState": {
         const home = new HomeStateService(
           this.workspaceSummary,

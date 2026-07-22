@@ -444,7 +444,11 @@ describe("Universal repository intelligence adapters", () => {
     const pkg = JSON.parse(await readFile("package.json", "utf8")) as {
       dependencies: Record<string, string>;
     };
-    expect(Object.keys(pkg.dependencies)).toEqual(["puppeteer", "react", "react-dom", "zod"]);
+    expect(Object.keys(pkg.dependencies)).toEqual([
+      "puppeteer", "react", "react-dom", "tree-sitter-go", "tree-sitter-java",
+      "tree-sitter-javascript", "tree-sitter-python", "tree-sitter-rust",
+      "tree-sitter-typescript", "web-tree-sitter", "zod",
+    ]);
   });
   it("43 uses no LLM for adapter ingestion or selection", async () => {
     const source = await readFile(

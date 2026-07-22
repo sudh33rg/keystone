@@ -115,6 +115,11 @@ import { SourceScopeService } from "../core/development/SourceScopeService";
 import { ManualHandoffService } from "../core/development/ManualHandoffService";
 import { WorkspaceChangeService } from "../core/development/WorkspaceChangeService";
 import { VsCodeDevelopmentAdapter } from "./development/VsCodeDevelopmentAdapter";
+import { ExecutionCapabilityDiscoveryService } from "../core/development/ExecutionCapabilityDiscoveryService";
+import { InstructionDiscoveryService } from "../core/development/InstructionDiscoveryService";
+import { DevelopmentSkillService } from "../core/development/DevelopmentSkillService";
+import { InstructionConflictDetector } from "../core/development/InstructionConflictDetector";
+import { ExecutionConfigurationService, FileExecutionConfigurationPersistence } from "../core/development/ExecutionConfigurationService";
 
 let logger: KeystoneLogger | undefined;
 
@@ -219,6 +224,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   development.setHandoffService(new ManualHandoffService({ writeText: async (value) => { await vscode.env.clipboard.writeText(value); } }));
   const developmentHost = repositoryUri ? new VsCodeDevelopmentAdapter(repositoryUri, language, intelligenceQuery) : undefined;
   const developmentScope = repositoryRoot && developmentHost ? new SourceScopeService(repositoryRoot, developmentHost) : undefined;
+  const capabilityDiscovery = new ExecutionCapabilityDiscoveryService({
+    clipboardAvailable: async () => typeof vscode.env.clipboard?.writeText === "function",
+    registeredCommands: async () => vscode.commands.getCommands(true),
+    discoveredAgents: async () => [],
+  });
+  const instructionDiscovery = new InstructionDiscoveryService(repositoryRoot ?? canonicalWorkflowRoot);
+  const skillService = new DevelopmentSkillService();
+  const builtInDevelopmentSkill = skillService.builtInDevelopmentSkill();
+  const conflictDetector = new InstructionConflictDetector();
+  const executionConfiguration = new ExecutionConfigurationService(new FileExecutionConfigurationPersistence(canonicalWorkflowRoot), {
+    discoverCapabilities: async (manualAgents) => capabilityDiscovery.discover(manualAgents),
+    discoverInstructions: async (paths) => instructionDiscovery.discover(paths),
+    previewInstruction: async (path) => instructionDiscovery.preview(path),
+    listSkills: () => skillService.list([builtInDevelopmentSkill]),
+    conflicts: (instructions, unavailable = []) => [...conflictDetector.detect(instructions), ...conflictDetector.unresolved(unavailable)],
+    invalidatePrompt: async (workItemId) => development.invalidatePrompt(workItemId),
+  });
+  await executionConfiguration.initialize();
+  development.setExecutionConfigurationService(executionConfiguration);
   development.setWorkspaceChangeService(new WorkspaceChangeService({ detect: async () => {
     if (!repositoryUri || !developmentHost) return undefined;
     await git.getMetadata(repositoryUri.toString());
@@ -663,6 +687,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     development,
     developmentScope,
     developmentHost,
+    executionConfiguration,
     healthCheck,
     intelligenceRuntime,
     intelligenceQuery,

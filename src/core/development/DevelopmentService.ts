@@ -97,6 +97,12 @@ export class DevelopmentService {
   async getHomeSummary(workflowId: string): Promise<{ nextRequiredAction: string } | undefined> {
     if (!this.state.workItems.some((item) => item.workflowId === workflowId)) return undefined;
     const aggregate = await this.load(workflowId);
+    if (this.executionConfiguration && aggregate.workItem.status !== "completed") {
+      const configuration = await this.executionConfiguration.load(workflowId, aggregate.workItem.id);
+      if (!configuration.profile) return { nextRequiredAction: "Configure Development execution" };
+      if (configuration.conflicts.some((item) => item.severity === "error")) return { nextRequiredAction: "Resolve Development instruction conflicts" };
+      if (configuration.profile.status !== "valid") return { nextRequiredAction: "Review stale Development execution profile" };
+    }
     const next = aggregate.completion.unmet[0] ?? (aggregate.workItem.status === "completed" ? "Open the next required stage" : "Complete Development");
     return { nextRequiredAction: next };
   }

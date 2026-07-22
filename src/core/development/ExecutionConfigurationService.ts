@@ -7,6 +7,7 @@ import {
   EXECUTION_CONFIGURATION_SCHEMA_VERSION,
   ExecutionConfigurationPersistentStateSchema,
   type DevelopmentExecutionProfile,
+  type DiscoveredAgent,
   type ExecutionConfigurationAggregate,
   type ExecutionConfigurationPersistentState,
   type InstructionConflict,
@@ -16,11 +17,11 @@ import {
   type SkillDefinition,
 } from "../../shared/contracts/executionConfiguration";
 
-export interface ExecutionConfigurationPersistence { read(): Promise<unknown | undefined>; write(value: ExecutionConfigurationPersistentState): Promise<void>; }
+export interface ExecutionConfigurationPersistence { read(): Promise<unknown>; write(value: ExecutionConfigurationPersistentState): Promise<void>; }
 export class FileExecutionConfigurationPersistence implements ExecutionConfigurationPersistence {
   private readonly path: string;
   constructor(root: string, private readonly writer = new AtomicFileWriter()) { this.path = join(root, "workflows", "phase-4-execution-configuration.json"); }
-  async read(): Promise<unknown | undefined> { try { return JSON.parse(await readFile(this.path, "utf8")) as unknown; } catch (cause) { if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") return undefined; return { malformed: true }; } }
+  async read(): Promise<unknown> { try { return JSON.parse(await readFile(this.path, "utf8")) as unknown; } catch (cause) { if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") return undefined; return { malformed: true }; } }
   write(value: ExecutionConfigurationPersistentState): Promise<void> { return this.writer.writeJson(this.path, value); }
 }
 
@@ -58,14 +59,18 @@ export class ExecutionConfigurationService {
     const capabilities = await this.dependencies.discoverCapabilities(this.state.manualAgents); const discovered = await this.dependencies.discoverInstructions(this.state.manualInstructionPaths); const skills = this.dependencies.listSkills();
     const manualAgents = this.state.manualAgents.map((item) => capabilities.manualAgents.find((candidate) => candidate.id === item.id) ?? { ...item, commandAvailable: false });
     const current = this.state.profiles.find((item) => item.workflowId === workflowId && item.workItemId === workItemId) ?? null;
-    const profile = current ? this.refreshStatus(current, capabilities.capabilities, discovered.sources, skills) : null;
-    const selected = profile ? discovered.sources.filter((item) => profile.instructionIds.includes(item.id)) : [];
+    const missingConfigured = current?.instructionIds.filter((id) => !discovered.sources.some((item) => item.id === id)).map((id): InstructionSource => ({ id, name: current.instructionPaths?.[id]?.split("/").at(-1) ?? "Missing instruction", workspaceRelativePath: current.instructionPaths?.[id] ?? "Unknown configured path", uri: `file://${current.instructionPaths?.[id] ?? "missing"}`, sourceType: "user-selected", sizeBytes: 0, availability: "missing", diagnostic: { code: "instruction-missing", message: "This instruction was selected in the saved profile but is no longer present." } })) ?? [];
+    const allInstructions = [...discovered.sources, ...missingConfigured];
+    const profile = current ? this.refreshStatus(current, capabilities.capabilities, allInstructions, skills, { agents: capabilities.agents, manualAgents }) : null;
+    const selected = profile ? allInstructions.filter((item) => profile.instructionIds.includes(item.id)) : [];
     const conflicts = await this.detect(selected);
-    return { capabilities: capabilities.capabilities, agents: capabilities.agents, manualAgents, instructions: discovered.sources, skills, conflicts, diagnostics: [...capabilities.diagnostics, ...discovered.diagnostics, ...this.diagnostics.map((message) => ({ code: "persistence-failed", message }))], profile };
+    return { capabilities: capabilities.capabilities, agents: capabilities.agents, manualAgents, instructions: allInstructions, skills, conflicts, diagnostics: [...capabilities.diagnostics, ...discovered.diagnostics, ...this.diagnostics.map((message) => ({ code: "persistence-failed", message }))], profile };
   }
 
   async refresh(workflowId: string, workItemId: string): Promise<ExecutionConfigurationAggregate> { return this.load(workflowId, workItemId); }
 
+  // Validation intentionally stays centralized so persisted profiles have one authoritative gate.
+  // eslint-disable-next-line complexity
   async saveProfile(draft: ExecutionProfileDraft, correlationId: string): Promise<ExecutionConfigurationAggregate> {
     this.assertCorrelation(correlationId); const aggregate = await this.load(draft.workflowId, draft.workItemId);
     const capability = aggregate.capabilities.find((item) => item.id === draft.executionCapabilityId);
@@ -75,18 +80,22 @@ export class ExecutionConfigurationService {
     const instructions = draft.instructionIds.map((id) => aggregate.instructions.find((item) => item.id === id));
     if (instructions.some((item) => !item)) throw new ExecutionConfigurationError("instruction-not-found", "A selected instruction was not found.");
     if (instructions.some((item) => item!.availability !== "available" || !item!.contentHash)) throw new ExecutionConfigurationError("instruction-unreadable", "Every selected instruction must be readable and unchanged.");
-    let agent: ManualAgentConfiguration | undefined;
+    let agent: ManualAgentConfiguration | DiscoveredAgent | undefined;
     if (draft.agentConfigurationId) {
-      agent = aggregate.manualAgents.find((item) => item.id === draft.agentConfigurationId);
-      if (!agent) throw new ExecutionConfigurationError("manual-agent-invalid", "The selected manual agent was not found.");
-      if (capability.kind === "chat-command-handoff" && (!agent.chatCommandId || !agent.commandAvailable)) throw new ExecutionConfigurationError("command-not-registered", "The manual agent's chat command is not registered in VS Code.");
+      agent = aggregate.agents.find((item) => item.id === draft.agentConfigurationId) ?? aggregate.manualAgents.find((item) => item.id === draft.agentConfigurationId);
+      if (!agent) throw new ExecutionConfigurationError("manual-agent-invalid", "The selected agent was not found or is unavailable.");
+      if (capability.kind === "chat-command-handoff") {
+        const supported = "supportedInvocationModes" in agent ? agent.supportedInvocationModes.includes("chat-command-handoff") : Boolean(agent.chatCommandId && agent.commandAvailable);
+        if (!supported) throw new ExecutionConfigurationError("command-not-registered", "The selected agent does not support the registered chat-command handoff.");
+      }
     }
     const conflicts = await this.detect(instructions as InstructionSource[]);
     if (conflicts.some((item) => item.severity === "error")) throw new ExecutionConfigurationError("instruction-conflict", "Resolve blocking instruction conflicts before saving configuration.");
     const timestamp = this.now(); const existing = this.state.profiles.find((item) => item.workflowId === draft.workflowId && item.workItemId === draft.workItemId);
     const instructionHashes = Object.fromEntries((instructions as InstructionSource[]).map((item) => [item.id, item.contentHash!]));
-    const contentHash = hash({ executionCapabilityId: capability.id, agentConfigurationId: agent?.id, skillId: skill.id, skillHash: skill.contentHash, instructionIds: draft.instructionIds, instructionHashes });
-    const profile: DevelopmentExecutionProfile = { id: existing?.id ?? this.createId(), workflowId: draft.workflowId, workItemId: draft.workItemId, executionCapabilityId: capability.id, ...(agent ? { agentConfigurationId: agent.id } : {}), skillId: skill.id, instructionIds: [...new Set(draft.instructionIds)], status: "valid", validation: { capabilityAvailable: true, skillAvailable: true, instructionsAvailable: true, conflictsResolved: true }, instructionHashes, skillHash: skill.contentHash, contentHash, createdAt: existing?.createdAt ?? timestamp, updatedAt: timestamp };
+    const instructionPaths = Object.fromEntries((instructions as InstructionSource[]).map((item) => [item.id, item.workspaceRelativePath]));
+    const contentHash = hash({ executionCapabilityId: capability.id, agentConfigurationId: agent?.id, skillId: skill.id, skillHash: skill.contentHash, instructionIds: draft.instructionIds, instructionHashes, instructionPaths });
+    const profile: DevelopmentExecutionProfile = { id: existing?.id ?? this.createId(), workflowId: draft.workflowId, workItemId: draft.workItemId, executionCapabilityId: capability.id, ...(agent ? { agentConfigurationId: agent.id } : {}), skillId: skill.id, instructionIds: [...new Set(draft.instructionIds)], status: "valid", validation: { capabilityAvailable: true, skillAvailable: true, instructionsAvailable: true, conflictsResolved: true }, instructionHashes, instructionPaths, skillHash: skill.contentHash, contentHash, createdAt: existing?.createdAt ?? timestamp, updatedAt: timestamp };
     await this.commit({ ...this.state, profiles: existing ? replace(this.state.profiles, profile) : [...this.state.profiles, profile], correlations: { ...this.state.correlations, [correlationId]: profile.id } }, timestamp);
     await this.dependencies.invalidatePrompt(draft.workItemId);
     return this.load(draft.workflowId, draft.workItemId);
@@ -118,13 +127,18 @@ export class ExecutionConfigurationService {
   }
 
   async previewInstruction(instructionId: string): Promise<InstructionPreview> { const discovered = await this.dependencies.discoverInstructions(this.state.manualInstructionPaths); const source = discovered.sources.find((item) => item.id === instructionId); if (!source) throw new ExecutionConfigurationError("instruction-not-found", "Instruction file was not found."); return this.dependencies.previewInstruction(source.workspaceRelativePath); }
+  async detectSelection(workflowId: string, workItemId: string, instructionIds: string[]): Promise<ExecutionConfigurationAggregate> {
+    const aggregate = await this.load(workflowId, workItemId);
+    const selected = instructionIds.map((id) => aggregate.instructions.find((item) => item.id === id)).filter((item): item is InstructionSource => Boolean(item));
+    return { ...aggregate, conflicts: await this.detect(selected) };
+  }
   skill(skillId: string): SkillDefinition { const skill = this.dependencies.listSkills().find((item) => item.id === skillId); if (!skill) throw new ExecutionConfigurationError("skill-not-found", "Development skill was not found."); return skill; }
   async promptContext(workflowId: string, workItemId: string) {
     const aggregate = await this.load(workflowId, workItemId); const profile = aggregate.profile;
     if (!profile || profile.status !== "valid") throw new ExecutionConfigurationError(profile ? "execution-profile-stale" : "execution-profile-invalid", profile ? "Refresh and save the stale execution profile before preparing a prompt." : "Save a valid execution profile before preparing a prompt.");
     const capability = aggregate.capabilities.find((item) => item.id === profile.executionCapabilityId)!; const skill = aggregate.skills.find((item) => item.id === profile.skillId)!;
     const instructions = await Promise.all(profile.instructionIds.map((id) => this.previewInstruction(id)));
-    const agent = profile.agentConfigurationId ? aggregate.manualAgents.find((item) => item.id === profile.agentConfigurationId) : undefined;
+    const agent = profile.agentConfigurationId ? aggregate.agents.find((item) => item.id === profile.agentConfigurationId) ?? aggregate.manualAgents.find((item) => item.id === profile.agentConfigurationId) : undefined;
     return { profile, capability, skill, instructions, agent };
   }
   manualInstructionPaths(): string[] { return [...this.state.manualInstructionPaths]; }
@@ -135,8 +149,9 @@ export class ExecutionConfigurationService {
     const previews = await Promise.all(available.map((item) => this.dependencies.previewInstruction(item.workspaceRelativePath)));
     return this.dependencies.conflicts(previews.map((item) => ({ id: item.id, workspaceRelativePath: item.workspaceRelativePath, content: item.content })), unavailable);
   }
-  private refreshStatus(profile: DevelopmentExecutionProfile, capabilities: ExecutionConfigurationAggregate["capabilities"], instructions: InstructionSource[], skills: SkillDefinition[]): DevelopmentExecutionProfile {
-    const capabilityAvailable = capabilities.some((item) => item.id === profile.executionCapabilityId && item.availability === "available"); const skill = skills.find((item) => item.id === profile.skillId); const skillAvailable = Boolean(skill && skill.contentHash === profile.skillHash);
+  private refreshStatus(profile: DevelopmentExecutionProfile, capabilities: ExecutionConfigurationAggregate["capabilities"], instructions: InstructionSource[], skills: SkillDefinition[], agentSources: { agents: DiscoveredAgent[]; manualAgents: ManualAgentConfiguration[] }): DevelopmentExecutionProfile {
+    const agentAvailable = !profile.agentConfigurationId || agentSources.agents.some((item) => item.id === profile.agentConfigurationId && item.availability === "available") || agentSources.manualAgents.some((item) => item.id === profile.agentConfigurationId);
+    const capabilityAvailable = agentAvailable && capabilities.some((item) => item.id === profile.executionCapabilityId && item.availability === "available"); const skill = skills.find((item) => item.id === profile.skillId); const skillAvailable = Boolean(skill && skill.contentHash === profile.skillHash);
     const instructionsAvailable = profile.instructionIds.every((id) => { const current = instructions.find((item) => item.id === id); return current?.availability === "available" && current.contentHash === profile.instructionHashes[id]; });
     const valid = capabilityAvailable && skillAvailable && instructionsAvailable;
     return { ...profile, status: valid ? "valid" : "stale", validation: { ...profile.validation, capabilityAvailable, skillAvailable, instructionsAvailable, conflictsResolved: profile.validation.conflictsResolved } };

@@ -14,10 +14,14 @@ const aggregate = {
   changeDetection: { available: true, changes: [] },
   completion: { allowed: false, unmet: ["Select source scope"] },
 };
+const executionConfiguration = {
+  capabilities: [], agents: [], manualAgents: [], instructions: [], skills: [], conflicts: [], profile: null,
+};
+const reply = (type: string, development = aggregate) => type.startsWith("executionConfiguration.") ? executionConfiguration : development;
 
 describe("DevelopmentStage", () => {
   it("renders exactly the six bounded sections and edits the real objective", async () => {
-    const request = vi.fn(async (type: string) => type === "development.updateObjective" ? { ...aggregate, workItem: { ...aggregate.workItem, objective: "Guard settled refunds", status: "editing" } } : aggregate);
+    const request = vi.fn(async (type: string) => reply(type, type === "development.updateObjective" ? { ...aggregate, workItem: { ...aggregate.workItem, objective: "Guard settled refunds", status: "editing" } } : aggregate));
     render(<DevelopmentStage bridge={{ request } as unknown as HostBridge} workflowId={ids.workflow} />);
     for (const name of ["Objective", "Source Scope", "Prompt Preparation", "Development Result", "Changed Files", "Completion"]) expect(await screen.findByRole("heading", { name })).toBeTruthy();
     for (const removed of ["Agent", "Context", "Security", "Performance", "QA", "Execution", "Evidence"]) expect(screen.queryByRole("tab", { name: removed })).toBeNull();
@@ -28,7 +32,7 @@ describe("DevelopmentStage", () => {
   });
 
   it("supports current file, prompt preparation, truthful handoff, result, changes, and gated completion", async () => {
-    const request = vi.fn(async (type: string) => type === "development.initialize" ? aggregate : aggregate);
+    const request = vi.fn(async (type: string) => reply(type));
     render(<DevelopmentStage bridge={{ request } as unknown as HostBridge} workflowId={ids.workflow} />);
     await screen.findByRole("heading", { name: "Objective" });
     expect(screen.getByRole("button", { name: "Add Current File" })).toBeTruthy();
@@ -47,7 +51,7 @@ describe("DevelopmentStage", () => {
       workItem: { ...aggregate.workItem, status: "completed" },
       completion: { allowed: true, unmet: [] },
     };
-    const request = vi.fn(async () => completed);
+    const request = vi.fn(async (type: string) => reply(type, completed));
 
     render(<DevelopmentStage bridge={{ request } as unknown as HostBridge} workflowId={ids.workflow} />);
 

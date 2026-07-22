@@ -26,6 +26,12 @@ export class VsCodeDevelopmentAdapter {
     const selected = await vscode.window.showQuickPick(choices, { canPickMany: true, matchOnDescription: true, placeHolder: "Select source or documentation files for Development scope", title: "Add Workspace Files" });
     return selected ? [...new Set(selected.map((item) => item.uri.toString()))] : [];
   }
+  async pickInstructionPath(): Promise<string | undefined> {
+    const files = await vscode.workspace.findFiles(new vscode.RelativePattern(this.root, "**/*.{md,mdx,txt}"), DEVELOPMENT_FILE_EXCLUDE_GLOB, 5000);
+    const choices = files.map((uri) => ({ label: uri.path.split("/").at(-1) ?? uri.path, description: this.relativePath(uri), uri }));
+    const selected = await vscode.window.showQuickPick(choices, { canPickMany: false, matchOnDescription: true, placeHolder: "Select an existing Markdown or text instruction file", title: "Add Instruction File" });
+    return selected ? this.relativePath(selected.uri) : undefined;
+  }
   async currentSelectionSymbol(): Promise<{ fileUri: string; symbol: NonNullable<DevelopmentScopeItem["symbol"]> } | undefined> {
     const editor = selectDevelopmentEditor(vscode.window.activeTextEditor, vscode.window.visibleTextEditors);
     if (!editor || editor.selection.isEmpty || editor.document.uri.scheme !== "file") return undefined;

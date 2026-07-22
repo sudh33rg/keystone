@@ -2,6 +2,7 @@ import { z } from "zod";
 import { HomeStateSchema } from "../../shared/contracts/home";
 import { CanonicalWorkflowSchema, WorkflowCreatedResponseSchema, WorkflowCreationFailedResponseSchema } from "../../shared/contracts/canonicalWorkflow";
 import { DevelopmentAggregateSchema } from "../../shared/contracts/development";
+import { ExecutionConfigurationAggregateSchema, InstructionPreviewSchema, SkillDefinitionSchema } from "../../shared/contracts/executionConfiguration";
 import {
   BootstrapSnapshotSchema,
   PersistedFoundationStateSchema,
@@ -296,6 +297,22 @@ function validateResult(type: WebviewRequestType, value: unknown): unknown {
     case "development.reviewResult":
     case "development.complete":
       return DevelopmentAggregateSchema.parse(value);
+    case "executionConfiguration.load":
+    case "executionConfiguration.refresh":
+    case "executionConfiguration.discoverInstructions":
+    case "executionConfiguration.listSkills":
+    case "executionConfiguration.detectConflicts":
+    case "executionConfiguration.createManualAgent":
+    case "executionConfiguration.updateManualAgent":
+    case "executionConfiguration.deleteManualAgent":
+    case "executionConfiguration.addInstructionFile":
+    case "executionConfiguration.validateProfile":
+    case "executionConfiguration.saveProfile":
+      return ExecutionConfigurationAggregateSchema.parse(value);
+    case "executionConfiguration.previewInstruction":
+      return InstructionPreviewSchema.parse(value);
+    case "executionConfiguration.previewSkill":
+      return SkillDefinitionSchema.parse(value);
     case "keystone/webviewReady":
       return KeystoneInitializationSchema.parse(value);
     case "keystone/initializationAcknowledged":

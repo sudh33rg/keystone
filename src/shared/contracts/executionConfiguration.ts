@@ -40,9 +40,9 @@ export const InstructionConflictSchema = z.object({
 }).strict();
 
 export const DevelopmentExecutionProfileSchema = z.object({
-  id: z.string().uuid(), workflowId: z.string().uuid(), workItemId: z.string().uuid(), executionCapabilityId: z.string().min(1).max(200), agentConfigurationId: z.string().uuid().optional(), skillId: z.string().min(1).max(200), instructionIds: z.array(z.string().min(1).max(200)).max(100),
+  id: z.string().uuid(), workflowId: z.string().uuid(), workItemId: z.string().uuid(), executionCapabilityId: z.string().min(1).max(200), agentConfigurationId: z.string().min(1).max(500).optional(), skillId: z.string().min(1).max(200), instructionIds: z.array(z.string().min(1).max(200)).max(100),
   status: z.enum(["draft", "valid", "invalid", "stale"]), validation: z.object({ capabilityAvailable: z.boolean(), skillAvailable: z.boolean(), instructionsAvailable: z.boolean(), conflictsResolved: z.boolean() }).strict(),
-  instructionHashes: z.record(z.string(), z.string().regex(/^[a-f0-9]{64}$/)), skillHash: z.string().regex(/^[a-f0-9]{64}$/), contentHash: z.string().regex(/^[a-f0-9]{64}$/), createdAt: z.string().datetime(), updatedAt: z.string().datetime(),
+  instructionHashes: z.record(z.string(), z.string().regex(/^[a-f0-9]{64}$/)), instructionPaths: z.record(z.string(), z.string().min(1).max(10_000)).optional(), skillHash: z.string().regex(/^[a-f0-9]{64}$/), contentHash: z.string().regex(/^[a-f0-9]{64}$/), createdAt: z.string().datetime(), updatedAt: z.string().datetime(),
 }).strict();
 
 export const ExecutionConfigurationAggregateSchema = z.object({

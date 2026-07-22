@@ -28,11 +28,13 @@ import {
   type IngestionDelta,
 } from "./runtime/IngestionDelta";
 import type { SemanticExtractor } from "./semantic/SemanticExtractionWorker";
-import { SemanticDeltaBuilder } from "./semantic/SemanticDeltaBuilder";
 import { SemanticGraphBuilder } from "./semantic/SemanticGraphBuilder";
+import { SemanticDeltaBuilder } from "./semantic/SemanticDeltaBuilder";
 import type { SemanticSourceFileInput } from "./semantic/SemanticModel";
 import type { CpgDelta } from "../../shared/contracts/cpg";
 import type { AdapterOutput, AdapterRegistryState } from "../../shared/contracts/adapters";
+import type { TreeSitterExtractionAdapter } from "./extraction/TreeSitterExtractionAdapter";
+import type { TreeSitterIdProvider, TreeSitterParseResult } from "./extraction/TreeSitterExtractionAdapter";
 
 export interface IndexProgress {
   stage: "inventory" | "symbols" | "publishing";
@@ -89,6 +91,7 @@ export class RepositoryIndexService {
     private readonly semantic?: SemanticExtractor,
     private readonly semanticDelta = new SemanticDeltaBuilder(),
     private readonly graphBuilder = new SemanticGraphBuilder(),
+    private readonly treeSitter?: TreeSitterExtractionAdapter,
   ) {
     this.state = {
       status: store.isStorageAvailable() ? "not-indexed" : "storage-unavailable",
@@ -807,6 +810,45 @@ export class RepositoryIndexService {
       }
     }
 
+    // Phase A: polyglot tree-sitter extraction (inert unless enabled). Runs
+    // for any language with a loaded grammar and supplements (never replaces)
+    // the document-symbol provider above. Graceful skip per language.
+    if (
+      this.treeSitter?.enabled &&
+      this.treeSitter.supports(file.language) &&
+      classification.analysisLevel === "deep" &&
+      classification.included &&
+      !classification.sensitive &&
+      !classification.binary &&
+      contentHash &&
+      indexedContent
+    ) {
+      try {
+        const result = await this.treeSitter.extractSymbols(
+          file.language,
+          relativePath,
+          new TextDecoder().decode(indexedContent),
+          this.treeSitterIdProvider(file, input, contentHash),
+        );
+        if (result.available) {
+          file.parseStatus = result.parseStatus;
+          file.parserId = result.extractorId;
+          file.parserVersion = result.extractorVersion;
+          this.addTreeSitterSymbols(result, file, input, local, contentHash);
+        }
+      } catch (cause) {
+        local.diagnostics.push(
+          diagnostic(
+            "TREE_SITTER_EXTRACTION_FAILED",
+            "warning",
+            safeMessage(cause),
+            rootRecord.id,
+            relativePath,
+          ),
+        );
+      }
+    }
+
     if (fileJob && indexedContent) {
       const current = await this.workspace.statFile(candidate.uri);
       if (current.modifiedAt !== observed.modifiedAt || current.byteSize !== observed.byteSize)
@@ -935,6 +977,165 @@ export class RepositoryIndexService {
         confidence: 1,
         generation: input.generation,
       });
+    }
+  }
+
+  /**
+   * Provides deterministic stable-id + evidence emission for the tree-sitter
+   * adapter, so its symbols/relationships merge cleanly into the same
+   * IngestionDelta without colliding with document-symbol output.
+   */
+  private treeSitterIdProvider(
+    file: IntelligenceFileRecord,
+    input: IndexFileInput,
+    contentHash: string,
+  ): TreeSitterIdProvider {
+    const self = this;
+    return {
+      repositoryId: input.repositoryId,
+      fileId: file.id,
+      generation: input.generation,
+      entity(language: string, name: string, discriminator: string): string {
+        return stableId(
+          "tssymbol",
+          input.repositoryId,
+          file.id,
+          language,
+          name,
+          discriminator,
+        );
+      },
+      relationship(sourceId: string, targetId: string, type: string, discriminator: string): string {
+        return stableId(
+          "relationship",
+          input.repositoryId,
+          sourceId,
+          targetId,
+          type,
+          file.id,
+          discriminator,
+        );
+      },
+      evidence(subjectId: string, relativePath: string, line: number): string {
+        return stableId(
+          "evidence",
+          subjectId,
+          relativePath,
+          line,
+          contentHash,
+          input.generation,
+          "tssymbol",
+        );
+      },
+    };
+  }
+
+  private async addTreeSitterSymbols(
+    result: TreeSitterParseResult,
+    file: IntelligenceFileRecord,
+    input: IndexFileInput,
+    local: MutableRecords,
+    contentHash: string,
+  ): Promise<void> {
+    for (const symbol of result.symbols) {
+      this.assertCurrent(input.run);
+      const symbolEvidenceId = await stableId(
+        "evidence",
+        symbol.id,
+        file.relativePath,
+        symbol.range.startLine,
+        contentHash,
+        "tssymbol",
+      );
+      local.evidence.push(
+        evidenceRecord(
+          symbolEvidenceId,
+          symbol.id,
+          input.rootRecord.id,
+          file.relativePath,
+          input.generation,
+          input.branch,
+          input.commit,
+          contentHash,
+          "language-provider",
+          result.extractorId,
+          `Tree-sitter reported the declaration ${symbol.qualifiedName}.`,
+          symbol.range,
+          result.extractorVersion,
+          file.id,
+        ),
+      );
+      local.symbols.push(symbol);
+      const declaresId = await stableId(
+        "relationship",
+        file.id,
+        symbol.id,
+        "keystone.core.DECLARES",
+      );
+      const declaresEvidenceId = await stableId("evidence", declaresId, symbolEvidenceId);
+      local.evidence.push(
+        evidenceRecord(
+          declaresEvidenceId,
+          declaresId,
+          input.rootRecord.id,
+          file.relativePath,
+          input.generation,
+          input.branch,
+          input.commit,
+          contentHash,
+          "language-provider",
+          result.extractorId,
+          `The file declares ${symbol.qualifiedName} at the tree-sitter source range.`,
+          symbol.range,
+          result.extractorVersion,
+          file.id,
+        ),
+      );
+      local.relationships.push({
+        id: declaresId,
+        repositoryId: input.repositoryId,
+        sourceId: file.id,
+        targetId: symbol.id,
+        type: "keystone.core.DECLARES",
+        ownerFileId: file.id,
+        targetFileId: file.id,
+        resolution: "exact",
+        evidenceIds: [declaresEvidenceId],
+        derivation: "extracted",
+        confidence: 1,
+        generation: input.generation,
+      });
+    }
+    for (const relationship of result.relationships) {
+      this.assertCurrent(input.run);
+      local.relationships.push(relationship);
+      const relEvidenceId = await stableId(
+        "evidence",
+        relationship.id,
+        file.relativePath,
+        relationship.generation,
+        contentHash,
+        "tssymbol",
+      );
+      local.evidence.push(
+        evidenceRecord(
+          relEvidenceId,
+          relationship.id,
+          input.rootRecord.id,
+          file.relativePath,
+          input.generation,
+          input.branch,
+          input.commit,
+          contentHash,
+          "language-provider",
+          result.extractorId,
+          `${relationship.type.replace("keystone.core.", "")} was extracted by tree-sitter.`,
+          undefined,
+          result.extractorVersion,
+          file.id,
+        ),
+      );
+      relationship.evidenceIds.push(relEvidenceId);
     }
   }
 

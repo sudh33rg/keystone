@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { HomeState } from "./home";
 import type { DevelopmentAggregate } from "./development";
+import type { ExecutionConfigurationAggregate, InstructionPreview, SkillDefinition } from "./executionConfiguration";
 import {
   CanonicalWorkflowWorkTypeSchema,
   type CanonicalWorkflow,
@@ -317,6 +318,19 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
   request("development.confirmNoCode", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid(), resultId: z.string().uuid(), explanation: z.string().max(5000), confirmed: z.boolean() }).strict()),
   request("development.reviewResult", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid(), resultId: z.string().uuid(), decision: z.enum(["accepted", "changes-requested"]) }).strict()),
   request("development.complete", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid() }).strict()),
+  request("executionConfiguration.load", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid() }).strict()),
+  request("executionConfiguration.refresh", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid() }).strict()),
+  request("executionConfiguration.discoverInstructions", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid() }).strict()),
+  request("executionConfiguration.listSkills", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid() }).strict()),
+  request("executionConfiguration.detectConflicts", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid(), instructionIds: z.array(z.string().min(1).max(200)).max(100) }).strict()),
+  request("executionConfiguration.createManualAgent", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid(), displayName: z.string().max(201), chatCommandId: z.string().max(500).optional(), usageNote: z.string().max(2000).optional() }).strict()),
+  request("executionConfiguration.updateManualAgent", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid(), agentId: z.string().uuid(), displayName: z.string().max(201), chatCommandId: z.string().max(500).optional(), usageNote: z.string().max(2000).optional() }).strict()),
+  request("executionConfiguration.deleteManualAgent", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid(), agentId: z.string().uuid() }).strict()),
+  request("executionConfiguration.addInstructionFile", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid() }).strict()),
+  request("executionConfiguration.previewInstruction", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid(), instructionId: z.string().min(1).max(200) }).strict()),
+  request("executionConfiguration.previewSkill", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid(), skillId: z.string().min(1).max(200) }).strict()),
+  request("executionConfiguration.validateProfile", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid(), executionCapabilityId: z.string().min(1).max(200), agentConfigurationId: z.string().min(1).max(500).optional(), skillId: z.string().min(1).max(200), instructionIds: z.array(z.string().min(1).max(200)).max(100) }).strict()),
+  request("executionConfiguration.saveProfile", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid(), executionCapabilityId: z.string().min(1).max(200), agentConfigurationId: z.string().min(1).max(500).optional(), skillId: z.string().min(1).max(200), instructionIds: z.array(z.string().min(1).max(200)).max(100) }).strict()),
   request("review/getState", ReviewWorkflowPayloadSchema),
   request("review/getSummary", ReviewWorkflowPayloadSchema),
   request("review/getTraceability", ReviewWorkflowPayloadSchema),
@@ -1453,6 +1467,19 @@ export interface WebviewRequestResults {
   "development.confirmNoCode": DevelopmentAggregate;
   "development.reviewResult": DevelopmentAggregate;
   "development.complete": DevelopmentAggregate;
+  "executionConfiguration.load": ExecutionConfigurationAggregate;
+  "executionConfiguration.refresh": ExecutionConfigurationAggregate;
+  "executionConfiguration.discoverInstructions": ExecutionConfigurationAggregate;
+  "executionConfiguration.listSkills": ExecutionConfigurationAggregate;
+  "executionConfiguration.detectConflicts": ExecutionConfigurationAggregate;
+  "executionConfiguration.createManualAgent": ExecutionConfigurationAggregate;
+  "executionConfiguration.updateManualAgent": ExecutionConfigurationAggregate;
+  "executionConfiguration.deleteManualAgent": ExecutionConfigurationAggregate;
+  "executionConfiguration.addInstructionFile": ExecutionConfigurationAggregate;
+  "executionConfiguration.previewInstruction": InstructionPreview;
+  "executionConfiguration.previewSkill": SkillDefinition;
+  "executionConfiguration.validateProfile": ExecutionConfigurationAggregate;
+  "executionConfiguration.saveProfile": ExecutionConfigurationAggregate;
   "review/getState": WorkflowReviewState;
   "review/getSummary": WorkflowReviewState["summary"];
   "review/getTraceability": WorkflowReviewState["traceability"];

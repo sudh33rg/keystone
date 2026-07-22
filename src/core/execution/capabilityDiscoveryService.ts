@@ -141,40 +141,6 @@ export class CapabilityDiscoveryService {
         agents.push(agent);
       }
 
-      // Check for Copilot agents
-      const copilotAgent: AgentCapability = {
-        id: "copilot-agent",
-        name: "GitHub Copilot Agent",
-        type: "agent",
-        source: "github-copilot",
-        description: "GitHub Copilot agent for code completion and assistance",
-        state: "partially-available",
-        lastDiscovered: this.lastDiscoveryTimestamp,
-        supportsDirectInvocation: false,
-        supportsManualHandoff: true,
-        supportedStageTypes: ["implementation", "analysis", "testing", "review"],
-        invocationModes: ["chat-handoff", "clipboard-handoff", "manual"],
-      };
-
-      agents.push(copilotAgent);
-
-      // Check for built-in Keystone agents
-      const keystoneAgent: AgentCapability = {
-        id: "keystone-agent",
-        name: "Keystone Agent",
-        type: "agent",
-        source: "keystone-built-in",
-        description: "Keystone internal deterministic operation agent",
-        state: "available",
-        lastDiscovered: this.lastDiscoveryTimestamp,
-        supportsDirectInvocation: true,
-        supportsManualHandoff: true,
-        supportedStageTypes: ["implementation", "analysis", "testing", "review", "validation"],
-        invocationModes: ["direct", "manual", "deterministic"],
-      };
-
-      agents.push(keystoneAgent);
-
       this.logger.debug(
         "capabilityDiscoveryService.discoverAgents",
         `Discovered ${agents.length} agents`,
