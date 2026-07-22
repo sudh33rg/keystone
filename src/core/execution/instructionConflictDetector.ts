@@ -55,7 +55,10 @@ export interface InstructionConflict {
 export class InstructionConflictDetector {
   private logger: KeystoneLogger;
 
-  constructor(logger: KeystoneLogger) {
+  constructor(
+    logger: KeystoneLogger,
+    private readonly resolveInstruction: (id: string) => InstructionCapability | undefined = () => undefined,
+  ) {
     this.logger = logger;
   }
 
@@ -214,15 +217,26 @@ export class InstructionConflictDetector {
     const instructions: InstructionCapability[] = [];
 
     // Get the instruction capabilities referenced in the profile
+    const unresolved: InstructionConflict[] = [];
     for (const instructionRef of profile.instructions) {
       const instruction = this.getInstructionById(instructionRef.instructionId);
       if (instruction) {
         instructions.push(instruction);
+      } else {
+        unresolved.push({
+          id: `unresolved-${instructionRef.instructionId}`,
+          description: `Instruction could not be resolved: ${instructionRef.instructionId}`,
+          severity: "high",
+          conflictingInstructions: [],
+          conflictType: "ambiguous",
+          blocking: true,
+          suggestedResolution: "Select an existing readable instruction record.",
+        });
       }
     }
 
     // Detect conflicts in these instructions
-    return this.detectConflicts(instructions);
+    return [...unresolved, ...this.detectConflicts(instructions)];
   }
 
   /**
@@ -234,21 +248,6 @@ export class InstructionConflictDetector {
    * @returns The instruction capability or undefined if not found
    */
   private getInstructionById(id: string): InstructionCapability | undefined {
-    // This is a simplified implementation - in reality, this would be fetched from the capability registry
-    // For now, we'll return a mock instruction for demonstration
-    return {
-      id,
-      name: `Instruction-${id}`,
-      type: "instruction",
-      source: "mock-source",
-      description: `Mock instruction for ID ${id}`,
-      state: "available",
-      lastDiscovered: new Date().toISOString(),
-      filePath: undefined,
-      scope: "user",
-      precedence: 5,
-      enabled: true,
-      contentHash: undefined,
-    };
+    return this.resolveInstruction(id);
   }
 }

@@ -11,7 +11,11 @@ import type { HostBridge } from "../../src/ui/services/HostBridge";
 
 function createBridge() {
   let listener: ((message: HostMessage) => void) | undefined;
-  const request = vi.fn().mockResolvedValue(undefined);
+  const request = vi.fn().mockImplementation((type: string) => Promise.resolve(type === "home/getState" ? {
+    repository: { name: "fixture-repository", status: "not-indexed", refreshSupported: true },
+    activeWorkflow: null,
+    recentActivities: [],
+  } : undefined));
   const bridge = {
     request,
     subscribe(callback: (message: HostMessage) => void) {
@@ -45,6 +49,10 @@ describe("App", () => {
           activeSection: "home",
           activeRoute: "/",
           workflowCount: 0,
+          activityRecords: [],
+          approvalRecords: [],
+          blockerRecords: [],
+          freshnessRecords: [],
           updatedAt: new Date().toISOString(),
         },
         activity: {
@@ -65,8 +73,8 @@ describe("App", () => {
       fake.emit(hostMessage("bootstrap/ready", snapshot));
     });
 
-    expect(screen.getByText(/Active repository · fixture-repository/)).toBeTruthy();
-    expect(screen.getByText(/Engineering work/)).toBeTruthy();
+    expect(await screen.findByText("fixture-repository")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Start New Work" })).toBeTruthy();
     expect(
       ["Home", "Active Work", "Intelligence", "History"].every((name) =>
         screen.getByRole("button", { name }),
@@ -80,15 +88,10 @@ describe("App", () => {
       "Delivery",
       "Task Handoff",
       "Diagnostics",
+      "Workspace health",
+      "Settings",
     ])
       expect(screen.queryByRole("button", { name: removed })).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: "Workspace health" }));
-    expect(screen.getByRole("heading", { name: "Diagnostics" })).toBeTruthy();
-    expect(fake.request).toHaveBeenCalledWith("navigation/set", { route: "/support/diagnostics" });
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
-    expect(screen.getByRole("heading", { name: "Settings" })).toBeTruthy();
-    expect(fake.request).toHaveBeenCalledWith("navigation/set", { route: "/settings" });
 
     fireEvent.click(screen.getByRole("button", { name: "Intelligence" }));
     expect(fake.request).toHaveBeenCalledWith("navigation/set", { route: "/intelligence" });

@@ -1,267 +1,94 @@
-import { useCallback, useEffect, useState } from "react";
-import type { BootstrapSnapshot, AppRoute } from "../../../shared/contracts/domain";
-import type {
-  CopilotCapabilities,
-  DevelopmentWorkflowSnapshot,
-} from "../../../shared/contracts/delegation";
-import type { CopilotIntegrationCapabilities } from "../../../shared/contracts/copilotIntegration";
-import type { IntelligenceOverview } from "../../../shared/contracts/intelligence";
-import type { WorkflowInstance } from "../../../shared/contracts/orchestration";
-import type { WorkbenchCreateContext } from "../../../shared/contracts/workbench";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { AppRoute } from "../../../shared/contracts/domain";
+import type { HomeState } from "../../../shared/contracts/home";
+import { canonicalWorkTypeLabel } from "../../../shared/contracts/canonicalWorkflow";
 import type { HostBridge } from "../../services/HostBridge";
-import { Icon } from "../Icon";
 import { toUiError, UiErrorState, type KeystoneUiError } from "../UiState";
 
-export function HomeDashboard({
-  bootstrap,
-  overview,
-  bridge,
-  navigate,
-}: {
-  bootstrap: BootstrapSnapshot;
-  overview?: IntelligenceOverview;
-  bridge: HostBridge;
-  navigate: (route: AppRoute) => void;
-}): React.JSX.Element {
-  const [workflows, setWorkflows] = useState<DevelopmentWorkflowSnapshot[]>([]);
-  const [instances, setInstances] = useState<WorkflowInstance[]>([]);
-  const [copilot, setCopilot] = useState<CopilotCapabilities>();
-  const [integration, setIntegration] = useState<CopilotIntegrationCapabilities>();
-  const [createContext, setCreateContext] = useState<WorkbenchCreateContext>();
-  const [notice, setNotice] = useState<string>();
+export function HomeDashboard({ bridge, navigate }: { bridge: HostBridge; navigate: (route: AppRoute) => void }): React.JSX.Element {
+  const [state, setState] = useState<HomeState>();
   const [error, setError] = useState<KeystoneUiError>();
-  const [refreshKey, setRefreshKey] = useState(0);
-  const load = useCallback(async (): Promise<void> => {
+  const [loading, setLoading] = useState(true);
+  const loadRef = useRef<() => void>(() => undefined);
+  const load = useCallback(async () => {
+    setLoading(true);
     try {
-      const [flows, orchestration, capabilities, integrationStatus, context] = await Promise.all([
-        bridge.request("workflow/list", {}),
-        bridge.request("orchestration/list", {}),
-        bridge.request("copilot/capabilities", {}),
-        bridge.request("copilot/getIntegrationStatus", {}),
-        bridge.request("workbench/getCreateContext", {}),
-      ]);
-      setWorkflows(Array.isArray(flows) ? flows : []);
-      setInstances(Array.isArray(orchestration) ? orchestration : []);
-      if (capabilities) setCopilot(capabilities);
-      setIntegration(integrationStatus);
-      setCreateContext(context);
+      setState(await bridge.request("home/getState", {}));
       setError(undefined);
     } catch (cause) {
-      setError(
-        toUiError(cause, {
-          category: "home-load",
-          title: "Home status is temporarily unavailable",
-          fallbackMessage: "Keystone could not refresh the current workflow status.",
-          retry: () => setRefreshKey((value) => value + 1),
-          dismiss: () => setError(undefined),
-        }),
-      );
+      setError(toUiError(cause, {
+        category: "home-load",
+        title: "Home is temporarily unavailable",
+        fallbackMessage: "Keystone could not load the current repository and workflow summary.",
+        retry: () => loadRef.current(),
+        dismiss: () => setError(undefined),
+      }));
+    } finally {
+      setLoading(false);
     }
   }, [bridge]);
-  useEffect(() => {
-    queueMicrotask(() => void load());
-  }, [load, refreshKey]);
-  const workflow =
-    workflows.find((item) => !["completed", "cancelled"].includes(item.status)) ?? workflows.at(-1);
-  const instance = workflow
-    ? instances.find((item) => item.intentId === workflow.intent.id)
-    : undefined;
-  const task =
-    workflow?.tasks.find((item) => ["executing", "ready", "blocked"].includes(item.status)) ??
-    workflow?.tasks[0];
-  const resume: AppRoute = workflow ? "/active-work" : "/active-work";
-  const importHandoff = async (): Promise<void> => {
-    try {
-      const imported = await bridge.request("handoff/import", { source: "file" });
-      setNotice(
-        imported
-          ? `Imported ${imported.package.task.title} for review.`
-          : "Handoff import cancelled.",
-      );
-    } catch (cause) {
-      setError(
-        toUiError(cause, {
-          category: "handoff-import",
-          title: "Task Handoff was not imported",
-          fallbackMessage: "Keystone could not read the selected package.",
-          preservedState: true,
-          retry: () => void importHandoff(),
-          dismiss: () => setError(undefined),
-        }),
-      );
-    }
-  };
-  const branch =
-    overview?.repository?.branch ??
-    instance?.branch ??
-    createContext?.repository.branch ??
-    "Unavailable";
-  const intelligenceStatus = (overview?.status ?? bootstrap.workspace.indexStatus).replace(
-    "-",
-    " ",
-  );
-  return (
-    <section className="page home-page">
-      <div className="hero">
-        <div className="eyebrow">
-          <Icon name="repo" size={14} /> Active repository · {bootstrap.workspace.name} · {branch}
-        </div>
-        <h1>
-          Engineering work,
-          <br />
-          <em>in one lifecycle.</em>
-        </h1>
-        <p>
-          Describe what you want to build. Keystone will analyze the repository, create a workflow,
-          and delegate implementation tasks to Copilot.
-        </p>
-        <div className="button-row">
-          <button className="primary-button" onClick={() => navigate("/active-work")}>
-            Start new work
-          </button>
-          {workflow && (
-            <button className="ghost-button" onClick={() => navigate(resume)}>
-              Resume workflow
-            </button>
-          )}
-          <button className="ghost-button" onClick={() => navigate("/intelligence")}>
-            Ask repository
-          </button>
-          <button className="ghost-button" onClick={() => void importHandoff()}>
-            Import handoff
-          </button>
-        </div>
-      </div>
-      {error && <UiErrorState error={error} />}{" "}
-      {notice && (
-        <div role="status" className="honesty-note">
-          {notice}
-        </div>
-      )}
-      <div className="status-grid">
-        <Projection
-          label="REPOSITORY"
-          value={bootstrap.workspace.name}
-          detail={`Branch ${branch}`}
-          action="Open Repository Intelligence"
-          onOpen={() => navigate("/intelligence")}
-        />
-        <Projection
-          label="INTELLIGENCE"
-          value={intelligenceStatus}
-          detail={
-            overview?.pendingUpdate
-              ? "Updating; last complete generation remains available"
-              : `Generation ${overview?.generation ?? 0}`
-          }
-          action="Ask repository"
-          onOpen={() => navigate("/intelligence")}
-        />
-        <Projection
-          label="ACTIVE WORKFLOW"
-          value={workflow?.specification?.title ?? workflow?.intent.normalizedObjective ?? "None"}
-          detail={workflow?.status ?? "Start new work to create a workflow"}
-          {...(workflow ? { action: "Resume workflow", onOpen: () => navigate(resume) } : {})}
-        />
-        <Projection
-          label="CURRENT TASK"
-          value={task?.title ?? "None"}
-          detail={task?.status ?? "No task is active"}
-          {...(workflow
-            ? {
-                action: "Open task",
-                onOpen: () => navigate(resume),
-              }
-            : {})}
-        />
-        <Projection
-          label="PENDING APPROVALS"
-          value={String(instance?.progress.pendingApprovals ?? 0)}
-          detail="Explicit workflow approval gates"
-          {...(workflow ? { action: "Open workflow", onOpen: () => navigate(resume) } : {})}
-        />
-        <Projection
-          label="BLOCKING FINDINGS"
-          value={String(instance?.progress.blockingFindings ?? 0)}
-          detail="Open findings that prevent completion"
-          {...(workflow
-            ? {
-                action: "Open workflow",
-                onOpen: () => navigate(resume),
-              }
-            : {})}
-        />
-        <Projection
-          label="VALIDATION FAILURES"
-          value={String(instance?.progress.failedTasks ?? 0)}
-          detail="Tasks with failed validation evidence"
-          {...(workflow
-            ? {
-                action: "Open workflow",
-                onOpen: () => navigate(resume),
-              }
-            : {})}
-        />
-        <Projection
-          label="GITHUB COPILOT"
-          value={
-            integration
-              ? integration.chatAvailable
-                ? "Ready"
-                : copilot?.extensionDetected
-                  ? "Limited"
-                  : "Unavailable"
-              : copilot?.extensionDetected
-                ? "Available"
-                : "Unavailable"
-          }
-          detail={
-            integration?.languageModelToolsAvailable
-              ? "Keystone tools available"
-              : integration?.assistedInvocationAvailable
-                ? "Assisted mode required"
-                : integration?.clipboardFallbackAvailable
-                  ? "Clipboard fallback available"
-                  : copilot?.directInvocationAvailable
-                    ? "Direct invocation supported"
-                    : "Workflow remains usable without Copilot"
-          }
-        />
-      </div>
-    </section>
-  );
+  useEffect(() => { loadRef.current = () => void load(); queueMicrotask(() => void load()); }, [load]);
+
+  if (loading && !state) return <section className="loading-view" aria-live="polite"><div className="loader" /><p>Loading Home…</p></section>;
+  if (error && !state) return <UiErrorState error={error} />;
+  if (!state) return <UiErrorState error={toUiError(new Error("Home state unavailable"), { category: "home-load", title: "Home is unavailable", fallbackMessage: "Keystone did not return Home state." })} />;
+  const repository = state.repository;
+  const workflow = state.activeWorkflow;
+
+  return <section className="page home-page">
+    {error && <UiErrorState error={error} />}
+    <div className="status-grid home-sections">
+      <section className="status-card" role="region" aria-labelledby="home-repository">
+        <small>REPOSITORY INTELLIGENCE</small>
+        <h2 id="home-repository">Repository Intelligence</h2>
+        <h3>{repository.name}</h3>
+        <p>Status: {repository.status.replaceAll("-", " ")}</p>
+        {repository.generation !== undefined && <p>Generation {repository.generation}</p>}
+        {repository.lastSuccessfulUpdate && <p>Last successful update: {formatDate(repository.lastSuccessfulUpdate)}</p>}
+        {repository.progress && <p>{repository.progress.label}: {repository.progress.completed} / {repository.progress.total}</p>}
+        {repository.error && <p role="alert">{repository.error}</p>}
+        {repository.refreshSupported && <button className="ghost-button" onClick={() => void bridge.request("intelligence/scan/start", {}).then(load).catch((cause) => setError(toUiError(cause, { category: "intelligence-refresh", title: "Repository Intelligence could not start", fallbackMessage: "Keystone could not start repository intelligence.", dismiss: () => setError(undefined) })))}>Refresh intelligence</button>}
+        <button className="card-action" onClick={() => navigate("/intelligence")}>Open Repository Intelligence →</button>
+      </section>
+
+      <section className="status-card" role="region" aria-labelledby="home-active-work">
+        <small>ACTIVE WORK</small>
+        <h2 id="home-active-work">Active Work</h2>
+        {workflow ? <>
+          <h3>{workflow.title}</h3>
+          {workflow.intent !== workflow.title && <p>{workflow.intent}</p>}
+          {workflow.workType && <p>Work type: {canonicalWorkTypeLabel(workflow.workType)}</p>}
+          <p>Status: {workflow.status}</p>
+          {workflow.currentStage && <p>Current stage: {workflow.currentStage} · {workflow.currentStageStatus}</p>}
+          {workflow.nextRequiredAction && <p>Next: {workflow.nextRequiredAction}</p>}
+          <p>Updated: {formatDate(workflow.updatedAt)}</p>
+          <button className="ghost-button" onClick={() => { clearSelectedWorkflow(bridge); navigate("/active-work"); }}>Resume Work</button>
+        </> : <p>No active workflow</p>}
+      </section>
+
+      <section className="status-card" role="region" aria-labelledby="home-start-work">
+        <small>START NEW WORK</small>
+        <h2 id="home-start-work">Start New Work</h2>
+        {workflow ? <p>Complete or cancel the current workflow before starting another.</p> : <><p>Start from an engineering intent and prepare a controlled Keystone workflow.</p><button className="primary-button" onClick={() => navigate("/workflow/new")}>Start Work</button></>}
+      </section>
+
+      <section className="status-card" role="region" aria-labelledby="home-activity">
+        <small>RECENT ACTIVITY</small>
+        <h2 id="home-activity">Recent Activity</h2>
+        {state.recentActivities.length ? <ul>{state.recentActivities.map((activity) => <li key={activity.id}><strong>{activity.title}</strong><span>{activity.status} · {formatDate(activity.updatedAt)}</span></li>)}</ul> : <p>No recent Keystone activity.</p>}
+      </section>
+    </div>
+  </section>;
 }
 
-function Projection({
-  label,
-  value,
-  detail,
-  action,
-  onOpen,
-}: {
-  label: string;
-  value: string;
-  detail: string;
-  action?: string;
-  onOpen?: () => void;
-}): React.JSX.Element {
-  const content = (
-    <>
-      <small>{label}</small>
-      <h2>{value}</h2>
-      <p>{detail}</p>
-      {action && <span className="card-action">{action} →</span>}
-    </>
-  );
-  return onOpen ? (
-    <button
-      className="status-card status-card-action"
-      onClick={onOpen}
-      aria-label={`${action}: ${value}`}
-    >
-      {content}
-    </button>
-  ) : (
-    <article className="status-card">{content}</article>
-  );
+function formatDate(value: string): string {
+  return new Date(value).toLocaleString();
+}
+
+function clearSelectedWorkflow(bridge: HostBridge): void {
+  const current = bridge.getWebviewState?.();
+  if (!current || typeof current !== "object") return;
+  const next = { ...current } as Record<string, unknown>;
+  delete next.keystoneSelectedWorkflowId;
+  bridge.setWebviewState?.(next);
 }

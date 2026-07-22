@@ -54,8 +54,6 @@ import { WorkflowRerunPlanner } from "../core/rerun/WorkflowRerunPlanner";
 import { ActivityService } from "../core/activity/ActivityService";
 import { ApprovalService } from "../core/approval/ApprovalService";
 import { BlockerService } from "../core/blocker/BlockerService";
-import { PersistenceConsistencyService } from "../core/persistence/PersistenceConsistencyService";
-import { SupportBundleService } from "../core/support/SupportBundleService";
 import { ResourceLimitService } from "../core/resource/ResourceLimitService";
 import { GitExecutableDeliveryAdapter } from "./git/GitDeliveryAdapter";
 import { VsCodeGitDeliveryAdapter } from "./git/VsCodeGitDeliveryAdapter";
@@ -111,6 +109,12 @@ import { KeystoneInitializationSchema } from "../shared/contracts/nativeShell";
 import type { IntelligenceServiceRegistry } from "./webview/WebviewMessageRouter";
 import { AppRouteSchema } from "../shared/contracts/domain";
 import { HealthCheckService } from "../core/health/HealthCheckService";
+import { FileWorkflowPersistence, WorkflowService } from "../core/workflow/WorkflowService";
+import { DevelopmentService, FileDevelopmentPersistence } from "../core/development/DevelopmentService";
+import { SourceScopeService } from "../core/development/SourceScopeService";
+import { ManualHandoffService } from "../core/development/ManualHandoffService";
+import { WorkspaceChangeService } from "../core/development/WorkspaceChangeService";
+import { VsCodeDevelopmentAdapter } from "./development/VsCodeDevelopmentAdapter";
 
 let logger: KeystoneLogger | undefined;
 
@@ -151,6 +155,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     "Restoring extension-managed product state.",
   );
   await initializeFoundationState(workspaceState);
+  const canonicalWorkflowRoot = storageRoot ?? context.storageUri?.fsPath ?? context.globalStorageUri.fsPath;
+  const canonicalWorkflow = new WorkflowService(
+    new FileWorkflowPersistence(join(canonicalWorkflowRoot, "workflows", "phase-2.json")),
+  );
+  await canonicalWorkflow.initialize();
 
   const workspace = new VsCodeWorkspaceAdapter();
   const git = new VsCodeGitAdapter();
@@ -205,6 +214,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     intelligenceRuntime,
     cpgQuery,
   );
+  const development = new DevelopmentService(new FileDevelopmentPersistence(canonicalWorkflowRoot), canonicalWorkflow);
+  await development.initialize();
+  development.setHandoffService(new ManualHandoffService({ writeText: async (value) => { await vscode.env.clipboard.writeText(value); } }));
+  const developmentHost = repositoryUri ? new VsCodeDevelopmentAdapter(repositoryUri, language, intelligenceQuery) : undefined;
+  const developmentScope = repositoryRoot && developmentHost ? new SourceScopeService(repositoryRoot, developmentHost) : undefined;
+  development.setWorkspaceChangeService(new WorkspaceChangeService({ detect: async () => {
+    if (!repositoryUri || !developmentHost) return undefined;
+    await git.getMetadata(repositoryUri.toString());
+    if (!git.isGitRepository(repositoryUri.toString())) return undefined;
+    const [changes, stagedFiles] = await Promise.all([git.getReconciliationChanges(repositoryUri.toString()), git.getStagedFiles(repositoryUri.toString())]);
+    const staged = new Set(stagedFiles);
+    return changes.map((change) => ({ path: developmentHost.relativePath(vscode.Uri.parse(change.uri)), status: change.kind, staged: staged.has(change.uri), ...(change.originalUri ? { previousPath: developmentHost.relativePath(vscode.Uri.parse(change.originalUri)) } : {}) }));
+  } }));
   const delegationStore = new DelegationPersistenceStore(storageRoot);
   const copilotIntegrationStore = new CopilotIntegrationPersistenceStore(storageRoot);
   await copilotIntegrationStore.initialize();
@@ -637,6 +659,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const launchValidation = new KeystoneLaunchValidationService(nativeSource);
   const dashboardViewModels = new KeystoneDashboardViewModelService(nativeSource);
   const serviceRegistry: IntelligenceServiceRegistry = {
+    canonicalWorkflow,
+    development,
+    developmentScope,
+    developmentHost,
     healthCheck,
     intelligenceRuntime,
     intelligenceQuery,

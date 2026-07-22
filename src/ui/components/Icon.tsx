@@ -13,7 +13,8 @@ interface IconProps {
     | "check"
     | "arrow"
     | "lock"
-    | "spark";
+    | "spark"
+    | "warning";
   size?: number;
 }
 
@@ -94,6 +95,12 @@ const paths: Record<IconProps["name"], React.ReactNode> = {
     <>
       <path d="m12 3 1.2 4.8L18 9l-4.8 1.2L12 15l-1.2-4.8L6 9l4.8-1.2z" />
       <path d="m19 15 .6 2.4L22 18l-2.4.6L19 21l-.6-2.4L16 18l2.4-.6z" />
+    </>
+  ),
+  warning: (
+    <>
+      <path d="M12 3 2 20h20L12 3Z" />
+      <path d="M12 9v5M12 17h.01" />
     </>
   ),
 };

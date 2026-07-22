@@ -1,4 +1,4 @@
-import { crypto } from "node:crypto";
+import * as crypto from "node:crypto";
 import { KeystoneError } from "../../shared/errors/KeystoneError";
 import {
   RerunActionSchema,
@@ -30,7 +30,7 @@ export class WorkflowRerunPlanner {
     const plan = this.planRerun(workflowId, trigger);
     return RerunPlanResultSchema.parse({
       plan,
-      totalAffectedWorkItems: plan.stages.reduce((sum, stage) => sum + stage.actions.length, 0),
+      totalAffectedWorkItems: plan.stages.length,
     });
   }
 
@@ -167,7 +167,9 @@ export class WorkflowRerunPlanner {
     const hash = this.hash(seed);
     for (let i = result.length - 1; i > 0; i--) {
       const j = (hash * (i + 1)) % (i + 1);
-      [result[i], result[j]] = [result[j], result[i]];
+      const tmp = result[i]!;
+      result[i] = result[j]!;
+      result[j] = tmp;
     }
     return result;
   }
@@ -176,11 +178,11 @@ export class WorkflowRerunPlanner {
    * Hash a string to a number.
    */
   private hash(str: string): number {
-    return crypto
+    const hex = crypto
       .createHash("sha256")
       .update(str)
       .digest("hex")
-      .slice(0, 8)
-      .reduce((acc, char) => acc + char.charCodeAt(0), 0);
+      .slice(0, 8);
+    return Array.from(hex).reduce((acc: number, char: string) => acc + char.charCodeAt(0), 0);
   }
 }

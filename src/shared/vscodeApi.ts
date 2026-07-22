@@ -16,6 +16,9 @@ import type {
  * Mock implementation of VSCodeAPI for testing
  */
 export class MockVSCodeAPI implements VSCodeAPI {
+  readWorkspaceFile(_path: string): Promise<{ uri: string; content: string } | undefined> {
+    return Promise.resolve(undefined);
+  }
   getChatParticipants(): Promise<VSCodeChatParticipant[]> {
     return Promise.resolve([
       {

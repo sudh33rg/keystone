@@ -3,6 +3,7 @@
   "displayName": "Keystone",
   "description": "A visible engineering control layer for repository-aware, spec-driven Copilot work.",
   "version": "0.1.0",
+  "publisher": "keystone-dev",
   "engines": {
     "vscode": "^1.95.0",
     "node": ">=20"
@@ -25,6 +26,7 @@
     "test:extension": "npm run build && npm run build:extension-tests && node scripts/run-extension-tests.mjs",
     "test:watch": "vitest",
     "test:intelligence-benchmark": "node --experimental-strip-types tests/fixtures/benchmarks/run-benchmarks.ts",
+    "verify": "npm run typecheck && npm test && npm run build",
     "package": "npm run verify && vsce package --allow-missing-repository --no-dependencies --baseContentUrl . --baseImagesUrl .",
     "audit": "npm audit --audit-level=high"
   },
@@ -1143,16 +1145,6 @@
         "command": "keystone.importHandoff",
         "title": "Keystone: Import Task Handoff",
         "icon": "$(cloud-download)"
-      },
-      {
-        "command": "keystone.openDiagnostics",
-        "title": "Keystone: Open Diagnostics",
-        "icon": "$(pulse)"
-      },
-      {
-        "command": "keystone.openSettings",
-        "title": "Keystone: Open Settings",
-        "icon": "$(gear)"
       },
       {
         "command": "keystone.showLogs",

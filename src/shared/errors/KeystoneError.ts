@@ -10,6 +10,7 @@ export type ErrorCategory =
   | "TERMINAL"
   | "WEBVIEW"
   | "CONFIGURATION"
+  | "RESOURCE"
   | "INTERNAL";
 
 export interface SerializedKeystoneError {

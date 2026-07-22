@@ -144,6 +144,7 @@ export class DelegationService {
   private capabilityService: CapabilityDiscoveryService;
   private vscodeAPI: VSCodeAPI;
   private delegationHistory: DelegationExecutionResult[] = [];
+  private readonly deterministicOperations = new Map<string, (request: DelegationRequest) => unknown>();
 
   constructor(
     logger: KeystoneLogger,
@@ -234,23 +235,16 @@ export class DelegationService {
       switch (prepared.delegationMode) {
         case "direct":
           if (prepared.canExecuteDirectly) {
-            // Execute directly using the VS Code API
             const executionResult = await this.executeDirectly(prepared);
             result.status = "completed";
             result.result = executionResult;
             result.endTime = new Date().toISOString();
             this.logger.info(
               "delegationService.executeDelegation",
-              "Direct delegation completed successfully",
+              "Direct delegation returned an execution result",
             );
           } else {
-            // Fallback to handoff mode
-            result.status = "handed-off";
-            result.endTime = new Date().toISOString();
-            this.logger.warning(
-              "delegationService.executeDelegation",
-              "Direct execution not available, falling back to handoff mode",
-            );
+            throw new Error("Direct execution is unavailable; no supported direct execution API is registered.");
           }
           break;
 
@@ -281,9 +275,8 @@ export class DelegationService {
           break;
 
         case "deterministic":
-          // Execute a deterministic operation (internal Keystone logic)
-          result.status = "completed";
           result.result = this.executeDeterministic(prepared);
+          result.status = "completed";
           result.endTime = new Date().toISOString();
           this.logger.info(
             "delegationService.executeDelegation",
@@ -390,24 +383,11 @@ export class DelegationService {
    * @returns Promise resolving to the execution result
    */
   private executeDirectly(prepared: PreparedDelegation): unknown {
-    const { request, agentCapability } = prepared;
-
-    // In a real implementation, this would use the VS Code Language Model API
-    // or a specific agent API to execute the task directly
-
     this.logger.debug(
       "delegationService.executeDirectly",
-      `Executing direct delegation with agent: ${agentCapability.name}`,
+      `Direct execution requested for agent: ${prepared.agentCapability.name}`,
     );
-
-    // This is a placeholder - in real implementation, we'd make actual API calls
-    return {
-      agent: agentCapability.name,
-      executionType: "direct",
-      workflowId: request.workflowId,
-      stageId: request.stageId,
-      timestamp: new Date().toISOString(),
-    };
+    throw new Error("Direct execution is unsupported because Keystone has no registered direct execution API.");
   }
 
   /**
@@ -418,18 +398,11 @@ export class DelegationService {
   private async executeChatHandoff(prepared: PreparedDelegation): Promise<void> {
     const { request, agentCapability } = prepared;
 
-    // In a real implementation, this would:
-    // 1. Open the VS Code chat window
-    // 2. Pre-fill the chat with the task content
-    // 3. Set the appropriate agent context
-    // 4. Possibly provide pre-filled messages or instructions
-
     this.logger.debug(
       "delegationService.executeChatHandoff",
       `Executing chat handoff for agent: ${agentCapability.name}`,
     );
 
-    // This is a placeholder - in real implementation, we'd use VS Code chat APIs
     await this.vscodeAPI.openChatWithContent(
       `Task for ${request.stageId}: ${prepared.taskContent || "Task details"}`,
     );
@@ -447,10 +420,7 @@ export class DelegationService {
       throw new Error("No task content available for clipboard handoff");
     }
 
-    // In a real implementation, this would copy the task content to the clipboard
     this.logger.debug("delegationService.executeClipboardHandoff", "Executing clipboard handoff");
-
-    // This is a placeholder - in real implementation, we'd use VS Code clipboard APIs
     await this.vscodeAPI.copyToClipboard(taskContent);
   }
 
@@ -462,23 +432,19 @@ export class DelegationService {
    */
   private executeDeterministic(prepared: PreparedDelegation): unknown {
     const { request } = prepared;
-
-    // In a real implementation, this would run internal Keystone logic
-    // such as static analysis, graph traversal, or other deterministic operations
-
     this.logger.debug(
       "delegationService.executeDeterministic",
       "Executing deterministic delegation",
     );
 
-    // This is a placeholder - in real implementation, we'd perform deterministic operations
-    return {
-      workflowId: request.workflowId,
-      stageId: request.stageId,
-      operationType: "deterministic",
-      timestamp: new Date().toISOString(),
-      result: "Deterministic operation completed successfully",
-    };
+    const operation = this.deterministicOperations.get(request.stageId);
+    if (!operation) throw new Error(`Unsupported deterministic operation: ${request.stageId}`);
+    return operation(request);
+  }
+
+  registerDeterministicOperation(id: string, operation: (request: DelegationRequest) => unknown): void {
+    if (!id.trim()) throw new Error("A deterministic operation ID is required.");
+    this.deterministicOperations.set(id, operation);
   }
 
   /**

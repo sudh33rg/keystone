@@ -1,4 +1,10 @@
 import type { ConfigurationService } from "../../core/configuration/ConfigurationService";
+import { HomeStateService } from "../../core/home/HomeStateService";
+import { WorkflowService, WorkflowServiceError } from "../../core/workflow/WorkflowService";
+import { DevelopmentService, DevelopmentServiceError } from "../../core/development/DevelopmentService";
+import { SourceScopeService, SourceScopeError } from "../../core/development/SourceScopeService";
+import type { VsCodeDevelopmentAdapter } from "../development/VsCodeDevelopmentAdapter";
+import type { DevelopmentScopeItem } from "../../shared/contracts/development";
 import type { IntelligenceQueryService } from "../../core/intelligence/IntelligenceQueryService";
 import type { IntelligenceRuntime } from "../../core/intelligence/runtime/IntelligenceRuntime";
 import type { ContinuousIntelligenceState } from "../../core/intelligence/runtime/IntelligenceRuntime";
@@ -60,6 +66,10 @@ import type {
 type PostMessage = (message: HostMessage) => Thenable<boolean>;
 
 export interface IntelligenceServiceRegistry {
+  canonicalWorkflow: WorkflowService;
+  development: DevelopmentService;
+  developmentScope?: SourceScopeService;
+  developmentHost?: VsCodeDevelopmentAdapter;
   intelligenceRuntime: IntelligenceRuntime;
   intelligenceQuery: IntelligenceQueryService;
   cpgQuery: CpgQueryService;
@@ -246,7 +256,10 @@ export class WebviewMessageRouter {
     try {
       await this.route(request);
     } catch (cause) {
-      const error = KeystoneError.fromUnknown(cause, request.type, request.requestId);
+      const structured = cause instanceof DevelopmentServiceError || cause instanceof SourceScopeError || (cause instanceof Error && "code" in cause && typeof cause.code === "string");
+      const error = structured
+        ? new KeystoneError({ code: (cause as Error & { code: string }).code, category: "WORKSPACE", message: (cause as Error).message, technicalDetails: `${request.type} failed for correlation ${"correlationId" in request.payload ? request.payload.correlationId : request.requestId}.`, operation: request.type, recoverable: true, recommendedAction: "Correct the Development input or workspace state, then retry.", retryable: true, correlationId: request.requestId, cause })
+        : KeystoneError.fromUnknown(cause, request.type, request.requestId);
       this.logger.error(error);
       await this.sendError(request.requestId, error);
     }
@@ -255,6 +268,113 @@ export class WebviewMessageRouter {
   private async route(request: WebviewRequest): Promise<void> {
     this.ensureWorkspaceTrust(request);
     switch (request.type) {
+      case "workflow.create": {
+        try {
+          const workflow = await this.services.canonicalWorkflow.createWorkflow(
+            { intent: request.payload.intent, workType: request.payload.workType, ...(request.payload.specification ? { specification: request.payload.specification } : {}) },
+            request.payload.correlationId,
+          );
+          try {
+            if (!(this.store.snapshot.activityRecords ?? []).some((activity) => activity.resultReference === workflow.id)) {
+              const timestamp = new Date().toISOString();
+              await this.store.update("activityRecords", [
+                ...(this.store.snapshot.activityRecords ?? []),
+                { id: crypto.randomUUID(), workflowId: workflow.id, category: "recovery", title: "Workflow created", status: "completed", progress: 100, currentAction: workflow.intent.text, startedAt: timestamp, completedAt: timestamp, resultReference: workflow.id, cancellationRequested: false, createdAt: timestamp, updatedAt: timestamp },
+              ]);
+            }
+          } catch (activityError) {
+            this.logger.warning("workflow.activity.write", "The workflow was persisted, but its optional Home activity record could not be saved.", { error: activityError instanceof Error ? activityError.message : String(activityError), workflowId: workflow.id });
+          }
+          await this.sendSuccess(request.requestId, { type: "workflow.created", correlationId: request.payload.correlationId, workflow });
+        } catch (cause) {
+          const error = cause instanceof WorkflowServiceError
+            ? { code: cause.code, message: cause.message, recoverable: cause.recoverable }
+            : { code: "WORKFLOW_PERSISTENCE_FAILED", message: "Keystone could not persist the workflow. Check repository write access, then try again.", recoverable: true };
+          await this.sendSuccess(request.requestId, { type: "workflow.creationFailed", correlationId: request.payload.correlationId, error });
+        }
+        return;
+      }
+      case "workflow.loadActive":
+        await this.sendSuccess(request.requestId, this.services.canonicalWorkflow.getActiveWorkflow());
+        return;
+      case "workflow.listCanonical":
+        await this.sendSuccess(request.requestId, this.services.canonicalWorkflow.listWorkflows());
+        return;
+      case "workflow.getCanonical":
+        await this.sendSuccess(request.requestId, this.services.canonicalWorkflow.getWorkflow(request.payload.workflowId));
+        return;
+      case "workflow.setActiveCanonical":
+        await this.sendSuccess(request.requestId, await this.services.canonicalWorkflow.setActiveWorkflow(request.payload.workflowId));
+        return;
+      case "development.initialize": {
+        let aggregate = await this.services.development.initializeStage(request.payload.workflowId, request.payload.correlationId);
+        if (this.services.developmentScope && aggregate.scopeItems.length) aggregate = await this.services.development.replaceScopeAvailability(request.payload.workflowId, aggregate.workItem.id, await this.services.developmentScope.refreshAvailability(aggregate.scopeItems));
+        await this.sendSuccess(request.requestId, aggregate); return;
+      }
+      case "development.load": {
+        let aggregate = await this.services.development.load(request.payload.workflowId);
+        if (this.services.developmentScope && aggregate.scopeItems.length) aggregate = await this.services.development.replaceScopeAvailability(request.payload.workflowId, aggregate.workItem.id, await this.services.developmentScope.refreshAvailability(aggregate.scopeItems));
+        await this.sendSuccess(request.requestId, aggregate); return;
+      }
+      case "development.updateObjective":
+        await this.sendSuccess(request.requestId, await this.services.development.updateObjective(request.payload.workflowId, request.payload.workItemId, request.payload.objective, request.payload.correlationId)); return;
+      case "development.addCurrentFile": {
+        const host = this.requireDevelopmentHost(); const scope = this.requireDevelopmentScope(); const aggregate = await this.services.development.load(request.payload.workflowId);
+        const item = await scope.createFileItem({ workflowId: request.payload.workflowId, workItemId: request.payload.workItemId, fileUri: host.currentFileUri(), source: "current-editor", existing: aggregate.scopeItems });
+        await this.sendSuccess(request.requestId, await this.services.development.addScopeItem(request.payload.workflowId, request.payload.workItemId, item, request.payload.correlationId)); return;
+      }
+      case "development.addSelectedFiles": {
+        const host = this.requireDevelopmentHost(); const scope = this.requireDevelopmentScope(); const aggregate = await this.services.development.load(request.payload.workflowId); const uris = await host.pickFileUris();
+        const created: DevelopmentScopeItem[] = [];
+        for (const fileUri of uris) created.push(await scope.createFileItem({ workflowId: request.payload.workflowId, workItemId: request.payload.workItemId, fileUri, source: "file-picker", existing: [...aggregate.scopeItems, ...created] }));
+        let next = aggregate;
+        for (let index = 0; index < created.length; index++) next = await this.services.development.addScopeItem(request.payload.workflowId, request.payload.workItemId, created[index]!, `${request.payload.correlationId}:${index}`);
+        await this.sendSuccess(request.requestId, next); return;
+      }
+      case "development.addCurrentSelection": {
+        const host = this.requireDevelopmentHost(); const scope = this.requireDevelopmentScope(); const aggregate = await this.services.development.load(request.payload.workflowId); const selected = await host.currentSelectionSymbol();
+        const item = await scope.createSymbolItem({ workflowId: request.payload.workflowId, workItemId: request.payload.workItemId, fileUri: selected?.fileUri ?? "", source: "current-selection", existing: aggregate.scopeItems, symbol: selected?.symbol });
+        await this.sendSuccess(request.requestId, await this.services.development.addScopeItem(request.payload.workflowId, request.payload.workItemId, item, request.payload.correlationId)); return;
+      }
+      case "development.addIntelligenceSymbol": {
+        const host = this.requireDevelopmentHost(); const scope = this.requireDevelopmentScope(); const aggregate = await this.services.development.load(request.payload.workflowId); const selected = await host.intelligenceSymbol(request.payload.entityId);
+        const item = await scope.createSymbolItem({ workflowId: request.payload.workflowId, workItemId: request.payload.workItemId, fileUri: selected?.fileUri ?? "", source: "intelligence", existing: aggregate.scopeItems, symbol: selected?.symbol });
+        await this.sendSuccess(request.requestId, await this.services.development.addScopeItem(request.payload.workflowId, request.payload.workItemId, item, request.payload.correlationId)); return;
+      }
+      case "development.removeScopeItem":
+        await this.sendSuccess(request.requestId, await this.services.development.removeScopeItem(request.payload.workflowId, request.payload.workItemId, request.payload.scopeItemId, request.payload.correlationId)); return;
+      case "development.preparePrompt":
+        await this.sendSuccess(request.requestId, await this.services.development.preparePrompt(request.payload.workflowId, request.payload.workItemId, this.services.developmentHost?.repositoryName() ?? this.workspaceSummary().name, request.payload.notes, request.payload.correlationId)); return;
+      case "development.copyPrompt":
+        await this.sendSuccess(request.requestId, await this.services.development.copyPrompt(request.payload.workflowId, request.payload.workItemId, request.payload.correlationId)); return;
+      case "development.confirmHandoff":
+        await this.sendSuccess(request.requestId, await this.services.development.confirmHandoff(request.payload.workflowId, request.payload.workItemId, request.payload.correlationId)); return;
+      case "development.recordManualOrigin":
+        await this.sendSuccess(request.requestId, await this.services.development.recordManualOrigin(request.payload.workflowId, request.payload.workItemId, request.payload.correlationId)); return;
+      case "development.loadChanges":
+        await this.sendSuccess(request.requestId, await this.services.development.detectChanges(request.payload.workflowId, request.payload.workItemId)); return;
+      case "development.recordResult":
+        await this.services.development.recordResult(request.payload.workflowId, request.payload.workItemId, { summary: request.payload.summary, ...(request.payload.decisions !== undefined ? { decisions: request.payload.decisions } : {}), ...(request.payload.assumptions !== undefined ? { assumptions: request.payload.assumptions } : {}), ...(request.payload.testsRun !== undefined ? { testsRun: request.payload.testsRun } : {}), ...(request.payload.unresolvedIssues !== undefined ? { unresolvedIssues: request.payload.unresolvedIssues } : {}) }, request.payload.correlationId);
+        await this.sendSuccess(request.requestId, await this.services.development.load(request.payload.workflowId)); return;
+      case "development.associateChangedFiles":
+        await this.sendSuccess(request.requestId, await this.services.development.associateChangedFiles(request.payload.workflowId, request.payload.workItemId, request.payload.resultId, request.payload.associated, request.payload.excluded, request.payload.correlationId)); return;
+      case "development.confirmNoCode":
+        await this.sendSuccess(request.requestId, await this.services.development.confirmNoCode(request.payload.workflowId, request.payload.workItemId, request.payload.resultId, request.payload.explanation, request.payload.confirmed, request.payload.correlationId)); return;
+      case "development.reviewResult":
+        await this.sendSuccess(request.requestId, await this.services.development.reviewResult(request.payload.workflowId, request.payload.workItemId, request.payload.resultId, request.payload.decision, request.payload.correlationId)); return;
+      case "development.complete":
+        await this.sendSuccess(request.requestId, await this.services.development.completeDevelopment(request.payload.workflowId, request.payload.workItemId, request.payload.correlationId)); return;
+      case "home/getState": {
+        const home = new HomeStateService(
+          this.workspaceSummary,
+          this.services.intelligenceQuery,
+          this.services.canonicalWorkflow,
+          () => this.store.snapshot.activityRecords ?? [],
+          this.services.development,
+        );
+        await this.sendSuccess(request.requestId, await home.getState());
+        return;
+      }
       case "app/bootstrap": {
         const bootstrap: BootstrapSnapshot = {
           extensionVersion: this.extensionVersion,
@@ -620,16 +740,6 @@ export class WebviewMessageRouter {
           this.services.workflow.get(request.payload.workflowId),
         );
         return;
-      case "workflow/updateStage": {
-        const { workflowId, stageId } = request.payload;
-        try {
-          const updatedWorkflow = await this.services.workflow.updateStage(workflowId, stageId);
-          await this.sendSuccess(request.requestId, updatedWorkflow);
-        } catch (error) {
-          await this.sendError(request.requestId, KeystoneError.fromUnknown(error, "workflow/updateStage"));
-        }
-        return;
-      }
       case "workflow/spec/submit":
         await this.sendWorkflow(
           request.requestId,
@@ -4486,6 +4596,16 @@ export class WebviewMessageRouter {
       message: `Service ${service} called with payload`,
       timestamp: new Date().toISOString(),
     });
+  }
+
+  private requireDevelopmentHost(): VsCodeDevelopmentAdapter {
+    if (!this.services.developmentHost) throw new DevelopmentServiceError("file-outside-workspace", "Development source scope requires an open file-backed workspace.");
+    return this.services.developmentHost;
+  }
+
+  private requireDevelopmentScope(): SourceScopeService {
+    if (!this.services.developmentScope) throw new DevelopmentServiceError("file-outside-workspace", "Development source scope requires an open file-backed workspace.");
+    return this.services.developmentScope;
   }
 
   private async sendError(requestId: string, error: KeystoneError): Promise<void> {

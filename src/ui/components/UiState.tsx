@@ -136,3 +136,19 @@ export function LoadingState({
     </section>
   );
 }
+
+export function RecoveryNotice({
+  recovery,
+}: {
+  recovery: { title: string; message: string; code: string };
+}): React.JSX.Element {
+  return (
+    <section className="ui-state recovery-notice" role="status" aria-label="Recovery notice">
+      <div>
+        <strong>{recovery.title}</strong>
+        <p>{recovery.message}</p>
+        <small>Recovery code: {recovery.code}</small>
+      </div>
+    </section>
+  );
+}

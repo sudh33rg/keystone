@@ -11,11 +11,10 @@ describe("product navigation", () => {
     ]);
   });
 
-  it("routes all sections to the correct active-work page", () => {
+  it("routes all active sections to the correct navigation section", () => {
     expect(sectionForRoute("/active-work")).toBe("active-work");
     expect(sectionForRoute("/intelligence")).toBe("intelligence");
     expect(sectionForRoute("/history")).toBe("history");
-    expect(sectionForRoute("/settings")).toBe("settings");
     expect(sectionForRoute("/")).toBe("home");
   });
 });

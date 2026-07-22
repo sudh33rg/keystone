@@ -5,6 +5,8 @@ import {
   ActivitySchema,
   ActivityStatusSchema,
   type Activity,
+  type ActivityStatus,
+  type ActivityCategory,
 } from "../../shared/contracts/activity";
 import { WorkspaceStateStore } from "../persistence/WorkspaceStateStore";
 
@@ -29,8 +31,8 @@ class ActivityStore {
   async updateActivity(
     activityId: string,
     updates: Partial<Activity>,
-    emitUpdate: (activity: Activity) => Promise<void>,
-  ): Promise<void> {
+    emitUpdate: (activity: Activity) => void | Promise<void>,
+  ): Promise<Activity> {
     const current = this.getActivity(activityId);
     if (!current) throw new Error(`Activity ${activityId} not found.`);
 
@@ -49,14 +51,16 @@ class ActivityStore {
 
     // Emit the update
     await emitUpdate(next);
+    return next;
   }
 
-  async createActivity(activity: Omit<Activity, "id" | "updatedAt">): Promise<Activity> {
+  async createActivity(activity: Omit<Activity, "id" | "updatedAt" | "createdAt" | "startedAt">): Promise<Activity> {
     const now = new Date().toISOString();
     const activityWithId: Activity = {
       ...activity,
       id: crypto.randomUUID(),
       createdAt: now,
+      startedAt: now,
       updatedAt: now,
     };
 
@@ -73,7 +77,7 @@ class ActivityStore {
  */
 export class ActivityService {
   private readonly store: ActivityStore;
-  private readonly updates: Array<(activity: Activity) => Promise<void>> = [];
+  private readonly updates: Array<(activity: Activity) => void | Promise<void>> = [];
 
   constructor(store: WorkspaceStateStore) {
     this.store = new ActivityStore(store);
@@ -89,7 +93,7 @@ export class ActivityService {
   async create(
     workflowId?: string,
     stageId?: string,
-    category: string = "unknown",
+    category: ActivityCategory = "recovery",
     title: string = "Unknown activity",
     progress: number = 0,
     currentAction: string = "Starting",
@@ -102,6 +106,7 @@ export class ActivityService {
       status: "queued",
       progress,
       currentAction,
+      cancellationRequested: false,
     });
 
     // Notify listeners
@@ -117,7 +122,7 @@ export class ActivityService {
    */
   async setStatus(
     activityId: string,
-    status: ActivityStatusSchema,
+    status: ActivityStatus,
     currentAction?: string,
   ): Promise<Activity> {
     return this.update(activityId, {
@@ -274,7 +279,7 @@ export class ActivityService {
   /**
    * Get activities by status.
    */
-  getByStatus(status: ActivityStatusSchema): Activity[] {
+  getByStatus(status: ActivityStatus): Activity[] {
     return this.store.getAllActivities().filter((a) => a.status === status);
   }
 

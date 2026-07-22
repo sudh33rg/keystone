@@ -9,6 +9,7 @@ import { PRIMARY_NAVIGATION, sectionForRoute } from "../shared/navigation";
 import type { IntelligenceOverview as IntelligenceOverviewModel } from "../shared/contracts/intelligence";
 import { Icon } from "./components/Icon";
 import { HomeDashboard } from "./components/home/HomeDashboard";
+import { StartWorkDraft } from "./components/workflow/StartWorkDraft";
 import { toUiError, UiErrorState, type KeystoneUiError } from "./components/UiState";
 import type { KeystoneInitialization, LaunchRecovery } from "../shared/contracts/nativeShell";
 
@@ -177,7 +178,7 @@ export function App({ bridge }: AppProps): React.JSX.Element {
   }, [bridge]);
 
   useEffect(() => {
-    if (!["/", "/intelligence"].includes(state?.activeRoute ?? "")) return;
+    if (state?.activeRoute !== "/intelligence") return;
     const controller = new AbortController();
     void bridge
       .request("intelligence/overview", {}, { signal: controller.signal })
@@ -226,14 +227,6 @@ export function App({ bridge }: AppProps): React.JSX.Element {
           <span>Engineering control center</span>
         </div>
         <div className="header-actions">
-          <button className="ghost-button" onClick={() => navigate("/support/diagnostics")}>
-            <Icon name="pulse" size={15} />
-            <span>Workspace health</span>
-          </button>
-          <button className="ghost-button" onClick={() => navigate("/settings")}>
-            <Icon name="settings" size={15} />
-            <span>Settings</span>
-          </button>
           <span className="version-pill">v{bootstrap?.extensionVersion ?? "—"}</span>
         </div>
       </header>
@@ -278,14 +271,9 @@ export function App({ bridge }: AppProps): React.JSX.Element {
         {!bootstrap ? (
           <LoadingView />
         ) : activeRoute === "/" ? (
-          <HomeDashboard
-            bootstrap={bootstrap}
-            overview={overview}
-            bridge={bridge}
-            navigate={navigate}
-          />
-        ) : activeRoute === "/settings" ? (
-          <Settings bridge={bridge} />
+          <HomeDashboard bridge={bridge} navigate={navigate} />
+        ) : activeRoute === "/workflow/new" ? (
+          <StartWorkDraft bridge={bridge} navigate={navigate} />
         ) : activeRoute === "/intelligence" ? (
           <Suspense fallback={<RouteLoadingView label="Repository Intelligence" />}>
             <IntelligenceOverviewRoute
@@ -315,21 +303,14 @@ export function App({ bridge }: AppProps): React.JSX.Element {
           </Suspense>
         ) : activeRoute === "/active-work" ? (
           <Suspense fallback={<RouteLoadingView label="Active Work" />}>
-            <ActiveWorkRoute bridge={bridge} navigate={navigate} />
+            <ActiveWorkRoute bridge={bridge} navigate={navigate} recovery={recovery} />
           </Suspense>
         ) : activeRoute === "/history" ? (
           <Suspense fallback={<RouteLoadingView label="History" />}>
             <HistoryRoute bridge={bridge} navigate={navigate} />
           </Suspense>
-        ) : activeRoute === "/support/diagnostics" ? (
-          <Diagnostics bootstrap={bootstrap} overview={overview} activity={activity} />
         ) : (
-          <HomeDashboard
-            bootstrap={bootstrap}
-            overview={overview}
-            bridge={bridge}
-            navigate={navigate}
-          />
+          <HomeDashboard bridge={bridge} navigate={navigate} />
         )}
       </main>
 
@@ -347,60 +328,6 @@ export function App({ bridge }: AppProps): React.JSX.Element {
         <span className="activity-meta">{implementationProgress}</span>
       </aside>
     </div>
-  );
-}
-
-function Diagnostics({
-  bootstrap,
-  overview,
-  activity,
-}: {
-  bootstrap: BootstrapSnapshot;
-  overview?: IntelligenceOverviewModel;
-  activity?: Activity;
-}): React.JSX.Element {
-  return (
-    <section className="page settings-page">
-      <div className="eyebrow">Bounded product health</div>
-      <h1>Diagnostics</h1>
-      <p>
-        Current Extension Host, repository, Intelligence, and operation state. No credentials or
-        repository source are included.
-      </p>
-      <div className="settings-list">
-        <div>
-          <span>
-            <strong>Workspace trust</strong>
-            <small>Executable and mutating actions require a trusted workspace</small>
-          </span>
-          <span className="setting-value">{bootstrap.workspace.trust}</span>
-        </div>
-        <div>
-          <span>
-            <strong>Intelligence</strong>
-            <small>Canonical local generation</small>
-          </span>
-          <span className="setting-value">
-            {overview?.status ?? bootstrap.workspace.indexStatus} · generation{" "}
-            {overview?.generation ?? 0}
-          </span>
-        </div>
-        <div>
-          <span>
-            <strong>Current operation</strong>
-            <small>{activity?.detail ?? "No active operation"}</small>
-          </span>
-          <span className="setting-value">{activity?.status ?? "idle"}</span>
-        </div>
-        <div>
-          <span>
-            <strong>Persistence</strong>
-            <small>Extension-managed files; no external database or backend</small>
-          </span>
-          <span className="setting-value">Local</span>
-        </div>
-      </div>
-    </section>
   );
 }
 
@@ -432,45 +359,4 @@ function showError(setError: (error: KeystoneUiError) => void): (cause: unknown)
         preservedState: true,
       }),
     );
-}
-
-function Settings({ bridge }: { bridge: import("./services/HostBridge").HostBridge }): React.JSX.Element {
-  return (
-    <section className="page settings-page">
-      <div className="eyebrow">Extension preferences</div>
-      <h1>Settings</h1>
-      <p>Keystone settings live in VS Code so workspace and user scopes remain explicit.</p>
-      <div className="settings-list">
-        <div>
-          <span>
-            <strong>Specification approvals</strong>
-            <small>Required before implementation by default</small>
-          </span>
-          <span className="setting-value">Required</span>
-        </div>
-        <div>
-          <span>
-            <strong>Agent selection</strong>
-            <small>Recommend an available agent and wait for confirmation</small>
-          </span>
-          <span className="setting-value">Recommended</span>
-        </div>
-        <div>
-          <span>
-            <strong>Context budget</strong>
-            <small>Maximum estimated tokens per task package</small>
-          </span>
-          <span className="setting-value">12,000</span>
-        </div>
-      </div>
-      <button
-        className="primary-button"
-        onClick={() => {
-          void bridge.request("settings/open", {});
-        }}
-      >
-        Open VS Code settings <Icon name="arrow" size={16} />
-      </button>
-    </section>
-  );
 }

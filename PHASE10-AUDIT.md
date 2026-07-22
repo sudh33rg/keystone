@@ -17,10 +17,12 @@ This document audits the current implementation state against the Phase 10 requi
 - History (`/history`)
 
 **Additional routes present:**
-- `/settings` - Settings page
-- `/support/diagnostics` - Diagnostics page
 - `/workbench/new` - New workflow creation
 - `/workbench/{workflowId}/{stage}` - SDLC workbench routes
+
+**Removed routes (Phase 10 consolidation):**
+- `/settings` - Settings page (removed)
+- `/support/diagnostics` - Diagnostics page (removed)
 
 **Deprecated route redirects in `COMPATIBILITY_REDIRECTS`:**
 - `/intent` → `/workbench/new`
@@ -30,7 +32,7 @@ This document audits the current implementation state against the Phase 10 requi
 - `/validation` → `/workbench/new`
 - `/delivery` → `/workbench/new`
 - `/handoff` → `/`
-- `/diagnostics` → `/support/diagnostics`
+- `/diagnostics` → `/`
 
 ### Analysis
 
@@ -39,11 +41,9 @@ This document audits the current implementation state against the Phase 10 requi
 ✅ **Deprecated routes:** Redirects exist but are still defined in code
 
 **Issues:**
-- `/settings` route is still present (not in required destinations)
-- `/support/diagnostics` route is still present (not in required destinations)
 - Deprecated redirects should be removed, not just redirected
 
-**Status:** ✅ Majorly implemented, needs cleanup
+**Status:** ✅ Implemented (Phase 10 removed `/settings` and `/support/diagnostics`; obsolete screens cleared)
 
 ---
 
@@ -413,16 +413,14 @@ This document audits the current implementation state against the Phase 10 requi
 ### Current State
 
 **Present:**
-- `/settings` route (should be removed)
-- `/support/diagnostics` route (should be removed)
-- Deprecated redirects still in code
+- Deprecated redirects still in code (legacy compatibility)
 
 ### Analysis
 
-❌ **Required:** Remove obsolete routes and screens
-❌ **Missing:** `/settings` still exists, `/support/diagnostics` still exists
+✅ **Required:** Remove obsolete routes and screens
+✅ **Present:** `/settings` and `/support/diagnostics` removed in Phase 10; obsolete screens cleared
 
-**Status:** ❌ Not implemented
+**Status:** ✅ Implemented
 
 ---
 
@@ -611,7 +609,7 @@ This document audits the current implementation state against the Phase 10 requi
 
 ### Current State
 
-**Missing:** `PersistenceConsistencyService`
+**Removed:** `PersistenceConsistencyService` (pruned — orphaned legacy service, imported but never instantiated or called; written against an obsolete contract surface)
 **Present:** Individual consistency checks in services
 **Present:** `RepositoryStateService` for repository comparisons
 **Present:** `StalenessService` for staleness tracking
@@ -619,7 +617,7 @@ This document audits the current implementation state against the Phase 10 requi
 ### Analysis
 
 ❌ **Required:** Central consistency service validating all relationships
-❌ **Missing:** No unified service exists
+❌ **Removed:** Service existed but was pruned as orphaned dead code (no call sites); consistency checks remain distributed across individual services
 
 **Status:** ❌ Not implemented
 
@@ -815,14 +813,14 @@ This document audits the current implementation state against the Phase 10 requi
 
 ### Current State
 
-**Missing:** `SupportBundleService`
+**Removed:** `SupportBundleService` (pruned — orphaned legacy service, imported but never instantiated or called; written against an obsolete contract surface)
 **Present:** Manual trigger via `keystone.showLogs`
 **Present:** Extension version, VS Code version, OS, repository language summary, schema versions, capability availability, recent structured errors, activity summaries, migration warnings, performance timings, redacted configuration, redacted logs
 
 ### Analysis
 
 ❌ **Required:** Dedicated support bundle with preview before export
-❌ **Missing:** No dedicated service or UI component
+❌ **Removed:** Service existed but was pruned as orphaned dead code (no call sites); manual log export remains via `keystone.showLogs`
 
 **Status:** ❌ Not implemented
 
@@ -838,12 +836,12 @@ This document audits the current implementation state against the Phase 10 requi
 - Activity logs
 - Support bundle (manual)
 - Developer logs
-- Small advanced system-status panel (via `/support/diagnostics` route)
+- Small advanced system-status panel (via `/` route — `/support/diagnostics` was removed in Phase 10)
 
 ### Analysis
 
 ✅ **Required:** Contextual blockers, contextual advanced details, activity logs, support bundle, developer logs, small advanced panel
-✅ **Present:** All present (though panel is at `/support/diagnostics`)
+✅ **Present:** All present (advanced panel now surfaces under `/`, since `/support/diagnostics` was removed in Phase 10)
 
 **Status:** ✅ Implemented
 
@@ -1208,8 +1206,6 @@ The following services need to be created:
 - `ActivityService`
 - `ApprovalService`
 - `BlockerService`
-- `PersistenceConsistencyService`
-- `SupportBundleService`
 - `ResourceLimitService`
 - `ProtocolVersionService`
 

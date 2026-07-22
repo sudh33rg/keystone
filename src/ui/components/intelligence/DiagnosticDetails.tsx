@@ -1,4 +1,3 @@
-import { useState } from "react";
 import type { IntelligenceDiagnostic } from "../../../shared/contracts/intelligence";
 import type { HostBridge } from "../../services/HostBridge";
 
@@ -24,29 +23,12 @@ export function DiagnosticDetails({
   bridge: HostBridge;
   onError?: (message: string) => void;
 }): React.JSX.Element {
-  const [preparing, setPreparing] = useState(false);
-  const [created, setCreated] = useState<string>();
   const guidance = diagnosticGuidance(diagnostic);
   const location = diagnostic.relativePath
     ? `${diagnostic.relativePath}${diagnostic.range ? `:${diagnostic.range.startLine + 1}:${diagnostic.range.startColumn + 1}` : ""}`
     : "Repository-wide";
-  const objective = `Investigate and resolve Keystone intelligence diagnostic ${diagnostic.code}.\n\nFinding: ${diagnostic.message}\nLocation: ${location}\nClassification: ${guidance.classification}.\nRequired outcome: ${guidance.action}\n\nPreserve evidence-backed intelligence behavior. Verify the source before changing code, add focused tests, and do not suppress the diagnostic unless the underlying cause or deterministic extractor limitation is addressed.`;
-
   const fail = (cause: unknown): void =>
     onError?.(cause instanceof Error ? cause.message : String(cause));
-  const createWorkflow = (): void => {
-    void bridge
-      .request("workflow/capture", {
-        text: objective,
-        mode: "quick",
-        title: `Resolve intelligence diagnostic: ${diagnostic.code}`,
-      })
-      .then((workflow) => {
-        setCreated(workflow.id);
-        setPreparing(false);
-      })
-      .catch(fail);
-  };
 
   return (
     <details className={`diagnostic-details ${diagnostic.severity}`}>
@@ -118,35 +100,7 @@ export function DiagnosticDetails({
               Open settings
             </button>
           )}
-          {guidance.canPrepare && !preparing && !created && (
-            <button className="ghost-button" onClick={() => setPreparing(true)}>
-              Prepare fix workflow
-            </button>
-          )}
         </div>
-        {preparing && (
-          <section className="prepared-fix" aria-label="Prepared fix workflow">
-            <h4>Prepared action</h4>
-            <pre>{objective}</pre>
-            <p>
-              Creating this workflow records an investigation intent. It does not edit source or
-              suppress the diagnostic.
-            </p>
-            <div className="diagnostic-actions">
-              <button className="primary-button" onClick={createWorkflow}>
-                Create workflow
-              </button>
-              <button className="ghost-button" onClick={() => setPreparing(false)}>
-                Discard
-              </button>
-            </div>
-          </section>
-        )}
-        {created && (
-          <p className="prepared-success">
-            Fix workflow prepared: <code>{created}</code>. Open Intent &amp; Specs to review it.
-          </p>
-        )}
       </div>
     </details>
   );

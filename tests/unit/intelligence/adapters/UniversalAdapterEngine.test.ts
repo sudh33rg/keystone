@@ -444,7 +444,7 @@ describe("Universal repository intelligence adapters", () => {
     const pkg = JSON.parse(await readFile("package.json", "utf8")) as {
       dependencies: Record<string, string>;
     };
-    expect(Object.keys(pkg.dependencies)).toEqual(["react", "react-dom", "zod"]);
+    expect(Object.keys(pkg.dependencies)).toEqual(["puppeteer", "react", "react-dom", "zod"]);
   });
   it("43 uses no LLM for adapter ingestion or selection", async () => {
     const source = await readFile(

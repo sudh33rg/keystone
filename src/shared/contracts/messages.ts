@@ -1,4 +1,12 @@
 import { z } from "zod";
+import type { HomeState } from "./home";
+import type { DevelopmentAggregate } from "./development";
+import {
+  CanonicalWorkflowWorkTypeSchema,
+  type CanonicalWorkflow,
+  type WorkflowCreatedResponse,
+  type WorkflowCreationFailedResponse,
+} from "./canonicalWorkflow";
 import {
   ActivitySchema,
   AppRouteSchema,
@@ -272,6 +280,7 @@ export const SerializedKeystoneErrorSchema = z
       "WEBVIEW",
       "CONFIGURATION",
       "INTERNAL",
+      "RESOURCE",
     ]),
     message: z.string(),
     technicalDetails: z.string().optional(),
@@ -284,6 +293,30 @@ export const SerializedKeystoneErrorSchema = z
   .strict();
 
 export const WebviewRequestSchema = z.discriminatedUnion("type", [
+  request("home/getState", z.object({}).strict()),
+  request("workflow.create", z.object({ correlationId: z.string().min(1).max(200), intent: z.string().trim().min(1).max(10_000), workType: CanonicalWorkflowWorkTypeSchema, specification: z.string().trim().min(1).max(50_000).optional() }).strict()),
+  request("workflow.loadActive", z.object({}).strict()),
+  request("workflow.listCanonical", z.object({}).strict()),
+  request("workflow.getCanonical", z.object({ workflowId: z.string().uuid() }).strict()),
+  request("workflow.setActiveCanonical", z.object({ workflowId: z.string().uuid() }).strict()),
+  request("development.initialize", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid() }).strict()),
+  request("development.load", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid() }).strict()),
+  request("development.updateObjective", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid(), objective: z.string().max(10_001) }).strict()),
+  request("development.addCurrentFile", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid() }).strict()),
+  request("development.addSelectedFiles", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid() }).strict()),
+  request("development.addCurrentSelection", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid() }).strict()),
+  request("development.addIntelligenceSymbol", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid(), entityId: z.string().min(1).max(500) }).strict()),
+  request("development.removeScopeItem", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid(), scopeItemId: z.string().uuid() }).strict()),
+  request("development.preparePrompt", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid(), notes: z.string().max(10_000).optional() }).strict()),
+  request("development.copyPrompt", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid() }).strict()),
+  request("development.confirmHandoff", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid() }).strict()),
+  request("development.recordManualOrigin", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid() }).strict()),
+  request("development.loadChanges", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid() }).strict()),
+  request("development.recordResult", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid(), summary: z.string().max(20_001), decisions: z.string().max(20_000).optional(), assumptions: z.string().max(20_000).optional(), testsRun: z.string().max(20_000).optional(), unresolvedIssues: z.string().max(20_000).optional() }).strict()),
+  request("development.associateChangedFiles", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid(), resultId: z.string().uuid(), associated: z.array(z.string().min(1).max(10_000)).max(1000), excluded: z.array(z.object({ path: z.string().min(1).max(10_000), reason: z.string().trim().min(1).max(2000) }).strict()).max(1000) }).strict()),
+  request("development.confirmNoCode", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid(), resultId: z.string().uuid(), explanation: z.string().max(5000), confirmed: z.boolean() }).strict()),
+  request("development.reviewResult", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid(), resultId: z.string().uuid(), decision: z.enum(["accepted", "changes-requested"]) }).strict()),
+  request("development.complete", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid() }).strict()),
   request("review/getState", ReviewWorkflowPayloadSchema),
   request("review/getSummary", ReviewWorkflowPayloadSchema),
   request("review/getTraceability", ReviewWorkflowPayloadSchema),
@@ -498,7 +531,6 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
   request("workbench/getCreateContext", z.object({}).strict()),
   request("workbench/createWorkflow", WorkbenchCreateWorkflowPayloadSchema),
   request("workbench/getWorkflow", WorkflowIdPayloadSchema),
-  request("workflow/updateStage", z.object({ workflowId: z.string().uuid(), stageId: z.string() })),
   request("workbench/listWorkflows", z.object({}).strict()),
   request("workbench/openWorkflow", WorkbenchStageNavigationPayloadSchema),
   request("workbench/getDefineState", WorkflowIdPayloadSchema),
@@ -1397,6 +1429,30 @@ export const HostMessageSchema = z.discriminatedUnion("type", [
 export type HostMessage = z.infer<typeof HostMessageSchema>;
 
 export interface WebviewRequestResults {
+  "home/getState": HomeState;
+  "workflow.create": WorkflowCreatedResponse | WorkflowCreationFailedResponse;
+  "workflow.loadActive": CanonicalWorkflow | null;
+  "workflow.listCanonical": CanonicalWorkflow[];
+  "workflow.getCanonical": CanonicalWorkflow | undefined;
+  "workflow.setActiveCanonical": CanonicalWorkflow;
+  "development.initialize": DevelopmentAggregate;
+  "development.load": DevelopmentAggregate;
+  "development.updateObjective": DevelopmentAggregate;
+  "development.addCurrentFile": DevelopmentAggregate;
+  "development.addSelectedFiles": DevelopmentAggregate;
+  "development.addCurrentSelection": DevelopmentAggregate;
+  "development.addIntelligenceSymbol": DevelopmentAggregate;
+  "development.removeScopeItem": DevelopmentAggregate;
+  "development.preparePrompt": DevelopmentAggregate;
+  "development.copyPrompt": DevelopmentAggregate;
+  "development.confirmHandoff": DevelopmentAggregate;
+  "development.recordManualOrigin": DevelopmentAggregate;
+  "development.loadChanges": DevelopmentAggregate;
+  "development.recordResult": DevelopmentAggregate;
+  "development.associateChangedFiles": DevelopmentAggregate;
+  "development.confirmNoCode": DevelopmentAggregate;
+  "development.reviewResult": DevelopmentAggregate;
+  "development.complete": DevelopmentAggregate;
   "review/getState": WorkflowReviewState;
   "review/getSummary": WorkflowReviewState["summary"];
   "review/getTraceability": WorkflowReviewState["traceability"];

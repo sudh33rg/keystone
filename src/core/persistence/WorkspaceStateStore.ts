@@ -5,7 +5,7 @@ import {
   type NavigationSection,
   type PersistedFoundationState,
 } from "../../shared/contracts/domain";
-import { sectionForRoute } from "../../shared/navigation";
+import { sectionForRoute, routeForSection } from "../../shared/navigation";
 import { KeystoneError } from "../../shared/errors/KeystoneError";
 import { readFile, rename } from "node:fs/promises";
 import { AtomicFileWriter } from "./AtomicFileWriter";
@@ -103,7 +103,7 @@ export class WorkspaceStateStore {
   }
 
   async setActiveSection(section: NavigationSection): Promise<PersistedFoundationState> {
-    return this.setActiveRoute(sectionForRoute(section as AppRoute));
+    return this.setActiveRoute(routeForSection(section));
   }
 
   async setActiveRoute(route: AppRoute): Promise<PersistedFoundationState> {
@@ -114,6 +114,21 @@ export class WorkspaceStateStore {
       revision: this.state.revision + 1,
       updatedAt: new Date().toISOString(),
     };
+    await this.persist(next);
+    return this.snapshot;
+  }
+
+  /**
+   * Merge an arbitrary keyed value into the workspace state and persist it.
+   * Used by the activity/approval/blocker/freshness record stores.
+   */
+  async update(key: string, value: unknown): Promise<PersistedFoundationState> {
+    const next = {
+      ...this.state,
+      [key]: value,
+      revision: this.state.revision + 1,
+      updatedAt: new Date().toISOString(),
+    } as PersistedFoundationState;
     await this.persist(next);
     return this.snapshot;
   }
@@ -146,6 +161,10 @@ export function createDefaultState(): PersistedFoundationState {
     activeSection: "home",
     activeRoute: "/",
     workflowCount: 0,
+    activityRecords: [],
+    approvalRecords: [],
+    blockerRecords: [],
+    freshnessRecords: [],
     updatedAt: new Date().toISOString(),
   };
 }
@@ -159,8 +178,8 @@ function migrateLegacyState(raw: unknown): PersistedFoundationState | undefined 
   ) {
     const result = PersistedFoundationStateSchema.safeParse({
       ...candidate,
-      activeSection: "intelligence",
-      activeRoute: "/intelligence",
+      activeSection: "home",
+      activeRoute: "/",
       revision: typeof candidate.revision === "number" ? candidate.revision + 1 : 1,
       updatedAt: new Date().toISOString(),
     });
@@ -172,7 +191,7 @@ function migrateLegacyState(raw: unknown): PersistedFoundationState | undefined 
     candidate.activeRoute === undefined
   ) {
     const section = candidate.activeSection as NavigationSection;
-    const activeRoute = sectionForRoute(section as AppRoute);
+    const activeRoute = routeForSection(section);
     const result = PersistedFoundationStateSchema.safeParse({
       ...candidate,
       activeSection: sectionForRoute(activeRoute),
@@ -183,12 +202,16 @@ function migrateLegacyState(raw: unknown): PersistedFoundationState | undefined 
     return result.success ? result.data : undefined;
   }
   if (candidate.schemaVersion !== 0) return undefined;
-  const activeSection =
+  const rawSection =
     typeof candidate.activeSection === "string" ? candidate.activeSection : "home";
-  const route = sectionForRoute(activeSection as AppRoute);
+  const knownSections = new Set<NavigationSection>(["home", "active-work", "intelligence", "history"]);
+  const activeSection: NavigationSection = knownSections.has(rawSection as NavigationSection)
+    ? (rawSection as NavigationSection)
+    : "home";
+  const route = routeForSection(activeSection);
   const result = PersistedFoundationStateSchema.safeParse({
     ...createDefaultState(),
-    activeSection: sectionForRoute(route),
+    activeSection,
     activeRoute: route,
     workflowCount: typeof candidate.workflowCount === "number" ? candidate.workflowCount : 0,
   });

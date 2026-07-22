@@ -325,8 +325,6 @@ export class KeystoneCommandService implements vscode.Disposable {
       );
     });
     command("keystone.importHandoff", () => open({ type: "import-handoff" }, "handoff-import"));
-    command("keystone.openDiagnostics", () => open({ type: "diagnostics" }, "diagnostics"));
-    command("keystone.openSettings", () => open({ type: "settings" }));
     command("keystone.dashboard.refresh", () => this.refresh.request());
     command("keystone.openFolder", () => vscode.commands.executeCommand("vscode.openFolder"));
     return this.disposables;

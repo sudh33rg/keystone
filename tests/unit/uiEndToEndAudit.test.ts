@@ -25,10 +25,11 @@ describe("final UI architecture audit", () => {
   it("lazy-loads the three heavy secondary routes", () => {
     const app = read("src/ui/App.tsx");
     expect(app).toContain("lazy(async () =>");
-    expect(app).toContain('import("./components/workbench/SDLCWorkbench")');
+    expect(app).toContain('import("./components/workbench/ActiveWork")');
     expect(app).toContain('import("./components/intelligence/IntelligenceOverview")');
     expect(app).toContain('import("./components/history/HistoryWorkspace")');
     expect(app).not.toContain("import { SDLCWorkbench } from");
+    expect(app).not.toContain("import { ActiveWork } from");
     expect(app).not.toContain("import { IntelligenceOverview } from");
   });
 
@@ -48,8 +49,9 @@ describe("final UI architecture audit", () => {
     const app = read("src/ui/App.tsx");
     expect(validate).toContain("item.workflowId === workflowId");
     expect(validate).toContain("No validation session for this workflow");
-    expect(home).toContain("instance?.progress.failedTasks");
-    expect(home).toContain("overview?.repository?.branch");
+    expect(home).toContain('bridge.request("home/getState", {})');
+    expect(home).not.toContain("failedTasks");
+    expect(home).not.toContain("copilot/capabilities");
     expect(app).toContain("UiErrorState");
   });
 

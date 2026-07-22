@@ -10,7 +10,14 @@ export const PRIMARY_NAVIGATION = [
 export function sectionForRoute(route: AppRoute): NavigationSection {
   if (route === "/intelligence") return "intelligence";
   if (route === "/history") return "history";
-  if (route === "/settings") return "settings";
-  if (route === "/active-work") return "active-work";
+  if (route === "/active-work" || route === "/workflow/new") return "active-work";
   return "home";
+}
+
+/**
+ * Map a navigation section to its canonical route.
+ */
+export function routeForSection(section: NavigationSection): AppRoute {
+  const entry = PRIMARY_NAVIGATION.find((n) => n.id === section);
+  return (entry?.route ?? "/") as AppRoute;
 }

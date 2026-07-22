@@ -6,6 +6,7 @@ import {
   ApprovalStatusSchema,
   ApprovalTypeSchema,
   type Approval,
+  type ApprovalType,
 } from "../../shared/contracts/approval";
 import { WorkspaceStateStore } from "../persistence/WorkspaceStateStore";
 
@@ -30,8 +31,8 @@ class ApprovalStore {
   async updateApproval(
     approvalId: string,
     updates: Partial<Approval>,
-    emitUpdate: (approval: Approval) => Promise<void>,
-  ): Promise<void> {
+    emitUpdate: (approval: Approval) => void | Promise<void>,
+  ): Promise<Approval> {
     const current = this.getApproval(approvalId);
     if (!current) throw new Error(`Approval ${approvalId} not found.`);
 
@@ -50,9 +51,10 @@ class ApprovalStore {
 
     // Emit the update
     await emitUpdate(next);
+    return next;
   }
 
-  async createApproval(approval: Omit<Approval, "id" | "updatedAt">): Promise<Approval> {
+  async createApproval(approval: Omit<Approval, "id" | "updatedAt" | "createdAt">): Promise<Approval> {
     const now = new Date().toISOString();
     const approvalWithId: Approval = {
       ...approval,
@@ -74,7 +76,7 @@ class ApprovalStore {
  */
 export class ApprovalService {
   private readonly store: ApprovalStore;
-  private readonly updates: Array<(approval: Approval) => Promise<void>> = [];
+  private readonly updates: Array<(approval: Approval) => void | Promise<void>> = [];
 
   constructor(store: WorkspaceStateStore) {
     this.store = new ApprovalStore(store);
@@ -90,7 +92,7 @@ export class ApprovalService {
   async create(
     workflowId: string,
     stageId?: string,
-    type: ApprovalTypeSchema = "workflow-start",
+    type: ApprovalType = "workflow-start",
     action: string = "Request approval",
     impact: string = "Unknown impact",
     exactScope: string = "Unknown scope",
@@ -161,28 +163,9 @@ export class ApprovalService {
     approvalId: string,
     updates: Partial<Approval>,
   ): Promise<Approval> {
-    const current = this.getApproval(approvalId);
-    if (!current) throw new Error(`Approval ${approvalId} not found.`);
-
-    const next: Approval = {
-      ...current,
-      ...updates,
-      updatedAt: new Date().toISOString(),
-    };
-
-    const records = this.store.snapshot.approvalRecords ?? [];
-    const index = records.findIndex((a) => a.id === approvalId);
-    if (index >= 0) records[index] = next;
-    else records.push(next);
-
-    this.store.update("approvalRecords", records);
-
-    // Emit the update
-    for (const callback of this.updates) {
-      void callback(next);
-    }
-
-    return next;
+    return this.store.updateApproval(approvalId, updates, async (approval) => {
+      for (const callback of this.updates) void callback(approval);
+    });
   }
 
   /**
@@ -237,7 +220,7 @@ export class ApprovalService {
   /**
    * Get approvals by type.
    */
-  getByType(type: ApprovalTypeSchema): Approval[] {
+  getByType(type: ApprovalType): Approval[] {
     return this.store.getAllApprovals().filter((a) => a.type === type);
   }
 

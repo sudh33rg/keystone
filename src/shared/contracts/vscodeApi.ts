@@ -77,6 +77,8 @@ export interface VSCodeExtension {
  * Interface for VS Code API access
  */
 export interface VSCodeAPI {
+  /** Read a configured instruction path from the current workspace. */
+  readWorkspaceFile?(path: string): Promise<{ uri: string; content: string } | undefined>;
   /**
    * Get available chat participants
    */

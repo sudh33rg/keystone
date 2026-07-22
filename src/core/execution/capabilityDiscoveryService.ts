@@ -21,6 +21,7 @@ import type {
 import type { KeystoneLogger } from "../../shared/logging/KeystoneLogger";
 import type { VSCodeAPI } from "../../shared/contracts/vscodeApi";
 import { KeystoneError } from "../../shared/errors/KeystoneError";
+import { createHash } from "node:crypto";
 
 /**
  * Service that discovers available execution capabilities in the VS Code environment.
@@ -30,6 +31,7 @@ export class CapabilityDiscoveryService {
   private vscodeAPI: VSCodeAPI;
   private capabilities: Capability[] = [];
   private lastDiscoveryTimestamp: string = new Date().toISOString();
+  private instructionDiagnostics: string[] = [];
 
   constructor(logger: KeystoneLogger, vscodeAPI: VSCodeAPI) {
     this.logger = logger;
@@ -59,7 +61,7 @@ export class CapabilityDiscoveryService {
       capabilities.push(...skillCapabilities);
 
       // Discover instructions (static registry lookup)
-      const instructionCapabilities = this.discoverInstructions();
+      const instructionCapabilities = await this.discoverInstructions();
       capabilities.push(...instructionCapabilities);
 
       // Discover language model providers (requires VS Code LM queries)
@@ -89,7 +91,7 @@ export class CapabilityDiscoveryService {
       return {
         capabilities,
         timestamp: this.lastDiscoveryTimestamp,
-        errors: [],
+        errors: this.instructionDiagnostics,
       };
     } catch (error) {
       this.logger.error(
@@ -351,20 +353,21 @@ export class CapabilityDiscoveryService {
    *
    * @returns Promise resolving to list of instruction capabilities
    */
-  private discoverInstructions(): InstructionCapability[] {
+  private async discoverInstructions(): Promise<InstructionCapability[]> {
     const instructions: InstructionCapability[] = [];
+    this.instructionDiagnostics = [];
 
     try {
       // Discover repository instruction files
-      const repoInstructions = this.discoverRepositoryInstructions();
+      const repoInstructions = await this.discoverRepositoryInstructions();
       instructions.push(...repoInstructions);
 
       // Discover workspace instruction files
-      const workspaceInstructions = this.discoverWorkspaceInstructions();
+      const workspaceInstructions = await this.discoverWorkspaceInstructions();
       instructions.push(...workspaceInstructions);
 
       // Discover user instruction files
-      const userInstructions = this.discoverUserInstructions();
+      const userInstructions = await this.discoverUserInstructions();
       instructions.push(...userInstructions);
 
       // Discover system instructions
@@ -390,12 +393,9 @@ export class CapabilityDiscoveryService {
    *
    * @returns Promise resolving to list of repository instruction capabilities
    */
-  private discoverRepositoryInstructions(): InstructionCapability[] {
-    const instructions: InstructionCapability[] = [];
-
-    try {
-      // Look for common instruction file patterns in the repository
-      const instructionFiles = [
+  private discoverRepositoryInstructions(): Promise<InstructionCapability[]> {
+    return this.discoverInstructionFiles(
+      [
         "repository-instructions.md",
         "coding-guidelines.md",
         "change-constraints.md",
@@ -403,38 +403,8 @@ export class CapabilityDiscoveryService {
         "security-guidelines.md",
         "performance-guidelines.md",
         "pr-review-guidelines.md",
-      ];
-
-      for (const filename of instructionFiles) {
-        // For now, we'll create placeholders - actual file checking would require filesystem access
-        const instruction: InstructionCapability = {
-          id: `repo-${filename.replace(".", "-")}`,
-          name: filename,
-          type: "instruction",
-          source: "repository",
-          description: `Repository instruction file: ${filename}`,
-          state: "partially-available", // We don't know if file exists yet
-          lastDiscovered: this.lastDiscoveryTimestamp,
-          filePath: filename,
-          scope: "repository",
-          precedence: 5, // Lower numbers have higher precedence
-          enabled: true,
-          contentHash: undefined,
-        };
-
-        instructions.push(instruction);
-      }
-
-      return instructions;
-    } catch (error) {
-      this.logger.error(
-        KeystoneError.fromUnknown(
-          error,
-          "capabilityDiscoveryService.discoverRepositoryInstructions",
-        ),
-      );
-      return [];
-    }
+      ], "repository", "repository", 5,
+    );
   }
 
   /**
@@ -442,45 +412,13 @@ export class CapabilityDiscoveryService {
    *
    * @returns Promise resolving to list of workspace instruction capabilities
    */
-  private discoverWorkspaceInstructions(): InstructionCapability[] {
-    const instructions: InstructionCapability[] = [];
-
-    try {
-      // Look for workspace-specific instruction files
-      const workspaceInstructionFiles = [
+  private discoverWorkspaceInstructions(): Promise<InstructionCapability[]> {
+    return this.discoverInstructionFiles(
+      [
         ".vscode/workspace-instructions.md",
         ".keystone/workspace-instructions.md",
-      ];
-
-      for (const filename of workspaceInstructionFiles) {
-        const instruction: InstructionCapability = {
-          id: `workspace-${filename.replace(".", "-")}`,
-          name: filename,
-          type: "instruction",
-          source: "workspace",
-          description: `Workspace instruction file: ${filename}`,
-          state: "partially-available",
-          lastDiscovered: this.lastDiscoveryTimestamp,
-          filePath: filename,
-          scope: "workspace",
-          precedence: 6,
-          enabled: true,
-          contentHash: undefined,
-        };
-
-        instructions.push(instruction);
-      }
-
-      return instructions;
-    } catch (error) {
-      this.logger.error(
-        KeystoneError.fromUnknown(
-          error,
-          "capabilityDiscoveryService.discoverWorkspaceInstructions",
-        ),
-      );
-      return [];
-    }
+      ], "workspace", "workspace", 6,
+    );
   }
 
   /**
@@ -488,39 +426,50 @@ export class CapabilityDiscoveryService {
    *
    * @returns Promise resolving to list of user instruction capabilities
    */
-  private discoverUserInstructions(): InstructionCapability[] {
+  private discoverUserInstructions(): Promise<InstructionCapability[]> {
+    return this.discoverInstructionFiles(
+      [".keystone/user-instructions.md", "custom-instructions.md"], "user", "user", 7,
+    );
+  }
+
+  private async discoverInstructionFiles(
+    paths: string[],
+    source: string,
+    scope: InstructionCapability["scope"],
+    precedence: number,
+  ): Promise<InstructionCapability[]> {
     const instructions: InstructionCapability[] = [];
-
-    try {
-      // Look for user-selected instruction files
-      const userInstructionFiles = [".keystone/user-instructions.md", "custom-instructions.md"];
-
-      for (const filename of userInstructionFiles) {
-        const instruction: InstructionCapability = {
-          id: `user-${filename.replace(".", "-")}`,
-          name: filename,
-          type: "instruction",
-          source: "user",
-          description: `User instruction file: ${filename}`,
-          state: "partially-available",
-          lastDiscovered: this.lastDiscoveryTimestamp,
-          filePath: filename,
-          scope: "user",
-          precedence: 7,
-          enabled: true,
-          contentHash: undefined,
-        };
-
-        instructions.push(instruction);
-      }
-
+    if (!this.vscodeAPI.readWorkspaceFile) {
+      this.instructionDiagnostics.push("Instruction discovery is unavailable because no workspace file reader is configured.");
       return instructions;
-    } catch (error) {
-      this.logger.error(
-        KeystoneError.fromUnknown(error, "capabilityDiscoveryService.discoverUserInstructions"),
-      );
-      return [];
     }
+    for (const path of paths) {
+      try {
+        const file = await this.vscodeAPI.readWorkspaceFile(path);
+        if (!file) {
+          this.instructionDiagnostics.push(`Configured instruction file is missing: ${path}`);
+          continue;
+        }
+        instructions.push({
+          id: `${source}-${createHash("sha256").update(file.uri).digest("hex").slice(0, 16)}`,
+          name: path,
+          type: "instruction",
+          source,
+          description: `${scope} instruction file: ${path}`,
+          state: "available",
+          lastDiscovered: this.lastDiscoveryTimestamp,
+          filePath: file.uri,
+          reference: file.uri,
+          scope,
+          precedence,
+          enabled: true,
+          contentHash: createHash("sha256").update(file.content).digest("hex"),
+        });
+      } catch (cause) {
+        this.instructionDiagnostics.push(`Configured instruction file is unreadable: ${path}: ${cause instanceof Error ? cause.message : String(cause)}`);
+      }
+    }
+    return instructions;
   }
 
   /**

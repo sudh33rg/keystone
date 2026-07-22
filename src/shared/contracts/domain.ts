@@ -1,5 +1,9 @@
 import { z } from "zod";
 import { IntelligenceStatusSchema } from "./intelligence";
+import { ActivitySchema as ActivityRecordSchema } from "./activity";
+import { ApprovalSchema } from "./approval";
+import { BlockerSchema } from "./blocker";
+import { FreshnessRecordSchema } from "./freshness";
 
 export const SCHEMA_VERSION = 1 as const;
 
@@ -54,11 +58,11 @@ export const AppRouteSchema = z
   .refine(
     (value) =>
       value === "/" ||
+      value === "/active-work" ||
+      value === "/workflow/new" ||
       value === "/intelligence" ||
       value === "/history" ||
       value === "/workbench/new" ||
-      value === "/support/diagnostics" ||
-      value === "/settings" ||
       /^\/workbench\/[0-9a-f-]+\/(define|plan|build|validate|review|complete)$/.test(value),
     "Unsupported Keystone route.",
   );
@@ -92,6 +96,10 @@ export const PersistedFoundationStateSchema = z.object({
   activeSection: NavigationSectionSchema,
   activeRoute: AppRouteSchema,
   workflowCount: z.number().int().nonnegative(),
+  activityRecords: z.array(ActivityRecordSchema).default([]),
+  approvalRecords: z.array(ApprovalSchema).default([]),
+  blockerRecords: z.array(BlockerSchema).default([]),
+  freshnessRecords: z.array(FreshnessRecordSchema).default([]),
   updatedAt: z.string().datetime(),
 });
 

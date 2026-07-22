@@ -1,8 +1,12 @@
 import { z } from "zod";
+import { HomeStateSchema } from "../../shared/contracts/home";
+import { CanonicalWorkflowSchema, WorkflowCreatedResponseSchema, WorkflowCreationFailedResponseSchema } from "../../shared/contracts/canonicalWorkflow";
+import { DevelopmentAggregateSchema } from "../../shared/contracts/development";
 import {
   BootstrapSnapshotSchema,
   PersistedFoundationStateSchema,
   SCHEMA_VERSION,
+  type AppRoute,
   type BootstrapSnapshot,
   type PersistedFoundationState,
 } from "../../shared/contracts/domain";
@@ -189,6 +193,14 @@ export class HostBridge {
     return () => this.listeners.delete(listener);
   }
 
+  getWebviewState(): unknown {
+    return this.api.getState();
+  }
+
+  setWebviewState(state: unknown): void {
+    this.api.setState(state);
+  }
+
   dispose(): void {
     window.removeEventListener("message", this.receive);
     for (const [requestId, request] of this.pending) {
@@ -253,6 +265,37 @@ export function createHostBridge(): HostBridge {
 
 function validateResult(type: WebviewRequestType, value: unknown): unknown {
   switch (type) {
+    case "home/getState":
+      return HomeStateSchema.parse(value);
+    case "workflow.create":
+      return WorkflowCreatedResponseSchema.or(WorkflowCreationFailedResponseSchema).parse(value);
+    case "workflow.loadActive":
+      return value === null ? null : CanonicalWorkflowSchema.parse(value);
+    case "workflow.listCanonical":
+      return CanonicalWorkflowSchema.array().max(1000).parse(value);
+    case "workflow.getCanonical":
+      return value === undefined ? undefined : CanonicalWorkflowSchema.parse(value);
+    case "workflow.setActiveCanonical":
+      return CanonicalWorkflowSchema.parse(value);
+    case "development.initialize":
+    case "development.load":
+    case "development.updateObjective":
+    case "development.addCurrentFile":
+    case "development.addSelectedFiles":
+    case "development.addCurrentSelection":
+    case "development.addIntelligenceSymbol":
+    case "development.removeScopeItem":
+    case "development.preparePrompt":
+    case "development.copyPrompt":
+    case "development.confirmHandoff":
+    case "development.recordManualOrigin":
+    case "development.loadChanges":
+    case "development.recordResult":
+    case "development.associateChangedFiles":
+    case "development.confirmNoCode":
+    case "development.reviewResult":
+    case "development.complete":
+      return DevelopmentAggregateSchema.parse(value);
     case "keystone/webviewReady":
       return KeystoneInitializationSchema.parse(value);
     case "keystone/initializationAcknowledged":
@@ -394,8 +437,6 @@ function validateResult(type: WebviewRequestType, value: unknown): unknown {
       return DevelopmentWorkflowSnapshotSchema.array().max(100).parse(value);
     case "workflow/get":
       return value === undefined ? undefined : DevelopmentWorkflowSnapshotSchema.parse(value);
-    case "workflow/updateStage":
-      return undefined;
     case "workbench/getCreateContext":
       return WorkbenchCreateContextSchema.parse(value);
     case "workbench/createWorkflow":
@@ -825,6 +866,10 @@ function createPreviewApi(): VsCodeApi {
     activeSection: "home",
     activeRoute: "/",
     workflowCount: 0,
+    activityRecords: [],
+    approvalRecords: [],
+    blockerRecords: [],
+    freshnessRecords: [],
     updatedAt: new Date().toISOString(),
   };
   let overview: IntelligenceOverview = emptyIntelligenceOverview("not-indexed");

@@ -88,8 +88,6 @@ export async function run(): Promise<void> {
     "keystone.showFlow",
     "keystone.analyzeImpact",
     "keystone.importHandoff",
-    "keystone.openDiagnostics",
-    "keystone.openSettings",
     "keystone.dashboard.refresh",
   ])
     assert.ok(commands.includes(command), `${command} should be registered`);

@@ -386,8 +386,7 @@ export class KeystoneLaunchValidationService {
     let query: string | undefined;
     if (
       !this.source.workspace().available &&
-      destination.type !== "home" &&
-      destination.type !== "settings"
+      destination.type !== "home"
     )
       recovery = recover(
         "workspace-missing",
@@ -396,10 +395,10 @@ export class KeystoneLaunchValidationService {
         "/",
       );
     else if (destination.type === "home") route = "/";
-    else if (destination.type === "new-workflow") route = "/active-work";
+    else if (destination.type === "new-workflow") route = "/workflow/new";
     else if (destination.type === "history") route = "/history";
-    else if (destination.type === "diagnostics") route = "/support/diagnostics";
-    else if (destination.type === "settings") route = "/settings";
+    else if (destination.type === "diagnostics") route = "/history";
+    else if (destination.type === "settings") route = "/";
     else if (
       destination.type === "intelligence-query" ||
       destination.type === "flow" ||
