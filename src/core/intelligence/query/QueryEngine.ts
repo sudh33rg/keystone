@@ -1881,19 +1881,20 @@ export class QueryExecutor {
       case "FORWARD_SLICE":
       case "CONDITIONS_FOR":
         return this.cpg.execute(context, resolved);
-      case "OKF_CONCEPT":
-        context.diagnostics.push(
-          new QueryDiagnosticsService().unsupported(context.query.operation),
-        );
+      case "OKF_CONCEPT": {
+        const results = await this.okf.query(context, {
+          id: resolved[0]?.selected?.id,
+        });
         return QueryDataSchema.parse({
-          kind: "unsupported",
-          items: [],
-          nodes: [],
+          kind: "okf-concepts",
+          items: results,
+          nodes: results,
           relationships: [],
           paths: [],
           sections: {},
-          metrics: {},
+          metrics: { concepts: results.length },
         });
+      }
     }
   }
 }

@@ -17,7 +17,7 @@ export default tseslint.config(
     rules: {
       ...reactHooks.configs.recommended.rules,
       // "@typescript-eslint/consistent-type-imports": "error",
-      // "@typescript-eslint/no-unused-vars": ["error", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_", "caughtErrorsIgnorePattern": "^_", "ignoreRestSiblings": true }],
+      "@typescript-eslint/no-unused-vars": ["error", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_", "caughtErrorsIgnorePattern": "^_", "ignoreRestSiblings": true }],
       // "@typescript-eslint/no-misused-promises": ["error", { "checksVoidReturn": false }],
       // "@typescript-eslint/no-floating-promises": "error",
       // require-await is stylistic only; these methods are intentionally Promise-typed

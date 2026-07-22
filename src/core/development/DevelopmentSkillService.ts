@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { SkillDefinition } from "../../shared/contracts/executionConfiguration";
+import { TEST_GENERATION_SKILL } from "../impactQa/TestGenerationSkill";
 
 export class DevelopmentSkillError extends Error {
   constructor(public readonly code: string, message: string) { super(message); this.name = "DevelopmentSkillError"; }
@@ -17,20 +18,25 @@ export class DevelopmentSkillService {
     });
   }
 
+  /** Phase 8 — bounded Test Generation skill used by the QA test-intelligence flow. */
+  builtInTestGenerationSkill(): SkillDefinition {
+    return this.withHash(TEST_GENERATION_SKILL);
+  }
+
   withHash(skill: SkillDefinition): SkillDefinition {
     const content = JSON.stringify({ id: skill.id, name: skill.name, description: skill.description, applicableStageTypes: skill.applicableStageTypes, promptFragment: skill.promptFragment, expectedOutput: skill.expectedOutput, source: skill.source, version: skill.version });
     return { ...skill, contentHash: createHash("sha256").update(content).digest("hex") };
   }
 
-  list(definitions: SkillDefinition[]): SkillDefinition[] {
+  list(definitions: SkillDefinition[], allowedStageTypes: string[] = ["development", "qa"]): SkillDefinition[] {
     const names = new Set<string>();
     for (const skill of definitions) { const key = skill.name.trim().toLowerCase(); if (names.has(key)) throw new DevelopmentSkillError("skill-duplicate", `Duplicate skill name: ${skill.name}`); names.add(key); }
-    return definitions.filter((skill) => skill.applicableStageTypes.includes("development"));
+    return definitions.filter((skill) => skill.applicableStageTypes.some((stage) => allowedStageTypes.includes(stage)));
   }
 
-  require(definitions: SkillDefinition[], id: string): SkillDefinition {
-    const skill = this.list(definitions).find((item) => item.id === id);
-    if (!skill) throw new DevelopmentSkillError("skill-not-found", "The selected Development skill was not found.");
+  require(definitions: SkillDefinition[], id: string, allowedStageTypes: string[] = ["development", "qa"]): SkillDefinition {
+    const skill = this.list(definitions, allowedStageTypes).find((item) => item.id === id);
+    if (!skill) throw new DevelopmentSkillError("skill-not-found", "The selected skill was not found.");
     return skill;
   }
 }

@@ -241,6 +241,8 @@ export const RequiredFactSchema = z
       "known-risk",
       "changed-symbol",
       "output-format",
+      "validation-evidence",
+      "specification",
     ]),
     critical: z.boolean().default(false),
     state: RequiredFactStateSchema,

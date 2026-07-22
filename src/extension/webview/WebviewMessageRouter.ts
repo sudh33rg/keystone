@@ -80,6 +80,7 @@ export interface IntelligenceServiceRegistry {
   intelligenceCanvas: IntelligenceGraphSliceService;
   intelligenceEngineeringQuery: IntelligenceEngineeringQueryService;
   impactQa?: ImpactQaService;
+  testIntelligence?: import("../../core/impactQa/TestIntelligenceService").TestIntelligenceService;
   cpgQuery: CpgQueryService;
   openSource(
     relativePath: string,
@@ -169,6 +170,99 @@ export class WebviewMessageRouter {
     if (!this.services.impactQa) throw Object.assign(new Error("Impact Analysis and QA are unavailable in this workspace."), { code: "internal-error" });
     return this.services.impactQa;
   }
+
+  private testIntelligence(): import("../../core/impactQa/TestIntelligenceService").TestIntelligenceService {
+    if (!this.services.testIntelligence) throw Object.assign(new Error("Test Intelligence is unavailable in this workspace."), { code: "internal-error" });
+    return this.services.testIntelligence;
+  }
+
+  private async routeTestIntelligence(req: WebviewRequest): Promise<void> {
+    const service = this.testIntelligence();
+    const p = req.payload as Record<string, unknown>;
+    const send = async (result: Promise<unknown> | unknown): Promise<void> => {
+      const aggregate = await result;
+      await this.postMessage(hostMessage("testIntelligence.updated", aggregate as never));
+      await this.sendSuccess(req.requestId, aggregate);
+    };
+    switch (req.type) {
+      case "testIntelligence.load":
+        await send(service.load(p.workflowId as string)); return;
+      case "testIntelligence.createGenerationRequest":
+        await send(service.createGenerationRequest(p.workflowId as string, p.coverageGapId as string)); return;
+      case "testIntelligence.deriveScenarios":
+        await send(service.deriveScenarios(p.workflowId as string, p.generationRequestId as string)); return;
+      case "testIntelligence.updateScenario":
+        await send(service.updateScenario(p.workflowId as string, p.scenarioId as string, { title: p.title as string | undefined, behaviour: p.behaviour as string | undefined, selected: p.selected as boolean | undefined, removalReason: p.removalReason as string | undefined })); return;
+      case "testIntelligence.approveScenarios":
+        await send(service.approveScenarios(p.workflowId as string, p.generationRequestId as string)); return;
+      case "testIntelligence.buildGenerationContext": {
+        const built = await service.buildGenerationContext(p.workflowId as string, p.generationRequestId as string, p.budgetTokens as number);
+        await this.postMessage(hostMessage("testIntelligence.updated", built.state as never));
+        await this.sendSuccess(req.requestId, built); return;
+      }
+      case "testIntelligence.approveGenerationContext":
+        await send(service.markStaleForInputs(p.workflowId as string, "Generation context re-approved.")); return;
+      case "testIntelligence.recordProposal":
+        await send(service.recordProposal(p.workflowId as string, p.generationRequestId as string, p.proposal as never)); return;
+      case "testIntelligence.validateProposalPolicy":
+        await send(service.load(p.workflowId as string)); return;
+      case "testIntelligence.applyProposal": {
+        const applied = await service.applyProposal(p.workflowId as string, p.proposalId as string, p.selectedChangeIds as string[]);
+        await this.postMessage(hostMessage("testIntelligence.updated", applied.state as never));
+        await this.sendSuccess(req.requestId, applied); return;
+      }
+      case "testIntelligence.revertApplied":
+        await send(service.revertApplied(p.workflowId as string, p.appliedChangeId as string)); return;
+      case "testIntelligence.createFailureAnalysis":
+        await send(service.createFailureAnalysis(p.workflowId as string, p.testFailureId as string, {
+          workflowId: p.workflowId as string,
+          qaExecutionId: "qa-execution-ui",
+          testFailureId: p.testFailureId as string,
+          changedProductionFiles: [],
+          changedTestFiles: [],
+          changedFixtureFiles: [],
+          testFilePath: (p.testFilePath as string | undefined) ?? "unknown",
+          message: (p.message as string | undefined) ?? "",
+          normalizedMessage: (p.normalizedMessage as string | undefined) ?? (p.message as string | undefined) ?? "",
+          stackFrames: (p.stackFrames as string[] | undefined) ?? [],
+          exceptionType: (p.exceptionType as string | undefined) ?? undefined,
+          assertionLocation: undefined,
+          specification: undefined,
+          expectedContractText: undefined,
+          currentContractText: undefined,
+          environmentProblems: [],
+          infrastructureProblems: [],
+          previousOutcomes: [],
+          timedOut: false,
+          signatureVariesAcrossRuns: false,
+          orderOrTimingSensitive: false,
+        })); return;
+      case "testIntelligence.acceptFailureClassification":
+        await send(service.acceptFailureClassification(p.workflowId as string, p.analysisId as string, p.category as never)); return;
+      case "testIntelligence.requestRepeatedRuns":
+        await send(service.requestRepeatedRuns(p.workflowId as string, p.testId as string, p.count as number, p.mode as string, p.seed as string | undefined)); return;
+      case "testIntelligence.loadFlakyHistory":
+        await send(service.loadFlakyHistory(p.workflowId as string, p.testId as string)); return;
+      case "testIntelligence.createRemediationProposal":
+        await send(service.createRemediationProposal(p.workflowId as string, p.analysisId as string, p.proposal as never)); return;
+      case "testIntelligence.validateRemediationPolicy":
+        await send(service.load(p.workflowId as string)); return;
+      case "testIntelligence.applyRemediation": {
+        const applied = await service.applyRemediation(p.workflowId as string, p.proposalId as string, p.selectedChangeIds as string[]);
+        await this.postMessage(hostMessage("testIntelligence.updated", applied.state as never));
+        await this.sendSuccess(req.requestId, applied); return;
+      }
+      case "testIntelligence.runValidationSequence":
+        await send(service.runValidationSequence(p.workflowId as string, p.source as never, p.sourceRecordId as string, [])); return;
+      case "testIntelligence.loadValidationState":
+        await send(service.loadValidationState(p.workflowId as string, p.source as never, p.sourceRecordId as string)); return;
+      case "testIntelligence.refreshQaDecision":
+        await send(service.load(p.workflowId as string)); return;
+      default:
+        throw new Error(`Unhandled Test Intelligence request: ${req.type}`);
+    }
+  }
+
 
   dispose(): void {
     this.disposed = true;
@@ -400,6 +494,28 @@ export class WebviewMessageRouter {
       case "qa.approvePlan": await this.sendSuccess(request.requestId, await this.impactQa().approvePlan(request.payload.workflowId, request.payload.expectedHash)); return;
       case "qa.execute": await this.sendSuccess(request.requestId, await this.impactQa().execute(request.payload.workflowId, request.payload.qaPlanId, (progress) => { void this.postMessage(hostMessage("qa.progress", { workflowId: request.payload.workflowId, ...progress })); })); return;
       case "qa.cancel": await this.sendSuccess(request.requestId, { cancelled: this.impactQa().cancel(request.payload.commandId) }); return;
+      case "testIntelligence.load":
+      case "testIntelligence.createGenerationRequest":
+      case "testIntelligence.deriveScenarios":
+      case "testIntelligence.updateScenario":
+      case "testIntelligence.approveScenarios":
+      case "testIntelligence.buildGenerationContext":
+      case "testIntelligence.approveGenerationContext":
+      case "testIntelligence.recordProposal":
+      case "testIntelligence.validateProposalPolicy":
+      case "testIntelligence.applyProposal":
+      case "testIntelligence.revertApplied":
+      case "testIntelligence.createFailureAnalysis":
+      case "testIntelligence.acceptFailureClassification":
+      case "testIntelligence.requestRepeatedRuns":
+      case "testIntelligence.loadFlakyHistory":
+      case "testIntelligence.createRemediationProposal":
+      case "testIntelligence.validateRemediationPolicy":
+      case "testIntelligence.applyRemediation":
+      case "testIntelligence.runValidationSequence":
+      case "testIntelligence.loadValidationState":
+      case "testIntelligence.refreshQaDecision":
+        await this.routeTestIntelligence(request); return;
       case "executionConfiguration.load":
       case "executionConfiguration.discoverInstructions":
       case "executionConfiguration.listSkills":

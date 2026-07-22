@@ -14,6 +14,7 @@ export const QUERY_TEMPLATES: ReadonlyArray<{
   operation: QueryOperation;
 }> = [
   { id: "find", label: "Find entity", template: "find <entity>", operation: "SEARCH" },
+  { id: "okf", label: "Find OKF concept", template: "okf <concept>", operation: "OKF_CONCEPT" },
   { id: "used", label: "Find usages", template: "where is <entity> used", operation: "USAGES" },
   {
     id: "callers",
@@ -143,6 +144,7 @@ const dependencyTypes = [
 ];
 const rules: Rule[] = [
   { id: "find", expression: /^find\s+(.+)$/i, compile: (m) => base("SEARCH", [selector(m[1]!)]) },
+  { id: "okf", expression: /^okf\s+(.+)$/i, compile: (m) => base("OKF_CONCEPT", [selector(m[1]!)]) },
   {
     id: "where-used",
     expression: /^where\s+is\s+(.+?)\s+(?:used|configured)$/i,

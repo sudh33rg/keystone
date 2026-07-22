@@ -49,7 +49,7 @@ export class ExecutionConfigurationService {
 
   async initialize(): Promise<void> {
     const stored = await this.persistence.read();
-    if (stored === undefined) { const skill = new DevelopmentSkillService().builtInDevelopmentSkill(); this.state = emptyState(this.now(), [skill]); await this.persistence.write(this.state); return; }
+    if (stored === undefined) { const skillService = new DevelopmentSkillService(); const skills = [skillService.builtInDevelopmentSkill(), skillService.builtInTestGenerationSkill()]; this.state = emptyState(this.now(), skills); await this.persistence.write(this.state); return; }
     const parsed = ExecutionConfigurationPersistentStateSchema.safeParse(stored);
     if (!parsed.success) { this.diagnostics.push("Stored execution configuration is malformed and was not loaded."); this.state = emptyState(this.now()); return; }
     this.state = parsed.data;
@@ -75,7 +75,7 @@ export class ExecutionConfigurationService {
     this.assertCorrelation(correlationId); const aggregate = await this.load(draft.workflowId, draft.workItemId);
     const capability = aggregate.capabilities.find((item) => item.id === draft.executionCapabilityId);
     if (!capability || capability.availability !== "available") throw new ExecutionConfigurationError("capability-unavailable", "The selected execution mode is not currently available.");
-    const skill = aggregate.skills.find((item) => item.id === draft.skillId && item.applicableStageTypes.includes("development"));
+    const skill = aggregate.skills.find((item) => item.id === draft.skillId && (item.applicableStageTypes.includes("development") || item.applicableStageTypes.includes("qa")));
     if (!skill) throw new ExecutionConfigurationError("skill-not-found", "The selected Development skill was not found or is not applicable.");
     const instructions = draft.instructionIds.map((id) => aggregate.instructions.find((item) => item.id === id));
     if (instructions.some((item) => !item)) throw new ExecutionConfigurationError("instruction-not-found", "A selected instruction was not found.");

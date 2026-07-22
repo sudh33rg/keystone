@@ -266,6 +266,47 @@ export class DevelopmentService {
     const timestamp = this.now(); await this.commit({ ...this.state, workItems: replace(this.state.workItems, { ...item, status, updatedAt: timestamp }), correlations: { ...this.state.correlations, [correlationId]: item.id } }, timestamp); return this.load(workflowId);
   }
 
+  /**
+   * Creates a new Development work item for a routed production defect (Keystone
+   * Phase 8 failure routing). This does not modify the existing work item; it
+   * adds a focused work item so the defect can be fixed via the normal
+   * Development flow. Returns the new work item id.
+   */
+  async createDefectWorkItem(workflowId: string, objective: string, correlationId: string, evidence?: string): Promise<string> {
+    this.assertCorrelation(correlationId);
+    const workflow = await this.workflows.activateDevelopmentStage(workflowId);
+    const stage = workflow.stages.find((item) => item.type === "development");
+    if (!stage) throw new DevelopmentServiceError("development-stage-not-found", "This workflow does not contain a Development stage.");
+    const value = objective.trim();
+    if (!value || value.length > 10_000) throw new DevelopmentServiceError("invalid-objective", "Defect objective is required and must be 10,000 characters or fewer.");
+    const timestamp = this.now();
+    const workItem: DevelopmentWorkItem = {
+      id: this.createId(),
+      workflowId,
+      stageId: stage.id,
+      objective: evidence ? `${value}\n\nEvidence:\n${evidence}` : value,
+      status: "ready",
+      sourceScopeIds: [],
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    await this.commit({ ...this.state, workItems: [...this.state.workItems, workItem], objectiveRevisions: { ...this.state.objectiveRevisions, [workItem.id]: 1 }, correlations: { ...this.state.correlations, [correlationId]: workItem.id } }, timestamp);
+    return workItem.id;
+  }
+
+  /** Load a specific Development work item (not just the first for the workflow). */
+  async loadWorkItem(workflowId: string, workItemId: string): Promise<DevelopmentAggregate> {
+    const workflow = this.workflows.getWorkflow(workflowId);
+    if (!workflow) throw new DevelopmentServiceError("workflow-not-found", "The selected workflow was not found.");
+    const workItem = this.state.workItems.find((item) => item.id === workItemId && item.workflowId === workflowId);
+    if (!workItem) throw new DevelopmentServiceError("work-item-not-found", "The selected Development work item was not found.");
+    const scopeItems = this.state.scopeItems.filter((item) => item.workItemId === workItem.id);
+    const promptPreparation = workItem.promptPreparationId ? this.state.promptPreparations.find((item) => item.id === workItem.promptPreparationId && item.status !== "superseded") ?? null : null;
+    const handoff = workItem.handoffId ? this.state.handoffs.find((item) => item.id === workItem.handoffId) ?? null : null;
+    const result = workItem.resultId ? this.state.results.find((item) => item.id === workItem.resultId) ?? null : null;
+    return { workflow, workItem, scopeItems, intelligenceSelections: this.state.intelligenceSelections.filter((selection) => selection.workItemId === workItem.id), promptPreparation, handoff, result, contextPackage: this.contextPackages?.get(workItem.id) ?? null, changeDetection: { available: false, changes: [], message: "Defect work item created by Phase 8 routing." }, completion: completionState(workflow.intent.workType, workItem, scopeItems, promptPreparation, handoff, result, this.state.manualOrigins.includes(workItem.id)) };
+  }
+
   async invalidatePrompt(workItemId: string): Promise<void> {
     await this.contextPackages?.invalidate(workItemId, "The Development execution profile changed.");
     const item = this.state.workItems.find((entry) => entry.id === workItemId); if (!item?.promptPreparationId) return;

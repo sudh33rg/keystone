@@ -9,6 +9,7 @@ import { IntelligenceEngineeringQueryService } from "../core/intelligence/canvas
 import { RepositoryIndexService } from "../core/intelligence/RepositoryIndexService";
 import { TreeSitterExtractionAdapter } from "../core/intelligence/extraction/TreeSitterExtractionAdapter";
 import { TechnologyDetectionService } from "../core/intelligence/technology/TechnologyDetectionService";
+import { SchemaSurfaceExtractor } from "../core/intelligence/schema/SchemaSurfaceExtractor";
 import { IntelligenceRuntime } from "../core/intelligence/runtime/IntelligenceRuntime";
 import { WorkerPoolManager } from "../core/intelligence/runtime/WorkerPoolManager";
 import { SemanticExtractionWorker } from "../core/intelligence/semantic/SemanticExtractionWorker";
@@ -127,6 +128,8 @@ import { InstructionConflictDetector } from "../core/development/InstructionConf
 import { ExecutionConfigurationService, FileExecutionConfigurationPersistence } from "../core/development/ExecutionConfigurationService";
 import { ImpactQaPersistence } from "../core/impactQa/ImpactQaPersistence";
 import { ImpactQaService } from "../core/impactQa/ImpactQaService";
+import { TestIntelligenceService } from "../core/impactQa/TestIntelligenceService";
+import { QaTestIntelligencePersistence } from "../core/impactQa/QaTestIntelligencePersistence";
 
 let logger: KeystoneLogger | undefined;
 
@@ -189,6 +192,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
   const treeSitterAdapter = new TreeSitterExtractionAdapter(); // disabled by default; flip enabled to activate polyglot extraction
   const technologyAdapter = new TechnologyDetectionService(); // disabled by default; flip enabled to activate Phase B technology detection
+  const schemaAdapter = new SchemaSurfaceExtractor(); // disabled by default; flip enabled to activate Phase C schema surface
   const repositoryIndex = new RepositoryIndexService(
     workspace,
     git,
@@ -204,6 +208,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     undefined,
     treeSitterAdapter,
     technologyAdapter,
+    schemaAdapter,
   );
   const monitor = new VsCodeRepositoryMonitor(workspace, git, ignorePolicy, logger);
   const startup = new StartupReconciler(workspace, git, intelligenceStore, {
@@ -247,12 +252,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const instructionDiscovery = new InstructionDiscoveryService(repositoryRoot ?? canonicalWorkflowRoot);
   const skillService = new DevelopmentSkillService();
   const builtInDevelopmentSkill = skillService.builtInDevelopmentSkill();
+  const builtInTestGenerationSkill = skillService.builtInTestGenerationSkill();
   const conflictDetector = new InstructionConflictDetector();
   const executionConfiguration = new ExecutionConfigurationService(new FileExecutionConfigurationPersistence(canonicalWorkflowRoot), {
     discoverCapabilities: async (manualAgents) => capabilityDiscovery.discover(manualAgents),
     discoverInstructions: async (paths) => instructionDiscovery.discover(paths),
     previewInstruction: async (path) => instructionDiscovery.preview(path),
-    listSkills: () => skillService.list([builtInDevelopmentSkill]),
+    listSkills: () => skillService.list([builtInDevelopmentSkill, builtInTestGenerationSkill]),
     conflicts: (instructions, unavailable = []) => [...conflictDetector.detect(instructions), ...conflictDetector.unresolved(unavailable)],
     invalidatePrompt: async (workItemId) => development.invalidatePrompt(workItemId),
   });
@@ -289,6 +295,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     },
   );
   await impactQa.initialize();
+  const testIntelligence = new TestIntelligenceService(
+    repositoryRoot ?? canonicalWorkflowRoot,
+    new QaTestIntelligencePersistence(canonicalWorkflowRoot),
+    impactQa,
+    development,
+    {
+      workspaceFiles: async () => new Set(repositoryUri && developmentHost ? (await vscode.workspace.findFiles(new vscode.RelativePattern(repositoryUri, "**/*"), DEVELOPMENT_FILE_EXCLUDE_GLOB, 20_000)).map((uri) => developmentHost.relativePath(uri)) : []),
+      readSource: async (relativePath) => {
+        const root = repositoryUri ?? vscode.Uri.file(repositoryRoot ?? canonicalWorkflowRoot);
+        const uri = vscode.Uri.joinPath(root, ...relativePath.split("/"));
+        const bytes = await vscode.workspace.fs.readFile(uri);
+        return Buffer.from(bytes).toString("utf8");
+      },
+    },
+  );
+  await testIntelligence.initialize();
   const delegationStore = new DelegationPersistenceStore(storageRoot);
   const copilotIntegrationStore = new CopilotIntegrationPersistenceStore(storageRoot);
   await copilotIntegrationStore.initialize();
@@ -732,6 +754,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     intelligenceCanvas,
     intelligenceEngineeringQuery,
     impactQa,
+    testIntelligence,
     cpgQuery,
     openSource,
     workflow,

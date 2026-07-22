@@ -1594,6 +1594,7 @@
   },
   "dependencies": {
     "@xyflow/react": "^12.11.2",
+    "fuse.js": "^7.5.0",
     "puppeteer": "^25.3.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",

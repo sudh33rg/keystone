@@ -176,6 +176,8 @@ export const SymbolRecordSchema = z
       .strict()
       .optional(),
     ownerFileId: z.string().min(1).optional(),
+    parserId: z.string().min(1).optional(),
+    parserVersion: z.string().min(1).optional(),
     evidenceIds: z.array(z.string().min(1)).min(1),
     confidence: z.number().min(0).max(1),
     generation: z.number().int().positive(),

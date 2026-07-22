@@ -30,6 +30,8 @@ export const IntelligenceViewTypeSchema = z.enum([
   "tests",
   "impact",
   "evidence",
+  "schema",
+  "technology",
 ]);
 export type IntelligenceViewType = z.infer<typeof IntelligenceViewTypeSchema>;
 
@@ -77,6 +79,13 @@ export const IntelligenceRelationshipSchema = z.enum([
   "uses",
   "configures",
   "impacts",
+  "defines-technology",
+  "uses-technology",
+  "foreign-key",
+  "db-table-has-column",
+  "orm-has-field",
+  "migration-applies",
+  "route-exposes",
   "unknown",
 ]);
 export type IntelligenceRelationship = z.infer<typeof IntelligenceRelationshipSchema>;

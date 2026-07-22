@@ -14,6 +14,7 @@
 
 import { generateOkfPath, validateKeystoneId } from "./OkfConceptIdFactory";
 import { OkfConceptBodySchema, OkfConceptFrontmatterSchema, type OkfConcept } from "./OkfConcept";
+import type { IntelligenceSnapshot } from "../../../shared/contracts/intelligence";
 
 /**
  * Relationship kind for OKF concepts
@@ -424,4 +425,67 @@ function generateContentHash(keystoneId: string, entityType: string, confidence:
   };
 
   return sha256(`${keystoneId}|${entityType}|${confidence}`);
+}
+
+/**
+ * Generate OKF concepts from an IntelligenceSnapshot.
+ *
+ * This converts the intelligence layer's symbols, relationships, and evidence
+ * into OKF concepts that can be persisted and queried.
+ *
+ * @param snapshot - The intelligence snapshot
+ * @returns An array of OKF concepts
+ */
+export function generateOkfConceptsFromSnapshot(snapshot: IntelligenceSnapshot): OkfConcept[] {
+  const concepts: OkfConcept[] = [];
+
+  // Process symbols
+  for (const symbol of snapshot.symbols) {
+    const keystoneId = `entity:${symbol.language}:${symbol.fileId}:${symbol.name}`;
+    const concept = mapEntityToConcept(keystoneId, symbol.type, {
+      title: symbol.name,
+      qualifiedName: symbol.qualifiedName,
+      repositoryId: symbol.repositoryId,
+      branch: snapshot.repository.branch ?? "",
+      headCommit: snapshot.repository.headCommit ?? undefined,
+      generation: snapshot.manifest.generation,
+      language: symbol.language,
+      confidence: symbol.confidence,
+      parserId: symbol.parserId || snapshot.files.find((f) => f.id === symbol.fileId)?.parserId,
+      parserVersion: symbol.parserVersion || snapshot.files.find((f) => f.id === symbol.fileId)?.parserVersion,
+    }, { calls: [], called_by: [], imports: [], exports: [], references: [], reads: [], writes: [], routes: [], middleware: [], tests: [], covered_by: [], configuration: [], belongs_to: [] });
+    concepts.push({
+      ...concept,
+      frontmatter: concept.frontmatter,
+      body: concept.body,
+      path: concept.path,
+      contentHash: concept.contentHash,
+      hasUserAnnotations: concept.hasUserAnnotations,
+    });
+  }
+
+  // Process files as concepts
+  for (const file of snapshot.files) {
+    const keystoneId = `entity:${file.language}:${file.id}:*`;
+    const concept = mapEntityToConcept(keystoneId, "File", {
+      title: file.relativePath.split("/").at(-1) ?? file.relativePath,
+      repositoryId: file.repositoryId,
+      branch: snapshot.repository.branch ?? "",
+      headCommit: snapshot.repository.headCommit ?? undefined,
+      generation: snapshot.manifest.generation,
+      language: file.language,
+      confidence: 1,
+      sourcePath: file.relativePath,
+    }, { calls: [], called_by: [], imports: [], exports: [], references: [], reads: [], writes: [], routes: [], middleware: [], tests: [], covered_by: [], configuration: [], belongs_to: [] });
+    concepts.push({
+      ...concept,
+      frontmatter: concept.frontmatter,
+      body: concept.body,
+      path: concept.path,
+      contentHash: concept.contentHash,
+      hasUserAnnotations: concept.hasUserAnnotations,
+    });
+  }
+
+  return concepts;
 }

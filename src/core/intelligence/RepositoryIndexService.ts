@@ -20,6 +20,8 @@ import type { IntelligenceStore } from "../persistence/IntelligenceStore";
 import type { IgnorePolicy } from "./IgnorePolicy";
 import { normalizeRelativePath, normalizeSignature, sha256Bytes, stableId } from "./StableId";
 import type { RepositoryChange, RepositoryChangeReason } from "./runtime/ChangeCollector";
+import type { OkfPersistenceStore, OkfConceptRecord } from "../persistence/OkfPersistenceStore";
+import { generateOkfConceptsFromSnapshot } from "./okf/OkfConceptMapper";
 import {
   DeltaMerger,
   DependencyInvalidator,
@@ -40,6 +42,11 @@ import type {
   TechnologyIdProvider,
   TechnologyDetectionResult,
 } from "./technology/TechnologyDetectionService";
+import { SchemaSurfaceExtractor } from "./schema/SchemaSurfaceExtractor";
+import type {
+  SchemaSurfaceIdProvider,
+  SchemaSurfaceResult,
+} from "./schema/SchemaSurfaceExtractor";
 
 export interface IndexProgress {
   stage: "inventory" | "symbols" | "publishing";
@@ -82,6 +89,7 @@ export class RepositoryIndexService {
   private disposed = false;
   private readonly listeners = new Set<RuntimeListener>();
   private state: IntelligenceRuntimeState;
+  private okfConcepts: OkfConceptRecord[] = [];
 
   constructor(
     private readonly workspace: WorkspaceAdapter,
@@ -98,6 +106,8 @@ export class RepositoryIndexService {
     private readonly graphBuilder = new SemanticGraphBuilder(),
     private readonly treeSitter?: TreeSitterExtractionAdapter,
     private readonly technology?: TechnologyDetectionService,
+    private readonly schema?: SchemaSurfaceExtractor,
+    private readonly okfPersistence?: OkfPersistenceStore,
   ) {
     this.state = {
       status: store.isStorageAvailable() ? "not-indexed" : "storage-unavailable",
@@ -556,6 +566,16 @@ export class RepositoryIndexService {
     });
     this.assertCurrent(run);
     await this.store.save(snapshot, () => this.assertCurrent(run), cpgDelta, adapterState);
+
+    // Generate and persist OKF concepts if persistence is available
+    if (this.okfPersistence) {
+      const concepts = generateOkfConceptsFromSnapshot(snapshot);
+      for (const concept of concepts) {
+        await this.okfPersistence.addConcept(concept);
+        this.okfConcepts.push(concept);
+      }
+    }
+
     this.assertCurrent(run);
     this.activeRun = undefined;
     this.state = { status, pendingUpdate: false, scanRevision: run.revision, trigger: run.trigger };
@@ -884,6 +904,46 @@ export class RepositoryIndexService {
         local.diagnostics.push(
           diagnostic(
             "TECHNOLOGY_DETECTION_FAILED",
+            "warning",
+            safeMessage(cause),
+            rootRecord.id,
+            relativePath,
+          ),
+        );
+      }
+    }
+
+    // Phase C: schema/migration/orm/route surface (inert unless enabled).
+    // Emits SchemaTable/Column/ForeignKey/ORMEntity/ORMField/Route/Migration
+    // symbols + DB/ORM/route edges. Distinct id namespaces + sourceKinds keep
+    // Phase C facts from colliding with A/B/document-symbol output.
+    if (
+      this.schema?.enabled &&
+      file.category !== "documentation" &&
+      file.category !== "asset" &&
+      classification.included &&
+      !classification.sensitive &&
+      contentHash &&
+      indexedContent
+    ) {
+      try {
+        const result = await this.schema.extract(
+          relativePath,
+          file.language,
+          new TextDecoder().decode(indexedContent),
+          this.schemaIdProvider(file, input),
+        );
+        if (result.available && result.symbols.length > 0) {
+          file.parseStatus = result.parseStatus;
+          file.parserId = result.extractorId;
+          file.parserVersion = result.extractorVersion;
+          await this.addSchemaSymbols(result, file, input, local, contentHash);
+        }
+        for (const diag of result.diagnostics) local.diagnostics.push(diag);
+      } catch (cause) {
+        local.diagnostics.push(
+          diagnostic(
+            "SCHEMA_SURFACE_EXTRACTION_FAILED",
             "warning",
             safeMessage(cause),
             rootRecord.id,
@@ -1357,6 +1417,159 @@ export class RepositoryIndexService {
     }
   }
 
+  private schemaIdProvider(
+    file: IntelligenceFileRecord,
+    input: IndexFileInput,
+  ): SchemaSurfaceIdProvider {
+    const namespaceFor = (kind: string): string => {
+      switch (kind) {
+        case "table":
+        case "column":
+        case "foreign-key":
+          return "db-table";
+        case "orm-entity":
+        case "orm-field":
+          return "orm-entity";
+        case "route":
+          return "route";
+        case "migration":
+          return "schema-migration";
+        default:
+          return "framework";
+      }
+    };
+    return {
+      repositoryId: input.repositoryId,
+      fileId: file.id,
+      generation: input.generation,
+      entity(kind: string, name: string, discriminator: string): Promise<string> {
+        return Promise.resolve(
+          stableId(namespaceFor(kind), input.repositoryId, name, discriminator),
+        );
+      },
+      relationship(
+        sourceId: string,
+        targetId: string,
+        type: string,
+        discriminator: string,
+      ): Promise<string> {
+        return Promise.resolve(
+          stableId(
+            "relationship",
+            input.repositoryId,
+            sourceId,
+            targetId,
+            type,
+            file.id,
+            discriminator,
+          ),
+        );
+      },
+    };
+  }
+
+  private async addSchemaSymbols(
+    result: SchemaSurfaceResult,
+    file: IntelligenceFileRecord,
+    input: IndexFileInput,
+    local: MutableRecords,
+    contentHash: string,
+  ): Promise<void> {
+    for (const symbol of result.symbols) {
+      this.assertCurrent(input.run);
+      const symbolEvidenceId = await stableId(
+        "evidence",
+        symbol.id,
+        file.relativePath,
+        symbol.line,
+        contentHash,
+        input.generation,
+        "schema",
+      );
+      const sourceKind: IntelligenceEvidenceRecord["sourceKind"] =
+        symbol.kind === "migration" ? "database" : symbol.kind === "table" || symbol.kind === "column" || symbol.kind === "foreign-key" ? "schema" : "framework-rule";
+      local.evidence.push(
+        evidenceRecord(
+          symbolEvidenceId,
+          symbol.id,
+          input.rootRecord.id,
+          file.relativePath,
+          input.generation,
+          input.branch,
+          input.commit,
+          contentHash,
+          sourceKind,
+          result.extractorId,
+          `Schema surface extraction reported ${symbol.qualifiedName}.`,
+          { startLine: symbol.line, startColumn: 0, endLine: symbol.line, endColumn: 0 },
+          result.extractorVersion,
+          file.id,
+        ),
+      );
+      const symbolRecord: IntelligenceSymbolRecord = {
+        id: symbol.id,
+        repositoryId: input.repositoryId,
+        fileId: file.id,
+        ownerFileId: file.id,
+        type: schemaSymbolType(symbol.kind),
+        name: symbol.name,
+        qualifiedName: symbol.qualifiedName,
+        language: symbol.language,
+        range: { startLine: symbol.line, startColumn: 0, endLine: symbol.line, endColumn: 0 },
+        ...(symbol.properties ? { properties: symbol.properties } : {}),
+        evidenceIds: [symbolEvidenceId],
+        confidence: symbol.confidence,
+        generation: input.generation,
+      };
+      local.symbols.push(symbolRecord);
+    }
+    for (const relationship of result.relationships) {
+      this.assertCurrent(input.run);
+      const relEvidenceId = await stableId(
+        "evidence",
+        relationship.id,
+        file.relativePath,
+        relationship.line,
+        contentHash,
+        input.generation,
+        "schema",
+      );
+      relationship.evidenceIds = [relEvidenceId];
+      local.evidence.push(
+        evidenceRecord(
+          relEvidenceId,
+          relationship.id,
+          input.rootRecord.id,
+          file.relativePath,
+          input.generation,
+          input.branch,
+          input.commit,
+          contentHash,
+          "schema",
+          result.extractorId,
+          `${relationship.type.replace("keystone.core.", "")} was extracted by the schema surface extractor.`,
+          { startLine: relationship.line, startColumn: 0, endLine: relationship.line, endColumn: 0 },
+          result.extractorVersion,
+          file.id,
+        ),
+      );
+      local.relationships.push({
+        id: relationship.id,
+        repositoryId: input.repositoryId,
+        sourceId: relationship.sourceId,
+        targetId: relationship.targetId,
+        type: relationship.type,
+        ownerFileId: file.id,
+        targetFileId: file.id,
+        resolution: "external",
+        evidenceIds: [relEvidenceId],
+        derivation: "framework-rule",
+        confidence: relationship.confidence,
+        generation: input.generation,
+      });
+    }
+  }
+
   private progress(run: ScanRun, progress: IndexProgress): void {
     if (this.activeRun !== run || run.cancelled) return;
     this.state = {
@@ -1685,6 +1898,28 @@ function isManifestCategory(classification: ClassificationDecision): boolean {
     classification.category === "infrastructure" ||
     classification.category === "configuration"
   );
+}
+
+/** Maps a Phase C schema-surface kind to its Intelligence symbol type string. */
+function schemaSymbolType(kind: string): string {
+  switch (kind) {
+    case "table":
+      return "keystone.core.SchemaTable";
+    case "column":
+      return "keystone.core.SchemaColumn";
+    case "foreign-key":
+      return "keystone.core.SchemaForeignKey";
+    case "orm-entity":
+      return "keystone.core.ORMEntity";
+    case "orm-field":
+      return "keystone.core.ORMField";
+    case "route":
+      return "keystone.core.Route";
+    case "migration":
+      return "keystone.core.Migration";
+    default:
+      return "keystone.core.SchemaTable";
+  }
 }
 
 function shouldUseSemanticParser(file: IntelligenceFileRecord): boolean {

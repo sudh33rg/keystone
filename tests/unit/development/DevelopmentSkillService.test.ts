@@ -9,7 +9,10 @@ describe("DevelopmentSkillService", () => {
     expect(first).toMatchObject({ id: "keystone-development", applicableStageTypes: ["development"], source: "keystone-built-in" });
     expect(first.promptFragment).toContain("list files changed");
     expect(first.contentHash).toBe(second.contentHash);
-    expect(service.list([first, { ...first, id: "qa", name: "QA", applicableStageTypes: ["qa"] }])).toEqual([first]);
+    const qaSkill: typeof first = { ...first, id: "qa", name: "QA", applicableStageTypes: ["qa"] };
+    expect(service.list([first, qaSkill])).toEqual([first, qaSkill]);
+    // Development-only filtering still applies when requested explicitly.
+    expect(service.list([first, qaSkill], ["development"])).toEqual([first]);
   });
 
   it("rejects missing and duplicate skill definitions", () => {

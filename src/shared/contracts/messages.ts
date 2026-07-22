@@ -38,6 +38,15 @@ import {
 import type { SerializedKeystoneError } from "../errors/KeystoneError";
 import type { ImpactQaAggregate } from "./impactQa";
 import {
+  QaTestIntelligenceAggregateSchema,
+  type QaTestIntelligenceAggregate,
+  StructuredProposalIngestSchema,
+  FailureCategorySchema,
+  ValidationSourceSchema,
+  ValidationLevelSchema,
+  ValidationLevelStatusSchema,
+} from "./phase8TestIntelligence";
+import {
   IntelligenceCanvasEntityActionRequestSchema,
   IntelligenceCanvasEvidenceRequestSchema,
   IntelligenceCanvasEvidenceActionRequestSchema,
@@ -348,6 +357,27 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
   request("qa.approvePlan", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), qaPlanId: z.string().min(1).max(500), expectedHash: z.string().startsWith("sha256:") }).strict()),
   request("qa.execute", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), qaPlanId: z.string().min(1).max(500) }).strict()),
   request("qa.cancel", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), commandId: z.string().min(1).max(500) }).strict()),
+  request("testIntelligence.load", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid() }).strict()),
+  request("testIntelligence.createGenerationRequest", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), coverageGapId: z.string().min(1).max(500) }).strict()),
+  request("testIntelligence.deriveScenarios", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), generationRequestId: z.string().min(1).max(500) }).strict()),
+  request("testIntelligence.updateScenario", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), scenarioId: z.string().min(1).max(500), title: z.string().min(1).max(500).optional(), behaviour: z.string().min(1).max(5000).optional(), selected: z.boolean().optional(), removalReason: z.string().min(1).max(2000).optional() }).strict()),
+  request("testIntelligence.approveScenarios", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), generationRequestId: z.string().min(1).max(500) }).strict()),
+  request("testIntelligence.buildGenerationContext", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), generationRequestId: z.string().min(1).max(500), budgetTokens: z.number().int().min(500).max(1_000_000) }).strict()),
+  request("testIntelligence.approveGenerationContext", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), generationRequestId: z.string().min(1).max(500), packageId: z.string().uuid(), revision: z.number().int().positive(), fingerprint: z.string().regex(/^[a-f0-9]{64}$/) }).strict()),
+  request("testIntelligence.recordProposal", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), generationRequestId: z.string().min(1).max(500), proposal: StructuredProposalIngestSchema }).strict()),
+  request("testIntelligence.validateProposalPolicy", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), proposalId: z.string().min(1).max(500) }).strict()),
+  request("testIntelligence.applyProposal", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), proposalId: z.string().min(1).max(500), selectedChangeIds: z.array(z.string().min(1).max(500)).max(200) }).strict()),
+  request("testIntelligence.revertApplied", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), appliedChangeId: z.string().min(1).max(500) }).strict()),
+  request("testIntelligence.createFailureAnalysis", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), testFailureId: z.string().min(1).max(500) }).strict()),
+  request("testIntelligence.acceptFailureClassification", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), analysisId: z.string().min(1).max(500), category: FailureCategorySchema }).strict()),
+  request("testIntelligence.requestRepeatedRuns", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), testId: z.string().min(1).max(500), count: z.number().int().min(1).max(20), mode: z.enum(["default", "seed", "isolation", "related-file", "suite-order"]).default("default"), seed: z.string().max(200).optional() }).strict()),
+  request("testIntelligence.loadFlakyHistory", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), testId: z.string().min(1).max(500) }).strict()),
+  request("testIntelligence.createRemediationProposal", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), analysisId: z.string().min(1).max(500), proposal: StructuredProposalIngestSchema }).strict()),
+  request("testIntelligence.validateRemediationPolicy", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), proposalId: z.string().min(1).max(500) }).strict()),
+  request("testIntelligence.applyRemediation", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), proposalId: z.string().min(1).max(500), selectedChangeIds: z.array(z.string().min(1).max(500)).max(200) }).strict()),
+  request("testIntelligence.runValidationSequence", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), source: ValidationSourceSchema, sourceRecordId: z.string().min(1).max(500) }).strict()),
+  request("testIntelligence.loadValidationState", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), source: ValidationSourceSchema, sourceRecordId: z.string().min(1).max(500) }).strict()),
+  request("testIntelligence.refreshQaDecision", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid() }).strict()),
   request("executionConfiguration.load", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid() }).strict()),
   request("executionConfiguration.refresh", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid() }).strict()),
   request("executionConfiguration.discoverInstructions", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid() }).strict()),
@@ -1031,6 +1061,8 @@ const CopilotIntegrationEventPayloadSchema = z
 
 export const HostMessageSchema = z.discriminatedUnion("type", [
   event("qa.progress", z.object({ workflowId: z.string().uuid(), executionId: z.string().min(1), commandId: z.string(), output: z.string().max(50_000).optional(), source: z.enum(["stdout", "stderr"]).optional(), completed: z.number().int().nonnegative(), total: z.number().int().nonnegative(), status: z.string().max(100) }).strict()),
+  event("testIntelligence.updated", QaTestIntelligenceAggregateSchema),
+  event("testIntelligence.validationProgress", z.object({ workflowId: z.string().uuid(), validationId: z.string().min(1), level: ValidationLevelSchema, status: ValidationLevelStatusSchema, output: z.string().max(50_000).optional() }).strict()),
   event("review/stateChanged", ReviewLifecycleEventSchema),
   event("review/noteChanged", ReviewLifecycleEventSchema),
   event("review/changesRequested", ReviewLifecycleEventSchema),
@@ -1525,6 +1557,27 @@ export interface WebviewRequestResults {
   "qa.approvePlan": ImpactQaAggregate;
   "qa.execute": ImpactQaAggregate;
   "qa.cancel": { cancelled: boolean };
+  "testIntelligence.load": QaTestIntelligenceAggregate;
+  "testIntelligence.createGenerationRequest": QaTestIntelligenceAggregate;
+  "testIntelligence.deriveScenarios": QaTestIntelligenceAggregate;
+  "testIntelligence.updateScenario": QaTestIntelligenceAggregate;
+  "testIntelligence.approveScenarios": QaTestIntelligenceAggregate;
+  "testIntelligence.buildGenerationContext": QaTestIntelligenceAggregate;
+  "testIntelligence.approveGenerationContext": QaTestIntelligenceAggregate;
+  "testIntelligence.recordProposal": QaTestIntelligenceAggregate;
+  "testIntelligence.validateProposalPolicy": QaTestIntelligenceAggregate;
+  "testIntelligence.applyProposal": QaTestIntelligenceAggregate;
+  "testIntelligence.revertApplied": QaTestIntelligenceAggregate;
+  "testIntelligence.createFailureAnalysis": QaTestIntelligenceAggregate;
+  "testIntelligence.acceptFailureClassification": QaTestIntelligenceAggregate;
+  "testIntelligence.requestRepeatedRuns": QaTestIntelligenceAggregate;
+  "testIntelligence.loadFlakyHistory": QaTestIntelligenceAggregate;
+  "testIntelligence.createRemediationProposal": QaTestIntelligenceAggregate;
+  "testIntelligence.validateRemediationPolicy": QaTestIntelligenceAggregate;
+  "testIntelligence.applyRemediation": QaTestIntelligenceAggregate;
+  "testIntelligence.runValidationSequence": QaTestIntelligenceAggregate;
+  "testIntelligence.loadValidationState": QaTestIntelligenceAggregate;
+  "testIntelligence.refreshQaDecision": QaTestIntelligenceAggregate;
   "executionConfiguration.load": ExecutionConfigurationAggregate;
   "executionConfiguration.refresh": ExecutionConfigurationAggregate;
   "executionConfiguration.discoverInstructions": ExecutionConfigurationAggregate;

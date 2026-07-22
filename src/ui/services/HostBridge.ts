@@ -20,6 +20,7 @@ import {
   emptyIntelligenceOverview,
   type IntelligenceOverview,
 } from "../../shared/contracts/intelligence";
+import { QaTestIntelligenceAggregateSchema } from "../../shared/contracts/phase8TestIntelligence";
 import {
   HostMessageSchema,
   hostMessage,
@@ -890,6 +891,28 @@ function validateResult(type: WebviewRequestType, value: unknown): unknown {
     case "validation/cancel":
     case "request/cancel":
       return undefined;
+    case "testIntelligence.load":
+    case "testIntelligence.createGenerationRequest":
+    case "testIntelligence.deriveScenarios":
+    case "testIntelligence.updateScenario":
+    case "testIntelligence.approveScenarios":
+    case "testIntelligence.buildGenerationContext":
+    case "testIntelligence.approveGenerationContext":
+    case "testIntelligence.recordProposal":
+    case "testIntelligence.validateProposalPolicy":
+    case "testIntelligence.applyProposal":
+    case "testIntelligence.revertApplied":
+    case "testIntelligence.createFailureAnalysis":
+    case "testIntelligence.acceptFailureClassification":
+    case "testIntelligence.requestRepeatedRuns":
+    case "testIntelligence.loadFlakyHistory":
+    case "testIntelligence.createRemediationProposal":
+    case "testIntelligence.validateRemediationPolicy":
+    case "testIntelligence.applyRemediation":
+    case "testIntelligence.runValidationSequence":
+    case "testIntelligence.loadValidationState":
+    case "testIntelligence.refreshQaDecision":
+      return QaTestIntelligenceAggregateSchema.parse(value);
   }
   throw new Error(`No Webview response validator is registered for ${type}.`);
 }

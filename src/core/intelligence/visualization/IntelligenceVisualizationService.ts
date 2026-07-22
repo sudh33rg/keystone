@@ -30,6 +30,8 @@ import { FlowViewBuilder } from "./FlowViewBuilder";
 import { DataFlowViewBuilder } from "./DataFlowViewBuilder";
 import { TestMappingViewBuilder } from "./TestMappingViewBuilder";
 import { ImpactViewBuilder } from "./ImpactViewBuilder";
+import { SchemaViewBuilder } from "./SchemaViewBuilder";
+import { TechnologyViewBuilder } from "./TechnologyViewBuilder";
 
 export interface VisualizationBuildOptions {
   repositoryRevision?: string;
@@ -175,6 +177,10 @@ export class IntelligenceVisualizationService {
       case "evidence":
         // Evidence view reuses the dependency graph as its backbone.
         return DependencyViewBuilder.build(ctx);
+      case "schema":
+        return SchemaViewBuilder.build(ctx);
+      case "technology":
+        return TechnologyViewBuilder.build(ctx);
     }
   }
 
