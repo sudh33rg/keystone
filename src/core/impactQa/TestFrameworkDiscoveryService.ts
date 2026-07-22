@@ -17,4 +17,4 @@ export class TestFrameworkDiscoveryService {
 }
 function command(framework: string, script: string): TestCommandDefinition { return { id: `command:package:${script}`, frameworkId: `framework:${framework}`, displayName: `npm run ${script}`, executable: "npm", arguments: ["run", script, "--"], workingDirectory: ".", scope: script.includes("e2e") ? "suite" : "test-file", source: "package-script", timeoutMs: script.includes("e2e") ? 300_000 : 120_000 }; }
 function unsupported(code: string, message: string): TestFrameworkCapability { return { id: "framework:unsupported", framework: "unknown", sourceFiles: [], commands: [], availability: "unsupported", diagnostic: { code, message } }; }
-function unsafe(command: string): boolean { return /[;&|`]|rm\b|git\s+(push|commit|reset|checkout)|\bdeploy\b/i.test(command); }
+function unsafe(command: string): boolean { return /[;&|`]|\Wrm\W|\Wgit\s+(push|commit|reset|checkout)\W|\Wdeploy\W/i.test(command); }
