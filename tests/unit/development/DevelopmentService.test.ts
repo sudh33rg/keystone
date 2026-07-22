@@ -51,6 +51,16 @@ describe("DevelopmentService", () => {
     expect(restored.scopeItems[0]?.id).toBe(scope.id);
   });
 
+  it("persists bounded Intelligence flow selections and rejects duplicates", async () => {
+    const { service, workflow, stored } = await fixture();
+    const initialized = await service.initializeStage(workflow.id, "init");
+    const selection = { kind: "call-flow" as const, label: "Flow: route → service", entityIds: ["entity:route", "entity:service"], edgeIds: ["relationship:route-service"], evidenceIds: ["evidence:route-service"], intelligenceRevision: "7", content: "Flow: route → service\n\nSteps:\n1. route routes-to service\n\nEvidence:\n- src/routes.ts:2–3" };
+    const aggregate = await service.addIntelligenceSelection(workflow.id, initialized.workItem.id, selection, "flow-selection");
+    expect(aggregate.intelligenceSelections[0]).toMatchObject(selection);
+    expect(stored()).toMatchObject({ intelligenceSelections: [expect.objectContaining({ edgeIds: selection.edgeIds, evidenceIds: selection.evidenceIds })] });
+    await expect(service.addIntelligenceSelection(workflow.id, initialized.workItem.id, selection, "flow-duplicate")).rejects.toMatchObject({ code: "duplicate-scope-item" });
+  });
+
   it("associates only selected changes, preserves exclusions, and completes after accepted review", async () => {
     const { service, workflow, workflowService } = await fixture(); const initialized = await service.initializeStage(workflow.id, "init");
     await service.addScopeItem(workflow.id, initialized.workItem.id, scopeFixture(workflow.id, initialized.workItem.id), "scope");

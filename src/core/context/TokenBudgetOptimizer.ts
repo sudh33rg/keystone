@@ -22,6 +22,7 @@ import type {
   ContextWarning,
 } from "../../shared/contracts/contextPackage";
 import { ContextWarningSchema } from "../../shared/contracts/contextPackage";
+import type { TokenCounter } from "./TokenCounterRegistry";
 
 export interface OptimizerInput {
   items: ContextItem[];
@@ -34,6 +35,8 @@ export interface OptimizerInput {
     specification: number;
   };
   pinnedIds: string[];
+  /** Counter used for both raw and compressed measurements. */
+  counter?: TokenCounter;
 }
 
 export interface OptimizerExclusion {
@@ -59,7 +62,6 @@ export class TokenBudgetOptimizer {
       input.budget.reservedOutputTokens +
       input.reservedSectionTokens.contract +
       input.reservedSectionTokens.skills +
-      input.reservedSectionTokens.instructions +
       input.reservedSectionTokens.specification;
 
     const available = Math.max(0, input.budget.requestedTokens - reservedTotal);
@@ -90,6 +92,16 @@ export class TokenBudgetOptimizer {
     );
     const included = [...required];
     let used = sumTokens(included);
+    if (used > available) {
+      warnings.push(
+        this.warning(
+          "required-over-budget",
+          "error",
+          `Required and pinned context needs ${used} tokens, but only ${available} context tokens are available. Increase the budget or remove a non-critical pin.`,
+        ),
+      );
+      return { included, excluded: input.items.filter((item) => !included.includes(item)).map((item) => ({ item, reason: "over-budget" as const, tokensRemoved: item.tokenCount, restorable: true })), warnings, impossible: true };
+    }
 
     // 2. Supporting by score.
     const supporting = input.items
@@ -100,7 +112,7 @@ export class TokenBudgetOptimizer {
         included.push(item);
         used += item.tokenCount;
       } else {
-        const compressed = this.tryCompressFit(item, available - used);
+        const compressed = this.tryCompressFit(item, available - used, input.counter);
         if (compressed) {
           included.push(compressed);
           used += compressed.tokenCount;
@@ -153,13 +165,13 @@ export class TokenBudgetOptimizer {
   }
 
   /** Attempt to compress an oversized item into a summary that fits. */
-  private tryCompressFit(item: ContextItem, room: number): ContextItem | undefined {
+  private tryCompressFit(item: ContextItem, room: number, counter?: TokenCounter): ContextItem | undefined {
     const summary = `Summary of ${item.title}: ${item.content
       .slice(0, Math.max(0, room * 3))
       .split("\n")
       .slice(0, 4)
       .join(" ")}`;
-    const approxTokens = Math.ceil(summary.length / 4);
+    const approxTokens = counter?.count(summary) ?? Math.ceil(summary.length / 4);
     if (approxTokens <= room) {
       return {
         ...item,

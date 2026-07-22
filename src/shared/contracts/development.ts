@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { CanonicalWorkflowSchema } from "./canonicalWorkflow";
+import { ContextPackageSchema } from "./contextPackage";
 
 export const DEVELOPMENT_SCHEMA_VERSION = 1 as const;
 export const DevelopmentWorkItemStatusSchema = z.enum(["ready", "editing", "prompt-prepared", "handed-off", "awaiting-result", "result-recorded", "awaiting-review", "completed", "failed"]);
@@ -22,16 +23,28 @@ export const DevelopmentScopeItemSchema = z.object({
   source: DevelopmentScopeSourceSchema, availability: DevelopmentScopeAvailabilitySchema, createdAt: z.string().datetime(),
 }).strict();
 
+export const DevelopmentIntelligenceSelectionSchema = z.object({
+  id: z.string().uuid(), workflowId: z.string().uuid(), workItemId: z.string().uuid(),
+  kind: z.literal("call-flow"), label: z.string().trim().min(1).max(1_000),
+  entityIds: z.array(z.string().min(1).max(500)).min(2).max(20),
+  edgeIds: z.array(z.string().min(1).max(500)).min(1).max(20),
+  evidenceIds: z.array(z.string().min(1).max(500)).max(100),
+  intelligenceRevision: z.string().min(1).max(100), content: z.string().min(1).max(20_000),
+  createdAt: z.string().datetime(),
+}).strict();
+
 export const DevelopmentPromptPreparationSchema = z.object({
   id: z.string().uuid(), workflowId: z.string().uuid(), workItemId: z.string().uuid(), content: z.string().min(1).max(200_000), contentHash: z.string().regex(/^[a-f0-9]{64}$/),
   sourceScopeIds: z.array(z.string().uuid()).max(500), objectiveRevision: z.number().int().positive(), specificationRevision: z.number().int().positive().optional(),
   executionProfileId: z.string().uuid().optional(), executionProfileHash: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  contextPackageId: z.string().uuid().optional(), contextPackageRevision: z.number().int().positive().optional(), contextPackageHash: z.string().regex(/^[a-f0-9]{64}$/).optional(), tokenMeasurement: z.enum(["exact-local", "estimated"]).optional(),
   status: z.enum(["prepared", "superseded", "handed-off"]), createdAt: z.string().datetime(),
 }).strict();
 
 export const DevelopmentHandoffSchema = z.object({
   id: z.string().uuid(), workflowId: z.string().uuid(), workItemId: z.string().uuid(), promptPreparationId: z.string().uuid(),
   mode: z.enum(["clipboard", "supported-chat-command"]), status: z.enum(["prepared", "handed-off", "failed"]),
+  contextPackageId: z.string().uuid().optional(), contextPackageRevision: z.number().int().positive().optional(), contextPackageHash: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   handedOffAt: z.string().datetime().optional(), error: z.object({ code: z.string().min(1), message: z.string().min(1) }).strict().optional(),
 }).strict();
 
@@ -55,19 +68,23 @@ export const DevelopmentCompletionSchema = z.object({ allowed: z.boolean(), unme
 export const DevelopmentPersistentStateSchema = z.object({
   schemaVersion: z.literal(DEVELOPMENT_SCHEMA_VERSION), revision: z.number().int().nonnegative(),
   workItems: z.array(DevelopmentWorkItemSchema).max(1000), scopeItems: z.array(DevelopmentScopeItemSchema).max(10_000),
+  intelligenceSelections: z.array(DevelopmentIntelligenceSelectionSchema).max(1_000).default([]),
   promptPreparations: z.array(DevelopmentPromptPreparationSchema).max(5000), handoffs: z.array(DevelopmentHandoffSchema).max(5000), results: z.array(DevelopmentResultSchema).max(5000),
   objectiveRevisions: z.record(z.string().uuid(), z.number().int().positive()), manualOrigins: z.array(z.string().uuid()).max(1000), correlations: z.record(z.string().min(1).max(200), z.string().min(1).max(500)), updatedAt: z.string().datetime(),
 }).strict();
 
 export const DevelopmentAggregateSchema = z.object({
   workflow: CanonicalWorkflowSchema, workItem: DevelopmentWorkItemSchema, scopeItems: z.array(DevelopmentScopeItemSchema),
+  intelligenceSelections: z.array(DevelopmentIntelligenceSelectionSchema),
   promptPreparation: DevelopmentPromptPreparationSchema.nullable(), handoff: DevelopmentHandoffSchema.nullable(), result: DevelopmentResultSchema.nullable(),
+  contextPackage: ContextPackageSchema.nullable(),
   changeDetection: DevelopmentChangeDetectionSchema, completion: DevelopmentCompletionSchema,
 }).strict();
 
 export type DevelopmentWorkItem = z.infer<typeof DevelopmentWorkItemSchema>;
 export type DevelopmentWorkItemStatus = z.infer<typeof DevelopmentWorkItemStatusSchema>;
 export type DevelopmentScopeItem = z.infer<typeof DevelopmentScopeItemSchema>;
+export type DevelopmentIntelligenceSelection = z.infer<typeof DevelopmentIntelligenceSelectionSchema>;
 export type DevelopmentPromptPreparation = z.infer<typeof DevelopmentPromptPreparationSchema>;
 export type DevelopmentHandoff = z.infer<typeof DevelopmentHandoffSchema>;
 export type DevelopmentResult = z.infer<typeof DevelopmentResultSchema>;

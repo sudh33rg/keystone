@@ -36,6 +36,19 @@ import {
   type IntelligenceSearchResult,
 } from "./intelligence";
 import type { SerializedKeystoneError } from "../errors/KeystoneError";
+import type { ImpactQaAggregate } from "./impactQa";
+import {
+  IntelligenceCanvasEntityActionRequestSchema,
+  IntelligenceCanvasEvidenceRequestSchema,
+  IntelligenceCanvasEvidenceActionRequestSchema,
+  IntelligenceCanvasQueryRequestSchema,
+  IntelligenceCanvasPathActionRequestSchema,
+  IntelligenceCanvasSearchRequestSchema,
+  IntelligenceGraphSliceRequestSchema,
+  type IntelligenceEngineeringQueryResult,
+  type IntelligenceGraphSlice,
+  type IntelligenceCanvasSearchItem,
+} from "./intelligenceCanvas";
 import {
   InitializationAcknowledgedPayloadSchema,
   KeystoneDashboardStateSchema,
@@ -309,6 +322,12 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
   request("development.addIntelligenceSymbol", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid(), entityId: z.string().min(1).max(500) }).strict()),
   request("development.removeScopeItem", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid(), scopeItemId: z.string().uuid() }).strict()),
   request("development.preparePrompt", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid(), notes: z.string().max(10_000).optional() }).strict()),
+  request("development.context.build", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid(), budgetTokens: z.number().int().min(500).max(1_000_000), notes: z.string().max(10_000).optional(), pinnedItemIds: z.array(z.string().max(500)).max(100).default([]) }).strict()),
+  request("development.context.changeBudget", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid(), packageId: z.string().uuid(), revision: z.number().int().positive(), budgetTokens: z.number().int().min(500).max(1_000_000), notes: z.string().max(10_000).optional(), pinnedItemIds: z.array(z.string().max(500)).max(100).default([]) }).strict()),
+  request("development.context.approve", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid(), packageId: z.string().uuid(), revision: z.number().int().positive(), fingerprint: z.string().regex(/^[a-f0-9]{64}$/) }).strict()),
+  request("development.context.pin", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid(), packageId: z.string().uuid(), revision: z.number().int().positive(), itemId: z.string().min(1).max(500), pinned: z.boolean() }).strict()),
+  request("development.context.remove", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid(), packageId: z.string().uuid(), revision: z.number().int().positive(), itemId: z.string().min(1).max(500), overrideRequired: z.boolean().default(false) }).strict()),
+  request("development.context.restore", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid(), packageId: z.string().uuid(), revision: z.number().int().positive(), itemId: z.string().min(1).max(500) }).strict()),
   request("development.copyPrompt", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid() }).strict()),
   request("development.confirmHandoff", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid() }).strict()),
   request("development.recordManualOrigin", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid() }).strict()),
@@ -318,6 +337,17 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
   request("development.confirmNoCode", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid(), resultId: z.string().uuid(), explanation: z.string().max(5000), confirmed: z.boolean() }).strict()),
   request("development.reviewResult", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid(), resultId: z.string().uuid(), decision: z.enum(["accepted", "changes-requested"]) }).strict()),
   request("development.complete", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid() }).strict()),
+  request("impact.load", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid() }).strict()),
+  request("impact.detect", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), manualSelection: z.boolean() }).strict()),
+  request("impact.openChangedFile", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), path: z.string().min(1).max(2000) }).strict()),
+  request("impact.acceptChangeSet", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), expectedHash: z.string().startsWith("sha256:") }).strict()),
+  request("impact.analyze", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), expectedHash: z.string().startsWith("sha256:") }).strict()),
+  request("impact.acceptAnalysis", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), impactAnalysisId: z.string().min(1).max(500), expectedHash: z.string().startsWith("sha256:") }).strict()),
+  request("qa.generatePlan", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid() }).strict()),
+  request("qa.updatePlan", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), itemId: z.string().min(1).max(500), selected: z.boolean(), overrideReason: z.string().min(1).max(2000).optional() }).strict()),
+  request("qa.approvePlan", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), qaPlanId: z.string().min(1).max(500), expectedHash: z.string().startsWith("sha256:") }).strict()),
+  request("qa.execute", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), qaPlanId: z.string().min(1).max(500) }).strict()),
+  request("qa.cancel", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), commandId: z.string().min(1).max(500) }).strict()),
   request("executionConfiguration.load", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid() }).strict()),
   request("executionConfiguration.refresh", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid() }).strict()),
   request("executionConfiguration.discoverInstructions", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid() }).strict()),
@@ -474,6 +504,16 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
   request("intelligence/diagnostics", IntelligenceDiagnosticsRequestSchema),
   request("intelligence/entity", IntelligenceEntityRequestSchema),
   request("intelligence/neighborhood", IntelligenceNeighborhoodRequestSchema),
+  request("intelligence.canvas.search", IntelligenceCanvasSearchRequestSchema),
+  request("intelligence.canvas.graph", IntelligenceGraphSliceRequestSchema),
+  request("intelligence.canvas.expand", IntelligenceGraphSliceRequestSchema),
+  request("intelligence.canvas.evidence", IntelligenceCanvasEvidenceRequestSchema),
+  request("intelligence.canvas.query", IntelligenceCanvasQueryRequestSchema),
+  request("intelligence.canvas.openSource", IntelligenceCanvasEntityActionRequestSchema),
+  request("intelligence.canvas.openEvidenceSource", IntelligenceCanvasEvidenceActionRequestSchema),
+  request("intelligence.canvas.addScope", IntelligenceCanvasEntityActionRequestSchema),
+  request("intelligence.canvas.addContext", IntelligenceCanvasEntityActionRequestSchema),
+  request("intelligence.canvas.addPathContext", IntelligenceCanvasPathActionRequestSchema),
   request("intelligence/technologies", TechnologyCoverageRequestSchema),
   request("intelligence/adapter-diagnostics", AdapterDiagnosticsRequestSchema),
   request("intelligence/query", UnifiedQueryRequestSchema),
@@ -990,6 +1030,7 @@ const CopilotIntegrationEventPayloadSchema = z
   .strict();
 
 export const HostMessageSchema = z.discriminatedUnion("type", [
+  event("qa.progress", z.object({ workflowId: z.string().uuid(), executionId: z.string().min(1), commandId: z.string(), output: z.string().max(50_000).optional(), source: z.enum(["stdout", "stderr"]).optional(), completed: z.number().int().nonnegative(), total: z.number().int().nonnegative(), status: z.string().max(100) }).strict()),
   event("review/stateChanged", ReviewLifecycleEventSchema),
   event("review/noteChanged", ReviewLifecycleEventSchema),
   event("review/changesRequested", ReviewLifecycleEventSchema),
@@ -1458,6 +1499,12 @@ export interface WebviewRequestResults {
   "development.addIntelligenceSymbol": DevelopmentAggregate;
   "development.removeScopeItem": DevelopmentAggregate;
   "development.preparePrompt": DevelopmentAggregate;
+  "development.context.build": DevelopmentAggregate;
+  "development.context.changeBudget": DevelopmentAggregate;
+  "development.context.approve": DevelopmentAggregate;
+  "development.context.pin": DevelopmentAggregate;
+  "development.context.remove": DevelopmentAggregate;
+  "development.context.restore": DevelopmentAggregate;
   "development.copyPrompt": DevelopmentAggregate;
   "development.confirmHandoff": DevelopmentAggregate;
   "development.recordManualOrigin": DevelopmentAggregate;
@@ -1467,6 +1514,17 @@ export interface WebviewRequestResults {
   "development.confirmNoCode": DevelopmentAggregate;
   "development.reviewResult": DevelopmentAggregate;
   "development.complete": DevelopmentAggregate;
+  "impact.load": ImpactQaAggregate;
+  "impact.detect": ImpactQaAggregate;
+  "impact.openChangedFile": { opened: true };
+  "impact.acceptChangeSet": ImpactQaAggregate;
+  "impact.analyze": ImpactQaAggregate;
+  "impact.acceptAnalysis": ImpactQaAggregate;
+  "qa.generatePlan": ImpactQaAggregate;
+  "qa.updatePlan": ImpactQaAggregate;
+  "qa.approvePlan": ImpactQaAggregate;
+  "qa.execute": ImpactQaAggregate;
+  "qa.cancel": { cancelled: boolean };
   "executionConfiguration.load": ExecutionConfigurationAggregate;
   "executionConfiguration.refresh": ExecutionConfigurationAggregate;
   "executionConfiguration.discoverInstructions": ExecutionConfigurationAggregate;
@@ -1623,6 +1681,16 @@ export interface WebviewRequestResults {
   "intelligence/diagnostics": IntelligenceDiagnosticsResult;
   "intelligence/entity": IntelligenceEntityDetails | undefined;
   "intelligence/neighborhood": IntelligenceNeighborhood;
+  "intelligence.canvas.search": { items: IntelligenceCanvasSearchItem[]; intelligenceRevision: string; stale: boolean };
+  "intelligence.canvas.graph": IntelligenceGraphSlice;
+  "intelligence.canvas.expand": IntelligenceGraphSlice;
+  "intelligence.canvas.evidence": { items: Array<{ id: string; filePath: string; range?: import("./intelligence").SourceRange; provider: string; evidenceType: string; excerpt: string; confidence: number }>; intelligenceRevision: string };
+  "intelligence.canvas.query": IntelligenceEngineeringQueryResult;
+  "intelligence.canvas.openSource": undefined;
+  "intelligence.canvas.openEvidenceSource": undefined;
+  "intelligence.canvas.addScope": DevelopmentAggregate;
+  "intelligence.canvas.addContext": DevelopmentAggregate;
+  "intelligence.canvas.addPathContext": DevelopmentAggregate;
   "intelligence/technologies": TechnologyCoverageResult;
   "intelligence/adapter-diagnostics": AdapterDiagnosticsResult;
   "intelligence/query": IntelligenceQueryResult;

@@ -4,7 +4,11 @@ import { join } from "node:path";
 import { ConfigurationService } from "../core/configuration/ConfigurationService";
 import { DefaultIgnorePolicy } from "../core/intelligence/IgnorePolicy";
 import { IntelligenceQueryService } from "../core/intelligence/IntelligenceQueryService";
+import { IntelligenceGraphSliceService } from "../core/intelligence/canvas/IntelligenceGraphSliceService";
+import { IntelligenceEngineeringQueryService } from "../core/intelligence/canvas/IntelligenceEngineeringQueryService";
 import { RepositoryIndexService } from "../core/intelligence/RepositoryIndexService";
+import { TreeSitterExtractionAdapter } from "../core/intelligence/extraction/TreeSitterExtractionAdapter";
+import { TechnologyDetectionService } from "../core/intelligence/technology/TechnologyDetectionService";
 import { IntelligenceRuntime } from "../core/intelligence/runtime/IntelligenceRuntime";
 import { WorkerPoolManager } from "../core/intelligence/runtime/WorkerPoolManager";
 import { SemanticExtractionWorker } from "../core/intelligence/semantic/SemanticExtractionWorker";
@@ -27,6 +31,7 @@ import { CopilotAgentRegistry } from "../core/copilot/AgentRegistry";
 import { TaskContextService } from "../core/context/TaskContextService";
 import { ContextPackageService } from "../core/context/ContextPackageService";
 import { ContextPersistenceStore } from "../core/context/ContextPersistenceStore";
+import { DevelopmentContextPackageService } from "../core/context/DevelopmentContextPackageService";
 import { DelegationService, DelegationTrackingService } from "../core/copilot/DelegationService";
 import { KeystoneError } from "../shared/errors/KeystoneError";
 import { KeystoneLogger } from "../shared/logging/KeystoneLogger";
@@ -114,12 +119,14 @@ import { DevelopmentService, FileDevelopmentPersistence } from "../core/developm
 import { SourceScopeService } from "../core/development/SourceScopeService";
 import { ManualHandoffService } from "../core/development/ManualHandoffService";
 import { WorkspaceChangeService } from "../core/development/WorkspaceChangeService";
-import { VsCodeDevelopmentAdapter } from "./development/VsCodeDevelopmentAdapter";
+import { DEVELOPMENT_FILE_EXCLUDE_GLOB, VsCodeDevelopmentAdapter } from "./development/VsCodeDevelopmentAdapter";
 import { ExecutionCapabilityDiscoveryService } from "../core/development/ExecutionCapabilityDiscoveryService";
 import { InstructionDiscoveryService } from "../core/development/InstructionDiscoveryService";
 import { DevelopmentSkillService } from "../core/development/DevelopmentSkillService";
 import { InstructionConflictDetector } from "../core/development/InstructionConflictDetector";
 import { ExecutionConfigurationService, FileExecutionConfigurationPersistence } from "../core/development/ExecutionConfigurationService";
+import { ImpactQaPersistence } from "../core/impactQa/ImpactQaPersistence";
+import { ImpactQaService } from "../core/impactQa/ImpactQaService";
 
 let logger: KeystoneLogger | undefined;
 
@@ -180,6 +187,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     workers,
     indexingConfiguration.retainedGenerations,
   );
+  const treeSitterAdapter = new TreeSitterExtractionAdapter(); // disabled by default; flip enabled to activate polyglot extraction
+  const technologyAdapter = new TechnologyDetectionService(); // disabled by default; flip enabled to activate Phase B technology detection
   const repositoryIndex = new RepositoryIndexService(
     workspace,
     git,
@@ -191,6 +200,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     undefined,
     undefined,
     semanticWorker,
+    undefined,
+    undefined,
+    treeSitterAdapter,
+    technologyAdapter,
   );
   const monitor = new VsCodeRepositoryMonitor(workspace, git, ignorePolicy, logger);
   const startup = new StartupReconciler(workspace, git, intelligenceStore, {
@@ -219,6 +232,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     intelligenceRuntime,
     cpgQuery,
   );
+  const intelligenceCanvas = new IntelligenceGraphSliceService(intelligenceStore);
+  const intelligenceEngineeringQuery = new IntelligenceEngineeringQueryService(intelligenceCanvas);
   const development = new DevelopmentService(new FileDevelopmentPersistence(canonicalWorkflowRoot), canonicalWorkflow);
   await development.initialize();
   development.setHandoffService(new ManualHandoffService({ writeText: async (value) => { await vscode.env.clipboard.writeText(value); } }));
@@ -243,6 +258,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   });
   await executionConfiguration.initialize();
   development.setExecutionConfigurationService(executionConfiguration);
+  const contextStore = new ContextPersistenceStore(storageRoot);
+  await contextStore.initialize();
+  if (developmentHost) development.setContextPackageService(new DevelopmentContextPackageService(contextStore), (path, range) => developmentHost.readScopeContent(path, range));
   development.setWorkspaceChangeService(new WorkspaceChangeService({ detect: async () => {
     if (!repositoryUri || !developmentHost) return undefined;
     await git.getMetadata(repositoryUri.toString());
@@ -251,6 +269,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const staged = new Set(stagedFiles);
     return changes.map((change) => ({ path: developmentHost.relativePath(vscode.Uri.parse(change.uri)), status: change.kind, staged: staged.has(change.uri), ...(change.originalUri ? { previousPath: developmentHost.relativePath(vscode.Uri.parse(change.originalUri)) } : {}) }));
   } }));
+  const impactQa = new ImpactQaService(
+    repositoryRoot ?? canonicalWorkflowRoot,
+    new ImpactQaPersistence(canonicalWorkflowRoot),
+    canonicalWorkflow,
+    intelligenceStore,
+    { detect: async () => {
+      if (!repositoryUri || !developmentHost) return undefined;
+      const metadata = await git.getMetadata(repositoryUri.toString());
+      if (!git.isGitRepository(repositoryUri.toString())) return undefined;
+      const [changes, stagedFiles] = await Promise.all([git.getReconciliationChanges(repositoryUri.toString()), git.getStagedFiles(repositoryUri.toString())]);
+      const staged = new Set(stagedFiles);
+      return { source: "git", baseRevision: metadata.headCommit, headRevision: metadata.headCommit, files: changes.map((change) => ({ path: developmentHost.relativePath(vscode.Uri.parse(change.uri)), changeType: change.kind, staged: staged.has(change.uri), ...(change.originalUri ? { oldPath: developmentHost.relativePath(vscode.Uri.parse(change.originalUri)) } : {}) })) };
+    } },
+    {
+      workspaceFiles: async () => new Set(repositoryUri && developmentHost ? (await vscode.workspace.findFiles(new vscode.RelativePattern(repositoryUri, "**/*"), DEVELOPMENT_FILE_EXCLUDE_GLOB, 20_000)).map((uri) => developmentHost.relativePath(uri)) : []),
+      pickChangedFiles: async () => developmentHost ? (await developmentHost.pickFileUris()).map((uri) => developmentHost.relativePath(vscode.Uri.parse(uri))) : [],
+      openSource: async (path) => openSource(path),
+    },
+  );
+  await impactQa.initialize();
   const delegationStore = new DelegationPersistenceStore(storageRoot);
   const copilotIntegrationStore = new CopilotIntegrationPersistenceStore(storageRoot);
   await copilotIntegrationStore.initialize();
@@ -268,14 +306,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const taskContext = new TaskContextService(
     null,
     delegationStore,
-    new ContextPersistenceStore(storageRoot),
+    contextStore,
   );
   taskContext.useEngine(
     new ContextPackageService(
       intelligenceStore,
       intelligenceQuery,
       workspace,
-      new ContextPersistenceStore(storageRoot),
+      contextStore,
     ),
   );
   const delegation = new DelegationService(
@@ -691,6 +729,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     healthCheck,
     intelligenceRuntime,
     intelligenceQuery,
+    intelligenceCanvas,
+    intelligenceEngineeringQuery,
+    impactQa,
     cpgQuery,
     openSource,
     workflow,

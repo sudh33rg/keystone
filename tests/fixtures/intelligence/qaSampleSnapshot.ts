@@ -64,7 +64,7 @@ function file(id: string, path: string, isTest = false, category: "source" | "te
     byteSize: 100,
     modifiedAt: new Date().toISOString(),
     isTest,
-    classification: { category, analysisLevel: "deep" as const, included: true, generated: false, confidence: 1 },
+    classification: { category, analysisLevel: "deep" as const, included: true, generated: false, binary: false, sensitive: false, ruleId: "fixture", reason: "Phase 7 test fixture" },
     evidenceIds: [`e-${id}`],
     generation: 1,
   };
@@ -140,7 +140,7 @@ export function buildQaSampleSnapshot(): IntelligenceSnapshot {
     ev("e-root1", "root1", "root evidence"),
   ];
 
-  return {
+  return IntelligenceSnapshotSchema.parse({
     manifest: {
       schemaVersion: 1 as const,
       generation: 1,
@@ -167,5 +167,5 @@ export function buildQaSampleSnapshot(): IntelligenceSnapshot {
       byLanguage: {}, incoming: {}, outgoing: {}, routeHandlers: { "POST /orders": ["s-controller"] },
       testTargets: {}, packageMembership: {}, configurationUsage: {},
     },
-  };
+  });
 }

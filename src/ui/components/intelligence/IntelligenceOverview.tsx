@@ -4,7 +4,7 @@ import type {
   IntelligenceOverview as IntelligenceOverviewModel,
 } from "../../../shared/contracts/intelligence";
 import type { HostBridge } from "../../services/HostBridge";
-import { SemanticBrowser } from "./SemanticBrowser";
+import { IntelligenceCanvasWorkspace } from "./IntelligenceCanvasWorkspace";
 import { DiagnosticDetails } from "./DiagnosticDetails";
 
 interface IntelligenceOverviewProps {
@@ -201,9 +201,10 @@ export function IntelligenceOverview({
       )}
 
       {overview.generation > 0 && (
-        <SemanticBrowser
+        <IntelligenceCanvasWorkspace
           key={`${overview.generation}:${initialQuery ?? ""}:${initialEntityId ?? ""}`}
           bridge={bridge}
+          intelligenceRevision={String(overview.generation)}
           initialQuery={initialQuery}
           initialEntityId={initialEntityId}
         />

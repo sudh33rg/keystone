@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { AtomicFileWriter } from "../persistence/AtomicFileWriter";
@@ -7,14 +7,17 @@ import { DevelopmentPromptService } from "./DevelopmentPromptService";
 import { ManualHandoffError, type ManualHandoffService } from "./ManualHandoffService";
 import type { WorkspaceChangeService } from "./WorkspaceChangeService";
 import type { ExecutionConfigurationService } from "./ExecutionConfigurationService";
+import type { DevelopmentContextBuildInput, DevelopmentContextPackageService } from "../context/DevelopmentContextPackageService";
 import {
   DEVELOPMENT_SCHEMA_VERSION,
   DevelopmentPersistentStateSchema,
+  DevelopmentIntelligenceSelectionSchema,
   DevelopmentResultSchema,
   DevelopmentScopeItemSchema,
   type DevelopmentAggregate,
   type DevelopmentChangeDetection,
   type DevelopmentHandoff,
+  type DevelopmentIntelligenceSelection,
   type DevelopmentPersistentState,
   type DevelopmentResult,
   type DevelopmentScopeItem,
@@ -50,6 +53,8 @@ export class DevelopmentService {
   private handoffService?: ManualHandoffService;
   private changeService?: WorkspaceChangeService;
   private executionConfiguration?: ExecutionConfigurationService;
+  private contextPackages?: DevelopmentContextPackageService;
+  private readScopeContent?: (path: string, range?: { startLine: number; endLine: number }) => Promise<string>;
   private readonly latestChanges = new Map<string, DevelopmentChangeDetection>();
   readonly diagnostics: string[] = [];
 
@@ -59,6 +64,7 @@ export class DevelopmentService {
   setHandoffService(service: ManualHandoffService): void { this.handoffService = service; }
   setWorkspaceChangeService(service: WorkspaceChangeService): void { this.changeService = service; }
   setExecutionConfigurationService(service: ExecutionConfigurationService): void { this.executionConfiguration = service; }
+  setContextPackageService(service: DevelopmentContextPackageService, readScopeContent: (path: string, range?: { startLine: number; endLine: number }) => Promise<string>): void { this.contextPackages = service; this.readScopeContent = readScopeContent; }
 
   async initialize(): Promise<void> {
     const stored = await this.persistence.read();
@@ -91,7 +97,7 @@ export class DevelopmentService {
     const handoff = workItem.handoffId ? this.state.handoffs.find((item) => item.id === workItem.handoffId) ?? null : null;
     const result = workItem.resultId ? this.state.results.find((item) => item.id === workItem.resultId) ?? null : null;
     const changeDetection = mergeAssociations(this.latestChanges.get(workItem.id) ?? { available: false, message: "Detect workspace changes to review them.", changes: [] }, result, scopeItems);
-    return { workflow, workItem, scopeItems, promptPreparation, handoff, result, changeDetection, completion: completionState(workflow.intent.workType, workItem, scopeItems, promptPreparation, handoff, result, this.state.manualOrigins.includes(workItem.id)) };
+    return { workflow, workItem, scopeItems, intelligenceSelections: this.state.intelligenceSelections.filter((selection) => selection.workItemId === workItem.id), promptPreparation, handoff, result, contextPackage: this.contextPackages?.get(workItem.id) ?? null, changeDetection, completion: completionState(workflow.intent.workType, workItem, scopeItems, promptPreparation, handoff, result, this.state.manualOrigins.includes(workItem.id)) };
   }
 
   async getHomeSummary(workflowId: string): Promise<{ nextRequiredAction: string } | undefined> {
@@ -113,6 +119,7 @@ export class DevelopmentService {
     if (item.objective === value) return this.load(workflowId);
     const timestamp = this.now(); const nextItem = { ...item, objective: value, status: "editing" as const, updatedAt: timestamp, promptPreparationId: undefined, handoffId: undefined };
     await this.commit({ ...this.state, workItems: replace(this.state.workItems, nextItem), promptPreparations: this.state.promptPreparations.map((entry) => entry.id === item.promptPreparationId ? { ...entry, status: "superseded" as const } : entry), objectiveRevisions: { ...this.state.objectiveRevisions, [item.id]: (this.state.objectiveRevisions[item.id] ?? 1) + 1 }, correlations: { ...this.state.correlations, [correlationId]: item.id } }, timestamp);
+    await this.contextPackages?.invalidate(workItemId, "The Development objective changed.");
     return this.load(workflowId);
   }
 
@@ -123,6 +130,7 @@ export class DevelopmentService {
     if (duplicate) throw new DevelopmentServiceError("duplicate-scope-item", "That source item is already in the Development scope.");
     const timestamp = this.now(); const nextItem = { ...item, status: "editing" as const, sourceScopeIds: [...item.sourceScopeIds, parsed.data.id], promptPreparationId: undefined, handoffId: undefined, updatedAt: timestamp };
     await this.commit({ ...this.state, workItems: replace(this.state.workItems, nextItem), scopeItems: [...this.state.scopeItems, parsed.data], promptPreparations: supersede(this.state.promptPreparations, item.promptPreparationId), correlations: { ...this.state.correlations, [correlationId]: parsed.data.id } }, timestamp);
+    await this.contextPackages?.invalidate(workItemId, "The selected source scope changed.");
     return this.load(workflowId);
   }
 
@@ -131,6 +139,19 @@ export class DevelopmentService {
     if (!item.sourceScopeIds.includes(scopeItemId)) throw new DevelopmentServiceError("scope-item-not-found", "The selected source-scope item was not found.");
     const timestamp = this.now(); const nextItem = { ...item, status: "editing" as const, sourceScopeIds: item.sourceScopeIds.filter((id) => id !== scopeItemId), promptPreparationId: undefined, handoffId: undefined, updatedAt: timestamp };
     await this.commit({ ...this.state, workItems: replace(this.state.workItems, nextItem), scopeItems: this.state.scopeItems.filter((entry) => entry.id !== scopeItemId), promptPreparations: supersede(this.state.promptPreparations, item.promptPreparationId), correlations: { ...this.state.correlations, [correlationId]: scopeItemId } }, timestamp);
+    await this.contextPackages?.invalidate(workItemId, "The selected source scope changed.");
+    return this.load(workflowId);
+  }
+
+  async addIntelligenceSelection(workflowId: string, workItemId: string, raw: Omit<DevelopmentIntelligenceSelection, "id" | "workflowId" | "workItemId" | "createdAt">, correlationId: string): Promise<DevelopmentAggregate> {
+    this.assertCorrelation(correlationId); const item = this.assertWorkItem(workflowId, workItemId);
+    const parsed = DevelopmentIntelligenceSelectionSchema.safeParse({ ...raw, id: this.createId(), workflowId, workItemId, createdAt: this.now() });
+    if (!parsed.success) throw new DevelopmentServiceError("context-update-failed", "The bounded Intelligence selection is invalid.");
+    const duplicate = this.state.intelligenceSelections.some((selection) => selection.workItemId === workItemId && selection.entityIds.join("\0") === parsed.data.entityIds.join("\0") && selection.edgeIds.join("\0") === parsed.data.edgeIds.join("\0"));
+    if (duplicate) throw new DevelopmentServiceError("duplicate-scope-item", "That Intelligence path is already selected for Development context.");
+    const timestamp = this.now();
+    await this.commit({ ...this.state, workItems: replace(this.state.workItems, { ...item, status: "editing", promptPreparationId: undefined, handoffId: undefined, updatedAt: timestamp }), intelligenceSelections: [...this.state.intelligenceSelections, parsed.data], promptPreparations: supersede(this.state.promptPreparations, item.promptPreparationId), correlations: { ...this.state.correlations, [correlationId]: parsed.data.id } }, timestamp);
+    await this.contextPackages?.invalidate(workItemId, "A bounded Intelligence flow selection changed.");
     return this.load(workflowId);
   }
 
@@ -146,7 +167,10 @@ export class DevelopmentService {
     if (!scope.length) throw new DevelopmentServiceError("completion-gate-failed", "Select at least one available source-scope item before preparing the prompt.");
     const execution = this.executionConfiguration ? await this.executionConfiguration.promptContext(workflowId, workItemId) : undefined;
     if (execution?.capability.kind === "manual-work") throw new DevelopmentServiceError("execution-profile-invalid", "Manual Work does not require prompt preparation. Start manual work from the selected execution profile.");
-    const prepared = this.promptService.prepare({ workflowId, workItemId, intent: workflow.intent.text, workType: workflow.intent.workType, specification: workflow.specification?.text, objective: item.objective, objectiveRevision: this.state.objectiveRevisions[item.id] ?? 1, specificationRevision: workflow.specification?.revision, repositoryName, notes, scope, ...(execution ? { execution } : {}) });
+    const contextPackage = this.contextPackages?.get(workItemId);
+    if (this.contextPackages && (!contextPackage || contextPackage.metadata.status !== "approved")) throw new DevelopmentServiceError("package-not-approved", "Approve the current context package before preparing the Development prompt.");
+    if (this.contextPackages && contextPackage) { const savedNotes = contextPackage.items.find((entry) => entry.id === "development:user-notes")?.content; const freshInput = await this.contextInput(workflowId, workItemId, contextPackage.budget.requestedTokens, savedNotes, contextPackage.items.filter((entry) => entry.pinned).map((entry) => entry.id)); if (!await this.contextPackages.ensureFresh(freshInput)) throw new DevelopmentServiceError("package-stale", "The approved context package is stale because an input or source changed. Regenerate and approve it again."); }
+    const prepared = this.promptService.prepare({ workflowId, workItemId, intent: workflow.intent.text, workType: workflow.intent.workType, specification: workflow.specification?.text, objective: item.objective, objectiveRevision: this.state.objectiveRevisions[item.id] ?? 1, specificationRevision: workflow.specification?.revision, repositoryName, notes, scope, ...(contextPackage ? { contextPackage } : {}), ...(execution ? { execution } : {}) });
     const timestamp = this.now(); const nextItem = { ...item, status: "prompt-prepared" as const, promptPreparationId: prepared.id, handoffId: undefined, updatedAt: timestamp };
     await this.commit({ ...this.state, workItems: replace(this.state.workItems, nextItem), promptPreparations: [...supersede(this.state.promptPreparations, item.promptPreparationId), prepared], correlations: { ...this.state.correlations, [correlationId]: prepared.id } }, timestamp);
     return this.load(workflowId);
@@ -154,9 +178,10 @@ export class DevelopmentService {
 
   async copyPrompt(workflowId: string, workItemId: string, correlationId: string): Promise<DevelopmentAggregate> {
     this.assertCorrelation(correlationId); const item = this.assertWorkItem(workflowId, workItemId); const prompt = this.currentPrompt(item);
+    await this.assertContextFreshForHandoff(workflowId, workItemId, prompt.contextPackageId, prompt.contextPackageRevision, prompt.contextPackageHash);
     if (!this.handoffService) throw new DevelopmentServiceError("clipboard-unavailable", "Clipboard integration is unavailable.");
     let handoff: DevelopmentHandoff;
-    try { handoff = await this.handoffService.copy({ workflowId, workItemId, promptPreparationId: prompt.id, content: prompt.content }); }
+    try { handoff = await this.handoffService.copy({ workflowId, workItemId, promptPreparationId: prompt.id, content: prompt.content }); if (prompt.contextPackageId && prompt.contextPackageRevision && prompt.contextPackageHash) handoff = { ...handoff, contextPackageId: prompt.contextPackageId, contextPackageRevision: prompt.contextPackageRevision, contextPackageHash: prompt.contextPackageHash }; }
     catch (cause) {
       if (cause instanceof ManualHandoffError && cause.handoff) {
         const timestamp = this.now(); const failedItem = { ...item, handoffId: cause.handoff.id, updatedAt: timestamp };
@@ -172,6 +197,7 @@ export class DevelopmentService {
   async confirmHandoff(workflowId: string, workItemId: string, correlationId: string): Promise<DevelopmentAggregate> {
     this.assertCorrelation(correlationId); const item = this.assertWorkItem(workflowId, workItemId); const handoff = item.handoffId ? this.state.handoffs.find((entry) => entry.id === item.handoffId) : undefined;
     if (!handoff || !this.handoffService) throw new DevelopmentServiceError("handoff-not-confirmed", "Copy the current prompt before confirming handoff.");
+    await this.assertContextFreshForHandoff(workflowId, workItemId, handoff.contextPackageId, handoff.contextPackageRevision, handoff.contextPackageHash);
     const confirmed = this.handoffService.confirm(handoff); const timestamp = this.now(); const nextItem = { ...item, status: "awaiting-result" as const, updatedAt: timestamp };
     await this.commit({ ...this.state, workItems: replace(this.state.workItems, nextItem), handoffs: replace(this.state.handoffs, confirmed), promptPreparations: this.state.promptPreparations.map((entry) => entry.id === confirmed.promptPreparationId ? { ...entry, status: "handed-off" as const } : entry), correlations: { ...this.state.correlations, [correlationId]: confirmed.id } }, timestamp);
     return this.load(workflowId);
@@ -241,10 +267,20 @@ export class DevelopmentService {
   }
 
   async invalidatePrompt(workItemId: string): Promise<void> {
+    await this.contextPackages?.invalidate(workItemId, "The Development execution profile changed.");
     const item = this.state.workItems.find((entry) => entry.id === workItemId); if (!item?.promptPreparationId) return;
     const timestamp = this.now(); const next = { ...item, status: "editing" as const, promptPreparationId: undefined, handoffId: undefined, updatedAt: timestamp };
     await this.commit({ ...this.state, workItems: replace(this.state.workItems, next), promptPreparations: supersede(this.state.promptPreparations, item.promptPreparationId) }, timestamp);
   }
+
+  async buildContextPackage(workflowId: string, workItemId: string, budgetTokens: number, notes: string | undefined, pinnedItemIds: string[], correlationId: string): Promise<DevelopmentAggregate> { this.assertCorrelation(correlationId); const input = await this.contextInput(workflowId, workItemId, budgetTokens, notes, pinnedItemIds); await this.contextPackages!.build(input); return this.load(workflowId); }
+  async changeContextBudget(workflowId: string, workItemId: string, packageId: string, revision: number, budgetTokens: number, notes: string | undefined, pinnedItemIds: string[], correlationId: string): Promise<DevelopmentAggregate> { this.assertCorrelation(correlationId); const input = await this.contextInput(workflowId, workItemId, budgetTokens, notes, pinnedItemIds); await this.contextPackages!.changeBudget(input, packageId, revision, budgetTokens); return this.load(workflowId); }
+  async approveContextPackage(workflowId: string, workItemId: string, packageId: string, revision: number, fingerprint: string, correlationId: string): Promise<DevelopmentAggregate> { this.assertCorrelation(correlationId); await this.contextPackages!.approve(workItemId, packageId, revision, fingerprint); return this.load(workflowId); }
+  async pinContextItem(workflowId: string, workItemId: string, packageId: string, revision: number, itemId: string, pinned: boolean, correlationId: string): Promise<DevelopmentAggregate> { this.assertCorrelation(correlationId); await this.contextPackages!.pin(workItemId, packageId, revision, itemId, pinned); return this.load(workflowId); }
+  async removeContextItem(workflowId: string, workItemId: string, packageId: string, revision: number, itemId: string, overrideRequired: boolean, correlationId: string): Promise<DevelopmentAggregate> { this.assertCorrelation(correlationId); await this.contextPackages!.remove(workItemId, packageId, revision, itemId, overrideRequired); return this.load(workflowId); }
+  async restoreContextItem(workflowId: string, workItemId: string, packageId: string, revision: number, itemId: string, correlationId: string): Promise<DevelopmentAggregate> { this.assertCorrelation(correlationId); await this.contextPackages!.restore(workItemId, packageId, revision, itemId); return this.load(workflowId); }
+
+  private async contextInput(workflowId: string, workItemId: string, budgetTokens: number, notes: string | undefined, pinnedItemIds: string[]): Promise<DevelopmentContextBuildInput> { if (!this.contextPackages || !this.readScopeContent || !this.executionConfiguration) throw new DevelopmentServiceError("internal-error", "Context compression is unavailable in this workspace."); const item = this.assertWorkItem(workflowId, workItemId); const workflow = this.workflows.getWorkflow(workflowId)!; const execution = await this.executionConfiguration.promptContext(workflowId, workItemId); if (execution.capability.kind === "manual-work") throw new DevelopmentServiceError("execution-profile-invalid", "Manual Work does not require an agent context package."); const scopeItems = this.state.scopeItems.filter((entry) => entry.workItemId === workItemId && entry.availability === "available"); if (!scopeItems.length) throw new DevelopmentServiceError("required-fact-missing", "Select at least one available source-scope item before building context."); const scope = await Promise.all(scopeItems.map(async (entry) => { let content: string; try { content = await this.readScopeContent!(entry.workspaceRelativePath, entry.symbol?.range); } catch (cause) { const missing = cause instanceof Error && "code" in cause && cause.code === "ENOENT"; throw new DevelopmentServiceError(missing ? "source-file-missing" : "source-file-unreadable", `${missing ? "Source file is missing" : "Source file could not be read"}: ${entry.workspaceRelativePath}. Restore access, then regenerate context.`); } if (entry.kind === "symbol" && !content.trim()) throw new DevelopmentServiceError("symbol-content-unavailable", `The selected symbol range has no readable content: ${entry.workspaceRelativePath}. Reselect the symbol, then regenerate context.`); return { id: entry.id, kind: entry.kind, workspaceRelativePath: entry.workspaceRelativePath, content, ...(entry.symbol ? { symbol: entry.symbol } : {}) }; })); return { workflowId, stageId: item.stageId, workItemId, executionProfileId: execution.profile.id, intent: workflow.intent.text, workType: workflow.intent.workType, specification: workflow.specification?.text, objective: item.objective, objectiveRevision: this.state.objectiveRevisions[item.id] ?? 1, specificationRevision: workflow.specification?.revision, budgetTokens, pinnedItemIds, notes, scope, intelligenceSelections: this.state.intelligenceSelections.filter((selection) => selection.workItemId === workItemId), skill: { id: execution.skill.id, name: execution.skill.name, content: execution.skill.promptFragment, contentHash: execution.skill.contentHash }, instructions: execution.instructions.map((entry) => ({ id: entry.id, name: entry.name, path: entry.workspaceRelativePath, content: entry.content, contentHash: entry.contentHash ?? createHash("sha256").update(entry.content).digest("hex") })) }; }
 
   private assertWorkItem(workflowId: string, workItemId: string): DevelopmentWorkItem {
     const item = this.state.workItems.find((entry) => entry.id === workItemId && entry.workflowId === workflowId);
@@ -258,13 +294,14 @@ export class DevelopmentService {
     const prompt = item.promptPreparationId ? this.state.promptPreparations.find((entry) => entry.id === item.promptPreparationId && entry.status === "prepared") : undefined;
     if (!prompt) throw new DevelopmentServiceError("prompt-stale", "Prepare a current Development prompt before handoff."); return prompt;
   }
+  private async assertContextFreshForHandoff(workflowId: string, workItemId: string, packageId?: string, revision?: number, fingerprint?: string): Promise<void> { if (!this.contextPackages) return; const pkg = this.contextPackages.get(workItemId); if (!pkg || pkg.metadata.status !== "approved" || pkg.id !== packageId || pkg.metadata.version !== revision || pkg.metadata.contentHash !== fingerprint) throw new DevelopmentServiceError("package-not-approved", "The prompt does not reference the current approved context package. Regenerate and approve context, then prepare the prompt again."); const savedNotes = pkg.items.find((entry) => entry.id === "development:user-notes")?.content; const input = await this.contextInput(workflowId, workItemId, pkg.budget.requestedTokens, savedNotes, pkg.items.filter((entry) => entry.pinned).map((entry) => entry.id)); if (!await this.contextPackages.ensureFresh(input)) { await this.invalidatePrompt(workItemId); throw new DevelopmentServiceError("package-stale", "The approved context package is stale because an input or source changed. Regenerate and approve it again."); } }
   private assertCorrelation(value: string): void { if (!value?.trim() || value.length > 200) throw new DevelopmentServiceError("invalid-correlation", "A valid correlation ID is required."); }
   private async commit(next: Omit<DevelopmentPersistentState, "revision" | "updatedAt"> & Partial<Pick<DevelopmentPersistentState, "revision" | "updatedAt">>, timestamp: string): Promise<void> {
     const state = DevelopmentPersistentStateSchema.parse({ ...next, schemaVersion: DEVELOPMENT_SCHEMA_VERSION, revision: this.state.revision + 1, updatedAt: timestamp }); await this.persistence.write(state); this.state = state;
   }
 }
 
-function emptyState(updatedAt = new Date().toISOString()): DevelopmentPersistentState { return { schemaVersion: DEVELOPMENT_SCHEMA_VERSION, revision: 0, workItems: [], scopeItems: [], promptPreparations: [], handoffs: [], results: [], objectiveRevisions: {}, manualOrigins: [], correlations: {}, updatedAt }; }
+function emptyState(updatedAt = new Date().toISOString()): DevelopmentPersistentState { return { schemaVersion: DEVELOPMENT_SCHEMA_VERSION, revision: 0, workItems: [], scopeItems: [], intelligenceSelections: [], promptPreparations: [], handoffs: [], results: [], objectiveRevisions: {}, manualOrigins: [], correlations: {}, updatedAt }; }
 function replace<T extends { id: string }>(items: T[], value: T): T[] { return items.map((item) => item.id === value.id ? value : item); }
 function supersede<T extends { id: string; status: string }>(items: T[], id?: string): T[] { return items.map((item) => item.id === id ? { ...item, status: "superseded" } : item); }
 function completionState(workType: string, workItem: DevelopmentWorkItem, scope: DevelopmentScopeItem[], prompt: DevelopmentAggregate["promptPreparation"], handoff: DevelopmentHandoff | null, result: DevelopmentResult | null, manual: boolean) {

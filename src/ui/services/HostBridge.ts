@@ -169,11 +169,12 @@ export class HostBridge {
         reject(new DOMException("The Keystone request was cancelled.", "AbortError"));
         return;
       }
+      const timeoutMs = type === "qa.execute" ? 3_600_000 : 15_000;
       const timer = window.setTimeout(() => {
         this.settle(requestId);
         reject(new Error(`Keystone host request timed out: ${type}`));
         this.postCancellation(requestId);
-      }, 15_000);
+      }, timeoutMs);
       const pending: PendingRequest = { type, resolve, reject, timer };
       if (options?.signal) {
         const abort = (): void => {
@@ -287,6 +288,12 @@ function validateResult(type: WebviewRequestType, value: unknown): unknown {
     case "development.addIntelligenceSymbol":
     case "development.removeScopeItem":
     case "development.preparePrompt":
+    case "development.context.build":
+    case "development.context.changeBudget":
+    case "development.context.approve":
+    case "development.context.pin":
+    case "development.context.remove":
+    case "development.context.restore":
     case "development.copyPrompt":
     case "development.confirmHandoff":
     case "development.recordManualOrigin":
@@ -405,6 +412,15 @@ function validateResult(type: WebviewRequestType, value: unknown): unknown {
       return value === undefined ? undefined : IntelligenceEntityDetailsSchema.parse(value);
     case "intelligence/neighborhood":
       return IntelligenceNeighborhoodSchema.parse(value);
+    case "intelligence.canvas.search":
+    case "intelligence.canvas.graph":
+    case "intelligence.canvas.expand":
+    case "intelligence.canvas.evidence":
+    case "intelligence.canvas.query":
+    case "intelligence.canvas.addScope":
+    case "intelligence.canvas.addContext":
+    case "intelligence.canvas.addPathContext":
+      return value;
     case "intelligence/technologies":
       return TechnologyCoverageResultSchema.parse(value);
     case "intelligence/adapter-diagnostics":
@@ -863,6 +879,8 @@ function validateResult(type: WebviewRequestType, value: unknown): unknown {
     case "intelligence/runtime/pause":
     case "intelligence/runtime/resume":
     case "intelligence/source/open":
+    case "intelligence.canvas.openSource":
+    case "intelligence.canvas.openEvidenceSource":
     case "intelligence/query/cancel":
     case "build/cancelValidation":
     case "build/cancelHandoff":

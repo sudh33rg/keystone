@@ -284,7 +284,7 @@ export class KeystonePanelService implements vscode.Disposable {
       `img-src ${webview.cspSource} data:`,
       `font-src ${webview.cspSource}`,
       `style-src ${webview.cspSource}`,
-      `script-src 'nonce-${nonce}'`,
+      `script-src ${webview.cspSource} 'nonce-${nonce}'`,
     ].join("; ");
     return html.replace(
       "<head>",

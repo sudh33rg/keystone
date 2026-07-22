@@ -62,4 +62,20 @@ describe("WorkflowService", () => {
     await expect(failing.createWorkflow({ intent: "Will fail", workType: "test-work" }, "fail")).rejects.toThrow("disk full");
     expect(failing.listWorkflows()).toEqual([]);
   });
+
+  it("advances Development through Impact Analysis and QA without unlocking later stages early", async () => {
+    const service = new WorkflowService(new MemoryPersistence()); await service.initialize();
+    const created = await service.createWorkflow({ intent: "Change order creation", workType: "feature" }, "phase-7");
+    const development = await service.activateDevelopmentStage(created.id);
+    const developmentStage = development.stages.find((stage) => stage.type === "development")!;
+    const impactReady = await service.completeDevelopmentStage(created.id, developmentStage.id);
+    expect(impactReady.stages.find((stage) => stage.type === "impact-analysis")?.status).toBe("ready");
+    expect(impactReady.stages.find((stage) => stage.type === "qa")?.status).toBe("not-ready");
+    const qaReady = await service.acceptImpactAnalysisStage(created.id);
+    expect(qaReady.stages.find((stage) => stage.type === "impact-analysis")?.status).toBe("completed");
+    expect(qaReady.stages.find((stage) => stage.type === "qa")?.status).toBe("ready");
+    const afterQa = await service.completeQaStage(created.id);
+    expect(afterQa.stages.find((stage) => stage.type === "qa")?.status).toBe("completed");
+    expect(afterQa.stages.find((stage) => stage.type === "pr-review")?.status).toBe("ready");
+  });
 });

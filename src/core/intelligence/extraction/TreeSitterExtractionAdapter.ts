@@ -15,6 +15,8 @@
  * are dynamically resolved via `createRequire` (Node) and never statically
  * imported, so bundlers do not try to bundle native bindings.
  */
+import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import type { TreeSitterNode } from "./TreeSitterNode";
 import type {
   IntelligenceRelationshipRecord,
@@ -76,7 +78,7 @@ export class TreeSitterExtractionAdapter {
   private readonly extractors = new Map<string, LanguageExtractor>();
   private readonly configByLang = new Map<string, LanguageConfig>();
   // Lazily resolved grammar modules, keyed by language id; `null` = failed load.
-  private readonly grammarByLang = new Map<string, unknown | null>();
+  private readonly grammarByLang = new Map<string, unknown>();
   private readonly requireFn: ((spec: string) => string) | null;
   private wasmInitPromise: Promise<void> | null = null;
   private parserModule: WebTreeSitterModule | null = null;
@@ -139,18 +141,17 @@ export class TreeSitterExtractionAdapter {
       if (!grammar) return empty;
       const tree = grammar.parser.parse(content);
       if (!tree) return empty;
-      const root = tree.rootNode as unknown as TreeSitterNode;
+      const root = tree.rootNode as TreeSitterNode;
       const structure = extractor.extractStructure(root);
       const callGraph = extractor.extractCallGraph(root);
       tree.delete();
 
-      const symbols = this.toSymbolRecords(structure.functions, structure.classes, {
+      const symbols = await this.toSymbolRecords(structure.functions, structure.classes, {
         language: key,
         relativePath,
-        content,
         ids,
       });
-      const relationships = this.toRelationshipRecords(callGraph, structure.imports, {
+      const relationships = await this.toRelationshipRecords(callGraph, structure.imports, {
         language: key,
         relativePath,
         ids,
@@ -199,12 +200,12 @@ export class TreeSitterExtractionAdapter {
     }
     try {
       const mod = await this.importWebTreeSitter();
-      const path = this.requireResolve(`${config.wasmPackage}/${config.wasmFile}`);
+      const path = this.resolveWasmPath(`${config.wasmPackage}/${config.wasmFile}`);
       const lang = await mod.Language.load(path);
       // Lazy-load the TSX grammar as an alias for .tsx handling.
       if (config.tsxWasmFile) {
         try {
-          const tsxPath = this.requireResolve(`${config.wasmPackage}/${config.tsxWasmFile}`);
+          const tsxPath = this.resolveWasmPath(`${config.wasmPackage}/${config.tsxWasmFile}`);
           this.grammarByLang.set("tsx", await mod.Language.load(tsxPath));
         } catch {
           /* tsx optional */
@@ -221,7 +222,7 @@ export class TreeSitterExtractionAdapter {
   private makeParser(lang: unknown): ParserHandle {
     const parser = new this.parserModule!.Parser();
     parser.setLanguage(lang);
-    return parser as unknown as ParserHandle;
+    return parser;
   }
 
   private normalizeLangKey(language: string): string {
@@ -237,21 +238,30 @@ export class TreeSitterExtractionAdapter {
     return mod;
   }
 
-  private requireResolve(spec: string): string {
-    if (!this.requireFn) throw new Error("require unavailable in this environment");
-    return this.requireFn(spec);
+  private resolveWasmPath(spec: string): string {
+    // ESM-native resolution (works under vitest's node environment and plain
+    // Node 22+). Falls back to createRequire for older/CJS hosts. Convert any
+    // file:// URL to a plain path because web-tree-sitter's Language.load needs
+    // a filesystem path, not a URL.
+    try {
+      const resolved = (import.meta as unknown as { resolve(spec: string): string }).resolve(spec);
+      return toFsPath(resolved);
+    } catch {
+      if (this.requireFn) return this.requireFn(spec);
+      throw new Error(`Cannot resolve WASM grammar module: ${spec}`);
+    }
   }
 
   // ---- record mapping ----
 
-  private toSymbolRecords(
+  private async toSymbolRecords(
     functions: ReadonlyArray<{ name: string; lineRange: [number, number]; params: string[]; returnType?: string }>,
     classes: ReadonlyArray<{ name: string; lineRange: [number, number]; methods: string[]; properties: string[] }>,
-    ctx: { language: string; relativePath: string; content: string; ids: TreeSitterIdProvider },
-  ): IntelligenceSymbolRecord[] {
+    ctx: { language: string; relativePath: string; ids: TreeSitterIdProvider },
+  ): Promise<IntelligenceSymbolRecord[]> {
     const symbols: IntelligenceSymbolRecord[] = [];
     for (const fn of functions) {
-      const id = ctx.ids.entity(ctx.language, fn.name, `fn:${fn.lineRange[0]}`);
+      const id = await ctx.ids.entity(ctx.language, fn.name, `fn:${fn.lineRange[0]}`);
       symbols.push({
         id,
         repositoryId: ctx.ids.repositoryId,
@@ -262,7 +272,7 @@ export class TreeSitterExtractionAdapter {
         qualifiedName: fn.name,
         language: ctx.language,
         range: { startLine: fn.lineRange[0], startColumn: 0, endLine: fn.lineRange[1], endColumn: 0 },
-        evidenceIds: [ctx.ids.evidence(id, ctx.relativePath, fn.lineRange[0])],
+        evidenceIds: [await ctx.ids.evidence(id, ctx.relativePath, fn.lineRange[0])],
         confidence: 1,
         generation: ctx.ids.generation,
         ...(fn.params.length > 0 ? { parameters: fn.params.map((p) => ({ name: p })) } : {}),
@@ -270,7 +280,7 @@ export class TreeSitterExtractionAdapter {
       });
     }
     for (const cls of classes) {
-      const id = ctx.ids.entity(ctx.language, cls.name, `class:${cls.lineRange[0]}`);
+      const id = await ctx.ids.entity(ctx.language, cls.name, `class:${cls.lineRange[0]}`);
       symbols.push({
         id,
         repositoryId: ctx.ids.repositoryId,
@@ -281,7 +291,7 @@ export class TreeSitterExtractionAdapter {
         qualifiedName: cls.name,
         language: ctx.language,
         range: { startLine: cls.lineRange[0], startColumn: 0, endLine: cls.lineRange[1], endColumn: 0 },
-        evidenceIds: [ctx.ids.evidence(id, ctx.relativePath, cls.lineRange[0])],
+        evidenceIds: [await ctx.ids.evidence(id, ctx.relativePath, cls.lineRange[0])],
         confidence: 1,
         generation: ctx.ids.generation,
         ...(cls.properties.length > 0
@@ -292,19 +302,21 @@ export class TreeSitterExtractionAdapter {
     return symbols;
   }
 
-  private toRelationshipRecords(
+  private async toRelationshipRecords(
     callGraph: ReadonlyArray<{ caller: string; callee: string; lineNumber: number }>,
     imports: ReadonlyArray<{ source: string; specifiers: string[]; lineNumber: number }>,
     ctx: { language: string; relativePath: string; ids: TreeSitterIdProvider; symbols: IntelligenceSymbolRecord[] },
-  ): IntelligenceRelationshipRecord[] {
+  ): Promise<IntelligenceRelationshipRecord[]> {
     const relationships: IntelligenceRelationshipRecord[] = [];
     const byName = new Map(ctx.symbols.map((s) => [s.name, s.id]));
     for (const call of callGraph) {
       const sourceId = byName.get(call.caller);
       if (!sourceId) continue; // caller not a top-level extracted symbol
-      const targetId = byName.get(call.callee) ?? ctx.ids.entity(ctx.language, call.callee, `call:${call.lineNumber}`);
+      // Callee resolves to a real symbol when known; otherwise the call is
+      // recorded as intra-file (target = the file) so both endpoints are valid.
+      const targetId = byName.get(call.callee) ?? ctx.ids.fileId;
       relationships.push({
-        id: ctx.ids.relationship(sourceId, targetId, "keystone.core.CALLS", `${call.lineNumber}`),
+        id: await ctx.ids.relationship(sourceId, targetId, "keystone.core.CALLS", `${call.lineNumber}`),
         repositoryId: ctx.ids.repositoryId,
         sourceId,
         targetId,
@@ -312,17 +324,24 @@ export class TreeSitterExtractionAdapter {
         ownerFileId: ctx.ids.fileId,
         targetFileId: ctx.ids.fileId,
         resolution: "syntactic",
-        evidenceIds: [ctx.ids.evidence(targetId, ctx.relativePath, call.lineNumber)],
+        evidenceIds: [await ctx.ids.evidence(targetId, ctx.relativePath, call.lineNumber)],
         derivation: "extracted",
         confidence: 1,
         generation: ctx.ids.generation,
       });
     }
     for (const imp of imports) {
-      const sourceId = ctx.ids.entity(ctx.language, `import:${imp.source}`, `imp:${imp.lineNumber}`);
-      const targetId = ctx.ids.entity(imp.source, imp.specifiers.join(",") || imp.source, `imp:${imp.lineNumber}`);
+      // Imports are recorded as a file-level fact: source = file, target = file
+      // (the imported module is external). Both endpoints resolve to the file.
+      const sourceId = ctx.ids.fileId;
+      const targetId = ctx.ids.fileId;
       relationships.push({
-        id: ctx.ids.relationship(sourceId, targetId, "keystone.core.IMPORTS", `${imp.lineNumber}`),
+        id: await ctx.ids.relationship(
+          sourceId,
+          targetId,
+          "keystone.core.IMPORTS",
+          `${imp.lineNumber}`,
+        ),
         repositoryId: ctx.ids.repositoryId,
         sourceId,
         targetId,
@@ -330,7 +349,7 @@ export class TreeSitterExtractionAdapter {
         ownerFileId: ctx.ids.fileId,
         targetFileId: ctx.ids.fileId,
         resolution: "syntactic",
-        evidenceIds: [ctx.ids.evidence(targetId, ctx.relativePath, imp.lineNumber)],
+        evidenceIds: [await ctx.ids.evidence(targetId, ctx.relativePath, imp.lineNumber)],
         derivation: "extracted",
         confidence: 1,
         generation: ctx.ids.generation,
@@ -366,17 +385,15 @@ interface WebTreeSitterModule {
 
 function safeCreateRequire(): ((spec: string) => string) | null {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { createRequire } = require("node:module") as typeof import("node:module");
     return createRequire(import.meta.url);
   } catch {
-    try {
-      // CJS fallback
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { createRequire } = require("module");
-      return createRequire(__filename);
-    } catch {
-      return null;
-    }
+    return null;
   }
+}
+
+function toFsPath(value: string): string {
+  if (value.startsWith("file://")) {
+    return fileURLToPath(value);
+  }
+  return value;
 }

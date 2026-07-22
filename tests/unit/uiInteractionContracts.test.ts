@@ -8,6 +8,11 @@ const UI_ROOT = join(process.cwd(), "src", "ui");
 describe("Webview interaction contracts", () => {
   const sources = sourceFiles(UI_ROOT);
 
+  it("allows nonce-protected entry scripts and same-origin lazy webview chunks", () => {
+    const source = readFileSync(join(process.cwd(), "src", "extension", "webview", "KeystonePanelService.ts"), "utf8");
+    expect(source).toContain("`script-src ${webview.cspSource} 'nonce-${nonce}'`");
+  });
+
   it("registers every UI host request in the contract, router, and response validator", () => {
     const requests = new Set<string>();
     for (const path of sources) {

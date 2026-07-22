@@ -10,7 +10,7 @@ const ids = { workflow: crypto.randomUUID(), stage: crypto.randomUUID(), workIte
 const aggregate = {
   workflow: { schemaVersion: 1, id: ids.workflow, intent: { text: "Add refunds", workType: "feature" }, status: "active", stages: [{ id: ids.stage, type: "development", displayName: "Development", order: 1, status: "ready", required: true }], currentStageId: ids.stage, createdAt: "2026-07-22T10:00:00.000Z", updatedAt: "2026-07-22T10:00:00.000Z" },
   workItem: { id: ids.workItem, workflowId: ids.workflow, stageId: ids.stage, objective: "Add refunds", status: "ready", sourceScopeIds: [], createdAt: "2026-07-22T10:00:00.000Z", updatedAt: "2026-07-22T10:00:00.000Z" },
-  scopeItems: [], promptPreparation: null, handoff: null, result: null,
+  scopeItems: [], promptPreparation: null, handoff: null, result: null, contextPackage: null,
   changeDetection: { available: true, changes: [] },
   completion: { allowed: false, unmet: ["Select source scope"] },
 };
@@ -20,10 +20,10 @@ const executionConfiguration = {
 const reply = (type: string, development = aggregate) => type.startsWith("executionConfiguration.") ? executionConfiguration : development;
 
 describe("DevelopmentStage", () => {
-  it("renders exactly the six bounded sections and edits the real objective", async () => {
+  it("renders the bounded Development sections including Context Package and edits the real objective", async () => {
     const request = vi.fn(async (type: string) => reply(type, type === "development.updateObjective" ? { ...aggregate, workItem: { ...aggregate.workItem, objective: "Guard settled refunds", status: "editing" } } : aggregate));
     render(<DevelopmentStage bridge={{ request } as unknown as HostBridge} workflowId={ids.workflow} />);
-    for (const name of ["Objective", "Source Scope", "Prompt Preparation", "Development Result", "Changed Files", "Completion"]) expect(await screen.findByRole("heading", { name })).toBeTruthy();
+    for (const name of ["Objective", "Source Scope", "Context Package", "Prompt Preparation", "Development Result", "Changed Files", "Completion"]) expect(await screen.findByRole("heading", { name })).toBeTruthy();
     for (const removed of ["Agent", "Context", "Security", "Performance", "QA", "Execution", "Evidence"]) expect(screen.queryByRole("tab", { name: removed })).toBeNull();
     fireEvent.change(screen.getByLabelText("Development objective"), { target: { value: "Guard settled refunds" } });
     expect(screen.getByText("Unsaved changes")).toBeTruthy();

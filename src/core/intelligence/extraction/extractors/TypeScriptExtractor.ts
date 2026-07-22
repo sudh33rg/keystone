@@ -87,7 +87,6 @@ export class TypeScriptExtractor implements LanguageExtractor {
     const functions: StructuralAnalysis["functions"] = [];
     const classes: StructuralAnalysis["classes"] = [];
     const imports: StructuralAnalysis["imports"] = [];
-    const exportedNames = new Set<string>();
 
     for (let i = 0; i < rootNode.childCount; i++) {
       const node = rootNode.child(i);
@@ -145,7 +144,7 @@ export class TypeScriptExtractor implements LanguageExtractor {
         const callee = node.childForFieldName("function");
         if (callee && functionStack.length > 0)
           entries.push({
-            caller: functionStack[functionStack.length - 1],
+            caller: functionStack[functionStack.length - 1]!,
             callee: callee.text,
             lineNumber: node.startPosition.row + 1,
           });

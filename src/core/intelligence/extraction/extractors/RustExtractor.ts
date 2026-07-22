@@ -36,11 +36,6 @@ function extractReturnType(node: TreeSitterNode): string | undefined {
   return returnType ? returnType.text : undefined;
 }
 
-function isPublic(node: TreeSitterNode): boolean {
-  const visMod = findChild(node, "visibility_modifier");
-  return visMod !== null && visMod.text.startsWith("pub");
-}
-
 function extractScopedPath(node: TreeSitterNode): { path: string; name: string } {
   if (node.type === "scoped_identifier") {
     const pathNode = node.childForFieldName("path");
@@ -107,7 +102,7 @@ export class RustExtractor implements LanguageExtractor {
         const callee = this.extractCalleeName(node);
         if (callee)
           entries.push({
-            caller: functionStack[functionStack.length - 1],
+            caller: functionStack[functionStack.length - 1]!,
             callee,
             lineNumber: node.startPosition.row + 1,
           });

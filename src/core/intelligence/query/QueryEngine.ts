@@ -26,6 +26,7 @@ import {
 } from "../../../shared/contracts/query";
 import { QueryCache } from "./QueryCache";
 import { QueryCompiler } from "./QueryParser";
+import { OkfQueryService } from "./OkfQueryService";
 
 type Entity = IntelligenceSymbolRecord | IntelligenceFileRecord;
 type Classification = QueryResultItem["classification"];
@@ -1800,9 +1801,11 @@ export class QueryExecutor {
   readonly dependencies = new DependencyQueryService(this.traversal);
   readonly usages = new UsageQueryService();
   readonly tests = new TestQueryService();
+  readonly okf: OkfQueryService;
   readonly changes: ChangeQueryService;
   readonly cpg: CpgQueryFacade;
   constructor(store: IntelligenceSnapshotReader, cpg: CpgQueryService) {
+    this.okf = new OkfQueryService(store);
     this.changes = new ChangeQueryService(store);
     this.cpg = new CpgQueryFacade(cpg);
   }

@@ -37,19 +37,9 @@ function extractReturnType(node: TreeSitterNode): string | undefined {
   return typeNode ? typeNode.text : undefined;
 }
 
-function hasModifier(node: TreeSitterNode, modifier: string): boolean {
-  const modifiers = findChild(node, "modifiers");
-  if (!modifiers) return false;
-  for (let i = 0; i < modifiers.childCount; i++) {
-    const child = modifiers.child(i);
-    if (child && child.text === modifier) return true;
-  }
-  return false;
-}
-
 function lastComponent(path: string): string {
   const parts = path.split(".");
-  return parts[parts.length - 1];
+  return parts[parts.length - 1] ?? path;
 }
 
 /** Java extractor (ported from Understand-Anything). */
@@ -97,7 +87,7 @@ export class JavaExtractor implements LanguageExtractor {
         const callee = this.extractMethodInvocationName(node);
         if (callee)
           entries.push({
-            caller: functionStack[functionStack.length - 1],
+            caller: functionStack[functionStack.length - 1]!,
             callee,
             lineNumber: node.startPosition.row + 1,
           });
@@ -106,7 +96,7 @@ export class JavaExtractor implements LanguageExtractor {
         const typeNode = node.childForFieldName("type");
         if (typeNode && functionStack.length > 0)
           entries.push({
-            caller: functionStack[functionStack.length - 1],
+            caller: functionStack[functionStack.length - 1]!,
             callee: `new ${typeNode.text}`,
             lineNumber: node.startPosition.row + 1,
           });

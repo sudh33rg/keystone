@@ -124,7 +124,7 @@ export class PythonExtractor implements LanguageExtractor {
         );
         if (calleeNode && functionStack.length > 0) {
           entries.push({
-            caller: functionStack[functionStack.length - 1],
+            caller: functionStack[functionStack.length - 1]!,
             callee: calleeNode.text,
             lineNumber: node.startPosition.row + 1,
           });

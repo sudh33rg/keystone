@@ -445,7 +445,7 @@ describe("Universal repository intelligence adapters", () => {
       dependencies: Record<string, string>;
     };
     expect(Object.keys(pkg.dependencies)).toEqual([
-      "puppeteer", "react", "react-dom", "tree-sitter-go", "tree-sitter-java",
+      "@xyflow/react", "puppeteer", "react", "react-dom", "tree-sitter-go", "tree-sitter-java",
       "tree-sitter-javascript", "tree-sitter-python", "tree-sitter-rust",
       "tree-sitter-typescript", "web-tree-sitter", "zod",
     ]);

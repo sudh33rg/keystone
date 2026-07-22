@@ -10,6 +10,7 @@ export class VsCodeDevelopmentAdapter {
   constructor(private readonly root: vscode.Uri, private readonly language: LanguageServiceAdapter, private readonly intelligence: IntelligenceQueryService) {}
 
   repositoryName(): string { return this.root.path.split("/").filter(Boolean).at(-1) ?? "workspace"; }
+  async readScopeContent(workspaceRelativePath: string, range?: { startLine: number; endLine: number }): Promise<string> { const bytes = await vscode.workspace.fs.readFile(vscode.Uri.joinPath(this.root, ...workspaceRelativePath.split("/"))); const text = new TextDecoder().decode(bytes); if (!range) return text; return text.split(/\r?\n/).slice(range.startLine, range.endLine + 1).join("\n"); }
   async exists(workspaceRelativePath: string): Promise<boolean> {
     try { const stat = await vscode.workspace.fs.stat(vscode.Uri.joinPath(this.root, ...workspaceRelativePath.split("/"))); return (stat.type & vscode.FileType.Directory) === 0; } catch { return false; }
   }

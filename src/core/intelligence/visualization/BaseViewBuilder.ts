@@ -58,8 +58,9 @@ export abstract class BaseViewBuilder {
   ): IntelligenceVisualNode {
     const symbol = this.symbolById(entityId);
     const file = this.fileById(entityId);
-    const kind: IntelligenceNodeKind = nodeKindForEntity(symbol, file);
-    const label = symbol?.name ?? file?.relativePath ?? entityId;
+    const repository = entityId === this.snapshot.repository.id ? this.snapshot.repository : undefined;
+    const kind: IntelligenceNodeKind = repository ? "repository" : nodeKindForEntity(symbol, file);
+    const label = repository?.displayName ?? symbol?.name ?? file?.relativePath ?? entityId;
     const secondary = symbol ? file?.relativePath : file?.category;
     return {
       id: nodeIdForEntity(entityId),

@@ -35,6 +35,11 @@ import type { CpgDelta } from "../../shared/contracts/cpg";
 import type { AdapterOutput, AdapterRegistryState } from "../../shared/contracts/adapters";
 import type { TreeSitterExtractionAdapter } from "./extraction/TreeSitterExtractionAdapter";
 import type { TreeSitterIdProvider, TreeSitterParseResult } from "./extraction/TreeSitterExtractionAdapter";
+import type {
+  TechnologyDetectionService,
+  TechnologyIdProvider,
+  TechnologyDetectionResult,
+} from "./technology/TechnologyDetectionService";
 
 export interface IndexProgress {
   stage: "inventory" | "symbols" | "publishing";
@@ -92,6 +97,7 @@ export class RepositoryIndexService {
     private readonly semanticDelta = new SemanticDeltaBuilder(),
     private readonly graphBuilder = new SemanticGraphBuilder(),
     private readonly treeSitter?: TreeSitterExtractionAdapter,
+    private readonly technology?: TechnologyDetectionService,
   ) {
     this.state = {
       status: store.isStorageAvailable() ? "not-indexed" : "storage-unavailable",
@@ -834,12 +840,50 @@ export class RepositoryIndexService {
           file.parseStatus = result.parseStatus;
           file.parserId = result.extractorId;
           file.parserVersion = result.extractorVersion;
-          this.addTreeSitterSymbols(result, file, input, local, contentHash);
+          await this.addTreeSitterSymbols(result, file, input, local, contentHash);
         }
       } catch (cause) {
         local.diagnostics.push(
           diagnostic(
             "TREE_SITTER_EXTRACTION_FAILED",
+            "warning",
+            safeMessage(cause),
+            rootRecord.id,
+            relativePath,
+          ),
+        );
+      }
+    }
+
+    // Phase B: technology detection from manifests/config (inert unless
+    // enabled). Emits framework/ORM/database/external-service symbols with
+    // distinct id namespaces + sourceKinds so they never collide with Phase A
+    // or document-symbol output. Graceful skip on any parse failure.
+    if (
+      this.technology?.enabled &&
+      isManifestCategory(classification) &&
+      classification.included &&
+      !classification.sensitive &&
+      contentHash &&
+      indexedContent
+    ) {
+      try {
+        const result = await this.technology.detect(
+          relativePath,
+          new TextDecoder().decode(indexedContent),
+          this.technologyIdProvider(file, input, contentHash),
+        );
+        if (result.available && result.symbols.length > 0) {
+          file.parseStatus = result.parseStatus;
+          file.parserId = result.extractorId;
+          file.parserVersion = result.extractorVersion;
+          await this.addTechnologySymbols(result, file, input, local, contentHash);
+        }
+        for (const diag of result.diagnostics) local.diagnostics.push(diag);
+      } catch (cause) {
+        local.diagnostics.push(
+          diagnostic(
+            "TECHNOLOGY_DETECTION_FAILED",
             "warning",
             safeMessage(cause),
             rootRecord.id,
@@ -990,41 +1034,23 @@ export class RepositoryIndexService {
     input: IndexFileInput,
     contentHash: string,
   ): TreeSitterIdProvider {
-    const self = this;
     return {
       repositoryId: input.repositoryId,
       fileId: file.id,
       generation: input.generation,
-      entity(language: string, name: string, discriminator: string): string {
-        return stableId(
-          "tssymbol",
-          input.repositoryId,
-          file.id,
-          language,
-          name,
-          discriminator,
+      entity(language: string, name: string, discriminator: string): Promise<string> {
+        return Promise.resolve(
+          stableId("tssymbol", input.repositoryId, file.id, language, name, discriminator),
         );
       },
-      relationship(sourceId: string, targetId: string, type: string, discriminator: string): string {
-        return stableId(
-          "relationship",
-          input.repositoryId,
-          sourceId,
-          targetId,
-          type,
-          file.id,
-          discriminator,
+      relationship(sourceId: string, targetId: string, type: string, discriminator: string): Promise<string> {
+        return Promise.resolve(
+          stableId("relationship", input.repositoryId, sourceId, targetId, type, file.id, discriminator),
         );
       },
-      evidence(subjectId: string, relativePath: string, line: number): string {
-        return stableId(
-          "evidence",
-          subjectId,
-          relativePath,
-          line,
-          contentHash,
-          input.generation,
-          "tssymbol",
+      evidence(subjectId: string, relativePath: string, line: number): Promise<string> {
+        return Promise.resolve(
+          stableId("evidence", subjectId, relativePath, line, contentHash, input.generation, "tssymbol"),
         );
       },
     };
@@ -1045,6 +1071,7 @@ export class RepositoryIndexService {
         file.relativePath,
         symbol.range.startLine,
         contentHash,
+        input.generation,
         "tssymbol",
       );
       local.evidence.push(
@@ -1108,15 +1135,19 @@ export class RepositoryIndexService {
     }
     for (const relationship of result.relationships) {
       this.assertCurrent(input.run);
-      local.relationships.push(relationship);
       const relEvidenceId = await stableId(
         "evidence",
         relationship.id,
         file.relativePath,
         relationship.generation,
         contentHash,
+        input.generation,
         "tssymbol",
       );
+      // The adapter pre-populated evidenceIds with a target-reference id that is
+      // only materialized for real symbols; replace it with the evidence record
+      // we actually create so snapshot validation never references a missing id.
+      relationship.evidenceIds = [relEvidenceId];
       local.evidence.push(
         evidenceRecord(
           relEvidenceId,
@@ -1135,7 +1166,194 @@ export class RepositoryIndexService {
           file.id,
         ),
       );
-      relationship.evidenceIds.push(relEvidenceId);
+      local.relationships.push(relationship);
+    }
+  }
+
+  /**
+   * Provides deterministic stable-id + evidence emission for the technology
+   * detection service. Kind-specific namespaces (`framework`, `orm-entity`,
+   * `db-table`, `ext-service`) keep Phase B facts from colliding with Phase A or
+   * document-symbol output. Reuses the existing `evidenceRecord` helper.
+   */
+  private technologyIdProvider(
+    file: IntelligenceFileRecord,
+    input: IndexFileInput,
+    contentHash: string,
+  ): TechnologyIdProvider {
+    const namespaceFor = (kind: string): string => {
+      switch (kind) {
+        case "framework":
+          return "framework";
+        case "orm":
+          return "orm-entity";
+        case "database":
+          return "db-table";
+        case "external-service":
+          return "ext-service";
+        default:
+          return "framework";
+      }
+    };
+    return {
+      repositoryId: input.repositoryId,
+      fileId: file.id,
+      generation: input.generation,
+      entity(kind: string, name: string, discriminator: string): Promise<string> {
+        return Promise.resolve(
+          stableId(namespaceFor(kind), input.repositoryId, name, discriminator),
+        );
+      },
+      relationship(
+        sourceId: string,
+        targetId: string,
+        type: string,
+        discriminator: string,
+      ): Promise<string> {
+        return Promise.resolve(
+          stableId(
+            "relationship",
+            input.repositoryId,
+            sourceId,
+            targetId,
+            type,
+            file.id,
+            discriminator,
+          ),
+        );
+      },
+      evidence(subjectId: string, relativePath: string, line: number): Promise<string> {
+        return Promise.resolve(
+          stableId("evidence", subjectId, relativePath, line, contentHash, input.generation, "tech"),
+        );
+      },
+    };
+  }
+
+  private async addTechnologySymbols(
+    result: TechnologyDetectionResult,
+    file: IntelligenceFileRecord,
+    input: IndexFileInput,
+    local: MutableRecords,
+    contentHash: string,
+  ): Promise<void> {
+    for (const symbol of result.symbols) {
+      this.assertCurrent(input.run);
+      const symbolEvidenceId = await stableId(
+        "evidence",
+        symbol.id,
+        file.relativePath,
+        symbol.range.startLine,
+        contentHash,
+        input.generation,
+        "tech",
+      );
+      local.evidence.push(
+        evidenceRecord(
+          symbolEvidenceId,
+          symbol.id,
+          input.rootRecord.id,
+          file.relativePath,
+          input.generation,
+          input.branch,
+          input.commit,
+          contentHash,
+          symbol.type === "keystone.core.Database"
+            ? "database"
+            : symbol.type === "keystone.core.ExternalService"
+              ? "infrastructure"
+              : symbol.type === "keystone.core.Framework" || symbol.type === "keystone.core.ORM"
+                ? "framework-rule"
+                : "manifest",
+          result.extractorId,
+          `Technology detection reported ${symbol.qualifiedName} from a manifest.`,
+          symbol.range,
+          result.extractorVersion,
+          file.id,
+        ),
+      );
+      symbol.evidenceIds = [symbolEvidenceId];
+      local.symbols.push(symbol);
+      // repo -> technology : defines_technology
+      const definesId = await stableId(
+        "relationship",
+        input.repositoryId,
+        symbol.id,
+        "keystone.core.DEFINES_TECHNOLOGY",
+      );
+      const definesEvidenceId = await stableId("evidence", definesId, symbolEvidenceId);
+      local.evidence.push(
+        evidenceRecord(
+          definesEvidenceId,
+          definesId,
+          input.rootRecord.id,
+          file.relativePath,
+          input.generation,
+          input.branch,
+          input.commit,
+          contentHash,
+          "manifest",
+          result.extractorId,
+          `The repository defines the technology ${symbol.qualifiedName}.`,
+          symbol.range,
+          result.extractorVersion,
+          file.id,
+        ),
+      );
+      local.relationships.push({
+        id: definesId,
+        repositoryId: input.repositoryId,
+        sourceId: input.repositoryId,
+        targetId: symbol.id,
+        type: "keystone.core.DEFINES_TECHNOLOGY",
+        ownerFileId: file.id,
+        targetFileId: file.id,
+        resolution: "framework",
+        evidenceIds: [definesEvidenceId],
+        derivation: "framework-rule",
+        confidence: symbol.confidence,
+        generation: input.generation,
+      });
+      // file -> technology : uses_technology
+      const usesId = await stableId(
+        "relationship",
+        file.id,
+        symbol.id,
+        "keystone.core.USES_TECHNOLOGY",
+      );
+      const usesEvidenceId = await stableId("evidence", usesId, symbolEvidenceId);
+      local.evidence.push(
+        evidenceRecord(
+          usesEvidenceId,
+          usesId,
+          input.rootRecord.id,
+          file.relativePath,
+          input.generation,
+          input.branch,
+          input.commit,
+          contentHash,
+          "manifest",
+          result.extractorId,
+          `The manifest ${file.relativePath} declares a dependency on ${symbol.qualifiedName}.`,
+          symbol.range,
+          result.extractorVersion,
+          file.id,
+        ),
+      );
+      local.relationships.push({
+        id: usesId,
+        repositoryId: input.repositoryId,
+        sourceId: file.id,
+        targetId: symbol.id,
+        type: "keystone.core.USES_TECHNOLOGY",
+        ownerFileId: file.id,
+        targetFileId: file.id,
+        resolution: "framework",
+        evidenceIds: [usesEvidenceId],
+        derivation: "framework-rule",
+        confidence: symbol.confidence,
+        generation: input.generation,
+      });
     }
   }
 
@@ -1458,6 +1676,15 @@ function workerPriority(trigger: ScanRun["trigger"]): 0 | 1 | 2 | 3 {
 
 function isTypeScriptJavaScript(language: string): boolean {
   return ["typescript", "typescriptreact", "javascript", "javascriptreact"].includes(language);
+}
+
+/** Phase B only runs detection on manifest/config-category files. */
+function isManifestCategory(classification: ClassificationDecision): boolean {
+  return (
+    classification.category === "manifest" ||
+    classification.category === "infrastructure" ||
+    classification.category === "configuration"
+  );
 }
 
 function shouldUseSemanticParser(file: IntelligenceFileRecord): boolean {

@@ -7,6 +7,9 @@ import type { VsCodeDevelopmentAdapter } from "../development/VsCodeDevelopmentA
 import type { ExecutionConfigurationService } from "../../core/development/ExecutionConfigurationService";
 import type { DevelopmentScopeItem } from "../../shared/contracts/development";
 import type { IntelligenceQueryService } from "../../core/intelligence/IntelligenceQueryService";
+import type { IntelligenceGraphSliceService } from "../../core/intelligence/canvas/IntelligenceGraphSliceService";
+import type { IntelligenceEngineeringQueryService } from "../../core/intelligence/canvas/IntelligenceEngineeringQueryService";
+import type { ImpactQaService } from "../../core/impactQa/ImpactQaService";
 import type { IntelligenceRuntime } from "../../core/intelligence/runtime/IntelligenceRuntime";
 import type { ContinuousIntelligenceState } from "../../core/intelligence/runtime/IntelligenceRuntime";
 import type { WorkspaceStateStore } from "../../core/persistence/WorkspaceStateStore";
@@ -74,6 +77,9 @@ export interface IntelligenceServiceRegistry {
   executionConfiguration: ExecutionConfigurationService;
   intelligenceRuntime: IntelligenceRuntime;
   intelligenceQuery: IntelligenceQueryService;
+  intelligenceCanvas: IntelligenceGraphSliceService;
+  intelligenceEngineeringQuery: IntelligenceEngineeringQueryService;
+  impactQa?: ImpactQaService;
   cpgQuery: CpgQueryService;
   openSource(
     relativePath: string,
@@ -157,6 +163,11 @@ export class WebviewMessageRouter {
       this.scheduleRuntimeEvent();
       this.scheduleOverviewEvent();
     });
+  }
+
+  private impactQa(): ImpactQaService {
+    if (!this.services.impactQa) throw Object.assign(new Error("Impact Analysis and QA are unavailable in this workspace."), { code: "internal-error" });
+    return this.services.impactQa;
   }
 
   dispose(): void {
@@ -347,6 +358,18 @@ export class WebviewMessageRouter {
         await this.sendSuccess(request.requestId, await this.services.development.removeScopeItem(request.payload.workflowId, request.payload.workItemId, request.payload.scopeItemId, request.payload.correlationId)); return;
       case "development.preparePrompt":
         await this.sendSuccess(request.requestId, await this.services.development.preparePrompt(request.payload.workflowId, request.payload.workItemId, this.services.developmentHost?.repositoryName() ?? this.workspaceSummary().name, request.payload.notes, request.payload.correlationId)); return;
+      case "development.context.build":
+        await this.sendSuccess(request.requestId, await this.services.development.buildContextPackage(request.payload.workflowId, request.payload.workItemId, request.payload.budgetTokens, request.payload.notes, request.payload.pinnedItemIds, request.payload.correlationId)); return;
+      case "development.context.changeBudget":
+        await this.sendSuccess(request.requestId, await this.services.development.changeContextBudget(request.payload.workflowId, request.payload.workItemId, request.payload.packageId, request.payload.revision, request.payload.budgetTokens, request.payload.notes, request.payload.pinnedItemIds, request.payload.correlationId)); return;
+      case "development.context.approve":
+        await this.sendSuccess(request.requestId, await this.services.development.approveContextPackage(request.payload.workflowId, request.payload.workItemId, request.payload.packageId, request.payload.revision, request.payload.fingerprint, request.payload.correlationId)); return;
+      case "development.context.pin":
+        await this.sendSuccess(request.requestId, await this.services.development.pinContextItem(request.payload.workflowId, request.payload.workItemId, request.payload.packageId, request.payload.revision, request.payload.itemId, request.payload.pinned, request.payload.correlationId)); return;
+      case "development.context.remove":
+        await this.sendSuccess(request.requestId, await this.services.development.removeContextItem(request.payload.workflowId, request.payload.workItemId, request.payload.packageId, request.payload.revision, request.payload.itemId, request.payload.overrideRequired, request.payload.correlationId)); return;
+      case "development.context.restore":
+        await this.sendSuccess(request.requestId, await this.services.development.restoreContextItem(request.payload.workflowId, request.payload.workItemId, request.payload.packageId, request.payload.revision, request.payload.itemId, request.payload.correlationId)); return;
       case "development.copyPrompt":
         await this.sendSuccess(request.requestId, await this.services.development.copyPrompt(request.payload.workflowId, request.payload.workItemId, request.payload.correlationId)); return;
       case "development.confirmHandoff":
@@ -366,6 +389,17 @@ export class WebviewMessageRouter {
         await this.sendSuccess(request.requestId, await this.services.development.reviewResult(request.payload.workflowId, request.payload.workItemId, request.payload.resultId, request.payload.decision, request.payload.correlationId)); return;
       case "development.complete":
         await this.sendSuccess(request.requestId, await this.services.development.completeDevelopment(request.payload.workflowId, request.payload.workItemId, request.payload.correlationId)); return;
+      case "impact.load": await this.sendSuccess(request.requestId, await this.impactQa().load(request.payload.workflowId)); return;
+      case "impact.detect": await this.sendSuccess(request.requestId, await this.impactQa().detect(request.payload.workflowId, request.payload.manualSelection)); return;
+      case "impact.openChangedFile": await this.impactQa().openChangedFile(request.payload.workflowId, request.payload.path); await this.sendSuccess(request.requestId, { opened: true }); return;
+      case "impact.acceptChangeSet": await this.sendSuccess(request.requestId, await this.impactQa().acceptChangeSet(request.payload.workflowId, request.payload.expectedHash)); return;
+      case "impact.analyze": await this.sendSuccess(request.requestId, await this.impactQa().analyze(request.payload.workflowId, request.payload.expectedHash)); return;
+      case "impact.acceptAnalysis": await this.sendSuccess(request.requestId, await this.impactQa().acceptImpact(request.payload.workflowId, request.payload.impactAnalysisId, request.payload.expectedHash)); return;
+      case "qa.generatePlan": await this.sendSuccess(request.requestId, await this.impactQa().generatePlan(request.payload.workflowId)); return;
+      case "qa.updatePlan": await this.sendSuccess(request.requestId, await this.impactQa().updatePlan(request.payload.workflowId, request.payload.itemId, request.payload.selected, request.payload.overrideReason)); return;
+      case "qa.approvePlan": await this.sendSuccess(request.requestId, await this.impactQa().approvePlan(request.payload.workflowId, request.payload.expectedHash)); return;
+      case "qa.execute": await this.sendSuccess(request.requestId, await this.impactQa().execute(request.payload.workflowId, request.payload.qaPlanId, (progress) => { void this.postMessage(hostMessage("qa.progress", { workflowId: request.payload.workflowId, ...progress })); })); return;
+      case "qa.cancel": await this.sendSuccess(request.requestId, { cancelled: this.impactQa().cancel(request.payload.commandId) }); return;
       case "executionConfiguration.load":
       case "executionConfiguration.discoverInstructions":
       case "executionConfiguration.listSkills":
@@ -547,6 +581,64 @@ export class WebviewMessageRouter {
           ),
         );
         return;
+      case "intelligence.canvas.search":
+        await this.sendSuccess(request.requestId, this.services.intelligenceCanvas.searchEntities(request.payload));
+        return;
+      case "intelligence.canvas.graph":
+      case "intelligence.canvas.expand":
+        await this.sendSuccess(request.requestId, this.services.intelligenceCanvas.getGraphSlice(request.payload));
+        return;
+      case "intelligence.canvas.evidence": {
+        if (request.payload.intelligenceRevision !== this.services.intelligenceCanvas.currentRevision()) throw new Error("The requested Intelligence revision is stale. Refresh the result.");
+        await this.sendSuccess(request.requestId, this.services.intelligenceCanvas.getEvidence(request.payload.evidenceIds));
+        return;
+      }
+      case "intelligence.canvas.query":
+        await this.sendSuccess(request.requestId, this.services.intelligenceEngineeringQuery.execute(request.payload));
+        return;
+      case "intelligence.canvas.openSource": {
+        const entity = this.services.intelligenceCanvas.getEntity(request.payload.entityId, request.payload.intelligenceRevision);
+        await this.services.openSource(entity.filePath, entity.range);
+        await this.sendSuccess(request.requestId);
+        return;
+      }
+      case "intelligence.canvas.openEvidenceSource": {
+        const evidence = this.services.intelligenceCanvas.getEvidenceSource(request.payload.evidenceId, request.payload.intelligenceRevision);
+        await this.services.openSource(evidence.filePath, evidence.range);
+        await this.sendSuccess(request.requestId);
+        return;
+      }
+      case "intelligence.canvas.addScope":
+      case "intelligence.canvas.addContext": {
+        this.services.intelligenceCanvas.getEntity(request.payload.entityId, request.payload.intelligenceRevision);
+        const workflow = this.services.canonicalWorkflow.getActiveWorkflow();
+        if (!workflow) throw new Error("Start or open a workflow before adding Intelligence to Development.");
+        const aggregate = await this.services.development.load(workflow.id);
+        const host = this.requireDevelopmentHost();
+        const scope = this.requireDevelopmentScope();
+        const selected = await host.intelligenceSymbol(request.payload.entityId);
+        const item = await scope.createSymbolItem({ workflowId: workflow.id, workItemId: aggregate.workItem.id, fileUri: selected?.fileUri ?? "", source: "intelligence", existing: aggregate.scopeItems, symbol: selected?.symbol });
+        await this.sendSuccess(request.requestId, await this.services.development.addScopeItem(workflow.id, aggregate.workItem.id, item, `${request.requestId}:${request.type}`));
+        return;
+      }
+      case "intelligence.canvas.addPathContext": {
+        const path = this.services.intelligenceCanvas.describePath(request.payload);
+        const workflow = this.services.canonicalWorkflow.getActiveWorkflow();
+        if (!workflow) throw new Error("Start or open a workflow before adding an Intelligence path to context.");
+        const host = this.requireDevelopmentHost();
+        const scope = this.requireDevelopmentScope();
+        let aggregate = await this.services.development.load(workflow.id);
+        for (let index = 0; index < request.payload.entityIds.length; index += 1) {
+          const entityId = request.payload.entityIds[index]!;
+          if (aggregate.scopeItems.some((item) => item.symbol?.entityId === entityId)) continue;
+          const selected = await host.intelligenceSymbol(entityId);
+          const item = await scope.createSymbolItem({ workflowId: workflow.id, workItemId: aggregate.workItem.id, fileUri: selected?.fileUri ?? "", source: "intelligence", existing: aggregate.scopeItems, symbol: selected?.symbol });
+          aggregate = await this.services.development.addScopeItem(workflow.id, aggregate.workItem.id, item, `${request.requestId}:path:${index}`);
+        }
+        aggregate = await this.services.development.addIntelligenceSelection(workflow.id, aggregate.workItem.id, { kind: "call-flow", ...path }, `${request.requestId}:path-selection`);
+        await this.sendSuccess(request.requestId, aggregate);
+        return;
+      }
       case "intelligence/technologies":
         await this.sendSuccess(
           request.requestId,

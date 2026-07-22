@@ -131,7 +131,8 @@ export class WorkflowService {
     if (!workflow) throw new WorkflowServiceError("WORKFLOW_NOT_FOUND", "The selected workflow was not found.", true);
     const development = workflow.stages.find((stage) => stage.id === stageId && stage.type === "development");
     if (!development) throw new WorkflowServiceError("DEVELOPMENT_STAGE_NOT_FOUND", "The Development stage was not found.", true);
-    const nextStage = workflow.stages.filter((stage) => stage.order > development.order).sort((left, right) => left.order - right.order)[0];
+    const nextStage = workflow.stages.find((stage) => stage.type === "impact-analysis")
+      ?? workflow.stages.filter((stage) => stage.order > development.order).sort((left, right) => left.order - right.order)[0];
     const timestamp = this.now();
     const updated: CanonicalWorkflow = {
       ...workflow,
@@ -142,6 +143,25 @@ export class WorkflowService {
     };
     await this.replaceWorkflow(updated, timestamp);
     return updated;
+  }
+  async acceptImpactAnalysisStage(workflowId: string): Promise<CanonicalWorkflow> {
+    const workflow = this.getWorkflow(workflowId);
+    if (!workflow) throw new WorkflowServiceError("WORKFLOW_NOT_FOUND", "The selected workflow was not found.", true);
+    const impact = workflow.stages.find((stage) => stage.type === "impact-analysis");
+    const qa = workflow.stages.find((stage) => stage.type === "qa");
+    if (!impact || !qa) throw new WorkflowServiceError("IMPACT_QA_STAGE_NOT_FOUND", "This workflow does not contain Impact Analysis and QA stages.", true);
+    const timestamp = this.now();
+    const updated: CanonicalWorkflow = { ...workflow, stages: workflow.stages.map((stage) => stage.id === impact.id ? { ...stage, status: "completed" as const } : stage.id === qa.id ? { ...stage, status: "ready" as const } : stage), currentStageId: qa.id, updatedAt: timestamp };
+    await this.replaceWorkflow(updated, timestamp); return updated;
+  }
+  async completeQaStage(workflowId: string): Promise<CanonicalWorkflow> {
+    const workflow = this.getWorkflow(workflowId);
+    if (!workflow) throw new WorkflowServiceError("WORKFLOW_NOT_FOUND", "The selected workflow was not found.", true);
+    const qa = workflow.stages.find((stage) => stage.type === "qa");
+    if (!qa) throw new WorkflowServiceError("QA_STAGE_NOT_FOUND", "This workflow does not contain a QA stage.", true);
+    const nextStage = workflow.stages.filter((stage) => stage.order > qa.order).sort((left, right) => left.order - right.order)[0]; const timestamp = this.now();
+    const updated: CanonicalWorkflow = { ...workflow, stages: workflow.stages.map((stage) => stage.id === qa.id ? { ...stage, status: "completed" as const } : stage.id === nextStage?.id ? { ...stage, status: "ready" as const } : stage), currentStageId: nextStage?.id ?? null, status: nextStage ? workflow.status : "completed", updatedAt: timestamp };
+    await this.replaceWorkflow(updated, timestamp); return updated;
   }
   private async replaceWorkflow(workflow: CanonicalWorkflow, timestamp: string): Promise<void> {
     const next: CanonicalWorkflowPersistentState = { ...this.state, revision: this.state.revision + 1, workflows: this.state.workflows.map((item) => item.id === workflow.id ? workflow : item), updatedAt: timestamp };
