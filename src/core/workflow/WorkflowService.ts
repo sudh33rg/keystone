@@ -13,13 +13,13 @@ import {
 } from "../../shared/contracts/canonicalWorkflow";
 
 export interface WorkflowPersistence {
-  read(): Promise<unknown | undefined>;
+  read(): Promise<unknown>;
   write(value: CanonicalWorkflowPersistentState): Promise<void>;
 }
 
 export class FileWorkflowPersistence implements WorkflowPersistence {
   constructor(private readonly path: string, private readonly writer = new AtomicFileWriter()) {}
-  async read(): Promise<unknown | undefined> {
+  async read(): Promise<unknown> {
     try { return JSON.parse(await readFile(this.path, "utf8")) as unknown; }
     catch (cause) {
       if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") return undefined;
@@ -163,6 +163,26 @@ export class WorkflowService {
     const updated: CanonicalWorkflow = { ...workflow, stages: workflow.stages.map((stage) => stage.id === qa.id ? { ...stage, status: "completed" as const } : stage.id === nextStage?.id ? { ...stage, status: "ready" as const } : stage), currentStageId: nextStage?.id ?? null, status: nextStage ? workflow.status : "completed", updatedAt: timestamp };
     await this.replaceWorkflow(updated, timestamp); return updated;
   }
+  /** Complete any stage by id and mark the next ordered stage ready. Host-computed; ignores caller-supplied status. */
+  async completeStage(workflowId: string, stageId: string): Promise<CanonicalWorkflow> {
+    const workflow = this.getWorkflow(workflowId);
+    if (!workflow) throw new WorkflowServiceError("WORKFLOW_NOT_FOUND", "The selected workflow was not found.", true);
+    const stage = workflow.stages.find((item) => item.id === stageId);
+    if (!stage) throw new WorkflowServiceError("STAGE_NOT_FOUND", "The selected stage was not found in this workflow.", true);
+    if (stage.status === "completed") return workflow;
+    const nextStage = workflow.stages.filter((item) => item.order > stage.order).sort((left, right) => left.order - right.order)[0];
+    const timestamp = this.now();
+    const updated: CanonicalWorkflow = {
+      ...workflow,
+      stages: workflow.stages.map((item) => item.id === stage.id ? { ...item, status: "completed" as const } : item.id === nextStage?.id ? { ...item, status: "ready" as const } : item),
+      currentStageId: nextStage?.id ?? null,
+      status: nextStage ? workflow.status : "completed",
+      updatedAt: timestamp,
+    };
+    await this.replaceWorkflow(updated, timestamp);
+    return updated;
+  }
+
   private async replaceWorkflow(workflow: CanonicalWorkflow, timestamp: string): Promise<void> {
     const next: CanonicalWorkflowPersistentState = { ...this.state, revision: this.state.revision + 1, workflows: this.state.workflows.map((item) => item.id === workflow.id ? workflow : item), updatedAt: timestamp };
     await this.persistence.write(next);

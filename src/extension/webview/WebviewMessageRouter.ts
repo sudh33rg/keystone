@@ -57,9 +57,6 @@ import type {
   DevelopmentTask,
   DevelopmentWorkflowSnapshot,
 } from "../../shared/contracts/delegation";
-import { createHash } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import type {
   KeystoneDashboardState,
   KeystonePanelState,
@@ -80,6 +77,7 @@ export interface IntelligenceServiceRegistry {
   intelligenceCanvas: IntelligenceGraphSliceService;
   intelligenceEngineeringQuery: IntelligenceEngineeringQueryService;
   impactQa?: ImpactQaService;
+  stageWorkspace?: import("../../core/workflows/StageWorkspaceService").StageWorkspaceService;
   testIntelligence?: import("../../core/impactQa/TestIntelligenceService").TestIntelligenceService;
   cpgQuery: CpgQueryService;
   openSource(
@@ -412,6 +410,28 @@ export class WebviewMessageRouter {
         return;
       case "workflow.setActiveCanonical":
         await this.sendSuccess(request.requestId, await this.services.canonicalWorkflow.setActiveWorkflow(request.payload.workflowId));
+        return;
+      case "stage.understand.load":
+      case "stage.understand.initializeIntelligence":
+      case "stage.understand.analyzeIntent":
+      case "stage.understand.approveAnalysis":
+      case "stage.understand.setScopeItem":
+      case "stage.understand.resolveAmbiguity":
+      case "stage.understand.setConfiguration":
+      case "stage.understand.generateContext":
+      case "stage.understand.approveContext":
+      case "stage.understand.delegate":
+      case "stage.understand.captureResult":
+      case "stage.understand.validateResult":
+      case "stage.understand.acceptWarnings":
+      case "stage.understand.complete":
+      case "stage.investigation.load":
+      case "stage.investigation.upsertQuestion":
+      case "stage.investigation.setConclusion":
+      case "stage.investigation.complete":
+      case "stage.complete.load":
+      case "stage.complete.archive":
+        await this.routeStageWorkspace(request);
         return;
       case "development.initialize": {
         let aggregate = await this.services.development.initializeStage(request.payload.workflowId, request.payload.correlationId);
@@ -3539,6 +3559,70 @@ export class WebviewMessageRouter {
   private requirePrReview(): import("../../core/review/PrReviewService").PrReviewService {
     if (!this.services.prReview) throw new KeystoneError({ code: "pr-review-unavailable", category: "WORKSPACE", message: "PR Review is not available in this workspace.", technicalDetails: "PrReviewService is not registered.", operation: "pr-review", recoverable: true, recommendedAction: "Retry after the workspace finishes initializing.", retryable: true });
     return this.services.prReview;
+  }
+
+  private requireStageWorkspace(): import("../../core/workflows/StageWorkspaceService").StageWorkspaceService {
+    if (!this.services.stageWorkspace)
+      throw new KeystoneError({ code: "stage-workspace-unavailable", category: "WORKSPACE", message: "The stage workspace is not available in this workspace.", technicalDetails: "StageWorkspaceService is not registered.", operation: "stage-workspace", recoverable: true, recommendedAction: "Retry after the workspace finishes initializing.", retryable: true });
+    return this.services.stageWorkspace;
+  }
+
+  private async routeStageWorkspace(request: WebviewRequest): Promise<void> {
+    const service = this.requireStageWorkspace();
+    try {
+      switch (request.type) {
+        case "stage.understand.load":
+          await this.sendSuccess(request.requestId, await service.loadUnderstand(request.payload.workflowId)); return;
+        case "stage.understand.initializeIntelligence":
+          await this.sendSuccess(request.requestId, await service.initializeIntelligence(request.payload.workflowId)); return;
+        case "stage.understand.analyzeIntent":
+          await this.sendSuccess(request.requestId, await service.analyzeIntent(request.payload.workflowId)); return;
+        case "stage.understand.approveAnalysis":
+          await this.sendSuccess(request.requestId, await service.approveAnalysis(request.payload.workflowId)); return;
+        case "stage.understand.setScopeItem":
+          await this.sendSuccess(request.requestId, await service.setScopeItemIncluded(request.payload.workflowId, request.payload.itemId, request.payload.included, request.payload.reason)); return;
+        case "stage.understand.resolveAmbiguity":
+          await this.sendSuccess(request.requestId, await service.resolveAmbiguity(request.payload.workflowId, request.payload.ambiguityId, request.payload.resolution)); return;
+        case "stage.understand.setConfiguration":
+          await this.sendSuccess(request.requestId, await service.setConfiguration(request.payload.workflowId, { ...(request.payload.mode ? { mode: request.payload.mode } : {}), ...(request.payload.skill ? { skill: request.payload.skill } : {}) })); return;
+        case "stage.understand.generateContext":
+          await this.sendSuccess(request.requestId, await service.generateContext(request.payload.workflowId)); return;
+        case "stage.understand.approveContext":
+          await this.sendSuccess(request.requestId, await service.approveContext(request.payload.workflowId, request.payload.packageId, request.payload.revision)); return;
+        case "stage.understand.delegate":
+          await this.sendSuccess(request.requestId, await service.delegate(request.payload.workflowId)); return;
+        case "stage.understand.captureResult":
+          await this.sendSuccess(request.requestId, await service.captureResult(request.payload.workflowId, { source: request.payload.source, content: request.payload.content, ...(request.payload.referencedFiles ? { referencedFiles: request.payload.referencedFiles } : {}), ...(request.payload.unresolvedQuestions ? { unresolvedQuestions: request.payload.unresolvedQuestions } : {}), ...(request.payload.notes !== undefined ? { notes: request.payload.notes } : {}) })); return;
+        case "stage.understand.validateResult":
+          await this.sendSuccess(request.requestId, await service.validateResult(request.payload.workflowId)); return;
+        case "stage.understand.acceptWarnings":
+          await this.sendSuccess(request.requestId, await service.acceptValidationWarnings(request.payload.workflowId)); return;
+        case "stage.understand.complete":
+          await this.sendSuccess(request.requestId, await service.completeUnderstand(request.payload.workflowId)); return;
+        case "stage.investigation.load":
+          await this.sendSuccess(request.requestId, await service.loadInvestigation(request.payload.workflowId)); return;
+        case "stage.investigation.upsertQuestion":
+          await this.sendSuccess(request.requestId, await service.upsertQuestion(request.payload.workflowId, { ...(request.payload.questionId ? { questionId: request.payload.questionId } : {}), ...(request.payload.text !== undefined ? { text: request.payload.text } : {}), ...(request.payload.required !== undefined ? { required: request.payload.required } : {}), ...(request.payload.answer !== undefined ? { answer: request.payload.answer } : {}), ...(request.payload.evidence ? { evidence: request.payload.evidence } : {}) })); return;
+        case "stage.investigation.setConclusion":
+          await this.sendSuccess(request.requestId, await service.setConclusion(request.payload.workflowId, request.payload.conclusion, request.payload.limitations, request.payload.accepted)); return;
+        case "stage.investigation.complete":
+          await this.sendSuccess(request.requestId, await service.completeInvestigation(request.payload.workflowId)); return;
+        case "stage.complete.load":
+          await this.sendSuccess(request.requestId, service.loadComplete(request.payload.workflowId)); return;
+        case "stage.complete.archive":
+          await this.sendSuccess(request.requestId, await service.archiveWorkflow(request.payload.workflowId)); return;
+        default:
+          return;
+      }
+    } catch (cause) {
+      const stageError = cause as { name?: string; code?: string; message?: string; recoverable?: boolean };
+      const error = stageError?.name === "StageWorkspaceError" || stageError?.name === "WorkflowServiceError"
+        ? new KeystoneError({ code: stageError.code ?? "stage-workspace-failed", category: "WORKSPACE", message: stageError.message ?? "The stage action failed.", technicalDetails: `${request.type} failed.`, operation: request.type, recoverable: stageError.recoverable ?? true, recommendedAction: "Correct the stage input, then retry.", retryable: true, correlationId: request.requestId })
+        : cause instanceof KeystoneError
+          ? cause
+          : new KeystoneError({ code: "stage-workspace-failed", category: "WORKSPACE", message: cause instanceof Error ? cause.message : "The stage action failed.", technicalDetails: `${request.type} failed.`, operation: request.type, recoverable: true, recommendedAction: "Retry the stage action.", retryable: true, correlationId: request.requestId, ...(cause instanceof Error ? { cause } : {}) });
+      await this.sendError(request.requestId, error);
+    }
   }
 
   private async sendError(requestId: string, error: KeystoneError): Promise<void> {

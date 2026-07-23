@@ -9,6 +9,14 @@ import {
   type WorkflowCreationFailedResponse,
 } from "./canonicalWorkflow";
 import {
+  StageDelegationModeSchema,
+  StageEvidenceSchema,
+  StageResultSourceSchema,
+  type CompleteState,
+  type InvestigationState,
+  type UnderstandState,
+} from "./stageWorkspace";
+import {
   ActivitySchema,
   AppRouteSchema,
   BootstrapSnapshotSchema,
@@ -226,9 +234,7 @@ import {
   type OrchestrationReviewPlan,
 } from "./orchestration";
 import {
-  CompleteApprovalPayloadSchema,
   CompleteDecisionPayloadSchema,
-  CompletePatchPayloadSchema,
   ReviewAddNotePayloadSchema,
   ReviewDecisionPayloadSchema,
   ReviewDiffPayloadSchema,
@@ -300,6 +306,26 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
   request("workflow.listCanonical", z.object({}).strict()),
   request("workflow.getCanonical", z.object({ workflowId: z.string().uuid() }).strict()),
   request("workflow.setActiveCanonical", z.object({ workflowId: z.string().uuid() }).strict()),
+  request("stage.understand.load", z.object({ workflowId: z.string().uuid() }).strict()),
+  request("stage.understand.initializeIntelligence", z.object({ workflowId: z.string().uuid() }).strict()),
+  request("stage.understand.analyzeIntent", z.object({ workflowId: z.string().uuid() }).strict()),
+  request("stage.understand.approveAnalysis", z.object({ workflowId: z.string().uuid() }).strict()),
+  request("stage.understand.setScopeItem", z.object({ workflowId: z.string().uuid(), itemId: z.string().min(1).max(500), included: z.boolean(), reason: z.string().max(2_000).optional() }).strict()),
+  request("stage.understand.resolveAmbiguity", z.object({ workflowId: z.string().uuid(), ambiguityId: z.string().min(1).max(200), resolution: z.string().min(1).max(2_000) }).strict()),
+  request("stage.understand.setConfiguration", z.object({ workflowId: z.string().uuid(), mode: StageDelegationModeSchema.optional(), skill: z.string().max(200).optional() }).strict()),
+  request("stage.understand.generateContext", z.object({ workflowId: z.string().uuid() }).strict()),
+  request("stage.understand.approveContext", z.object({ workflowId: z.string().uuid(), packageId: z.string().uuid(), revision: z.number().int().positive() }).strict()),
+  request("stage.understand.delegate", z.object({ workflowId: z.string().uuid() }).strict()),
+  request("stage.understand.captureResult", z.object({ workflowId: z.string().uuid(), source: StageResultSourceSchema, content: z.string().min(1).max(500_000), referencedFiles: z.array(z.string().max(1_000)).max(200).optional(), unresolvedQuestions: z.array(z.string().max(2_000)).max(50).optional(), notes: z.string().max(10_000).optional() }).strict()),
+  request("stage.understand.validateResult", z.object({ workflowId: z.string().uuid() }).strict()),
+  request("stage.understand.acceptWarnings", z.object({ workflowId: z.string().uuid() }).strict()),
+  request("stage.understand.complete", z.object({ workflowId: z.string().uuid() }).strict()),
+  request("stage.investigation.load", z.object({ workflowId: z.string().uuid() }).strict()),
+  request("stage.investigation.upsertQuestion", z.object({ workflowId: z.string().uuid(), questionId: z.string().uuid().optional(), text: z.string().max(2_000).optional(), required: z.boolean().optional(), answer: z.string().max(20_000).optional(), evidence: z.array(StageEvidenceSchema).max(30).optional() }).strict()),
+  request("stage.investigation.setConclusion", z.object({ workflowId: z.string().uuid(), conclusion: z.string().max(50_000), limitations: z.array(z.string().max(2_000)).max(30), accepted: z.boolean() }).strict()),
+  request("stage.investigation.complete", z.object({ workflowId: z.string().uuid() }).strict()),
+  request("stage.complete.load", z.object({ workflowId: z.string().uuid() }).strict()),
+  request("stage.complete.archive", z.object({ workflowId: z.string().uuid() }).strict()),
   request("development.initialize", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid() }).strict()),
   request("development.load", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid() }).strict()),
   request("development.updateObjective", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid(), objective: z.string().max(10_001) }).strict()),
@@ -1224,6 +1250,26 @@ export interface WebviewRequestResults {
   "workflow.listCanonical": CanonicalWorkflow[];
   "workflow.getCanonical": CanonicalWorkflow | undefined;
   "workflow.setActiveCanonical": CanonicalWorkflow;
+  "stage.understand.load": UnderstandState;
+  "stage.understand.initializeIntelligence": UnderstandState;
+  "stage.understand.analyzeIntent": UnderstandState;
+  "stage.understand.approveAnalysis": UnderstandState;
+  "stage.understand.setScopeItem": UnderstandState;
+  "stage.understand.resolveAmbiguity": UnderstandState;
+  "stage.understand.setConfiguration": UnderstandState;
+  "stage.understand.generateContext": UnderstandState;
+  "stage.understand.approveContext": UnderstandState;
+  "stage.understand.delegate": UnderstandState;
+  "stage.understand.captureResult": UnderstandState;
+  "stage.understand.validateResult": UnderstandState;
+  "stage.understand.acceptWarnings": UnderstandState;
+  "stage.understand.complete": { state: UnderstandState; workflow: CanonicalWorkflow };
+  "stage.investigation.load": InvestigationState;
+  "stage.investigation.upsertQuestion": InvestigationState;
+  "stage.investigation.setConclusion": InvestigationState;
+  "stage.investigation.complete": { state: InvestigationState; workflow: CanonicalWorkflow };
+  "stage.complete.load": CompleteState;
+  "stage.complete.archive": CanonicalWorkflow;
   "development.initialize": DevelopmentAggregate;
   "development.load": DevelopmentAggregate;
   "development.updateObjective": DevelopmentAggregate;

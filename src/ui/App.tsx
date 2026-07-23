@@ -1,6 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type {
-  Activity,
   AppRoute,
   BootstrapSnapshot,
   PersistedFoundationState,
@@ -33,7 +32,6 @@ const HistoryRoute = lazy(async () => {
 export function App({ bridge }: AppProps): React.JSX.Element {
   const [bootstrap, setBootstrap] = useState<BootstrapSnapshot>();
   const [state, setState] = useState<PersistedFoundationState>();
-  const [activity, setActivity] = useState<Activity>();
   const [overview, setOverview] = useState<IntelligenceOverviewModel>();
   const [error, setError] = useState<KeystoneUiError>();
   const [recovery, setRecovery] = useState<LaunchRecovery>();
@@ -56,10 +54,8 @@ export function App({ bridge }: AppProps): React.JSX.Element {
           activeRoute: route,
           activeSection: sectionForRoute(route),
         });
-        setActivity(message.payload.activity);
       }
       if (message.type === "state/updated") setState(message.payload);
-      if (message.type === "activity/updated") setActivity(message.payload);
       if (message.type === "intelligence/updated") setOverview(message.payload);
       if (message.type === "intelligence/runtime")
         setOverview((current) =>
@@ -191,13 +187,6 @@ export function App({ bridge }: AppProps): React.JSX.Element {
   }, [bridge, state?.activeRoute]);
 
   const activeRoute = state?.activeRoute ?? "/";
-  const implementationProgress = useMemo(
-    () =>
-      bootstrap
-        ? `${bootstrap.implementation.completedTasks.length} milestone capabilities complete`
-        : "Connecting to Extension Host",
-    [bootstrap],
-  );
 
   const navigate = (route: AppRoute): void => {
     if (state)
@@ -213,41 +202,36 @@ export function App({ bridge }: AppProps): React.JSX.Element {
   };
 
   return (
-    <div className="app-shell">
-      <header className="brand-bar">
-        <div className="brand-mark" aria-hidden="true">
-          <span />
-          <span />
-          <span />
-        </div>
+    <div className="app-shell top-nav-shell">
+      <header className="top-bar">
         <div className="brand-copy">
           <strong>Keystone</strong>
-          <span>Engineering control center</span>
         </div>
+        <nav className="top-navigation" aria-label="Keystone sections">
+          {PRIMARY_NAVIGATION.map((item) => {
+            const active =
+              item.id === "active-work"
+                ? activeRoute === "/active-work"
+                : activeRoute === item.route;
+            return (
+              <button
+                key={item.id}
+                className={active ? "nav-item active" : "nav-item"}
+                onClick={() => navigate(item.route)}
+                aria-current={active ? "page" : undefined}
+              >
+                <Icon name={item.icon} />
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
+        </nav>
         <div className="header-actions">
-          <span className="version-pill">v{bootstrap?.extensionVersion ?? "—"}</span>
+          <button className="primary-button new-work-button" onClick={() => navigate("/workflow/new")}>
+            New Work
+          </button>
         </div>
       </header>
-
-      <nav className="navigation" aria-label="Keystone sections">
-        {PRIMARY_NAVIGATION.map((item) => {
-          const active =
-            item.id === "active-work"
-              ? activeRoute === "/active-work"
-              : activeRoute === item.route;
-          return (
-            <button
-              key={item.id}
-              className={active ? "nav-item active" : "nav-item"}
-              onClick={() => navigate(item.route)}
-              aria-current={active ? "page" : undefined}
-            >
-              <Icon name={item.icon} />
-              <span>{item.label}</span>
-            </button>
-          );
-        })}
-      </nav>
 
       <main className="main-content" ref={mainRef} tabIndex={-1}>
         {error && <UiErrorState error={error} />}
@@ -311,20 +295,6 @@ export function App({ bridge }: AppProps): React.JSX.Element {
           <HomeDashboard bridge={bridge} navigate={navigate} />
         )}
       </main>
-
-      <aside
-        className={`activity-panel ${activity?.status ?? "idle"}`}
-        aria-label="Current activity"
-      >
-        <div className="activity-icon">
-          <Icon name={activity?.status === "completed" ? "check" : "pulse"} />
-        </div>
-        <div className="activity-copy">
-          <strong>{activity?.operation ?? "Connecting"}</strong>
-          <span>{activity?.detail ?? "Restoring Keystone state…"}</span>
-        </div>
-        <span className="activity-meta">{implementationProgress}</span>
-      </aside>
     </div>
   );
 }

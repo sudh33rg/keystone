@@ -1,13 +1,13 @@
 import { z } from "zod";
 import { HomeStateSchema } from "../../shared/contracts/home";
 import { CanonicalWorkflowSchema, WorkflowCreatedResponseSchema, WorkflowCreationFailedResponseSchema } from "../../shared/contracts/canonicalWorkflow";
+import { CompleteStateSchema, InvestigationStateSchema, UnderstandStateSchema } from "../../shared/contracts/stageWorkspace";
 import { DevelopmentAggregateSchema } from "../../shared/contracts/development";
 import { ExecutionConfigurationAggregateSchema, InstructionPreviewSchema, SkillDefinitionSchema } from "../../shared/contracts/executionConfiguration";
 import {
   BootstrapSnapshotSchema,
   PersistedFoundationStateSchema,
   SCHEMA_VERSION,
-  type AppRoute,
   type BootstrapSnapshot,
   type PersistedFoundationState,
 } from "../../shared/contracts/domain";
@@ -56,8 +56,6 @@ import {
   ValidationRunSchemaV2,
   WorkflowCompletionReportSchema,
 } from "../../shared/contracts/execution";
-import {
-} from "../../shared/contracts/delivery";
 import {
   HandoffCompatibilityReportSchema,
   HandoffPrivacyReportSchema,
@@ -270,6 +268,32 @@ function validateResult(type: WebviewRequestType, value: unknown): unknown {
     case "workflow.getCanonical":
       return value === undefined ? undefined : CanonicalWorkflowSchema.parse(value);
     case "workflow.setActiveCanonical":
+      return CanonicalWorkflowSchema.parse(value);
+    case "stage.understand.load":
+    case "stage.understand.initializeIntelligence":
+    case "stage.understand.analyzeIntent":
+    case "stage.understand.approveAnalysis":
+    case "stage.understand.setScopeItem":
+    case "stage.understand.resolveAmbiguity":
+    case "stage.understand.setConfiguration":
+    case "stage.understand.generateContext":
+    case "stage.understand.approveContext":
+    case "stage.understand.delegate":
+    case "stage.understand.captureResult":
+    case "stage.understand.validateResult":
+    case "stage.understand.acceptWarnings":
+      return UnderstandStateSchema.parse(value);
+    case "stage.understand.complete":
+      return z.object({ state: UnderstandStateSchema, workflow: CanonicalWorkflowSchema }).parse(value);
+    case "stage.investigation.load":
+    case "stage.investigation.upsertQuestion":
+    case "stage.investigation.setConclusion":
+      return InvestigationStateSchema.parse(value);
+    case "stage.investigation.complete":
+      return z.object({ state: InvestigationStateSchema, workflow: CanonicalWorkflowSchema }).parse(value);
+    case "stage.complete.load":
+      return CompleteStateSchema.parse(value);
+    case "stage.complete.archive":
       return CanonicalWorkflowSchema.parse(value);
     case "development.initialize":
     case "development.load":
@@ -741,22 +765,6 @@ function validateResult(type: WebviewRequestType, value: unknown): unknown {
     case "pr-review/generatePackage":
     case "pr-review/updatePackage":
       return PullRequestPackageSchema.parse(value);
-    case "taskHandoff/checkEligibility":
-      return z.object({ eligible: z.boolean(), reason: z.string().max(2000).optional() }).strict().parse(value);
-    case "taskHandoff/createDraft":
-    case "taskHandoff/updateDraft":
-    case "taskHandoff/acceptImport":
-    case "taskHandoff/rejectImport":
-      return z.object({ id: z.string(), status: z.string().max(200) }).strict().parse(value);
-    case "taskHandoff/runPrivacyScan":
-    case "taskHandoff/markRedacted":
-      return z.object({ findings: z.array(z.object({ id: z.string(), message: z.string().max(2000) })).max(200).default([]) }).strict().parse(value);
-    case "taskHandoff/export":
-      return z.object({ savedUri: z.string() }).strict().parse(value);
-    case "taskHandoff/listHistory":
-      return z.array(z.object({ id: z.string(), status: z.string().max(200), direction: z.string().max(200) })).max(1000).parse(value);
-    case "taskHandoff/previewImport":
-      return z.object({ blocking: z.boolean(), blockingWarnings: z.array(z.string().max(2000)).max(100).default([]) }).strict().parse(value);
     case "execution/route":
       return ExecutionRoutingDecisionSchema.parse(value);
     case "git/capabilities":
@@ -764,7 +772,6 @@ function validateResult(type: WebviewRequestType, value: unknown): unknown {
     case "git/status":
     case "git/repositoryState":
       return value;
-    case "git/repositoryState":
     case "git/remotes":
     case "git/branches":
     case "git/diff":

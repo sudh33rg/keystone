@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { ReviewPersistenceStore } from "../../../src/core/persistence/ReviewPersistenceStore";
 import { ReviewCompletionService } from "../../../src/core/review/ReviewCompletionService";
-import { DeliveryPersistenceStore } from "../../../src/core/persistence/DeliveryPersistenceStore";
 import { DevelopmentWorkflowSnapshotSchema } from "../../../src/shared/contracts/delegation";
 import { SCHEMA_VERSION } from "../../../src/shared/contracts/domain";
 import { WebviewRequestSchema } from "../../../src/shared/contracts/messages";
@@ -141,10 +140,8 @@ describe("Review and optional completion contracts", () => {
   it("blocks Review on required incomplete work and completes locally without Git mutation", async () => {
     const reviewStore = new ReviewPersistenceStore();
     await reviewStore.initialize();
-    const deliveryStore = new DeliveryPersistenceStore();
-    await deliveryStore.initialize();
     let workflow = workflowFixture(false, "ready");
-    const gitMutation = () => {
+    const _gitMutation = () => {
       throw new Error("Git must not be called for local completion.");
     };
     const service = new ReviewCompletionService(
@@ -166,8 +163,15 @@ describe("Review and optional completion contracts", () => {
       } as never,
       { snapshot: { sessions: [], runs: [] } } as never,
       {
-        persistence: deliveryStore,
-        adapter: { stage: gitMutation, commit: gitMutation, push: gitMutation },
+        getBranch: () => "main",
+        getRevision: () => "HEAD",
+        getStatus: () => /** never called */ ({} as never),
+        getChangedFiles: () => /** never called */ ([] as never),
+        getDiff: () => /** never called */ ("" as never),
+        getHistory: () => /** never called */ ([] as never),
+        getRepositoryIdentity:
+          () =>
+            /** never called */ ({} as never),
       } as never,
     );
     expect(service.getState(workflowId).readinessBlockers).toEqual(

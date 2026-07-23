@@ -5,7 +5,6 @@ import type { WorkspaceAdapter } from "../../extension/adapters/WorkspaceAdapter
 import type { IntelligenceStore } from "../persistence/IntelligenceStore";
 import type { CopilotIntegrationPersistenceStore } from "../persistence/CopilotIntegrationPersistenceStore";
 import type { DevelopmentWorkflowService } from "../workflows/DevelopmentWorkflowService";
-import type { DeliveryCoordinator } from "../delivery/GitDeliveryService";
 
 /**
  * Health status enum for individual health checks
@@ -488,41 +487,4 @@ export class HealthCheckService {
     };
   }
 
-  /**
-   * Create a health check for delivery service.
-   */
-  static createDeliveryCheck(delivery: DeliveryCoordinator): HealthCheckRegistration {
-    return {
-      name: "delivery",
-      critical: false,
-      check: async () => {
-        const timestamp = new Date().toISOString();
-        try {
-          const pending =
-            typeof (delivery as unknown as { getPendingChanges?: () => Promise<number> })
-              .getPendingChanges === "function"
-              ? await (
-                  delivery as unknown as { getPendingChanges: () => Promise<number> }
-                ).getPendingChanges()
-              : 0;
-          return {
-            name: "delivery",
-            status: "healthy",
-            message: `${pending} pending change(s)`,
-            details: { pendingChanges: pending },
-            timestamp,
-            durationMs: 0,
-          };
-        } catch (error) {
-          return {
-            name: "delivery",
-            status: "degraded",
-            message: error instanceof Error ? error.message : "Delivery check failed",
-            timestamp,
-            durationMs: 0,
-          };
-        }
-      },
-    };
-  }
 }

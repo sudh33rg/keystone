@@ -48,13 +48,7 @@ import {
   CompletionDecisionService,
   WorkflowCompletionService,
 } from "../core/execution/CompletionService";
-import { WorkflowFreshnessService } from "../core/freshness/WorkflowFreshnessService";
 import { RepositoryReadService } from "../core/repository/RepositoryReadService";
-import { WorkflowRerunPlanner } from "../core/rerun/WorkflowRerunPlanner";
-import { ActivityService } from "../core/activity/ActivityService";
-import { ApprovalService } from "../core/approval/ApprovalService";
-import { BlockerService } from "../core/blocker/BlockerService";
-import { ResourceLimitService } from "../core/resource/ResourceLimitService";
 import { ScopeCorrectionMigration } from "../core/persistence/ScopeCorrectionMigration";
 import { OrchestrationPersistenceStore } from "../core/persistence/OrchestrationPersistenceStore";
 import { OrchestrationService } from "../core/orchestration/OrchestrationService";
@@ -109,6 +103,7 @@ import type { IntelligenceServiceRegistry } from "./webview/WebviewMessageRouter
 import { AppRouteSchema } from "../shared/contracts/domain";
 import { HealthCheckService } from "../core/health/HealthCheckService";
 import { FileWorkflowPersistence, WorkflowService } from "../core/workflow/WorkflowService";
+import { FileStageWorkspacePersistence, StageWorkspaceService } from "../core/workflows/StageWorkspaceService";
 import { DevelopmentService, FileDevelopmentPersistence } from "../core/development/DevelopmentService";
 import { SourceScopeService } from "../core/development/SourceScopeService";
 import { ManualHandoffService } from "../core/development/ManualHandoffService";
@@ -338,6 +333,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const routing = new ExecutionRoutingService();
   await workflow.initialize();
   const copilot = new CapabilityDrivenCopilotAdapter(new VsCodeCopilotEnvironment());
+  const stageWorkspace = new StageWorkspaceService(
+    new FileStageWorkspacePersistence(join(canonicalWorkflowRoot, "workflows", "stage-workspace.json")),
+    canonicalWorkflow,
+    intelligenceStore,
+    copilot,
+    () => { intelligenceRuntime.start(); return Promise.resolve(); },
+  );
+  await stageWorkspace.initialize();
   const agents = new CopilotAgentRegistry(copilot, delegationStore);
   agents.restore();
   await new ConfiguredAgentLoader(workspace, agents).load();
@@ -575,6 +578,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const dashboardViewModels = new KeystoneDashboardViewModelService(nativeSource);
   const serviceRegistry: IntelligenceServiceRegistry = {
     canonicalWorkflow,
+    stageWorkspace,
     development,
     developmentScope,
     developmentHost,
