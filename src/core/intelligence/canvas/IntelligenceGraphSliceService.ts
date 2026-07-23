@@ -294,7 +294,7 @@ export class IntelligenceGraphSliceService {
   private canonicalRelationships(snapshot: IntelligenceSnapshot): CanonicalRelationship[] {
     const groups = new Map<string, { records: IntelligenceRelationshipRecord[]; type: IntelligenceCanvasRelationship; sourceId: string; targetId: string }>();
     for (const relationship of snapshot.relationships) {
-      let type = canonicalRelationship(relationship.type);
+      const type = canonicalRelationship(relationship.type);
       if (!type) continue;
       let sourceId = relationship.sourceId;
       let targetId = relationship.targetId;

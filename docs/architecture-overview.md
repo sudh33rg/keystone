@@ -115,15 +115,11 @@ Bounded, token-efficient context packages:
 - **GitDeliveryService** — Git operations, commit planning (merge/split/reorder), mutation approval with verification, PR provider registry, delivery reports
 - **DeliveryCoordinator** — Git push and PR creation via provider registry (GitHub extension or clipboard fallback)
 
-### 3.8 Team Collaboration (`src/core/team/`)
-
-- **TeamWorkflowService** — Handoff packages, reconciliation (exact/compatible/ahead/behind/divergent), acceptance, reassignment, progress tracking, imports/exports (4 modes: json/zip/repository-artifact/clipboard-summary), manual ZIP creation
-
-### 3.9 Orchestration (`src/core/orchestration/`)
+### 3.8 Orchestration (`src/core/orchestration/`)
 
 - **OrchestrationService** — Multi-agent orchestration with 20+ state machine transitions, 6 workflow definitions (quick-fix/feature-development/bug-fix/refactoring/modernization/security-remediation), 3 policy profiles (manual/guided/approval-gated), review plan generation with regex-based trigger detection, delivery readiness evaluation, finding resolution with security/performance blocking constraints
 
-### 3.10 Configuration (`src/core/configuration/`)
+### 3.9 Configuration (`src/core/configuration/`)
 
 - **ConfigurationService** — Bounded configuration with `bounded()` and `enumValue()` helpers, typed settings access
 
@@ -161,7 +157,7 @@ React/Vite single-page application with lazy-loaded routes:
 
 - **App.tsx** — Root component with React Router, lazy route loading
 - **HostBridge** — Communication bridge to extension host via VS Code API
-- **Components** — DeliveryWorkspace, DevelopmentWorkspace, ExecutionValidationWorkspace, HomeDashboard, OrchestrationWorkspace, QueryWorkspace, SDLCWorkbench, SemanticBrowser, TeamWorkflowWorkspace, UiState
+- **Components** — DeliveryWorkspace, DevelopmentWorkspace, ExecutionValidationWorkspace, HomeDashboard, OrchestrationWorkspace, QueryWorkspace, SDLCWorkbench, SemanticBrowser, TaskHandoffWorkspace, UiState
 
 ---
 
@@ -201,7 +197,6 @@ All extension state is persisted under `.keystone/` with sharded, gzip-compresse
 | **ExecutionPersistenceStore** | — | Execution sessions and validation runs |
 | **DeliveryPersistenceStore** | — | Delivery change sets and PR results |
 | **ReviewPersistenceStore** | — | Review state |
-| **TeamWorkflowPersistenceStore** | — | Handoff artifacts |
 | **OrchestrationPersistenceStore** | — | Orchestration state |
 | **NativeShellPersistenceStore** | — | Native shell state |
 | **CopilotIntegrationPersistenceStore** | — | Copilot settings and tool audit |

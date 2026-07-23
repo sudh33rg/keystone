@@ -8,6 +8,7 @@ import type {
   ValidationRunV2,
   WorkflowCompletionReport,
 } from "../../../shared/contracts/execution";
+import type { PostEditVerificationResult } from "../../../shared/contracts/postEditVerification";
 
 export function ExecutionValidationWorkspace({
   bridge,
@@ -52,6 +53,23 @@ export function ExecutionValidationWorkspace({
         setActiveRunId(message.payload.runId);
       if (message.type === "validation/completed" || message.type === "validation/cancelled")
         setActiveRunId(undefined);
+      if (message.type === "execution/resultCaptured" && message.payload.sessionId) {
+        setSessions((items) =>
+          items.map((item) =>
+            item.id === message.payload.sessionId
+              ? {
+                  ...item,
+                  status: item.status === "awaiting-result-capture"
+                    ? "result-captured"
+                    : item.status,
+                  ...(message.payload.postEditVerifierResult
+                    ? { postEditVerifierResult: message.payload.postEditVerifierResult }
+                    : {}),
+                }
+              : item,
+          ),
+        );
+      }
     });
   }, [bridge]);
   const applySession = (value: TaskExecutionSession): void => {
@@ -493,7 +511,37 @@ function ExecutionSummary({ session }: { session: TaskExecutionSession }): React
             {Math.round(session.metrics.validationDurationMs)} ms
           </dd>
         </div>
+        <div>
+          <dt>Post-edit verifier</dt>
+          <dd>
+            {session.metrics.postEditVerifier
+              ? session.postEditVerifierResult
+                ? session.postEditVerifierResult.verdict
+                : "enabled"
+              : "off"}
+          </dd>
+        </div>
       </dl>
+      {session.metrics.postEditVerifier && session.postEditVerifierResult && (
+        <div className="context-preview">
+          <h3>Post-edit verification trace</h3>
+          <div className="button-row">
+            <span className={session.postEditVerifierResult.passed ? 'td-state state-passed' : 'td-state state-failed'}>
+              {session.postEditVerifierResult.verdict}
+            </span>
+            <span>{session.postEditVerifierResult.signals.length} signal(s)</span>
+          </div>
+          <ul className="review-list">
+            {session.postEditVerifierResult.signals.map((item, index) => (
+              <li key={index} className={'review-item ' + (item.passed ? 'review-passed' : 'review-failed')}>
+                <span>{item.signal}</span>
+                <span>{item.passed ? 'passed' : 'failed'}</span>
+                <span>{item.details}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <p>
         Opening Copilot did not start this session. Completion is not inferred from changed files or
         stopped chat activity.

@@ -17,6 +17,7 @@ import type {
   IntelligenceGraphSlice,
 } from "../../../shared/contracts/intelligenceCanvas";
 import type { HostBridge } from "../../services/HostBridge";
+import { FileExplorerTree } from "./FileExplorerTree";
 
 const MODES: Array<{ id: IntelligenceCanvasMode; label: string }> = [
   { id: "architecture", label: "Architecture" },
@@ -57,6 +58,7 @@ export function IntelligenceCanvasWorkspace({
   const [selectedPath, setSelectedPath] = useState<{ entityIds: string[]; edgeIds: string[]; evidenceIds: string[] }>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const [files, setFiles] = useState<Array<{ id: string; relativePath: string; analysisLevel?: string }>>([]);
   const stale = Boolean(graph && graph.intelligenceRevision !== intelligenceRevision);
 
   const loadGraph = useCallback((rootId: string, nextMode = mode, nextDepth = depth, nextRelationships = relationships, direction: "inbound" | "outbound" | "both" = "both"): void => {
@@ -156,6 +158,13 @@ export function IntelligenceCanvasWorkspace({
   };
 
   const flow = useMemo(() => layoutGraph(graph), [graph]);
+  const derivedFiles = useMemo(() => {
+    if (!graph) return [];
+    const seen = new Set<string>();
+    return graph.nodes
+      .filter((node) => !seen.has(node.filePath) && seen.add(node.filePath))
+      .map((node) => ({ id: node.id, relativePath: node.filePath }));
+  }, [graph]);
   return (
     <section className="intelligence-canvas-workspace" aria-label="Intelligence canvas workspace">
       {!embedded && <header className="canvas-query-bar">
@@ -187,6 +196,9 @@ export function IntelligenceCanvasWorkspace({
         <button key={candidate.id} onClick={() => loadGraph(candidate.id)}><strong>{candidate.qualifiedLabel}</strong><small>{candidate.context}</small></button>)}</div>}
       {!graph ? <div className="canvas-empty"><strong>Search for a real repository symbol</strong><span>Or ask a bounded question about callers, dependencies, flows, or tests. Keystone only displays indexed entities and evidence.</span></div> :
         <div className="intelligence-canvas-layout">
+          <aside className="canvas-explorer" aria-label="File explorer">
+            <FileExplorerTree files={files.length ? files : derivedFiles} onSelectEntity={(entityId) => { const node = graph?.nodes.find((item) => item.id === entityId); if (node) loadGraph(node.id); }} />
+          </aside>
           <div className="intelligence-canvas" aria-label={`${mode} graph`}>
             {typeof ResizeObserver !== "undefined" && <ReactFlow nodes={flow.nodes} edges={flow.edges} fitView minZoom={.2} maxZoom={2}
               onNodeClick={(_, node) => setSelectedNode(graph.nodes.find((item) => item.id === node.id))}

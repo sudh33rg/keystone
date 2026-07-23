@@ -144,7 +144,7 @@ Build on the foundation to improve testing, observability, and developer experie
 1. Create test fixtures for repository scenarios
 2. Test delegation flow: context → prompt → execution → change tracking → validation
 3. Test delivery flow: commit plan → git operations → PR creation
-4. Test team workflow: handoff → reconciliation → acceptance
+4. Test handoff flow: draft → privacy scan → export → import → acceptance
 5. Test intelligence: indexing → querying → staleness detection
 6. Test persistence: save → load → recovery → migration
 
@@ -252,34 +252,7 @@ Add significant new capabilities that differentiate Keystone.
 4. Add offline indicator in UI
 5. Add conflict resolution for offline changes
 
-### 3.4 Real-Time Collaboration
-
-**Priority:** 🟡 Medium
-**Effort:** 4-6 weeks
-**Description:** Add real-time collaboration support for team workflows.
-
-**Implementation Plan:**
-1. Evaluate WebSocket vs. VS Code document sync
-2. Create collaboration service with presence awareness
-3. Add live co-authoring for specifications
-4. Add real-time handoff notifications
-5. Add conflict resolution for concurrent edits
-
-### 3.5 Webhook/Integration System
-
-**Priority:** 🟡 Medium
-**Effort:** 2-3 weeks
-**Description:** Add webhook system for external service integration.
-
-**Implementation Plan:**
-1. Define webhook event types
-2. Create webhook registry with URL + secret configuration
-3. Add HTTP delivery with retry logic
-4. Create webhook management UI
-5. Add webhook delivery logs
-6. Create example integrations (Slack, Jira, GitHub)
-
-### 3.6 Streaming Copilot Responses
+### 3.4 Streaming Copilot Responses
 
 **Priority:** 🟡 Medium
 **Effort:** 1-2 weeks

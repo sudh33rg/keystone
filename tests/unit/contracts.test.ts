@@ -52,39 +52,19 @@ describe("WebviewRequestSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  it("accepts typed team assignment requests and rejects unbounded notes", () => {
-    const ids = {
-      workflowId: crypto.randomUUID(),
-      taskId: crypto.randomUUID(),
-      assignedBy: crypto.randomUUID(),
-      assignedTo: crypto.randomUUID(),
-    };
-    expect(
-      WebviewRequestSchema.safeParse({ ...validBase, type: "assignment/create", payload: ids })
-        .success,
-    ).toBe(true);
+  it("keeps task handoff export explicit and typed", () => {
     expect(
       WebviewRequestSchema.safeParse({
         ...validBase,
-        type: "assignment/create",
-        payload: { ...ids, notes: "x".repeat(20_001) },
-      }).success,
-    ).toBe(false);
-  });
-
-  it("keeps repository-artifact export explicit and typed", () => {
-    expect(
-      WebviewRequestSchema.safeParse({
-        ...validBase,
-        type: "handoff/export",
-        payload: { packageId: crypto.randomUUID(), mode: "repository-artifact" },
+        type: "taskHandoff/export",
+        payload: { workflowId: crypto.randomUUID(), targetPath: ".keystone/handoff/export.keystone-handoff" },
       }).success,
     ).toBe(true);
     expect(
       WebviewRequestSchema.safeParse({
         ...validBase,
-        type: "handoff/export",
-        payload: { packageId: crypto.randomUUID(), mode: "auto-push" },
+        type: "taskHandoff/export",
+        payload: { workflowId: crypto.randomUUID() },
       }).success,
     ).toBe(false);
   });

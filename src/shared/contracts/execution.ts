@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { RepositoryStateRefSchema, StalenessRecordSchema } from "./integration";
 import { CopilotAgentDescriptorSchema, RepositoryBaselineSchema } from "./delegation";
+import { PostEditVerificationResultSchema } from "./postEditVerification";
 
 export const EXECUTION_SCHEMA_VERSION = 1 as const;
 export const TaskExecutionStatusSchema = z.enum([
@@ -124,6 +125,7 @@ export const ExecutionMetricsSchema = z
     cancelledSteps: z.number().int().nonnegative().default(0),
     outputTruncations: z.number().int().nonnegative().default(0),
     staleInvalidations: z.number().int().nonnegative().default(0),
+    postEditVerifier: z.boolean().default(false),
   })
   .strict();
 export const TaskExecutionSessionSchema = z
@@ -168,6 +170,7 @@ export const TaskExecutionSessionSchema = z
       cancelledSteps: 0,
       outputTruncations: 0,
       staleInvalidations: 0,
+      postEditVerifier: false,
     }),
     diagnostics: z
       .array(
@@ -180,6 +183,7 @@ export const TaskExecutionSessionSchema = z
           .strict(),
       )
       .max(100),
+    postEditVerifierResult: PostEditVerificationResultSchema.optional(),
   })
   .strict();
 export type TaskExecutionSession = z.infer<typeof TaskExecutionSessionSchema>;

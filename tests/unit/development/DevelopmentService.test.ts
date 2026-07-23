@@ -9,11 +9,11 @@ function memoryPersistence<T>() {
 
 async function fixture() {
   const workflows = memoryPersistence<never>();
-  const workflowService = new WorkflowService(workflows.adapter as WorkflowPersistence);
+  const workflowService = new WorkflowService(workflows.adapter);
   await workflowService.initialize();
   const workflow = await workflowService.createWorkflow({ intent: "Add refund safeguards", workType: "feature", specification: "Keep an audit record." }, "workflow-create");
   const development = memoryPersistence<never>();
-  const service = new DevelopmentService(development.adapter as DevelopmentPersistence, workflowService, () => "2026-07-22T12:00:00.000Z", (() => { let id = 0; return () => `00000000-0000-4000-8000-${String(++id).padStart(12, "0")}`; })());
+  const service = new DevelopmentService(development.adapter, workflowService, () => "2026-07-22T12:00:00.000Z", (() => { let id = 0; return () => `00000000-0000-4000-8000-${String(++id).padStart(12, "0")}`; })());
   await service.initialize();
   return { service, workflow, workflowService, stored: development.read };
 }
@@ -41,12 +41,12 @@ describe("DevelopmentService", () => {
   });
 
   it("survives service recreation with stable work-item, stage, objective, and source-scope IDs", async () => {
-    const workflows = memoryPersistence<never>(); const workflowService = new WorkflowService(workflows.adapter as WorkflowPersistence); await workflowService.initialize();
+    const workflows = memoryPersistence<never>(); const workflowService = new WorkflowService(workflows.adapter); await workflowService.initialize();
     const workflow = await workflowService.createWorkflow({ intent: "Persist Development", workType: "bug-fix" }, "workflow");
-    const development = memoryPersistence<never>(); const first = new DevelopmentService(development.adapter as DevelopmentPersistence, workflowService); await first.initialize();
+    const development = memoryPersistence<never>(); const first = new DevelopmentService(development.adapter, workflowService); await first.initialize();
     const initialized = await first.initializeStage(workflow.id, "init"); const scope = scopeFixture(workflow.id, initialized.workItem.id); await first.addScopeItem(workflow.id, initialized.workItem.id, scope, "scope");
     await first.updateObjective(workflow.id, initialized.workItem.id, "Persisted objective", "objective");
-    const restarted = new DevelopmentService(development.adapter as DevelopmentPersistence, workflowService); await restarted.initialize(); const restored = await restarted.load(workflow.id);
+    const restarted = new DevelopmentService(development.adapter, workflowService); await restarted.initialize(); const restored = await restarted.load(workflow.id);
     expect(restored.workItem).toMatchObject({ id: initialized.workItem.id, stageId: initialized.workItem.stageId, objective: "Persisted objective" });
     expect(restored.scopeItems[0]?.id).toBe(scope.id);
   });

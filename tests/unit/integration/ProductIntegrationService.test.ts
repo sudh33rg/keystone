@@ -8,7 +8,6 @@ import {
   StalenessService,
   StartupStateService,
 } from "../../../src/core/integration/ProductIntegrationService";
-import { TeamWorkflowPersistenceStore } from "../../../src/core/persistence/TeamWorkflowPersistenceStore";
 import { intelligenceSnapshot } from "../intelligence/fixtures";
 
 const roots: string[] = [];
@@ -68,22 +67,5 @@ describe("product integration contracts", () => {
     });
     expect(degraded).toMatchObject({ stage: "degraded", status: "degraded" });
     expect(degraded.diagnostics).toHaveLength(1);
-  });
-
-  it("migrates the legacy repository artifact path once", async () => {
-    const root = await mkdtemp(join(tmpdir(), "keystone-team-migration-"));
-    roots.push(root);
-    const seed = new TeamWorkflowPersistenceStore(root);
-    await seed.initialize();
-    const path = join(root, "workflow", "team-state.json");
-    const value = JSON.parse(await readFile(path, "utf8")) as {
-      settings: { repositoryArtifactPath: string };
-    };
-    value.settings.repositoryArtifactPath = ".buildwise/handoffs";
-    await mkdir(join(root, "workflow"), { recursive: true });
-    await writeFile(path, JSON.stringify(value));
-    const restored = await new TeamWorkflowPersistenceStore(root).initialize();
-    expect(restored.settings.repositoryArtifactPath).toBe(".keystone/handoffs");
-    expect(await readFile(path, "utf8")).not.toContain(".buildwise/handoffs");
   });
 });

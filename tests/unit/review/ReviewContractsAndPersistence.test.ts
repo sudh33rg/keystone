@@ -35,7 +35,6 @@ describe("Review and optional completion contracts", () => {
       "complete/getChangeSet",
       "complete/getPushReadiness",
       "complete/getPrCapabilities",
-      "complete/prepareHandoff",
     ] as const) {
       expect(
         WebviewRequestSchema.safeParse({

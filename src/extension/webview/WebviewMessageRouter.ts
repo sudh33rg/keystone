@@ -21,6 +21,7 @@ import {
   type WebviewRequest,
 } from "../../shared/contracts/messages";
 import { KeystoneError } from "../../shared/errors/KeystoneError";
+import { HandoffError } from "../../shared/contracts/handoff";
 import type { KeystoneLogger } from "../../shared/logging/KeystoneLogger";
 import type { CpgQueryService } from "../../core/intelligence/cpg/CpgQueryService";
 import type { IntelligenceQuery } from "../../shared/contracts/query";
@@ -36,7 +37,6 @@ import type {
   WorkflowCompletionService,
 } from "../../core/execution/CompletionService";
 import type { DeliveryCoordinator } from "../../core/delivery/GitDeliveryService";
-import type { TeamWorkflowService } from "../../core/team/TeamWorkflowService";
 import type { ExecutionRoutingService } from "../../core/workflows/ExecutionRoutingService";
 import type { OrchestrationService } from "../../core/orchestration/OrchestrationService";
 import type { BuildWorkspaceService } from "../../core/workflows/BuildWorkspaceService";
@@ -106,7 +106,8 @@ export interface IntelligenceServiceRegistry {
   workflowCompletion: WorkflowCompletionService;
   delivery: DeliveryCoordinator;
   review: ReviewCompletionService;
-  team: TeamWorkflowService;
+  prReview?: import("../../core/review/PrReviewService").PrReviewService;
+  taskHandoff?: import("../../core/handoff/TaskHandoffService").TaskHandoffService;
   routing: ExecutionRoutingService;
   orchestration: OrchestrationService;
   workspaceTrusted(): boolean;
@@ -2254,6 +2255,15 @@ export class WebviewMessageRouter {
             taskId: session.taskId,
             mode: session.resultCapture!.mode,
             message: "Result captured as untrusted claims plus repository observations.",
+            ...(session.postEditVerifierResult
+              ? {
+                  postEditVerifierResult: {
+                    passed: session.postEditVerifierResult.passed,
+                    verdict: session.postEditVerifierResult.verdict,
+                    signals: session.postEditVerifierResult.signals.slice(0, 20),
+                  },
+                }
+              : {}),
           }),
         );
         await this.sendSuccess(request.requestId, session);
@@ -2686,6 +2696,108 @@ export class WebviewMessageRouter {
           this.services.review.getState(request.payload.workflowId).prDraft,
         );
         return;
+      // Phase 11 — Task Handoff (portable local package; no git/PR/account operations).
+      case "taskHandoff/checkEligibility": {
+        const svc = this.requireTaskHandoff();
+        await this.sendSuccess(request.requestId, svc.checkEligibility(request.payload.workflowId));
+        return;
+      }
+      case "taskHandoff/createDraft": {
+        const svc = this.requireTaskHandoff();
+        await this.sendSuccess(request.requestId, await svc.createDraft(request.payload.workflowId));
+        return;
+      }
+      case "taskHandoff/updateDraft": {
+        const svc = this.requireTaskHandoff();
+        await this.sendSuccess(request.requestId, await svc.updateDraft(request.payload.workflowId, request.payload.handoffId, request.payload));
+        return;
+      }
+      case "taskHandoff/runPrivacyScan": {
+        const svc = this.requireTaskHandoff();
+        await this.sendSuccess(request.requestId, svc.runPrivacyScan(request.payload.handoffId));
+        return;
+      }
+      case "taskHandoff/markRedacted": {
+        const svc = this.requireTaskHandoff();
+        await this.sendSuccess(request.requestId, svc.markRedacted(request.payload.handoffId, request.payload.findingId));
+        return;
+      }
+      case "taskHandoff/export": {
+        const svc = this.requireTaskHandoff();
+        await this.sendSuccess(request.requestId, await svc.exportPackage(request.payload.handoffId, request.payload.expectedRevision, request.payload.targetPath));
+        return;
+      }
+      case "taskHandoff/listHistory": {
+        const svc = this.requireTaskHandoff();
+        await this.sendSuccess(request.requestId, svc.listHistory(request.payload.workflowId));
+        return;
+      }
+      case "taskHandoff/previewImport": {
+        const svc = this.requireTaskHandoff();
+        await this.sendSuccess(request.requestId, svc.previewImport(request.payload.rawContent));
+        return;
+      }
+      case "taskHandoff/acceptImport": {
+        const svc = this.requireTaskHandoff();
+        await this.sendSuccess(request.requestId, await svc.acceptImport(request.payload.rawContent, request.payload.receiverLabel, request.payload.receiverNotes));
+        return;
+      }
+      case "taskHandoff/rejectImport": {
+        const svc = this.requireTaskHandoff();
+        await this.sendSuccess(request.requestId, svc.rejectImport(request.payload.rawContent));
+        return;
+      }
+      // Phase 10 — Evidence-Backed PR Review (deterministic; no git/PR writes).
+      case "pr-review/prepare": {
+        const svc = this.requirePrReview();
+        await this.sendSuccess(request.requestId, await svc.prepare(request.payload.workflowId, request.payload.overrideChangeSet, request.payload.confirmPartial));
+        return;
+      }
+      case "pr-review/getState": {
+        const svc = this.requirePrReview();
+        await this.sendSuccess(request.requestId, svc.persisted);
+        return;
+      }
+      case "pr-review/getFindings": {
+        const svc = this.requirePrReview();
+        const review = svc.getReview(request.payload.workflowId);
+        await this.sendSuccess(request.requestId, svc.getFindings(review.id));
+        return;
+      }
+      case "pr-review/updateFindingStatus": {
+        const svc = this.requirePrReview();
+        await this.sendSuccess(
+          request.requestId,
+          await svc.updateFindingStatus(
+            request.payload.workflowId,
+            request.payload.findingId,
+            request.payload.status,
+            request.payload.resolutionEvidence,
+            request.payload.justification,
+          ),
+        );
+        return;
+      }
+      case "pr-review/calculateReadiness": {
+        const svc = this.requirePrReview();
+        await this.sendSuccess(request.requestId, svc.calculateReadiness(request.payload.workflowId));
+        return;
+      }
+      case "pr-review/approveReadiness": {
+        const svc = this.requirePrReview();
+        await this.sendSuccess(request.requestId, await svc.approveReadiness(request.payload.workflowId, request.payload.decision, request.payload.reason));
+        return;
+      }
+      case "pr-review/generatePackage": {
+        const svc = this.requirePrReview();
+        await this.sendSuccess(request.requestId, svc.generatePackage(request.payload.workflowId));
+        return;
+      }
+      case "pr-review/updatePackage": {
+        const svc = this.requirePrReview();
+        await this.sendSuccess(request.requestId, await svc.updatePackage(request.payload.workflowId, request.payload.title, request.payload.description));
+        return;
+      }
       case "review/generatePrDraft":
       case "complete/preparePr": {
         const workflowId = request.payload.workflowId;
@@ -3261,64 +3373,6 @@ export class WebviewMessageRouter {
         await this.sendSuccess(request.requestId, { path: `.keystone/exports/${name}`, hash });
         return;
       }
-      case "complete/prepareHandoff": {
-        const review = this.services.review.getState(request.payload.workflowId);
-        const incomplete = review.workflow.tasks.find((item) => item.status !== "completed");
-        if (!incomplete) throw new Error("Task Handoff requires explicit unfinished work.");
-        const assignment = this.services.team.store.snapshot.assignments.find(
-          (item) =>
-            item.workflowId === review.workflow.id &&
-            item.taskId === incomplete.id &&
-            ["accepted", "in-progress", "handoff-requested"].includes(item.status),
-        );
-        if (!assignment)
-          throw new Error("Assign and accept the unfinished task before preparing a Handoff.");
-        const packageData = await this.services.team.packages.build({
-          assignmentId: assignment.id,
-          senderParticipantId: assignment.assignedTo,
-          completedWork: review.workflow.tasks
-            .filter((item) => item.status === "completed")
-            .map((item) => item.title),
-          remainingWork: review.workflow.tasks
-            .filter((item) => item.status !== "completed")
-            .map((item) => item.title),
-          blockers: review.readinessBlockers.map((description) => ({
-            id: crypto.randomUUID(),
-            category: "review",
-            description,
-            blocking: true,
-          })),
-          openQuestions: review.notes
-            .filter((item) => !item.resolvedAt && item.type === "question")
-            .map((item) => ({
-              id: crypto.randomUUID(),
-              question: item.text,
-              blocking: item.blocking,
-            })),
-          senderNotes: "Prepared from the current retained Review evidence.",
-        });
-        await this.publishReviewEvent(
-          "complete/handoffPrepared",
-          review.workflow.id,
-          "Task-centered Handoff package prepared for the unfinished task.",
-        );
-        await this.sendSuccess(request.requestId, packageData);
-        return;
-      }
-      case "complete/exportHandoff": {
-        const packageData = this.services.team.store.snapshot.packages.find(
-          (item) => item.id === request.payload.packageId,
-        );
-        if (!packageData) throw new Error("Handoff package not found.");
-        const destination = await this.services.team.artifacts.export(packageData, "json");
-        if (!destination)
-          throw new Error("Handoff export was cancelled; the package remains available.");
-        await this.sendSuccess(request.requestId, {
-          uri: destination,
-          hash: packageData.fingerprint,
-        });
-        return;
-      }
       case "completion/getWorkflowReport":
         await this.sendSuccess(
           request.requestId,
@@ -3794,323 +3848,6 @@ export class WebviewMessageRouter {
           ),
         );
         return;
-      case "team/participants":
-        await this.sendSuccess(request.requestId, this.services.team.participants.list());
-        return;
-      case "team/addParticipant": {
-        const participant = await this.services.team.participants.create(request.payload);
-        await this.postMessage(
-          hostMessage("team/participantsChanged", {
-            participantIds: this.services.team.participants.list().map((item) => item.id),
-            message: "Participant added to local team metadata.",
-          }),
-        );
-        await this.sendSuccess(request.requestId, participant);
-        return;
-      }
-      case "team/updateParticipant": {
-        const participant = await this.services.team.participants.update(request.payload);
-        await this.postMessage(
-          hostMessage("team/participantsChanged", {
-            participantIds: this.services.team.participants.list().map((item) => item.id),
-            message: "Participant metadata updated.",
-          }),
-        );
-        await this.sendSuccess(request.requestId, participant);
-        return;
-      }
-      case "team/removeParticipant":
-        await this.services.team.participants.remove(request.payload.participantId);
-        await this.postMessage(
-          hostMessage("team/participantsChanged", {
-            participantIds: this.services.team.participants.list().map((item) => item.id),
-            message: "Participant removed from local team metadata.",
-          }),
-        );
-        await this.sendSuccess(request.requestId);
-        return;
-      case "team/capabilities":
-        await this.sendSuccess(request.requestId, {
-          identityAssurance: "self-asserted-local",
-          capabilities: [
-            "participants",
-            "explicit-assignment-acceptance",
-            "reviewed-handoff",
-            "json-zip-export",
-            "repository-reconciliation",
-            "read-only-import",
-          ],
-          limitations: [
-            "No authentication or authorization provider",
-            "No cloud sync or real-time presence",
-            "No automatic Git mutation or execution continuation",
-          ],
-        });
-        return;
-      case "assignment/create": {
-        const assignment = await this.services.team.assignments.create(request.payload);
-        await this.postMessage(
-          hostMessage("assignment/created", {
-            assignmentId: assignment.id,
-            message: "Assignment created and awaiting explicit acceptance.",
-          }),
-        );
-        await this.sendSuccess(request.requestId, assignment);
-        return;
-      }
-      case "assignment/get":
-        await this.sendSuccess(
-          request.requestId,
-          this.services.team.assignments.get(request.payload.assignmentId),
-        );
-        return;
-      case "assignment/list":
-      case "progress/assignments":
-        await this.sendSuccess(
-          request.requestId,
-          this.services.team.assignments.list(request.payload.workflowId),
-        );
-        return;
-      case "assignment/update":
-        await this.sendSuccess(
-          request.requestId,
-          await this.services.team.assignments.update(
-            request.payload.assignmentId,
-            request.payload.patch,
-          ),
-        );
-        return;
-      case "assignment/accept":
-      case "assignment/reject":
-      case "assignment/requestClarification": {
-        const decision =
-          request.type === "assignment/accept"
-            ? "accepted"
-            : request.type === "assignment/reject"
-              ? "rejected"
-              : "clarification-requested";
-        const assignment = await this.services.team.assignments.decide(request.payload, decision);
-        await this.postMessage(
-          hostMessage("assignment/statusChanged", {
-            assignmentId: assignment.id,
-            message: `Assignment is ${assignment.status}.`,
-          }),
-        );
-        await this.sendSuccess(request.requestId, assignment);
-        return;
-      }
-      case "assignment/reassign": {
-        const assignment = await this.services.team.reassignments.reassign(request.payload);
-        await this.postMessage(
-          hostMessage("assignment/reassigned", {
-            assignmentId: assignment.id,
-            message: "Assignment reassigned with an auditable continuity record.",
-          }),
-        );
-        await this.sendSuccess(request.requestId, assignment);
-        return;
-      }
-      case "assignment/cancel": {
-        const assignment = await this.services.team.assignments.cancel(request.payload);
-        await this.postMessage(
-          hostMessage("assignment/statusChanged", {
-            assignmentId: assignment.id,
-            message: "Assignment cancelled with an explicit reason.",
-          }),
-        );
-        await this.sendSuccess(request.requestId, assignment);
-        return;
-      }
-      case "handoff/prepare":
-      case "build/prepareHandoff": {
-        await this.postMessage(
-          hostMessage("handoff/preparationStarted", {
-            message: "Preparing immutable, evidence-linked handoff package.",
-          }),
-        );
-        const packageData = await this.services.team.packages.build(request.payload);
-        await this.postMessage(
-          hostMessage("handoff/prepared", {
-            packageId: packageData.id,
-            message: "Handoff package prepared for review and export.",
-          }),
-        );
-        await this.sendSuccess(request.requestId, packageData);
-        return;
-      }
-      case "handoff/get":
-        await this.sendSuccess(
-          request.requestId,
-          this.services.team.store.snapshot.packages.find(
-            (item) => item.id === request.payload.packageId,
-          ),
-        );
-        return;
-      case "handoff/validate":
-      case "build/validateHandoff":
-        await this.sendSuccess(
-          request.requestId,
-          this.services.team.validator.validate(
-            request.payload.package,
-            this.services.team.store.snapshot.settings,
-          ),
-        );
-        return;
-      case "handoff/export":
-      case "build/exportHandoff": {
-        const packageData = this.services.team.store.snapshot.packages.find(
-          (item) => item.id === request.payload.packageId,
-        );
-        if (!packageData) throw new Error("Handoff package not found.");
-        const destination = await this.services.team.artifacts.export(
-          packageData,
-          request.payload.mode,
-        );
-        if (destination)
-          await this.postMessage(
-            hostMessage("handoff/exported", {
-              packageId: packageData.id,
-              message: "Reviewed handoff artifact exported.",
-            }),
-          );
-        await this.sendSuccess(request.requestId, {
-          ...(destination ? { destination } : {}),
-        });
-        return;
-      }
-      case "handoff/import": {
-        const artifact = await this.services.team.artifacts.selectImport();
-        if (!artifact) {
-          await this.sendSuccess(request.requestId, undefined);
-          return;
-        }
-        const imported = await this.cancellableQuery(request.requestId, (signal) =>
-          this.services.team.imports.importJson(
-            artifact.bytes,
-            artifact.source,
-            artifact.label,
-            signal,
-          ),
-        );
-        await this.postMessage(
-          hostMessage("handoff/imported", {
-            packageId: imported.package.id,
-            message: "Handoff imported for review; no repository or execution state was changed.",
-          }),
-        );
-        await this.sendSuccess(request.requestId, {
-          package: imported.package,
-          validation: imported.validation,
-          importId: imported.record.id,
-        });
-        return;
-      }
-      case "handoff/reconcile": {
-        const packageData = this.services.team.store.snapshot.packages.find(
-          (item) => item.id === request.payload.packageId,
-        );
-        if (!packageData) throw new Error("Handoff package not found.");
-        const reconciliation = await this.services.team.reconciliation.reconcile(packageData);
-        await this.postMessage(
-          hostMessage("handoff/reconciliationCompleted", {
-            packageId: packageData.id,
-            message: `Repository reconciliation classified the receiver as ${reconciliation.compatibility}.`,
-          }),
-        );
-        await this.sendSuccess(request.requestId, reconciliation);
-        return;
-      }
-      case "handoff/accept":
-      case "handoff/reject":
-      case "handoff/importReadOnly": {
-        const decision =
-          request.type === "handoff/accept"
-            ? "accepted"
-            : request.type === "handoff/reject"
-              ? "rejected"
-              : "read-only";
-        const acceptance = await this.services.team.acceptance.decide({
-          ...request.payload,
-          decision,
-        });
-        let contextMessage = "";
-        if (decision === "accepted") {
-          const packageData = this.services.team.store.snapshot.packages.find(
-            (item) => item.id === acceptance.packageId,
-          );
-          const workflow = packageData
-            ? this.services.workflow.get(packageData.workflowId)
-            : undefined;
-          const task = workflow?.tasks.find((item) => item.id === packageData?.taskId);
-          if (packageData && workflow?.specification && task) {
-            try {
-              const rebuilt = await this.services.context.build({
-                task,
-                specification: workflow.specification,
-                pinnedEntityIds: packageData.context.flatMap((item) => item.canonicalEntityIds),
-                pinnedFiles: packageData.context.flatMap((item) => item.sourcePaths),
-                currentFile: this.services.currentEditor?.(),
-                currentSelection: this.services.currentSelection?.(),
-              });
-              contextMessage = ` Fresh receiver context ${rebuilt.id} was rebuilt and remains unreviewed.`;
-            } catch (cause) {
-              contextMessage =
-                " Receiver context could not be rebuilt automatically and must be prepared before delegation.";
-              this.logger.warning("handoff.context.rebuild", contextMessage, cause);
-            }
-          }
-        }
-        await this.postMessage(
-          hostMessage(decision === "accepted" ? "handoff/accepted" : "handoff/rejected", {
-            packageId: acceptance.packageId,
-            message:
-              decision === "accepted"
-                ? `Handoff accepted; a fresh execution approval is still required.${contextMessage}`
-                : `Handoff retained as ${decision}.`,
-          }),
-        );
-        await this.sendSuccess(request.requestId, acceptance);
-        return;
-      }
-      case "handoff/cancel":
-      case "build/cancelHandoff":
-        await this.services.team.store.update((state) => ({
-          ...state,
-          packages: state.packages.filter((item) => item.id !== request.payload.packageId),
-        }));
-        await this.sendSuccess(request.requestId);
-        return;
-      case "progress/workflows":
-        await this.sendSuccess(
-          request.requestId,
-          this.services.team.store.snapshot.progress.slice(-500),
-        );
-        return;
-      case "progress/tasks":
-      case "progress/refresh": {
-        const progress = this.services.team.progress.get(request.payload.workflowId);
-        await this.services.team.store.update((state) => ({
-          ...state,
-          progress: [
-            ...state.progress.filter((item) => item.workflowId !== progress.workflowId),
-            progress,
-          ].slice(-500),
-        }));
-        await this.postMessage(
-          hostMessage("progress/changed", {
-            workflowId: progress.workflowId,
-            message: "Local workflow progress snapshot refreshed.",
-          }),
-        );
-        await this.sendSuccess(request.requestId, progress);
-        return;
-      }
-      case "progress/audit":
-        await this.sendSuccess(
-          request.requestId,
-          this.services.team.audit.list(this.services.team.store.snapshot, request.payload),
-        );
-        return;
       case "orchestration/create": {
         const value = await this.services.orchestration.create(
           request.payload.workflowId,
@@ -4504,11 +4241,7 @@ export class WebviewMessageRouter {
       "build/rerunValidation",
       "build/startRetry",
     ]);
-    if (
-      (request.type === "handoff/export" || request.type === "build/exportHandoff") &&
-      request.payload.mode === "repository-artifact"
-    )
-      blocked.add(request.type);
+    if (!blocked.has(request.type)) return;
     if (!blocked.has(request.type)) return;
     throw new KeystoneError({
       code: "WORKSPACE_TRUST_REQUIRED",
@@ -4606,15 +4339,6 @@ export class WebviewMessageRouter {
     for (const current of this.services.workflow.list()) {
       try {
         const workflow = await this.services.workflow.reconcileStaleness(current.id);
-        const staleAssignments = await this.services.team.reconcileStaleness(current.id);
-        for (const assignment of staleAssignments)
-          await this.postMessage(
-            hostMessage("assignment/stale", {
-              assignmentId: assignment.id,
-              message:
-                "Assignment became stale after canonical workflow or repository state changed.",
-            }),
-          );
         const staleTasks = workflow.tasks.filter((task) => task.status === "stale");
         for (const task of staleTasks) {
           if (this.services.context.get(task.id))
@@ -4842,6 +4566,16 @@ export class WebviewMessageRouter {
   private requireDevelopmentScope(): SourceScopeService {
     if (!this.services.developmentScope) throw new DevelopmentServiceError("file-outside-workspace", "Development source scope requires an open file-backed workspace.");
     return this.services.developmentScope;
+  }
+
+  private requireTaskHandoff(): import("../../core/handoff/TaskHandoffService").TaskHandoffService {
+    if (!this.services.taskHandoff) throw new HandoffError("task-handoff-unavailable", "Task Handoff is not available in this workspace.", true, "handoff");
+    return this.services.taskHandoff;
+  }
+
+  private requirePrReview(): import("../../core/review/PrReviewService").PrReviewService {
+    if (!this.services.prReview) throw new KeystoneError({ code: "pr-review-unavailable", category: "WORKSPACE", message: "PR Review is not available in this workspace.", technicalDetails: "PrReviewService is not registered.", operation: "pr-review", recoverable: true, recommendedAction: "Retry after the workspace finishes initializing.", retryable: true });
+    return this.services.prReview;
   }
 
   private async sendError(requestId: string, error: KeystoneError): Promise<void> {

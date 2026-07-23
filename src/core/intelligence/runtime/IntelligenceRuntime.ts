@@ -76,8 +76,17 @@ export class IntelligenceRuntime {
   async initialize(): Promise<void> {
     if (this.initialized) return;
     this.initialized = true;
+    this.emit();
     await this.index.initialize();
+    this.emit();
     await this.health.refresh();
+    this.registerDisposables();
+    await this.monitor.start();
+    this.maybeEnqueueStartupWork();
+    this.emit();
+  }
+
+  private registerDisposables(): void {
     this.disposables.push(
       this.index.onDidChange(() => this.emit()),
       this.scheduler.onDidChange((state) => {
@@ -108,25 +117,34 @@ export class IntelligenceRuntime {
       }),
       this.monitor.onDidChangeWorkspaceRoots(() => this.enqueueFull("workspace")),
     );
-    await this.monitor.start();
+  }
+
+  private maybeEnqueueStartupWork(): void {
     const configuration = this.workspace.getIndexingConfiguration();
-    if (configuration.enabled && configuration.onWorkspaceOpen && this.workspace.isTrusted()) {
-      const reconciliation = await this.startup.reconcile();
-      this.phase = reconciliation.phase;
-      this.logger.info("intelligence.startup.reconcile", reconciliation.message, {
-        action: reconciliation.action,
-        changedFiles: reconciliation.changes.length,
-      });
-      if (reconciliation.action === "incremental")
-        this.enqueueBatch({
-          changes: reconciliation.changes,
-          reason: reconciliation.reason,
-          createdAt: new Date().toISOString(),
+    if (!configuration.enabled || !configuration.onWorkspaceOpen || !this.workspace.isTrusted()) return;
+    void (async () => {
+      try {
+        const reconciliation = await this.startup.reconcile();
+        this.phase = reconciliation.phase;
+        this.logger.info("intelligence.startup.reconcile", reconciliation.message, {
+          action: reconciliation.action,
+          changedFiles: reconciliation.changes.length,
         });
-      else if (reconciliation.action === "rebuild" || reconciliation.action === "recover")
-        this.enqueueFull(reconciliation.reason);
-    }
-    this.emit();
+        if (reconciliation.action === "incremental")
+          this.enqueueBatch({
+            changes: reconciliation.changes,
+            reason: reconciliation.reason,
+            createdAt: new Date().toISOString(),
+          });
+        else if (reconciliation.action === "rebuild" || reconciliation.action === "recover")
+          this.enqueueFull(reconciliation.reason);
+      } catch (cause) {
+        this.phase = "stale";
+        this.logger.warning("intelligence.startup.reconcile", String(cause));
+      } finally {
+        this.emit();
+      }
+    })();
   }
 
   start(): { scanRevision: number } {

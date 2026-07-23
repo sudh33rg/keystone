@@ -65,7 +65,6 @@ Keystone's workflow engine drives the SDLC:
 - **ValidationOrchestrator** — Runs build/lint/test commands and evaluates acceptance criteria.
 - **ReviewCompletionService** — Orchestrates review workflow completion.
 - **DeliveryCoordinator** — Manages Git push and PR creation via provider registry (GitHub extension or clipboard fallback).
-- **TeamWorkflowService** — Handles handoff export/import with security verification.
 - **OrchestrationService** — Multi-agent orchestration with routing strategies.
 
 ### Copilot Integration (src/core/copilot)
@@ -94,7 +93,6 @@ All extension state is persisted under `.keystone/`:
 - **ExecutionPersistenceStore** — Execution sessions and validation runs.
 - **DeliveryPersistenceStore** — Delivery change sets and PR results.
 - **ReviewPersistenceStore** — Review state.
-- **TeamWorkflowPersistenceStore** — Handoff artifacts.
 - **OrchestrationPersistenceStore** — Orchestration state.
 - **NativeShellPersistenceStore** — Native shell state.
 - **CopilotIntegrationPersistenceStore** — Copilot settings and tool audit.

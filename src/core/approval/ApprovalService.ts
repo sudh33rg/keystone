@@ -157,6 +157,23 @@ export class ApprovalService {
   }
 
   /**
+   * Auto-reject expired approvals when they are observed.
+   */
+  async rejectExpired(approvalId: string): Promise<Approval> {
+    const current = this.get(approvalId);
+    if (!current) throw new Error(`Approval ${approvalId} not found.`);
+    if (current.status !== "pending") return current;
+    const expired = current.expiry ? Date.parse(current.expiry) <= Date.now() : false;
+    if (!expired) return current;
+    return this.update(approvalId, {
+      status: "rejected",
+      actor: "keystone",
+      reason: "Approval expired before a decision was recorded.",
+      previousStatus: current.status,
+    });
+  }
+
+  /**
    * Update an approval.
    */
   private async update(

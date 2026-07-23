@@ -69,15 +69,11 @@ import {
   PullRequestProviderCapabilitySchema,
 } from "../../shared/contracts/delivery";
 import {
-  HandoffAcceptanceSchema,
-  HandoffPackageSchema,
-  HandoffReconciliationSchema,
-  HandoffValidationResultSchema,
-  TaskAssignmentSchema,
-  TeamAuditEntrySchema,
-  TeamParticipantSchema,
-  TeamProgressSnapshotSchema,
-} from "../../shared/contracts/team";
+  HandoffCompatibilityReportSchema,
+  HandoffPrivacyReportSchema,
+  TaskHandoffSchema,
+  TaskHandoffPackageSchema,
+} from "../../shared/contracts/handoff";
 import { ExecutionRoutingDecisionSchema } from "../../shared/contracts/routing";
 import {
   OrchestrationReviewPlanSchema,
@@ -111,6 +107,11 @@ import {
   WorkflowCompletionRecordSchema,
   WorkflowReviewStateSchema,
 } from "../../shared/contracts/review";
+import {
+  ChangeReadinessDecisionSchema,
+  PullRequestPackageSchema,
+  ReviewFindingSchema,
+} from "../../shared/contracts/prReview";
 import {
   AssistedLaunchStateSchema,
   CopilotCustomizationRecordSchema,
@@ -758,67 +759,54 @@ function validateResult(type: WebviewRequestType, value: unknown): unknown {
     case "complete/createPr":
     case "complete/confirmAssistedPr":
       return PullRequestCreationResultSchema.parse(value);
-    case "complete/prepareHandoff":
-      return HandoffPackageSchema.parse(value);
     case "complete/preparePatch":
     case "complete/exportPatch":
-    case "complete/exportHandoff":
+    case "taskHandoff/checkEligibility":
       return value;
-    case "team/participants":
-      return TeamParticipantSchema.array().max(500).parse(value);
-    case "team/addParticipant":
-    case "team/updateParticipant":
-      return TeamParticipantSchema.parse(value);
-    case "assignment/create":
-    case "assignment/update":
-    case "assignment/accept":
-    case "assignment/reject":
-    case "assignment/requestClarification":
-    case "assignment/reassign":
-    case "assignment/cancel":
-      return TaskAssignmentSchema.parse(value);
-    case "assignment/get":
-      return value === undefined ? undefined : TaskAssignmentSchema.parse(value);
-    case "assignment/list":
-    case "progress/assignments":
-      return TaskAssignmentSchema.array().max(2000).parse(value);
-    case "handoff/prepare":
-    case "build/prepareHandoff":
-      return HandoffPackageSchema.parse(value);
-    case "handoff/get":
-      return value === undefined ? undefined : HandoffPackageSchema.parse(value);
-    case "handoff/validate":
-    case "build/validateHandoff":
-      return HandoffValidationResultSchema.parse(value);
-    case "handoff/import":
-      return value === undefined
-        ? undefined
-        : {
-            package: HandoffPackageSchema.parse((value as { package: unknown }).package),
-            validation: HandoffValidationResultSchema.parse(
-              (value as { validation: unknown }).validation,
-            ),
-            importId: String((value as { importId: unknown }).importId),
-          };
-    case "handoff/reconcile":
-      return HandoffReconciliationSchema.parse(value);
-    case "handoff/export":
-    case "build/exportHandoff": {
-      if (!value || typeof value !== "object") return {};
-      const destination = (value as { destination?: unknown }).destination;
-      return typeof destination === "string" ? { destination } : {};
-    }
-    case "handoff/accept":
-    case "handoff/reject":
-    case "handoff/importReadOnly":
-      return HandoffAcceptanceSchema.parse(value);
-    case "progress/tasks":
-    case "progress/refresh":
-      return TeamProgressSnapshotSchema.parse(value);
-    case "progress/workflows":
-      return TeamProgressSnapshotSchema.array().max(500).parse(value);
-    case "progress/audit":
-      return TeamAuditEntrySchema.array().max(500).parse(value);
+    case "taskHandoff/createDraft":
+    case "taskHandoff/updateDraft":
+      return TaskHandoffSchema.parse(value);
+    case "taskHandoff/runPrivacyScan":
+    case "taskHandoff/markRedacted":
+      return HandoffPrivacyReportSchema.parse(value);
+    case "taskHandoff/export":
+      return { pkg: TaskHandoffPackageSchema.parse((value as { pkg: unknown }).pkg), savedUri: String((value as { savedUri: unknown }).savedUri) };
+    case "taskHandoff/listHistory":
+      return TaskHandoffSchema.array().parse(value);
+    case "taskHandoff/previewImport":
+      return { pkg: TaskHandoffPackageSchema.parse((value as { pkg: unknown }).pkg), compatibility: HandoffCompatibilityReportSchema.parse((value as { compatibility: unknown }).compatibility), blocking: Boolean((value as { blocking: unknown }).blocking) };
+    case "taskHandoff/acceptImport":
+    case "taskHandoff/rejectImport":
+      return TaskHandoffSchema.parse(value);
+    case "pr-review/prepare":
+    case "pr-review/getState":
+      return value;
+    case "pr-review/getFindings":
+      return ReviewFindingSchema.array().parse(value);
+    case "pr-review/updateFindingStatus":
+      return ReviewFindingSchema.parse(value);
+    case "pr-review/calculateReadiness":
+    case "pr-review/approveReadiness":
+      return ChangeReadinessDecisionSchema.parse(value);
+    case "pr-review/generatePackage":
+    case "pr-review/updatePackage":
+      return PullRequestPackageSchema.parse(value);
+    case "taskHandoff/checkEligibility":
+      return z.object({ eligible: z.boolean(), reason: z.string().max(2000).optional() }).strict().parse(value);
+    case "taskHandoff/createDraft":
+    case "taskHandoff/updateDraft":
+    case "taskHandoff/acceptImport":
+    case "taskHandoff/rejectImport":
+      return z.object({ id: z.string(), status: z.string().max(200) }).strict().parse(value);
+    case "taskHandoff/runPrivacyScan":
+    case "taskHandoff/markRedacted":
+      return z.object({ findings: z.array(z.object({ id: z.string(), message: z.string().max(2000) })).max(200).default([]) }).strict().parse(value);
+    case "taskHandoff/export":
+      return z.object({ savedUri: z.string() }).strict().parse(value);
+    case "taskHandoff/listHistory":
+      return z.array(z.object({ id: z.string(), status: z.string().max(200), direction: z.string().max(200) })).max(1000).parse(value);
+    case "taskHandoff/previewImport":
+      return z.object({ blocking: z.boolean(), blockingWarnings: z.array(z.string().max(2000)).max(100).default([]) }).strict().parse(value);
     case "execution/route":
       return ExecutionRoutingDecisionSchema.parse(value);
     case "git/capabilities":
@@ -884,8 +872,6 @@ function validateResult(type: WebviewRequestType, value: unknown): unknown {
     case "intelligence.canvas.openEvidenceSource":
     case "intelligence/query/cancel":
     case "build/cancelValidation":
-    case "build/cancelHandoff":
-    case "handoff/cancel":
     case "delegation/openCopilot":
     case "delegation/copyPrompt":
     case "validation/cancel":
@@ -1022,7 +1008,7 @@ function createPreviewApi(): VsCodeApi {
           const route =
             "route" in request.payload
               ? request.payload.route
-              : sectionForRoute(request.payload.section as AppRoute);
+              : sectionForRoute(request.payload.section);
           state = {
             ...state,
             activeRoute: route,

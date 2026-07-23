@@ -7,6 +7,7 @@ import { RecoveryNotice, toUiError, UiErrorState, type KeystoneUiError } from ".
 import { DevelopmentStage } from "./DevelopmentStage";
 import { ImpactAnalysisStage } from "./ImpactAnalysisStage";
 import { QaStage } from "./QaStage";
+import { TaskHandoffWorkspace } from "./TaskHandoffWorkspace";
 
 export function ActiveWork({ bridge, workflowId, navigate, recovery }: { bridge: HostBridge; workflowId?: string; navigate: (route: AppRoute) => void; recovery?: LaunchRecovery }): React.JSX.Element {
   const selectedWorkflowId = workflowId ?? readSelectedWorkflowId(bridge);
@@ -14,6 +15,7 @@ export function ActiveWork({ bridge, workflowId, navigate, recovery }: { bridge:
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<KeystoneUiError>();
   const [selectedStageId, setSelectedStageId] = useState<string>();
+  const [showHandoff, setShowHandoff] = useState(false);
   const loadRef = useRef<() => void>(() => undefined);
   const load = useCallback(async () => {
     setLoading(true);
@@ -42,7 +44,8 @@ export function ActiveWork({ bridge, workflowId, navigate, recovery }: { bridge:
     <section className="stage-inputs" aria-labelledby="workflow-specification"><h2 id="workflow-specification">Specification</h2>{workflow.specification ? <><p>{workflow.specification.text}</p><small>Revision {workflow.specification.revision}</small></> : <p>No specification was added.</p>}</section>
     <section className="stage-inputs" aria-labelledby="stage-overview"><h2 id="stage-overview">Stage overview</h2><ol className="stage-summary-list stage-rail">{workflow.stages.map((stage) => { const openable = stage.type === "development" || stage.status === "completed" || stage.id === workflow.currentStageId; return <li key={stage.id} className={`${stage.id === workflow.currentStageId ? "current " : ""}${stage.id === selected?.id ? "selected" : ""}`} aria-current={stage.id === workflow.currentStageId ? "step" : undefined}><button disabled={!openable} onClick={() => setSelectedStageId(stage.id)}><strong>{stage.displayName}</strong><span>Order {stage.order} · {stage.status} · {stage.required ? "Required" : "Optional"}</span></button></li>; })}</ol></section>
     {selected?.type === "development" ? <DevelopmentStage bridge={bridge} workflowId={workflow.id} onWorkflowChange={handleWorkflowChange} /> : selected?.type === "impact-analysis" ? <ImpactAnalysisStage bridge={bridge} workflowId={workflow.id} onWorkflowChange={handleWorkflowChange} /> : selected?.type === "qa" ? <QaStage bridge={bridge} workflowId={workflow.id} onWorkflowChange={handleWorkflowChange} /> : selected && <section className="honesty-note" aria-labelledby="selected-stage"><h2 id="selected-stage">{selected.id === workflow.currentStageId ? "Current stage" : "Stage"}: {selected.displayName}</h2><p>Status: {selected.status}</p><p>This persisted stage remains a compact read-only summary in Phase 3.</p>{workflow.status === "active" && workflow.stages.some((stage) => stage.type === "development") && <button className="primary-button" onClick={() => setSelectedStageId(workflow.stages.find((stage) => stage.type === "development")!.id)}>Open Development</button>}</section>}
-    <div className="button-row"><button className="ghost-button" onClick={() => navigate("/")}>Return Home</button><button className="ghost-button" onClick={() => navigate("/intelligence")}>View Intelligence</button><button className="primary-button" onClick={() => void load()}>Refresh Workflow</button></div>
+    <div className="button-row"><button className="ghost-button" onClick={() => navigate("/")}>Return Home</button><button className="ghost-button" onClick={() => navigate("/intelligence")}>View Intelligence</button>{workflow.status === "active" && <button className="secondary-button" onClick={() => setShowHandoff((v) => !v)}>Task Handoff</button>}<button className="primary-button" onClick={() => void load()}>Refresh Workflow</button></div>
+    {showHandoff && <TaskHandoffWorkspace bridge={bridge} workflowId={workflow.id} onClose={() => setShowHandoff(false)} />}
   </section>;
 }
 

@@ -88,7 +88,7 @@ tests/ui/QueryWorkspace.test.tsx
 tests/ui/SDLCWorkbench.test.tsx
 tests/ui/SemanticBrowser.test.tsx
 tests/ui/StartWorkDraft.test.tsx
-tests/ui/TeamWorkflowWorkspace.test.tsx
+tests/ui/TaskHandoffWorkspace.test.tsx
 tests/ui/UiState.test.tsx
 tests/ui/phase10Consolidation.test.tsx
 tests/unit/NativeShellServices.test.ts
@@ -135,7 +135,7 @@ tests/unit/redaction.test.ts
 tests/unit/review/ReviewContractsAndPersistence.test.ts
 tests/unit/scopeCorrection.test.ts
 tests/unit/tasks/TaskGraphService.test.ts
-tests/unit/team/TeamWorkflowService.test.ts
+tests/unit/handoff/orchestrator.test.ts
 tests/unit/uiEndToEndAudit.test.ts
 tests/unit/uiInteractionContracts.test.ts
 tests/unit/validation/ValidationEngine.test.ts

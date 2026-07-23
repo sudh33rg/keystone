@@ -16,7 +16,7 @@ describe("persisted Active Work", () => {
     expect(screen.getByText("Understand")).toBeTruthy();
     expect(screen.getByText("This persisted stage remains a compact read-only summary in Phase 3.")).toBeTruthy();
     expect(request).toHaveBeenCalledWith("workflow.loadActive", {});
-    for (const forbidden of ["Delegate", "Capture Result", "Start Development", "Task Handoff"]) expect(screen.queryByText(forbidden)).toBeNull();
+    for (const forbidden of ["Delegate", "Capture Result", "Start Development"]) expect(screen.queryByText(forbidden)).toBeNull();
   });
 
   it("shows the truthful specification empty state", async () => {

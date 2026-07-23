@@ -222,33 +222,6 @@ import {
   type PullRequestCreationResult,
   type PullRequestProviderCapability,
 } from "./delivery";
-import {
-  AssignmentCreatePayloadSchema,
-  AssignmentDecisionPayloadSchema,
-  HandoffAcceptPayloadSchema,
-  HandoffCreatePayloadSchema,
-  HandoffExportPayloadSchema,
-  HandoffImportPayloadSchema,
-  HandoffPackageIdPayloadSchema,
-  HandoffReconcilePayloadSchema,
-  HandoffValidatePayloadSchema,
-  ParticipantCreatePayloadSchema,
-  ParticipantIdPayloadSchema,
-  ParticipantUpdatePayloadSchema,
-  ReassignmentPayloadSchema,
-  TaskAssignmentSchema,
-  TeamAuditPayloadSchema,
-  TeamProgressPayloadSchema,
-  type HandoffAcceptance,
-  type HandoffPackage,
-  type HandoffReconciliation,
-  type HandoffValidationResult,
-  type TaskAssignment,
-  type TeamAuditEntry,
-  type TeamParticipant,
-  type TeamPersistentState,
-  type TeamProgressSnapshot,
-} from "./team";
 import { ExecutionRoutingRequestSchema, type ExecutionRoutingDecision } from "./routing";
 import {
   OrchestrationCreatePayloadSchema,
@@ -286,6 +259,29 @@ import {
   type WorkflowCompletionRecord,
   type WorkflowReviewState,
 } from "./review";
+import {
+  ReviewChangeSetSourceSchema,
+  ReviewFindingStatusSchema,
+  type PullRequestReview,
+  type ReviewFinding,
+  type ReviewScopeAssessment,
+  type ReviewTraceabilityAssessment,
+  type ReviewContractAssessment,
+  type ReviewTestAssessment,
+  type ChangeReadinessDecision,
+  type PullRequestPackage,
+  type PrReviewPersistentState,
+} from "./prReview";
+import {
+  HandoffCompatibilityReportSchema,
+  HandoffPrivacyReportSchema,
+  HANDOFF_SCHEMA_VERSION,
+  TaskHandoffSchema,
+  type HandoffCompatibilityReport,
+  type HandoffPrivacyReport,
+  type TaskHandoff,
+  type TaskHandoffPackage,
+} from "./handoff";
 
 export const SerializedKeystoneErrorSchema = z
   .object({
@@ -424,6 +420,85 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
   request("review/returnToBuild", ReviewRequestChangesPayloadSchema),
   request("review/returnToDefine", ReviewRequestChangesPayloadSchema),
   request("review/dispositionFinding", ReviewRiskDispositionPayloadSchema),
+  // Phase 10 — Evidence-Backed PR Review (deterministic; no git/PR writes performed here).
+  request(
+    "pr-review/prepare",
+    z
+      .object({
+        workflowId: z.string().min(1).max(200),
+        overrideChangeSet: ReviewChangeSetSourceSchema.optional(),
+        confirmPartial: z.boolean().optional(),
+      })
+      .strict(),
+  ),
+  request("pr-review/getState", z.object({ workflowId: z.string().min(1).max(200) }).strict()),
+  request("pr-review/getFindings", z.object({ workflowId: z.string().min(1).max(200) }).strict()),
+  request(
+    "pr-review/updateFindingStatus",
+    z
+      .object({
+        workflowId: z.string().min(1).max(200),
+        findingId: z.string().min(1).max(200),
+        status: ReviewFindingStatusSchema,
+        resolutionEvidence: z.array(z.string().min(1).max(2000)).max(500).optional(),
+        justification: z.string().min(1).max(5000).optional(),
+      })
+      .strict(),
+  ),
+  request("pr-review/calculateReadiness", z.object({ workflowId: z.string().min(1).max(200) }).strict()),
+  request(
+    "pr-review/approveReadiness",
+    z
+      .object({
+        workflowId: z.string().min(1).max(200),
+        decision: z.enum(["ready", "ready-with-warnings"]),
+        reason: z.string().min(1).max(5000),
+      })
+      .strict(),
+  ),
+  request("pr-review/generatePackage", z.object({ workflowId: z.string().min(1).max(200) }).strict()),
+  // Phase 11 — Task Handoff (portable local package; no git/PR/account operations).
+  request("taskHandoff/checkEligibility", z.object({ workflowId: z.string().min(1).max(200) }).strict()),
+  request("taskHandoff/createDraft", z.object({ workflowId: z.string().min(1).max(200) }).strict()),
+  request(
+    "taskHandoff/updateDraft",
+    z
+      .object({
+        workflowId: z.string().min(1).max(200),
+        handoffId: z.string().min(1).max(200),
+        progressSummary: z.string().min(1).max(20_000).optional(),
+        completedWork: z.array(z.string().min(1).max(2000)).max(500).optional(),
+        unresolvedWork: z.array(z.string().min(1).max(2000)).max(500).optional(),
+        blockers: z.array(z.string().min(1).max(2000)).max(500).optional(),
+        assumptions: z.array(z.string().min(1).max(2000)).max(500).optional(),
+        nextActionTitle: z.string().min(1).max(2000).optional(),
+        nextActionDescription: z.string().min(1).max(20_000).optional(),
+        nextActionStageId: z.string().min(1).max(200).optional(),
+        nextActionWorkItemId: z.string().min(1).max(200).optional(),
+        senderLabel: z.string().min(1).max(200).optional(),
+      })
+      .strict(),
+  ),
+  request("taskHandoff/runPrivacyScan", z.object({ handoffId: z.string().min(1).max(200) }).strict()),
+  request("taskHandoff/markRedacted", z.object({ handoffId: z.string().min(1).max(200), findingId: z.string().min(1).max(200) }).strict()),
+  request(
+    "taskHandoff/export",
+    z.object({ handoffId: z.string().min(1).max(200), expectedRevision: z.number().int().nonnegative(), targetPath: z.string().min(1).max(4000) }).strict(),
+  ),
+  request("taskHandoff/listHistory", z.object({ workflowId: z.string().min(1).max(200) }).strict()),
+  request("taskHandoff/previewImport", z.object({ rawContent: z.string().min(1).max(5_000_000) }).strict()),
+  request("taskHandoff/acceptImport", z.object({ rawContent: z.string().min(1).max(5_000_000), receiverLabel: z.string().min(1).max(200).optional(), receiverNotes: z.string().min(1).max(20_000).optional() }).strict()),
+  request("taskHandoff/rejectImport", z.object({ rawContent: z.string().min(1).max(5_000_000) }).strict()),
+  request(
+    "pr-review/updatePackage",
+    z
+      .object({
+        workflowId: z.string().min(1).max(200),
+        title: z.string().min(1).max(200).optional(),
+        description: z.string().min(1).max(20_000).optional(),
+      })
+      .strict(),
+  ),
   request("complete/getState", ReviewWorkflowPayloadSchema),
   request("complete/getOptions", ReviewWorkflowPayloadSchema),
   request("complete/getReport", ReviewWorkflowPayloadSchema),
@@ -465,8 +540,6 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
     "complete/exportPatch",
     z.object({ workflowId: z.string().uuid(), approvalId: z.string().uuid() }).strict(),
   ),
-  request("complete/prepareHandoff", ReviewWorkflowPayloadSchema),
-  request("complete/exportHandoff", z.object({ packageId: z.string().uuid() }).strict()),
   request("orchestration/create", OrchestrationCreatePayloadSchema),
   request("orchestration/get", OrchestrationIdPayloadSchema),
   request("orchestration/list", z.object({}).strict()),
@@ -700,10 +773,6 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
   request("build/updateRetryAgent", RetryPlanPayloadSchema),
   request("build/approveRetry", ExecutionSessionPayloadSchema),
   request("build/startRetry", ExecutionSessionPayloadSchema),
-  request("build/prepareHandoff", HandoffCreatePayloadSchema),
-  request("build/validateHandoff", HandoffValidatePayloadSchema),
-  request("build/exportHandoff", HandoffExportPayloadSchema),
-  request("build/cancelHandoff", HandoffPackageIdPayloadSchema),
   request("build/getCompletionReadiness", ExecutionSessionPayloadSchema),
   request("build/requestCompletionReview", ExecutionSessionPayloadSchema),
   request("copilot/capabilities", z.object({}).strict()),
@@ -987,47 +1056,6 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
   ),
   request("pullRequest/status", PullRequestDraftPayloadSchema),
   request("pullRequest/refresh", PullRequestDraftPayloadSchema),
-  request("team/participants", z.object({}).strict()),
-  request("team/addParticipant", ParticipantCreatePayloadSchema),
-  request("team/updateParticipant", ParticipantUpdatePayloadSchema),
-  request("team/removeParticipant", ParticipantIdPayloadSchema),
-  request("team/capabilities", z.object({}).strict()),
-  request("assignment/create", AssignmentCreatePayloadSchema),
-  request("assignment/get", z.object({ assignmentId: z.string().uuid() }).strict()),
-  request("assignment/list", z.object({ workflowId: z.string().uuid().optional() }).strict()),
-  request(
-    "assignment/update",
-    z
-      .object({
-        assignmentId: z.string().uuid(),
-        patch: TaskAssignmentSchema.pick({
-          priority: true,
-          dueDate: true,
-          notes: true,
-        }).partial(),
-      })
-      .strict(),
-  ),
-  request("assignment/accept", AssignmentDecisionPayloadSchema),
-  request("assignment/reject", AssignmentDecisionPayloadSchema),
-  request("assignment/requestClarification", AssignmentDecisionPayloadSchema),
-  request("assignment/reassign", ReassignmentPayloadSchema),
-  request("assignment/cancel", AssignmentDecisionPayloadSchema),
-  request("handoff/prepare", HandoffCreatePayloadSchema),
-  request("handoff/get", HandoffPackageIdPayloadSchema),
-  request("handoff/validate", HandoffValidatePayloadSchema),
-  request("handoff/export", HandoffExportPayloadSchema),
-  request("handoff/import", HandoffImportPayloadSchema),
-  request("handoff/reconcile", HandoffReconcilePayloadSchema),
-  request("handoff/accept", HandoffAcceptPayloadSchema),
-  request("handoff/reject", HandoffAcceptPayloadSchema),
-  request("handoff/importReadOnly", HandoffAcceptPayloadSchema),
-  request("handoff/cancel", HandoffPackageIdPayloadSchema),
-  request("progress/workflows", z.object({}).strict()),
-  request("progress/tasks", TeamProgressPayloadSchema),
-  request("progress/assignments", z.object({ workflowId: z.string().uuid().optional() }).strict()),
-  request("progress/refresh", TeamProgressPayloadSchema),
-  request("progress/audit", TeamAuditPayloadSchema),
   request("execution/route", ExecutionRoutingRequestSchema),
   request("request/cancel", z.object({ targetRequestId: z.string().uuid() }).strict()),
 ]);
@@ -1225,6 +1253,24 @@ export const HostMessageSchema = z.discriminatedUnion("type", [
         taskId: z.string().uuid(),
         mode: z.string().max(100),
         message: z.string().max(2000),
+        postEditVerifierResult: z
+          .object({
+            passed: z.boolean(),
+            verdict: z.enum(["satisfied", "needs_revision", "failed"]),
+            signals: z
+              .array(
+                z
+                  .object({
+                    signal: z.string().max(200),
+                    passed: z.boolean(),
+                    details: z.string().max(2000),
+                  })
+                  .strict(),
+              )
+              .max(100),
+          })
+          .strict()
+          .optional(),
       })
       .strict(),
   ),
@@ -1476,42 +1522,6 @@ export const HostMessageSchema = z.discriminatedUnion("type", [
     "pullRequest/stale",
     z.object({ draftId: z.string().uuid(), message: z.string().max(2000) }).strict(),
   ),
-  event(
-    "team/participantsChanged",
-    z
-      .object({
-        participantIds: z.array(z.string().uuid()).max(500),
-        message: z.string().max(2000),
-      })
-      .strict(),
-  ),
-  event("assignment/created", teamLifecycle("assignmentId")),
-  event("assignment/statusChanged", teamLifecycle("assignmentId")),
-  event("assignment/stale", teamLifecycle("assignmentId")),
-  event("assignment/reassigned", teamLifecycle("assignmentId")),
-  event("handoff/preparationStarted", teamLifecycle("packageId", true)),
-  event("handoff/prepared", teamLifecycle("packageId")),
-  event("handoff/exported", teamLifecycle("packageId")),
-  event("handoff/imported", teamLifecycle("packageId")),
-  event("handoff/reconciliationCompleted", teamLifecycle("packageId")),
-  event("handoff/accepted", teamLifecycle("packageId")),
-  event("handoff/rejected", teamLifecycle("packageId")),
-  event("handoff/stale", teamLifecycle("packageId")),
-  event("handoff/failed", teamLifecycle("packageId", true)),
-  event(
-    "progress/changed",
-    z.object({ workflowId: z.string().uuid(), message: z.string().max(2000) }).strict(),
-  ),
-  event(
-    "progress/blockerChanged",
-    z
-      .object({
-        workflowId: z.string().uuid(),
-        taskId: z.string().uuid().optional(),
-        message: z.string().max(2000),
-      })
-      .strict(),
-  ),
 ]);
 export type HostMessage = z.infer<typeof HostMessageSchema>;
 
@@ -1623,6 +1633,41 @@ export interface WebviewRequestResults {
   "review/returnToBuild": ReviewDecision;
   "review/returnToDefine": ReviewDecision;
   "review/dispositionFinding": FindingDisposition;
+  // Phase 10 — Evidence-Backed PR Review responses.
+  "pr-review/prepare": {
+    review: PullRequestReview;
+    scope: ReviewScopeAssessment;
+    traceability: ReviewTraceabilityAssessment;
+    contract: ReviewContractAssessment;
+    test: ReviewTestAssessment;
+    findings: ReviewFinding[];
+  };
+  "pr-review/getState": {
+    reviews: PullRequestReview[];
+    scopeAssessments: ReviewScopeAssessment[];
+    traceabilityAssessments: ReviewTraceabilityAssessment[];
+    contractAssessments: ReviewContractAssessment[];
+    testAssessments: ReviewTestAssessment[];
+    findings: ReviewFinding[];
+    readinessDecisions: ChangeReadinessDecision[];
+    packages: PullRequestPackage[];
+  };
+  "pr-review/getFindings": ReviewFinding[];
+  "pr-review/updateFindingStatus": ReviewFinding;
+  "pr-review/calculateReadiness": ChangeReadinessDecision;
+  "pr-review/approveReadiness": ChangeReadinessDecision;
+  "pr-review/generatePackage": PullRequestPackage;
+  "pr-review/updatePackage": PullRequestPackage;
+  "taskHandoff/checkEligibility": { eligible: boolean; reason?: string };
+  "taskHandoff/createDraft": TaskHandoff;
+  "taskHandoff/updateDraft": TaskHandoff;
+  "taskHandoff/runPrivacyScan": HandoffPrivacyReport;
+  "taskHandoff/markRedacted": HandoffPrivacyReport;
+  "taskHandoff/export": { pkg: TaskHandoffPackage; savedUri: string };
+  "taskHandoff/listHistory": TaskHandoff[];
+  "taskHandoff/previewImport": { pkg: TaskHandoffPackage; compatibility: HandoffCompatibilityReport; blocking: boolean };
+  "taskHandoff/acceptImport": TaskHandoff;
+  "taskHandoff/rejectImport": TaskHandoff;
   "complete/getState": CompletionState;
   "complete/getOptions": CompletionState["options"];
   "complete/getReport": WorkflowCompletionRecord | undefined;
@@ -1649,8 +1694,6 @@ export interface WebviewRequestResults {
   "complete/preparePatch": { paths: string[]; totalBytes: number; blockedPaths: string[] };
   "complete/approvePatchExport": GitMutationApproval;
   "complete/exportPatch": { path: string; hash: string };
-  "complete/prepareHandoff": HandoffPackage;
-  "complete/exportHandoff": { uri: string; hash: string };
   "orchestration/create": WorkflowInstance;
   "orchestration/get": WorkflowInstance | undefined;
   "orchestration/list": WorkflowInstance[];
@@ -1848,8 +1891,6 @@ export interface WebviewRequestResults {
   "build/updateRetryAgent": RetryPlan;
   "build/approveRetry": RetryPlan | undefined;
   "build/startRetry": TaskExecutionSession;
-  "build/prepareHandoff": HandoffPackage;
-  "build/validateHandoff": HandoffValidationResult;
   "build/exportHandoff": { destination?: string };
   "build/cancelHandoff": undefined;
   "build/getCompletionReadiness": CompletionDecision;
@@ -2006,45 +2047,6 @@ export interface WebviewRequestResults {
   "pullRequest/confirmExternalCreation": PullRequestCreationResult;
   "pullRequest/status": PullRequestCreationResult | undefined;
   "pullRequest/refresh": PullRequestCreationResult | undefined;
-  "team/participants": TeamParticipant[];
-  "team/addParticipant": TeamParticipant;
-  "team/updateParticipant": TeamParticipant;
-  "team/removeParticipant": undefined;
-  "team/capabilities": {
-    identityAssurance: "self-asserted-local";
-    capabilities: string[];
-    limitations: string[];
-  };
-  "assignment/create": TaskAssignment;
-  "assignment/get": TaskAssignment | undefined;
-  "assignment/list": TaskAssignment[];
-  "assignment/update": TaskAssignment;
-  "assignment/accept": TaskAssignment;
-  "assignment/reject": TaskAssignment;
-  "assignment/requestClarification": TaskAssignment;
-  "assignment/reassign": TaskAssignment;
-  "assignment/cancel": TaskAssignment;
-  "handoff/prepare": HandoffPackage;
-  "handoff/get": HandoffPackage | undefined;
-  "handoff/validate": HandoffValidationResult;
-  "handoff/export": { destination?: string };
-  "handoff/import":
-    | {
-        package: HandoffPackage;
-        validation: HandoffValidationResult;
-        importId: string;
-      }
-    | undefined;
-  "handoff/reconcile": HandoffReconciliation;
-  "handoff/accept": HandoffAcceptance;
-  "handoff/reject": HandoffAcceptance;
-  "handoff/importReadOnly": HandoffAcceptance;
-  "handoff/cancel": undefined;
-  "progress/workflows": TeamPersistentState["progress"];
-  "progress/tasks": TeamProgressSnapshot;
-  "progress/assignments": TaskAssignment[];
-  "progress/refresh": TeamProgressSnapshot;
-  "progress/audit": TeamAuditEntry[];
   "execution/route": ExecutionRoutingDecision;
   "request/cancel": undefined;
 }
@@ -2075,9 +2077,5 @@ function event<T extends string, P extends z.ZodType>(type: T, payload: P) {
   return z.object({ ...hostEnvelopeFields, type: z.literal(type), payload }).strict();
 }
 
-function teamLifecycle(key: "assignmentId" | "packageId", optional = false) {
-  const id = optional ? z.string().uuid().optional() : z.string().uuid();
-  return z.object({ [key]: id, message: z.string().max(2000) }).strict();
-}
 
 export type { SerializedKeystoneError };

@@ -59,7 +59,7 @@ function createRouter(canonicalWorkflow: WorkflowService) {
     { error: vi.fn() } as never,
     "0.1.0",
     () => ({ name: "fixture", rootCount: 1, trust: "trusted", indexStatus: "ready" }),
-    (message) => { posted.push(message as never); return Promise.resolve(true); },
+    (message) => { posted.push(message); return Promise.resolve(true); },
     { canonicalWorkflow, intelligenceRuntime: { onDidChange: () => ({ dispose: vi.fn() }) }, intelligenceQuery: {}, workflow: { list: () => [] }, cpgQuery: {}, openSource: vi.fn() } as never,
   );
   return { router, posted };

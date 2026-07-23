@@ -19,5 +19,5 @@ export function sectionForRoute(route: AppRoute): NavigationSection {
  */
 export function routeForSection(section: NavigationSection): AppRoute {
   const entry = PRIMARY_NAVIGATION.find((n) => n.id === section);
-  return (entry?.route ?? "/") as AppRoute;
+  return (entry?.route ?? "/");
 }

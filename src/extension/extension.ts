@@ -63,11 +63,7 @@ import { BlockerService } from "../core/blocker/BlockerService";
 import { ResourceLimitService } from "../core/resource/ResourceLimitService";
 import { GitExecutableDeliveryAdapter } from "./git/GitDeliveryAdapter";
 import { VsCodeGitDeliveryAdapter } from "./git/VsCodeGitDeliveryAdapter";
-import { TeamWorkflowPersistenceStore } from "../core/persistence/TeamWorkflowPersistenceStore";
-import { TeamWorkflowService } from "../core/team/TeamWorkflowService";
 import { ScopeCorrectionMigration } from "../core/persistence/ScopeCorrectionMigration";
-import { canonicalJson, sha256 } from "../core/team/HandoffSecurity";
-import { VsCodeTeamArtifactAdapter } from "./team/VsCodeTeamArtifactAdapter";
 import { OrchestrationPersistenceStore } from "../core/persistence/OrchestrationPersistenceStore";
 import { OrchestrationService } from "../core/orchestration/OrchestrationService";
 import { StartupStateService } from "../core/integration/ProductIntegrationService";
@@ -75,6 +71,11 @@ import { CopilotCustomizationService } from "../core/copilot/CopilotCustomizatio
 import { BuildWorkspaceService } from "../core/workflows/BuildWorkspaceService";
 import { ReviewPersistenceStore } from "../core/persistence/ReviewPersistenceStore";
 import { ReviewCompletionService } from "../core/review/ReviewCompletionService";
+import { PrReviewService } from "../core/review/PrReviewService";
+import { PrReviewPersistenceStore } from "../core/persistence/PrReviewPersistenceStore";
+import { HandoffPersistenceStore } from "../core/persistence/HandoffPersistenceStore";
+import { TaskHandoffService } from "../core/handoff/TaskHandoffService";
+import { RepositoryIdentityService } from "../core/handoff/RepositoryIdentityService";
 import { CopilotIntegrationPersistenceStore } from "../core/persistence/CopilotIntegrationPersistenceStore";
 import {
   CopilotCapabilityService,
@@ -132,6 +133,29 @@ import { TestIntelligenceService } from "../core/impactQa/TestIntelligenceServic
 import { QaTestIntelligencePersistence } from "../core/impactQa/QaTestIntelligencePersistence";
 
 let logger: KeystoneLogger | undefined;
+
+/** Build a bounded, path-independent repository identity for Task Handoff compatibility. */
+async function buildTaskHandoffRepositoryIdentity(
+  svc: RepositoryIdentityService,
+  delivery: { root: string; repositories: { getState(root: string): Promise<{ remotes: Array<{ sanitizedUrl: string; isDefault: boolean }> }> } },
+  workspace: { getRoots(): ReadonlyArray<{ name: string; uri: string }> },
+): Promise<import("../shared/contracts/handoff").HandoffRepositoryIdentity> {
+  const roots = workspace.getRoots();
+  let remoteUrl: string | undefined;
+  try {
+    const state = await delivery.repositories.getState(delivery.root);
+    remoteUrl = state.remotes.find((r) => r.isDefault)?.sanitizedUrl ?? state.remotes[0]?.sanitizedUrl;
+  } catch {
+    remoteUrl = undefined;
+  }
+  const repositoryName = remoteUrl?.split("/").pop()?.replace(/\.git$/, "") ?? roots[0]?.name ?? "workspace";
+  return svc.build({
+    repositoryName,
+    manifestHashes: [],
+    ...(remoteUrl ? { git: { remoteUrl } } : {}),
+    workspaceRootCount: roots.length,
+  });
+}
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   const startedAt = performance.now();
@@ -444,185 +468,41 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       completed: review.persisted.completions.some((item) => item.workflowId === workflowId),
     };
   });
-  const teamStore = new TeamWorkflowPersistenceStore(storageRoot);
-  const team = new TeamWorkflowService(
-    teamStore,
-    workflow,
-    {
-      current: () => {
-        const snapshot = intelligenceStore.getSnapshot();
-        if (!snapshot)
-          throw new Error("Repository intelligence is unavailable for handoff reconciliation.");
-        const relevantFileFingerprints = Object.fromEntries(
-          snapshot.files
-            .filter((file) => file.contentHash)
-            .slice(0, 500)
-            .map((file) => [file.relativePath, file.contentHash!]),
-        );
+  const prReviewStore = new PrReviewPersistenceStore(storageRoot);
+  const prReview = new PrReviewService(review, prReviewStore);
+  await prReview.initialize();
+  // Phase 11 — Task Handoff (portable local package; no git/PR/account operations).
+  const handoffStore = new HandoffPersistenceStore(storageRoot);
+  const repositoryIdentityService = new RepositoryIdentityService();
+  const repositoryIdentity = await buildTaskHandoffRepositoryIdentity(repositoryIdentityService, delivery, workspace);
+  const handoffService = new TaskHandoffService({
+    workflows: {
+      getActiveWorkflowId: () => canonicalWorkflow.getActiveWorkflow()?.id ?? null,
+      getWorkflow: (id: string) => {
+        const cwf = canonicalWorkflow.getWorkflow(id);
+        if (!cwf) return undefined;
         return {
-          repositoryId: snapshot.repository.id,
-          ...(snapshot.repository.branch ? { branch: snapshot.repository.branch } : {}),
-          ...(snapshot.repository.headCommit
-            ? {
-                baseCommit: snapshot.repository.headCommit,
-                headCommit: snapshot.repository.headCommit,
-              }
-            : {}),
-          intelligenceGeneration: snapshot.manifest.generation,
-          repositoryFingerprint: sha256(
-            canonicalJson({
-              repository: snapshot.repository,
-              generation: snapshot.manifest.generation,
-              relevantFileFingerprints,
-            }),
-          ),
-          relevantFileFingerprints,
+          id: cwf.id,
+          intentText: cwf.intent.text,
+          workType: cwf.intent.workType,
+          ...(cwf.specification ? { specificationText: cwf.specification.text, specificationRevision: cwf.specification.revision } : {}),
+          status: cwf.status,
+          stages: cwf.stages.map((s) => ({ id: s.id, type: s.type, displayName: s.displayName, order: s.order, status: s.status })),
+          currentStageId: cwf.currentStageId,
+          createdAt: cwf.createdAt,
+          updatedAt: cwf.updatedAt,
+          revision: 0,
         };
       },
-      compare: (sender, receiver) =>
-        sender.headCommit && receiver.headCommit
-          ? deliveryGit.compareCommits(
-              deliveryRepositoryRoot,
-              sender.headCommit,
-              receiver.headCommit,
-            )
-          : Promise.resolve("missing-commits"),
-      resolveEntities: (ids) => {
-        const snapshot = intelligenceStore.getSnapshot();
-        if (!snapshot) return ids;
-        const known = new Set([
-          ...snapshot.files.map((item) => item.id),
-          ...snapshot.symbols.map((item) => item.id),
-        ]);
-        return ids.filter((id) => !known.has(id));
-      },
-      providerVersions: () => ({
-        ...(intelligenceStore.getSnapshot()?.manifest.extractorVersions ?? {}),
-        [CPG_PROVIDER_ID]: CPG_PROVIDER_VERSION,
-      }),
+      getRevision: (_id: string) => 0,
     },
-    (taskId) => taskContext.get(taskId),
-    new VsCodeTeamArtifactAdapter(repositoryUri),
-    {
-      snapshot: (taskId, workflowId) => {
-        const executionState = executionStore.snapshot;
-        const sessions = executionState.sessions.filter((item) => item.taskId === taskId);
-        const latest = sessions.at(-1);
-        const runIds = [...new Set(sessions.flatMap((item) => item.validationRunIds))];
-        const runs = executionState.runs.filter((item) => runIds.includes(item.id));
-        const latestRun = runs.at(-1);
-        const deliveryState = deliveryStore.snapshot;
-        const changeSet = deliveryState.changeSets
-          .filter((item) => item.workflowId === workflowId)
-          .at(-1);
-        const commitPlan = changeSet
-          ? deliveryState.commitPlans.filter((item) => item.changeSetId === changeSet.id).at(-1)
-          : undefined;
-        const actionResults = deliveryState.actionResults.filter(
-          (item) => item.status === "succeeded",
-        );
-        return {
-          ...(latest
-            ? {
-                execution: {
-                  sessionIds: sessions.map((item) => item.id),
-                  latestStatus: latest.status,
-                  selectedAgentId: latest.agentId,
-                  delegationMode: latest.delegationMode,
-                  ...(latest.contextFingerprint
-                    ? { contextFingerprint: latest.contextFingerprint }
-                    : {}),
-                  ...(latest.promptFingerprint
-                    ? { promptFingerprint: latest.promptFingerprint }
-                    : {}),
-                  attemptCount: Math.max(...sessions.map((item) => item.retryAttempt + 1)),
-                  transferred: true as const,
-                  continuationRequiresNewApproval: true as const,
-                  observedChangeCount: latest.observedChanges.length,
-                },
-              }
-            : {}),
-          ...(runs.length
-            ? {
-                validation: {
-                  planIds: [
-                    ...new Set(
-                      sessions.flatMap((item) =>
-                        item.validationPlanId ? [item.validationPlanId] : [],
-                      ),
-                    ),
-                  ],
-                  runIds,
-                  ...(latestRun ? { latestStatus: latestRun.status } : {}),
-                  passedSteps: runs.reduce(
-                    (total, run) =>
-                      total + run.stepResults.filter((item) => item.status === "passed").length,
-                    0,
-                  ),
-                  failedSteps: runs.reduce(
-                    (total, run) =>
-                      total + run.stepResults.filter((item) => item.status === "failed").length,
-                    0,
-                  ),
-                  criterionResults:
-                    latestRun?.acceptanceCriteriaResults.map((item) => ({
-                      criterionId: item.criterionId,
-                      status: item.status,
-                      evidenceIds: item.evidenceIds,
-                    })) ?? [],
-                  findingSummaries:
-                    latestRun?.findings.map(
-                      (item) => `${item.severity}: ${item.title} — ${item.description}`,
-                    ) ?? [],
-                  overrideIds: executionState.overrides
-                    .filter((item) => runIds.includes(item.validationRunId ?? ""))
-                    .map((item) => item.id),
-                  repositoryFingerprint: latestRun?.repositoryFingerprint,
-                  providerVersions: {
-                    ...(intelligenceStore.getSnapshot()?.manifest.extractorVersions ?? {}),
-                    [CPG_PROVIDER_ID]: CPG_PROVIDER_VERSION,
-                  },
-                },
-              }
-            : {}),
-          ...(changeSet
-            ? {
-                delivery: {
-                  changeSetId: changeSet.id,
-                  changeSetFingerprint: changeSet.fingerprint,
-                  ...(commitPlan ? { commitPlanId: commitPlan.id } : {}),
-                  commitHashes: actionResults.flatMap((item) =>
-                    item.commitHash ? [item.commitHash] : [],
-                  ),
-                  pushStatus: actionResults.filter((item) => item.action === "push").at(-1)?.status,
-                  pullRequestStatus: deliveryState.pullRequestResults.at(-1)?.status,
-                  pullRequestUrl: deliveryState.pullRequestResults.at(-1)?.url,
-                },
-              }
-            : {}),
-          changedFiles:
-            latest?.observedChanges.map((item) => ({
-              path: item.relativePath,
-              kind: item.kind,
-              classification: item.userOverride?.classification ?? item.classification,
-              availability: "local-unavailable" as const,
-              summary: item.reasons.join(" ").slice(0, 2000),
-            })) ?? [],
-          changedEntities:
-            latest?.changedEntities.map((item) => ({
-              entityId: item.entityId,
-              qualifiedName: item.qualifiedName,
-              entityType: item.entityType,
-              relativePath: item.relativePath,
-              changeKind: item.changeKind,
-              ...(item.afterFingerprint ? { fingerprint: item.afterFingerprint } : {}),
-              evidenceIds: item.evidenceIds,
-            })) ?? [],
-        };
-      },
-    },
-  );
-  await team.initialize();
+    development: { load: async () => undefined },
+    evidence: { buildBundle: () => ({ evidenceIncluded: false, findingsAndRemediation: [], contextPackages: [] }) },
+    references: { buildManifest: () => ({ files: [], symbols: [], instructions: [], skills: [], intelligenceRevision: "gen-0" }) },
+    repository: { build: () => repositoryIdentity },
+    localReferences: { build: () => ({ fileHashes: new Map(), instructionHashes: new Map(), skillState: new Map(), symbolLocations: new Map() }) },
+    store: handoffStore,
+  });
   const orchestrationStore = new OrchestrationPersistenceStore(storageRoot);
   const orchestration = new OrchestrationService(orchestrationStore, workflow, routing);
   await orchestration.initialize();
@@ -683,15 +563,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     "ready",
     "Product services restored; background Intelligence repair may continue.",
   );
-  const repositoryArtifactsEnabled = vscode.workspace
-    .getConfiguration("keystone.team")
-    .get<boolean>("repositoryArtifactsEnabled", false);
-  if (team.store.snapshot.settings.repositoryArtifactsEnabled !== repositoryArtifactsEnabled)
-    await team.store.update((state) => ({
-      ...state,
-      settings: { ...state.settings, repositoryArtifactsEnabled },
-    }));
-
   const packageVersion = (context.extension.packageJSON as { version?: unknown }).version;
   const extensionVersion = typeof packageVersion === "string" ? packageVersion : "0.0.0";
   const nativeStore = new NativeShellPersistenceStore(storageRoot);
@@ -733,11 +604,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       };
     },
     copilot: () => copilotIntegrationStore.snapshot.lastCapabilities,
-    handoffAttention: () =>
-      team.store.snapshot.imports.filter((entry) =>
-        ["reviewable", "read-only", "failed", "interrupted"].includes(entry.status),
-      ).length,
     persistenceWarnings: () => scopeMigration.diagnostics,
+    handoffAttention: () => 0,
   };
   const panelState = new KeystonePanelStateService(nativeStore);
   const launchValidation = new KeystoneLaunchValidationService(nativeSource);
@@ -773,7 +641,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     workflowCompletion,
     delivery,
     review,
-    team,
+    prReview,
+    taskHandoff: handoffService,
     integrationCapabilities,
     copilotIntegrationStore,
     toolRegistry,

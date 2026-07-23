@@ -117,8 +117,6 @@ export function App({ bridge }: AppProps): React.JSX.Element {
             route: message.payload.route,
           })
           .catch(showError(setError));
-        if (message.payload.request.destination.type === "import-handoff")
-          void bridge.request("handoff/import", { source: "file" }).catch(showError(setError));
         window.setTimeout(() => mainRef.current?.focus(), 0);
       }
     });
