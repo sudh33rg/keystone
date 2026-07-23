@@ -6,7 +6,7 @@ import {
   QaTestIntelligenceAggregateSchema,
   TEST_INTELLIGENCE_REQUESTS,
   type TestIntelligenceRequestType,
-} from "../../../src/shared/contracts/phase8TestIntelligence";
+} from "../../../src/shared/contracts/qaTestIntelligence";
 import { TestIntelligenceService } from "../../../src/core/impactQa/TestIntelligenceService";
 import { QaTestIntelligencePersistence } from "../../../src/core/impactQa/QaTestIntelligencePersistence";
 import type { ImpactQaAggregate } from "../../../src/shared/contracts/impactQa";

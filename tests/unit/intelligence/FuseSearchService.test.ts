@@ -21,7 +21,7 @@ const SNAPSHOT: IntelligenceSnapshot = {
   diagnostics: [],
 } as unknown as IntelligenceSnapshot;
 
-describe("Phase D — FuseSearchService", () => {
+describe("QA — FuseSearchService", () => {
   const svc = new FuseSearchService(SNAPSHOT);
 
   it("D.1a searches by name substring (exact fallback)", () => {

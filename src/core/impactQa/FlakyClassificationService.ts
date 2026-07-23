@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { FlakyClassification, FlakyState, FlakyTestRun } from "../../shared/contracts/phase8TestIntelligence";
+import type { FlakyClassification, FlakyState, FlakyTestRun } from "../../shared/contracts/qaTestIntelligence";
 
 export interface FlakyConfig {
   /** Runs with at least one pass and one fail for the same revision. */

@@ -3,7 +3,7 @@ import type {
   TestScenario,
   TestScenarioImportance,
   TestScenarioType,
-} from "../../shared/contracts/phase8TestIntelligence";
+} from "../../shared/contracts/qaTestIntelligence";
 
 export interface ScenarioEvidenceInput {
   workflowId: string;

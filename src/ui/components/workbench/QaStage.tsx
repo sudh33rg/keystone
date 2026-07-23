@@ -6,7 +6,7 @@ import type {
   FailureCategory,
   TestGenerationRequest,
   TestScenario,
-} from "../../../shared/contracts/phase8TestIntelligence";
+} from "../../../shared/contracts/qaTestIntelligence";
 import type { HostBridge } from "../../services/HostBridge";
 
 type LooseRequest = (type: string, payload: unknown) => Promise<unknown>;

@@ -3,7 +3,7 @@ import type {
   PolicyAssessment,
   PolicyFinding,
   ProposedFileChange,
-} from "../../shared/contracts/phase8TestIntelligence";
+} from "../../shared/contracts/qaTestIntelligence";
 
 export interface PolicyCheckInput {
   proposalId: string;

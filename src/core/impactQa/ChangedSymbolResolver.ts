@@ -1,10 +1,10 @@
 import type { IntelligenceSnapshot } from "../../shared/contracts/intelligence";
-import type { Phase7ChangeSet, Phase7ChangedEntity } from "../../shared/contracts/impactQa";
+import type { QaChangeSet, QaChangedEntity } from "../../shared/contracts/impactQa";
 
 export class ChangedSymbolResolver {
   constructor(private readonly snapshot: IntelligenceSnapshot) {}
-  resolve(changeSet: Phase7ChangeSet, intelligenceRevision: string): Phase7ChangedEntity[] {
-    const resolved: Phase7ChangedEntity[] = [];
+  resolve(changeSet: QaChangeSet, intelligenceRevision: string): QaChangedEntity[] {
+    const resolved: QaChangedEntity[] = [];
     for (const changed of changeSet.files) {
       const file = this.snapshot.files.find((item) => item.relativePath === changed.path) ?? (changed.oldPath ? this.snapshot.files.find((item) => item.relativePath === changed.oldPath) : undefined);
       const canResolveSymbols = changed.changeType === "added" || changed.changeType === "deleted" || Boolean(changed.changedRanges?.length);

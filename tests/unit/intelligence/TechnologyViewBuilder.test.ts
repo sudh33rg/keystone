@@ -10,7 +10,7 @@ const makeSnapshot = (symbols: any[] = [], relationships: any[] = []): any => ({
   diagnostics: [],
 });
 
-describe("Phase D — TechnologyViewBuilder", () => {
+describe("QA — TechnologyViewBuilder", () => {
   it("build includes explicit technology nodes", async () => {
     const snapshot = makeSnapshot([
       { id: "db:1", type: "keystone.core.Database", name: "postgres", qualifiedName: "postgres", evidenceIds: [] },

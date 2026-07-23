@@ -10,7 +10,7 @@ import { TestIntelligenceService } from "../../../src/core/impactQa/TestIntellig
 import { QaTestIntelligencePersistence } from "../../../src/core/impactQa/QaTestIntelligencePersistence";
 import type { ImpactQaAggregate } from "../../../src/shared/contracts/impactQa";
 import type {
-  Phase7CoverageGap,
+  QaCoverageGap,
   TestFrameworkCapability,
 } from "../../../src/shared/contracts/impactQa";
 
@@ -38,7 +38,7 @@ function capability(): TestFrameworkCapability {
   };
 }
 
-function coverageGap(id: string): Phase7CoverageGap {
+function coverageGap(id: string): QaCoverageGap {
   return {
     id,
     entityId: "svc",

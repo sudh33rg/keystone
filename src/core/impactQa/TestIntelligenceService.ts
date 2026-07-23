@@ -18,7 +18,7 @@ import {
   type ValidationLevelStatus,
   type ValidationSource,
   TestIntelligenceError,
-} from "../../shared/contracts/phase8TestIntelligence";
+} from "../../shared/contracts/qaTestIntelligence";
 import type { ImpactQaAggregate } from "../../shared/contracts/impactQa";
 import type { ImpactQaService } from "./ImpactQaService";
 import type { DevelopmentService } from "../development/DevelopmentService";

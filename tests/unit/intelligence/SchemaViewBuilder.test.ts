@@ -10,7 +10,7 @@ const makeSnapshot = (symbols: any[] = [], relationships: any[] = []): any => ({
   diagnostics: [],
 });
 
-describe("Phase D — SchemaViewBuilder", () => {
+describe("QA — SchemaViewBuilder", () => {
   it("builds schema graph from seed entity ids", async () => {
     const snapshot = makeSnapshot([
       { id: "db:1", type: "keystone.core.Database", name: "pg", qualifiedName: "pg", evidenceIds: [] },

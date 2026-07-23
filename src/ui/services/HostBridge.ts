@@ -20,7 +20,7 @@ import {
   emptyIntelligenceOverview,
   type IntelligenceOverview,
 } from "../../shared/contracts/intelligence";
-import { QaTestIntelligenceAggregateSchema } from "../../shared/contracts/phase8TestIntelligence";
+import { QaTestIntelligenceAggregateSchema } from "../../shared/contracts/qaTestIntelligence";
 import {
   HostMessageSchema,
   hostMessage,

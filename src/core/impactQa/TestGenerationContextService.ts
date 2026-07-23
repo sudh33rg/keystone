@@ -13,7 +13,7 @@ import { TokenCounterRegistry } from "../context/TokenCounterRegistry";
 import { ContextDeduplicator } from "../context/ContextDeduplicator";
 import { ContextCompressionService } from "../context/ContextCompressionService";
 import { TokenBudgetOptimizer } from "../context/TokenBudgetOptimizer";
-import type { TestScenario } from "../../shared/contracts/phase8TestIntelligence";
+import type { TestScenario } from "../../shared/contracts/qaTestIntelligence";
 
 export interface GenerationContextInput {
   workflowId: string;

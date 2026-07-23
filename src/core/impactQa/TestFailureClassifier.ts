@@ -4,7 +4,7 @@ import type {
   FailureCategory,
   FailureRecommendedAction,
   TestFailureAnalysis,
-} from "../../shared/contracts/phase8TestIntelligence";
+} from "../../shared/contracts/qaTestIntelligence";
 import { TestFailureSignature } from "./TestFailureSignature";
 
 export interface FailureClassificationEvidence {

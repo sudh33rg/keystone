@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { GraphExportService } from "../../../src/core/intelligence/visualization/GraphExportService";
 
-describe("Phase D — GraphExportService static HTML export", () => {
+describe("QA — GraphExportService static HTML export", () => {
   const service = new GraphExportService();
 
   it("exportSnapshotAsStaticHtml includes title and metadata", async () => {

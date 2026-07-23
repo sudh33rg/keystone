@@ -1,7 +1,7 @@
 import { readFile, rename } from "node:fs/promises";
 import { join } from "node:path";
 import { AtomicFileWriter } from "../persistence/AtomicFileWriter";
-import type { QaTestIntelligenceAggregate } from "../../shared/contracts/phase8TestIntelligence";
+import type { QaTestIntelligenceAggregate } from "../../shared/contracts/qaTestIntelligence";
 
 interface Phase8State {
   schemaVersion: 1;

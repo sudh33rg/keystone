@@ -45,7 +45,7 @@ import {
   ValidationSourceSchema,
   ValidationLevelSchema,
   ValidationLevelStatusSchema,
-} from "./phase8TestIntelligence";
+} from "./qaTestIntelligence";
 import {
   IntelligenceCanvasEntityActionRequestSchema,
   IntelligenceCanvasEvidenceRequestSchema,

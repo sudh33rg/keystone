@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildQaSampleSnapshot } from "../../fixtures/intelligence/qaSampleSnapshot";
 import { WorkspaceChangeSetService } from "../../../src/core/impactQa/WorkspaceChangeSetService";
 import { ChangedSymbolResolver } from "../../../src/core/impactQa/ChangedSymbolResolver";
-import { Phase7ImpactAnalysisService } from "../../../src/core/impactQa/Phase7ImpactAnalysisService";
+import { ImpactAnalysisService } from "../../../src/core/impactQa/ImpactAnalysisService";
 
 const snapshot = buildQaSampleSnapshot();
 const workflowId = "00000000-0000-4000-8000-000000000071";
@@ -60,7 +60,7 @@ describe("Phase 7 changed symbols and impact", () => {
 
   it("returns bounded direct callers, transitive impacts, mapped tests and evidence", () => {
     const changed = new ChangedSymbolResolver(snapshot).resolve(changeSet, "generation:1");
-    const analysis = new Phase7ImpactAnalysisService(snapshot).analyze({ workflowId, changeSet, changedEntities: changed, intelligenceRevision: "generation:1", depth: 3, maxNodes: 20, maxEdges: 30 });
+    const analysis = new ImpactAnalysisService(snapshot).analyze({ workflowId, changeSet, changedEntities: changed, intelligenceRevision: "generation:1", depth: 3, maxNodes: 20, maxEdges: 30 });
     expect(analysis.impacts.some((item) => item.entityId === "s-controller" && item.distance === 1)).toBe(true);
     expect(analysis.affectedFlowIds).toContain("s-controller");
     expect(analysis.affectedContractIds).toContain("s-createOrder");
@@ -73,7 +73,7 @@ describe("Phase 7 changed symbols and impact", () => {
 
   it("excludes unrelated branches and truthfully represents no impact", () => {
     const fileOnly = [{ id: "changed:unknown", filePath: "unknown.txt", changeType: "file-level" as const, confidence: 0, evidenceIds: [], intelligenceRevision: "generation:1" }];
-    const analysis = new Phase7ImpactAnalysisService(snapshot).analyze({ workflowId, changeSet, changedEntities: fileOnly, intelligenceRevision: "generation:1", depth: 2, maxNodes: 10, maxEdges: 10 });
+    const analysis = new ImpactAnalysisService(snapshot).analyze({ workflowId, changeSet, changedEntities: fileOnly, intelligenceRevision: "generation:1", depth: 2, maxNodes: 10, maxEdges: 10 });
     expect(analysis.impacts).toEqual([]);
     expect(analysis.summary).toMatch(/No evidence-backed/i);
   });

@@ -6,8 +6,8 @@ import { GraphExportService } from "../../../src/core/intelligence/visualization
 import { CopilotContextService } from "../../../src/core/intelligence/visualization/CopilotContextService";
 import type { IntelligenceSnapshot } from "../../../src/shared/contracts/intelligence";
 
-describe("Phase D — polyglot conformance pipeline", () => {
-  it("fires all Phase D surfaces against a deterministic polyglot snapshot", async () => {
+describe("QA — polyglot conformance pipeline", () => {
+  it("fires all QA surfaces against a deterministic polyglot snapshot", async () => {
     const snapshot = makeSnapshot();
     const query = new IntelligenceQueryService({ getSnapshot: () => snapshot } as any, { getState: () => ({}) } as any);
     const search = new FuseSearchService(snapshot);
@@ -36,7 +36,7 @@ describe("Phase D — polyglot conformance pipeline", () => {
     expect(Array.isArray(candidates)).toBe(true);
   });
 
-  it("preserves deterministic identifiers and non-regression across Phase D entrypoints", async () => {
+  it("preserves deterministic identifiers and non-regression across QA entrypoints", async () => {
     const snapshot = makeSnapshot();
     const search = new FuseSearchService(snapshot);
     const viz = new IntelligenceVisualizationService(snapshot);
