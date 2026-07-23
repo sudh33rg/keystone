@@ -12,6 +12,8 @@ Keystone is a **deterministic, repository-aware control layer** for Copilot-assi
 - **Tracked** — Every change is attributed to a task, requirement, and criterion with full audit trails.
 - **Delivered** — Git commits and PRs are planned, reviewed, and pushed with structured metadata.
 
+> **Release Boundary.** Keystone is a local-first VS Code extension. The current release does not include centralized collaboration, manager assignment, organization dashboards, cloud synchronization, authentication infrastructure, deployment automation, automatic Git operations, remote pull-request integration, LoRA training, or model fine-tuning. Git operations, source synchronization, remote PR actions, and package transfer remain manual.
+
 ---
 
 ## 2. High-Level Architecture
@@ -142,12 +144,11 @@ Bounded, token-efficient context packages:
 | **LanguageServiceAdapter** | Language features, diagnostics, code actions |
 | **CopilotEnvironmentAdapter** | Copilot API access, tool registration |
 | **SharedArtifactAdapter** | Clipboard, file dialogs, system integration |
-| **TeamRepositoryProvider** | Team workflow repository access |
 
 ### 4.3 Webview
 
 - **WebviewMessageRouter** — Bidirectional message routing between extension host and webview
-- **Dashboard Providers** — Home, Development, Delivery, Execution/Validation, Orchestration, Query, Semantic Browser, Team Workflow dashboards
+- **Dashboard Providers** — Home, Development, Delivery, Execution/Validation, Orchestration, Query, Semantic Browser dashboards
 
 ---
 

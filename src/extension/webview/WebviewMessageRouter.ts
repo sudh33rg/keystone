@@ -180,7 +180,7 @@ export class WebviewMessageRouter {
   private async routeTestIntelligence(req: WebviewRequest): Promise<void> {
     const service = this.testIntelligence();
     const p = req.payload as Record<string, unknown>;
-    const send = async (result: Promise<unknown> | unknown): Promise<void> => {
+    const send = async (result: unknown): Promise<void> => {
       const aggregate = await result;
       await this.postMessage(hostMessage("testIntelligence.updated", aggregate as never));
       await this.sendSuccess(req.requestId, aggregate);
@@ -809,54 +809,6 @@ export class WebviewMessageRouter {
         await this.sendSuccess(
           request.requestId,
           this.services.intelligenceQuery.explanation(request.payload.queryId),
-        );
-        return;
-      case "intelligence/exported-symbols":
-        await this.sendSuccess(
-          request.requestId,
-          await this.runIntelligenceService("exported-symbols", request.payload),
-        );
-        return;
-      case "intelligence/wildcard-search":
-        await this.sendSuccess(
-          request.requestId,
-          await this.runIntelligenceService("wildcard-search", request.payload),
-        );
-        return;
-      case "intelligence/module-mapping":
-        await this.sendSuccess(
-          request.requestId,
-          await this.runIntelligenceService("module-mapping", request.payload),
-        );
-        return;
-      case "intelligence/circular-dependencies":
-        await this.sendSuccess(
-          request.requestId,
-          await this.runIntelligenceService("circular-dependencies", request.payload),
-        );
-        return;
-      case "intelligence/node-metrics":
-        await this.sendSuccess(
-          request.requestId,
-          await this.runIntelligenceService("node-metrics", request.payload),
-        );
-        return;
-      case "intelligence/dead-code":
-        await this.sendSuccess(
-          request.requestId,
-          await this.runIntelligenceService("dead-code", request.payload),
-        );
-        return;
-      case "intelligence/filtered-subgraph":
-        await this.sendSuccess(
-          request.requestId,
-          await this.runIntelligenceService("filtered-subgraph", request.payload),
-        );
-        return;
-      case "intelligence/cyclomatic-complexity":
-        await this.sendSuccess(
-          request.requestId,
-          await this.runIntelligenceService("cyclomatic-complexity", request.payload),
         );
         return;
       case "intelligence/path":
@@ -4541,21 +4493,6 @@ export class WebviewMessageRouter {
         );
       throw cause;
     }
-  }
-
-  private runIntelligenceService(service: string, payload: unknown): Promise<unknown> {
-    // This is a placeholder - in a real implementation, you would:
-    // 1. Import the appropriate service (e.g., ExportedSymbolsService, WildcardSearchService, etc.)
-    // 2. Instantiate it with the intelligence store
-    // 3. Call the appropriate method with the payload
-    // 4. Return the result
-    // For now, return a generic response
-    return Promise.resolve({
-      service,
-      payload,
-      message: `Service ${service} called with payload`,
-      timestamp: new Date().toISOString(),
-    });
   }
 
   private requireDevelopmentHost(): VsCodeDevelopmentAdapter {

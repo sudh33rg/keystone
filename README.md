@@ -88,7 +88,7 @@ src/
 │   ├── persistence/        # Extension-managed local persistence (9 stores)
 │   ├── review/             # Review workflow completion
 │   ├── specifications/     # Specification generation and approval
-│   ├── team/               # Team workflow handoff
+│   ├── handoff/            # Portable local task handoff (export/import, privacy scan)
 │   ├── tasks/              # Task graph management
 │   ├── validation/         # Validation orchestration
 │   ��── workflows/          # Development workflow lifecycle (6 workflow types)
@@ -199,7 +199,7 @@ Open
 - Execution tracking with 17-state state machine
 - Validation orchestration (build, lint, test, acceptance criteria)
 - Git/PR delivery with commit planning and PR provider registry
-- Team workflow handoff with security verification
+- Portable task handoff with security verification (local `.keystone-handoff` packages, privacy scan, manual export/import)
 - React/Vite Webview UI with Home, Active Work, Intelligence, History tabs
 - Intelligence Explorer side-bar view
 - Dashboard with workflow state and quick actions

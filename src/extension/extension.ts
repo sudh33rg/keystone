@@ -934,30 +934,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       intelligenceQuery.unified(request),
     ),
     vscode.commands.registerCommand("keystone.intelligence.open", () => intelligencePanel.show()),
-    vscode.commands.registerCommand("keystone.intelligence.exported-symbols", () =>
-      intelligencePanel.show(),
-    ),
-    vscode.commands.registerCommand("keystone.intelligence.wildcard-search", () =>
-      intelligencePanel.show(),
-    ),
-    vscode.commands.registerCommand("keystone.intelligence.module-mapping", () =>
-      intelligencePanel.show(),
-    ),
-    vscode.commands.registerCommand("keystone.intelligence.circular-dependencies", () =>
-      intelligencePanel.show(),
-    ),
-    vscode.commands.registerCommand("keystone.intelligence.node-metrics", () =>
-      intelligencePanel.show(),
-    ),
-    vscode.commands.registerCommand("keystone.intelligence.dead-code", () =>
-      intelligencePanel.show(),
-    ),
-    vscode.commands.registerCommand("keystone.intelligence.filtered-subgraph", () =>
-      intelligencePanel.show(),
-    ),
-    vscode.commands.registerCommand("keystone.intelligence.cyclomatic-complexity", () =>
-      intelligencePanel.show(),
-    ),
     vscode.commands.registerCommand("keystone.copilot.toggle", async () => {
       const enabled = await copilotToggle.toggle();
       vscode.window.showInformationMessage(

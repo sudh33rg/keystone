@@ -270,13 +270,8 @@ import {
   type ReviewTestAssessment,
   type ChangeReadinessDecision,
   type PullRequestPackage,
-  type PrReviewPersistentState,
 } from "./prReview";
 import {
-  HandoffCompatibilityReportSchema,
-  HandoffPrivacyReportSchema,
-  HANDOFF_SCHEMA_VERSION,
-  TaskHandoffSchema,
   type HandoffCompatibilityReport,
   type HandoffPrivacyReport,
   type TaskHandoff,
@@ -348,7 +343,7 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
   request("impact.acceptChangeSet", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), expectedHash: z.string().startsWith("sha256:") }).strict()),
   request("impact.analyze", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), expectedHash: z.string().startsWith("sha256:") }).strict()),
   request("impact.acceptAnalysis", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), impactAnalysisId: z.string().min(1).max(500), expectedHash: z.string().startsWith("sha256:") }).strict()),
-  request("qa.generatePlan", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid() }).strict()),
+  request("qa.generatePlan", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), qaMode: z.enum(["recommend", "legacy-modernize", "flaky-focused", "coverage-gap"]).optional(), testMode: z.enum(["impacted", "affected-suite", "all"]).optional() }).strict()),
   request("qa.updatePlan", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), itemId: z.string().min(1).max(500), selected: z.boolean(), overrideReason: z.string().min(1).max(2000).optional() }).strict()),
   request("qa.approvePlan", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), qaPlanId: z.string().min(1).max(500), expectedHash: z.string().startsWith("sha256:") }).strict()),
   request("qa.execute", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), qaPlanId: z.string().min(1).max(500) }).strict()),

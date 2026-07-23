@@ -440,7 +440,7 @@ export class KeystoneLaunchValidationService {
           "The entity may have been renamed, deleted, or invalidated by a branch change.",
           "/intelligence",
         );
-    } else if (destination.type === "import-handoff") route = "/";
+    } else if (destination.type === "import-handoff") route = "/active-work";
     else {
       workflowId = destination.workflowId;
       const workflow = workflows.find((entry) => entry.id === destination.workflowId);

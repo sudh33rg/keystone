@@ -57,14 +57,14 @@ describe("WebviewRequestSchema", () => {
       WebviewRequestSchema.safeParse({
         ...validBase,
         type: "taskHandoff/export",
-        payload: { workflowId: crypto.randomUUID(), targetPath: ".keystone/handoff/export.keystone-handoff" },
+        payload: { handoffId: crypto.randomUUID(), expectedRevision: 0, targetPath: ".keystone/handoff/export.keystone-handoff" },
       }).success,
     ).toBe(true);
     expect(
       WebviewRequestSchema.safeParse({
         ...validBase,
         type: "taskHandoff/export",
-        payload: { workflowId: crypto.randomUUID() },
+        payload: { handoffId: crypto.randomUUID() },
       }).success,
     ).toBe(false);
   });

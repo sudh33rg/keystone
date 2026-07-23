@@ -23,11 +23,32 @@ describe("scope correction", () => {
     );
   });
 
-  it("retains future ideas only in a clearly excluded roadmap", async () => {
-    const roadmap = await readFile("docs/10-future-roadmap.md", "utf8");
-    expect(roadmap).toContain("Not Part of Current Implementation");
-    expect(roadmap).toContain("Business Unit Intelligence Hub");
-    expect(roadmap).toContain("Local Model and LoRA Adaptation");
-    expect(roadmap).toContain("Neither capability is implemented");
+  it("removes obsolete legacy intelligence commands from the manifest", async () => {
+    const manifest = await readFile("package.json", "utf8");
+    for (const sub of [
+      "exported-symbols",
+      "wildcard-search",
+      "module-mapping",
+      "circular-dependencies",
+      "node-metrics",
+      "dead-code",
+      "filtered-subgraph",
+      "cyclomatic-complexity",
+    ]) {
+      expect(manifest).not.toContain(`keystone.intelligence.${sub}`);
+    }
+  });
+
+  it("keeps excluded future ideas out of the active release plan", async () => {
+    const { existsSync } = await import("node:fs");
+    // Excluded initiatives must not live in a separate roadmap file inside the release plan.
+    expect(existsSync("docs/10-future-roadmap.md")).toBe(false);
+    // The principal planning document must state the release boundary instead.
+    const overview = await readFile("docs/architecture-overview.md", "utf8");
+    expect(overview).toContain("Release Boundary");
+    expect(overview).toContain("does not include centralized collaboration");
+    expect(overview).toContain("automatic Git operations");
+    // Excluded capability terms must not reappear as active service/promise references in the overview.
+    expect(overview).not.toMatch(/TeamWorkflowService|TeamWorkflowPersistenceStore|TeamRepositoryProvider/i);
   });
 });

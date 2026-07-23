@@ -1171,46 +1171,6 @@
         "icon": "$(graph)"
       },
       {
-        "command": "keystone.intelligence.exported-symbols",
-        "title": "Keystone: Show Exported Symbols",
-        "icon": "$(symbol-method)"
-      },
-      {
-        "command": "keystone.intelligence.wildcard-search",
-        "title": "Keystone: Wildcard Search",
-        "icon": "$(search)"
-      },
-      {
-        "command": "keystone.intelligence.module-mapping",
-        "title": "Keystone: Module Mapping",
-        "icon": "$(folder-library)"
-      },
-      {
-        "command": "keystone.intelligence.circular-dependencies",
-        "title": "Keystone: Circular Dependencies",
-        "icon": "$(debug-restart)"
-      },
-      {
-        "command": "keystone.intelligence.node-metrics",
-        "title": "Keystone: Node Metrics",
-        "icon": "$(graph)"
-      },
-      {
-        "command": "keystone.intelligence.dead-code",
-        "title": "Keystone: Dead Code Detection",
-        "icon": "$(trash)"
-      },
-      {
-        "command": "keystone.intelligence.filtered-subgraph",
-        "title": "Keystone: Filtered Subgraph",
-        "icon": "$(filter)"
-      },
-      {
-        "command": "keystone.intelligence.cyclomatic-complexity",
-        "title": "Keystone: Cyclomatic Complexity",
-        "icon": "$(beaker)"
-      },
-      {
         "command": "keystone.copilot.toggle",
         "title": "Keystone: Toggle Copilot Markdown Generation",
         "icon": "$(copilot)"
@@ -1269,16 +1229,6 @@
           "command": "keystone.analyzeImpact",
           "when": "keystone.intelligenceReady && keystone.workspaceTrusted && config.keystone.shell.showEditorContextActions",
           "group": "navigation@54"
-        },
-        {
-          "command": "keystone.intelligence.exported-symbols",
-          "when": "keystone.intelligenceReady && keystone.workspaceTrusted && config.keystone.shell.showEditorContextActions",
-          "group": "navigation@55"
-        },
-        {
-          "command": "keystone.intelligence.circular-dependencies",
-          "when": "keystone.intelligenceReady && keystone.workspaceTrusted && config.keystone.shell.showEditorContextActions",
-          "group": "navigation@56"
         }
       ],
       "commandPalette": [
@@ -1296,38 +1246,6 @@
         },
         {
           "command": "keystone.intelligence.open",
-          "when": "keystone.intelligenceReady"
-        },
-        {
-          "command": "keystone.intelligence.exported-symbols",
-          "when": "keystone.intelligenceReady"
-        },
-        {
-          "command": "keystone.intelligence.wildcard-search",
-          "when": "keystone.intelligenceReady"
-        },
-        {
-          "command": "keystone.intelligence.module-mapping",
-          "when": "keystone.intelligenceReady"
-        },
-        {
-          "command": "keystone.intelligence.circular-dependencies",
-          "when": "keystone.intelligenceReady"
-        },
-        {
-          "command": "keystone.intelligence.node-metrics",
-          "when": "keystone.intelligenceReady"
-        },
-        {
-          "command": "keystone.intelligence.dead-code",
-          "when": "keystone.intelligenceReady"
-        },
-        {
-          "command": "keystone.intelligence.filtered-subgraph",
-          "when": "keystone.intelligenceReady"
-        },
-        {
-          "command": "keystone.intelligence.cyclomatic-complexity",
           "when": "keystone.intelligenceReady"
         },
         {

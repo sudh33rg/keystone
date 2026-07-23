@@ -88,6 +88,17 @@ describe("native shell services", () => {
     expect(result.route).toBe("/");
   });
 
+  it("routes the import-handoff destination to the Active Work handoff panel", () => {
+    const result = new KeystoneLaunchValidationService(source(true)).validate({
+      schemaVersion: 1,
+      destination: { type: "import-handoff" },
+      source: "command-palette",
+      requestedAt: new Date().toISOString(),
+    });
+    expect(result.valid).toBe(true);
+    expect(result.route).toBe("/active-work");
+  });
+
   it("accepts every supported deep-link destination through one typed contract", () => {
     const workflowId = "00000000-0000-4000-8000-000000000001";
     const taskId = "00000000-0000-4000-8000-000000000002";

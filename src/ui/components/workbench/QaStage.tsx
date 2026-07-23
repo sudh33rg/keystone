@@ -49,6 +49,10 @@ export function QaStage({ bridge, workflowId, onWorkflowChange }: { bridge: Host
   const [output, setOutput] = useState("");
   const [runningCommandId, setRunningCommandId] = useState<string>();
   const [error, setError] = useState<string>();
+  const [qaMode, setQaMode] = useState<string>("recommend");
+  const [testMode, setTestMode] = useState<string>("impacted");
+  const [userPrompt, setUserPrompt] = useState<string>("");
+  const recommendations = deriveRecommendations(state, ti, qaMode, userPrompt);
 
   const load = useCallback(() => {
     void request("impact.load", { correlationId: crypto.randomUUID(), workflowId })
@@ -117,10 +121,43 @@ export function QaStage({ bridge, workflowId, onWorkflowChange }: { bridge: Host
         <p>Review exact repository-derived commands, approve once, then observe real execution.</p>
       </header>
       {error && <div role="alert" className="diagnostic error">{error}</div>}
+      <div className="qa-mode-bar">
+        <label>
+          QA mode
+          <select
+            value={qaMode}
+            onChange={(event) => setQaMode(event.target.value)}
+            disabled={Boolean(busy)}
+          >
+            <option value="recommend">Recommend only</option>
+            <option value="legacy-modernize">Legacy modernization</option>
+            <option value="flaky-focused">Flaky-focused</option>
+            <option value="coverage-gap">Coverage-gap generation</option>
+          </select>
+        </label>
+        <label>
+          Test selection
+          <select
+            value={testMode}
+            onChange={(event) => setTestMode(event.target.value)}
+            disabled={Boolean(busy)}
+          >
+            <option value="impacted">Impacted tests</option>
+            <option value="affected-suite">Affected suite</option>
+            <option value="all">Full test suite</option>
+          </select>
+        </label>
+        <textarea
+          value={userPrompt}
+          onChange={(event) => setUserPrompt(event.target.value)}
+          placeholder="Optional guidance for recommendations..."
+          disabled={Boolean(busy)}
+        />
+      </div>
       <div className="button-row">
-        <button className="primary-button" disabled={Boolean(busy) || !state.impactAnalysis} onClick={() => act("generate", "qa.generatePlan")}>Generate QA Plan</button>
-        <button onClick={load}>Reload persisted QA</button>
-        <button onClick={loadTi} disabled={Boolean(busy)}>Reload Test Intelligence</button>
+        <button className="primary-button" disabled={Boolean(busy) || !state.impactAnalysis} onClick={() => act("generate", "qa.generatePlan", { qaMode, testMode })}>Generate QA Plan</button>
+        <button disabled={Boolean(busy)} onClick={load}>Reload persisted QA</button>
+        <button disabled={Boolean(busy)} onClick={loadTi}>Reload Test Intelligence</button>
       </div>
       <section><h3>Plan Summary</h3><p>{state.qaPlan ? `${state.qaPlan.requiredItems.length} required · ${state.qaPlan.recommendedItems.length} recommended · ${state.qaPlan.optionalItems.length} optional` : "No plan generated."}</p></section>
       {groups.map((group) => (
@@ -132,6 +169,20 @@ export function QaStage({ bridge, workflowId, onWorkflowChange }: { bridge: Host
           ) : <p>No {group.title.toLowerCase()} selected.</p>}
         </section>
       ))}
+      {recommendations.length ? (
+        <section><h3>Recommendations</h3>
+          <ul>{recommendations.map((item, index) => (
+            <li key={index}>
+              <strong>{item.title}</strong> — {item.rationale}
+              {item.testFile && <p>Test: <code>{item.testFile}</code></p>}
+              {item.command && <small>{item.command.executable} {item.command.arguments.join(" ")} · confidence {item.confidence.toFixed(2)}</small>}
+              <div className="button-row">
+                {item.acceptRoute && <button disabled={Boolean(busy)} onClick={() => item.acceptRoute && tiAct("accept-rec", item.acceptRoute.type, item.acceptRoute.payload)}>Accept recommendation</button>}
+              </div>
+            </li>
+          ))}</ul>
+        </section>
+      ) : <p>No recommendations for the selected mode.</p>}
       <section><h3>Coverage Gaps</h3>
         {gaps.length ? (
           <ul>{gaps.map((gap) => {
@@ -226,4 +277,110 @@ export function QaStage({ bridge, workflowId, onWorkflowChange }: { bridge: Host
 
 function report(setter: (value: string) => void) {
   return (cause: unknown): void => setter(cause instanceof Error ? cause.message : String(cause));
+}
+
+type QaRecommendation = {
+  title: string;
+  rationale: string;
+  confidence: number;
+  testFile?: string;
+  command?: QaPlanItem["command"];
+  acceptRoute?: { type: string; payload: Record<string, unknown> };
+};
+
+const QA_RECOMMENDATION_ROUTES: Record<string, { type: string; buildPayload: (arg: unknown) => Record<string, unknown> }> = {
+  coverageGap: {
+    type: "testIntelligence.createGenerationRequest",
+    buildPayload: (gapId: unknown) => ({ coverageGapId: String(gapId) }),
+  },
+  flakyRepeats: {
+    type: "testIntelligence.requestRepeatedRuns",
+    buildPayload: (testId: unknown) => ({ testId: String(testId), count: 3, mode: "default" }),
+  },
+  legacyModernize: {
+    type: "qa.updatePlan",
+    buildPayload: (itemId: unknown) => ({ itemId: String(itemId), selected: true, overrideReason: "Modernize legacy test path." }),
+  },
+  blockingGap: {
+    type: "testIntelligence.createGenerationRequest",
+    buildPayload: (gapId: unknown) => ({ coverageGapId: String(gapId) }),
+  },
+};
+
+function buildAcceptRoute(routeKey: string, arg: unknown): { type: string; payload: Record<string, unknown> } | undefined {
+  const route = QA_RECOMMENDATION_ROUTES[routeKey];
+  if (!route) return undefined;
+  return { type: route.type, payload: route.buildPayload(arg) };
+}
+
+function deriveRecommendations(
+  state: ImpactQaAggregate,
+  ti: QaTestIntelligenceAggregate,
+  qaMode: string,
+  userPrompt: string,
+): QaRecommendation[] {
+  const recommendations: QaRecommendation[] = [];
+  const prompt = userPrompt.trim().toLowerCase();
+  const gaps = state.impactAnalysis?.coverageGaps ?? [];
+  const flaky = ti.flakyClassifications;
+
+  if (qaMode === "coverage-gap" || prompt.includes("coverage") || prompt.includes("test gap")) {
+    for (const gap of gaps.slice(0, 5)) {
+      if (!gap.blocking) continue;
+      const existing = ti.generationRequests.some((r) => r.coverageGapId === gap.id);
+      recommendations.push({
+        title: `Generate tests for coverage gap`,
+        rationale: gap.reason,
+        confidence: 0.9,
+        testFile: gap.recommendedTestLayer,
+        acceptRoute: existing ? undefined : buildAcceptRoute("coverageGap", gap.id),
+      });
+    }
+  }
+
+  if (qaMode === "flaky-focused" || prompt.includes("flaky") || prompt.includes("heal")) {
+    for (const entry of flaky.slice(0, 5)) {
+      const confidence = Math.min(0.99, 0.55 + entry.confidence * 0.35);
+      recommendations.push({
+        title: `Investigate flaky test ${entry.testId}`,
+        rationale: `${entry.state} · ${entry.evidenceRequiredForStronger}`,
+        confidence,
+        testFile: entry.testId,
+        acceptRoute: buildAcceptRoute("flakyRepeats", entry.testId),
+      });
+    }
+  }
+
+  if (qaMode === "legacy-modernize" || prompt.includes("legacy") || prompt.includes("modernize")) {
+    const legacyAnnotations = ["skip", "todo", "fixme", "pending"];
+    const legacyTests = (state.qaPlan?.requiredItems ?? []).filter((item) =>
+      legacyAnnotations.some((token) => item.reason.toLowerCase().includes(token)),
+    );
+    for (const item of legacyTests.slice(0, 5)) {
+      const testFile = item.command.arguments.find((arg) => /\.(spec|test)\./.test(arg));
+      recommendations.push({
+        title: `Modernize legacy test path: ${item.label}`,
+        rationale: item.reason,
+        confidence: 0.8,
+        testFile,
+        command: item.command,
+        acceptRoute: buildAcceptRoute("legacyModernize", item.id),
+      });
+    }
+  }
+
+  if (qaMode === "recommend" || prompt) {
+    const blocking = gaps.filter((gap) => gap.blocking).slice(0, 3);
+    for (const gap of blocking) {
+      recommendations.push({
+        title: `Prioritize blocking coverage gap`,
+        rationale: gap.reason,
+        confidence: 0.86,
+        testFile: gap.recommendedTestLayer,
+        acceptRoute: buildAcceptRoute("blockingGap", gap.id),
+      });
+    }
+  }
+
+  return recommendations;
 }

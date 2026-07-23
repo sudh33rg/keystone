@@ -441,15 +441,6 @@ function validateResult(type: WebviewRequestType, value: unknown): unknown {
     case "intelligence/changes":
     case "intelligence/cpg":
       return IntelligenceQueryResultSchema.parse(value);
-    case "intelligence/exported-symbols":
-    case "intelligence/wildcard-search":
-    case "intelligence/module-mapping":
-    case "intelligence/circular-dependencies":
-    case "intelligence/node-metrics":
-    case "intelligence/dead-code":
-    case "intelligence/filtered-subgraph":
-    case "intelligence/cyclomatic-complexity":
-      return z.any().parse(value);
     case "intelligence/query/compile":
       return QueryCompilationSchema.parse(value);
     case "intelligence/query/suggestions":

@@ -138,3 +138,28 @@ export function shinglesJaccard(a: string[], b: string[]): number {
 }
 
 export { redact };
+
+/** Conservative shape-agnostic token estimation.
+ *  Uses `Math.max(1, Math.ceil(value.length / charsPerToken))` so empty/short
+ *  inputs still return a non-zero budget. Default `4` chars/token matches the
+ *  reference heuristic from `code-review-graph` token budget utilities. */
+export function estimateTokens(value: string, charsPerToken = 4): number {
+  const length = typeof value === "string" ? value.length : 0;
+  return Math.max(1, Math.ceil(length / charsPerToken));
+}
+
+export type TokenBudget = {
+  readonly target: number;
+  readonly reserved: number;
+  readonly available: number;
+};
+
+export function estimateTokenBudget(input: { readonly targetTokens?: number; readonly reservedTokens?: number }): TokenBudget {
+  const target = Math.max(0, input.targetTokens ?? 0);
+  const reserved = Math.max(0, Math.min(target, input.reservedTokens ?? 0));
+  return {
+    target,
+    reserved,
+    available: Math.max(0, target - reserved),
+  };
+}

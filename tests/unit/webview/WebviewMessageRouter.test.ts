@@ -451,4 +451,50 @@ describe("WebviewMessageRouter", () => {
     });
     router.dispose();
   });
+
+  it("does not return a synthetic response for removed intelligence subcommands", async () => {
+    const posted: HostMessage[] = [];
+    const router = new WebviewMessageRouter(
+      {} as WorkspaceStateStore,
+      {} as ConfigurationService,
+      { error: vi.fn() } as unknown as KeystoneLogger,
+      "0.1.0",
+      () => ({
+        name: "fixture",
+        rootCount: 1,
+        trust: "trusted",
+        indexStatus: "ready",
+      }),
+      (message) => {
+        posted.push(message);
+        return Promise.resolve(true);
+      },
+      {
+        intelligenceRuntime: { onDidChange: () => ({ dispose: vi.fn() }) } as never,
+        intelligenceQuery: {} as IntelligenceQueryService,
+        cpgQuery: {} as never,
+        openSource: vi.fn(),
+      } as never,
+    );
+    // A request type that previously routed to a fake runIntelligenceService responder.
+    await router.handle({
+      requestId: crypto.randomUUID(),
+      type: "intelligence/exported-symbols",
+      timestamp: new Date().toISOString(),
+      schemaVersion: 1,
+      payload: { pattern: "*" },
+    });
+    const synthetic = posted.filter(
+      (message) =>
+        message.type === "response/success" &&
+        (message as { payload?: { data?: { message?: string } } }).payload?.data &&
+        typeof (message as { payload: { data: { message?: string } } }).payload.data.message ===
+          "string" &&
+        (message as { payload: { data: { message: string } } }).payload.data.message.includes(
+          "called with payload",
+        ),
+    );
+    expect(synthetic).toHaveLength(0);
+    router.dispose();
+  });
 });
