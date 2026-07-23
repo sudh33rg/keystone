@@ -204,25 +204,13 @@ import {
   type ValidationRunV2,
   type WorkflowCompletionReport,
 } from "./execution";
-import {
-  CommitPlanSchema,
-  DeliveryChangeSetPayloadSchema,
-  DeliveryFileDecisionPayloadSchema,
-  DeliveryWorkflowPayloadSchema,
-  PullRequestDraftPayloadSchema,
-  PullRequestDraftSchema,
-  type CommitPlan,
-  type DeliveryChangeSet,
-  type DeliveryReadiness,
-  type GitActionResult,
-  type GitCapabilities,
-  type GitMutationApproval,
-  type GitRepositoryState,
-  type PullRequestDraft,
-  type PullRequestCreationResult,
-  type PullRequestProviderCapability,
-} from "./delivery";
 import { ExecutionRoutingRequestSchema, type ExecutionRoutingDecision } from "./routing";
+import {
+  type RepositoryStatus,
+  type RepositoryDiff,
+  type RepositoryIdentity,
+  type RepositoryHistoryEntry,
+} from "./repository";
 import {
   OrchestrationCreatePayloadSchema,
   OrchestrationDecisionPayloadSchema,
@@ -245,7 +233,6 @@ import {
   ReviewDecisionPayloadSchema,
   ReviewDiffPayloadSchema,
   ReviewFollowUpPayloadSchema,
-  ReviewPrDraftUpdatePayloadSchema,
   ReviewRequestChangesPayloadSchema,
   ReviewResolveNotePayloadSchema,
   ReviewRiskDispositionPayloadSchema,
@@ -406,7 +393,6 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
   request("review/createFollowUpTask", ReviewFollowUpPayloadSchema),
   request("review/generatePrDraft", ReviewWorkflowPayloadSchema),
   request("review/getPrDraft", ReviewWorkflowPayloadSchema),
-  request("review/updatePrDraft", ReviewPrDraftUpdatePayloadSchema),
   request("review/getPrChecklist", ReviewWorkflowPayloadSchema),
   request("review/getReadiness", ReviewWorkflowPayloadSchema),
   request("review/approve", ReviewDecisionPayloadSchema),
@@ -501,40 +487,6 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
   request("complete/closePartial", CompleteDecisionPayloadSchema),
   request("complete/cancelWithChanges", CompleteDecisionPayloadSchema),
   request("complete/archive", ReviewWorkflowPayloadSchema),
-  request("complete/getChangeSet", ReviewWorkflowPayloadSchema),
-  request(
-    "complete/updateChangeSet",
-    DeliveryFileDecisionPayloadSchema.extend({ included: z.boolean() }).strict(),
-  ),
-  request("complete/generateCommitPlan", DeliveryChangeSetPayloadSchema),
-  request("complete/updateCommitPlan", z.object({ commitPlan: CommitPlanSchema }).strict()),
-  request("complete/approveStaging", CompleteApprovalPayloadSchema),
-  request("complete/stageChanges", z.object({ approvalId: z.string().uuid() }).strict()),
-  request("complete/approveCommit", CompleteApprovalPayloadSchema),
-  request("complete/createCommit", z.object({ approvalId: z.string().uuid() }).strict()),
-  request("complete/getPushReadiness", ReviewWorkflowPayloadSchema),
-  request("complete/approvePush", CompleteApprovalPayloadSchema),
-  request("complete/push", z.object({ approvalId: z.string().uuid() }).strict()),
-  request("complete/getPrCapabilities", ReviewWorkflowPayloadSchema),
-  request("complete/preparePr", ReviewWorkflowPayloadSchema),
-  request("complete/approvePrCreation", CompleteApprovalPayloadSchema),
-  request("complete/createPr", z.object({ approvalId: z.string().uuid() }).strict()),
-  request(
-    "complete/confirmAssistedPr",
-    z
-      .object({
-        workflowId: z.string().uuid(),
-        url: z.string().url().max(2000),
-        confirm: z.literal(true),
-      })
-      .strict(),
-  ),
-  request("complete/preparePatch", CompletePatchPayloadSchema),
-  request("complete/approvePatchExport", CompleteApprovalPayloadSchema),
-  request(
-    "complete/exportPatch",
-    z.object({ workflowId: z.string().uuid(), approvalId: z.string().uuid() }).strict(),
-  ),
   request("orchestration/create", OrchestrationCreatePayloadSchema),
   request("orchestration/get", OrchestrationIdPayloadSchema),
   request("orchestration/list", z.object({}).strict()),
@@ -889,6 +841,9 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
   request("git/repositoryState", z.object({}).strict()),
   request("git/remotes", z.object({}).strict()),
   request("git/branches", z.object({}).strict()),
+  request("git/status", z.object({}).strict()),
+  request("git/identity", z.object({}).strict()),
+  request("git/history", z.object({ limit: z.number().int().min(1).max(200).default(50) }).strict()),
   request(
     "git/diff",
     z
@@ -899,158 +854,6 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
       })
       .strict(),
   ),
-  request("git/readiness", DeliveryWorkflowPayloadSchema),
-  request("delivery/createChangeSet", DeliveryWorkflowPayloadSchema),
-  request("delivery/getChangeSet", DeliveryChangeSetPayloadSchema),
-  request("delivery/includeFile", DeliveryFileDecisionPayloadSchema),
-  request("delivery/excludeFile", DeliveryFileDecisionPayloadSchema),
-  request(
-    "delivery/attributeFile",
-    DeliveryFileDecisionPayloadSchema.extend({
-      attribution: z.enum([
-        "expected",
-        "related",
-        "unexpected",
-        "pre-existing",
-        "concurrent",
-        "ambiguous",
-        "excluded",
-        "generated-output",
-      ]),
-    }).strict(),
-  ),
-  request("delivery/rebuildChangeSet", DeliveryWorkflowPayloadSchema),
-  request(
-    "commitPlan/create",
-    z
-      .object({
-        changeSetId: z.string().uuid(),
-        convention: z.enum(["conventional", "plain", "repository", "user-template"]).optional(),
-      })
-      .strict(),
-  ),
-  request("commitPlan/get", z.object({ commitPlanId: z.string().uuid() }).strict()),
-  request("commitPlan/update", z.object({ plan: CommitPlanSchema }).strict()),
-  request(
-    "commitPlan/merge",
-    z
-      .object({
-        commitPlanId: z.string().uuid(),
-        commitIds: z.array(z.string().uuid()).min(2).max(50),
-      })
-      .strict(),
-  ),
-  request(
-    "commitPlan/split",
-    z
-      .object({
-        commitPlanId: z.string().uuid(),
-        commitId: z.string().uuid(),
-        fileIds: z.array(z.string().max(500)).min(1).max(5000),
-        title: z.string().min(1).max(200),
-      })
-      .strict(),
-  ),
-  request(
-    "commitPlan/reorder",
-    z
-      .object({
-        commitPlanId: z.string().uuid(),
-        commitIds: z.array(z.string().uuid()).min(1).max(50),
-      })
-      .strict(),
-  ),
-  request(
-    "commitPlan/moveFile",
-    z
-      .object({
-        commitPlanId: z.string().uuid(),
-        fileId: z.string().max(500),
-        targetCommitId: z.string().uuid(),
-      })
-      .strict(),
-  ),
-  request(
-    "commitPlan/approve",
-    z.object({ commitPlanId: z.string().uuid(), confirm: z.literal(true) }).strict(),
-  ),
-  request(
-    "git/stage",
-    z
-      .object({
-        changeSetId: z.string().uuid(),
-        paths: z.array(z.string().max(1024)).min(1).max(5000),
-        confirm: z.literal(true),
-      })
-      .strict(),
-  ),
-  request(
-    "git/unstage",
-    z
-      .object({
-        changeSetId: z.string().uuid(),
-        paths: z.array(z.string().max(1024)).min(1).max(5000),
-        confirm: z.literal(true),
-      })
-      .strict(),
-  ),
-  request(
-    "git/createBranch",
-    z.object({ branch: z.string().min(1).max(200), confirm: z.literal(true) }).strict(),
-  ),
-  request(
-    "git/commit",
-    z
-      .object({
-        changeSetId: z.string().uuid(),
-        commitPlanId: z.string().uuid(),
-        proposedCommitId: z.string().uuid(),
-        message: z.string().min(1).max(20_000),
-        confirm: z.literal(true),
-      })
-      .strict(),
-  ),
-  request(
-    "git/push",
-    z
-      .object({
-        remote: z.string().min(1).max(200),
-        branch: z.string().min(1).max(500),
-        confirm: z.literal(true),
-      })
-      .strict(),
-  ),
-  request("pullRequest/capabilities", z.object({}).strict()),
-  request("pullRequest/templates", z.object({}).strict()),
-  request(
-    "pullRequest/createDraft",
-    z
-      .object({
-        changeSetId: z.string().uuid(),
-        commitPlanId: z.string().uuid(),
-        baseBranch: z.string().min(1).max(500),
-      })
-      .strict(),
-  ),
-  request("pullRequest/updateDraft", z.object({ draft: PullRequestDraftSchema }).strict()),
-  request("pullRequest/validate", PullRequestDraftPayloadSchema),
-  request(
-    "pullRequest/approve",
-    PullRequestDraftPayloadSchema.extend({ confirm: z.literal(true) }).strict(),
-  ),
-  request(
-    "pullRequest/create",
-    PullRequestDraftPayloadSchema.extend({ confirm: z.literal(true) }).strict(),
-  ),
-  request(
-    "pullRequest/confirmExternalCreation",
-    PullRequestDraftPayloadSchema.extend({
-      url: z.string().url().max(2000),
-      confirm: z.literal(true),
-    }).strict(),
-  ),
-  request("pullRequest/status", PullRequestDraftPayloadSchema),
-  request("pullRequest/refresh", PullRequestDraftPayloadSchema),
   request("execution/route", ExecutionRoutingRequestSchema),
   request("request/cancel", z.object({ targetRequestId: z.string().uuid() }).strict()),
 ]);
@@ -1093,12 +896,6 @@ export const HostMessageSchema = z.discriminatedUnion("type", [
   event("review/stale", ReviewLifecycleEventSchema),
   event("review/prDraftChanged", ReviewLifecycleEventSchema),
   event("complete/optionsChanged", ReviewLifecycleEventSchema),
-  event("complete/changeSetChanged", ReviewLifecycleEventSchema),
-  event("complete/commitPlanChanged", ReviewLifecycleEventSchema),
-  event("complete/commitCreated", ReviewLifecycleEventSchema),
-  event("complete/pushCompleted", ReviewLifecycleEventSchema),
-  event("complete/prCreated", ReviewLifecycleEventSchema),
-  event("complete/patchExported", ReviewLifecycleEventSchema),
   event("complete/handoffPrepared", ReviewLifecycleEventSchema),
   event("complete/workflowCompleted", ReviewLifecycleEventSchema),
   event("complete/workflowClosedPartial", ReviewLifecycleEventSchema),
@@ -1417,106 +1214,6 @@ export const HostMessageSchema = z.discriminatedUnion("type", [
       })
       .strict(),
   ),
-  event("git/stateChanged", z.object({ message: z.string().max(2000) }).strict()),
-  event(
-    "git/actionStarted",
-    z.object({ action: z.string().max(100), message: z.string().max(2000) }).strict(),
-  ),
-  event(
-    "git/actionProgress",
-    z.object({ action: z.string().max(100), message: z.string().max(2000) }).strict(),
-  ),
-  event(
-    "git/actionCompleted",
-    z
-      .object({
-        action: z.string().max(100),
-        resultId: z.string().uuid(),
-        message: z.string().max(2000),
-      })
-      .strict(),
-  ),
-  event(
-    "git/actionFailed",
-    z.object({ action: z.string().max(100), message: z.string().max(2000) }).strict(),
-  ),
-  event(
-    "delivery/changeSetChanged",
-    z.object({ changeSetId: z.string().uuid(), message: z.string().max(2000) }).strict(),
-  ),
-  event(
-    "delivery/stale",
-    z.object({ changeSetId: z.string().uuid(), message: z.string().max(2000) }).strict(),
-  ),
-  event(
-    "commitPlan/changed",
-    z
-      .object({
-        commitPlanId: z.string().uuid(),
-        message: z.string().max(2000),
-      })
-      .strict(),
-  ),
-  event(
-    "commitPlan/stale",
-    z
-      .object({
-        commitPlanId: z.string().uuid(),
-        message: z.string().max(2000),
-      })
-      .strict(),
-  ),
-  event(
-    "commitPlan/commitCreated",
-    z
-      .object({
-        commitPlanId: z.string().uuid(),
-        commitHash: z.string().max(100),
-        message: z.string().max(2000),
-      })
-      .strict(),
-  ),
-  event(
-    "pullRequest/draftChanged",
-    z.object({ draftId: z.string().uuid(), message: z.string().max(2000) }).strict(),
-  ),
-  event(
-    "pullRequest/creationStarted",
-    z.object({ draftId: z.string().uuid(), message: z.string().max(2000) }).strict(),
-  ),
-  event(
-    "pullRequest/created",
-    z
-      .object({
-        draftId: z.string().uuid(),
-        url: z.string().url().max(2000),
-        message: z.string().max(2000),
-      })
-      .strict(),
-  ),
-  event(
-    "pullRequest/statusChanged",
-    z
-      .object({
-        draftId: z.string().uuid(),
-        status: z.string().max(100),
-        message: z.string().max(2000),
-      })
-      .strict(),
-  ),
-  event(
-    "pullRequest/failed",
-    z
-      .object({
-        draftId: z.string().uuid().optional(),
-        message: z.string().max(2000),
-      })
-      .strict(),
-  ),
-  event(
-    "pullRequest/stale",
-    z.object({ draftId: z.string().uuid(), message: z.string().max(2000) }).strict(),
-  ),
 ]);
 export type HostMessage = z.infer<typeof HostMessageSchema>;
 
@@ -1617,9 +1314,9 @@ export interface WebviewRequestResults {
   "review/resolveNote": ReviewNote;
   "review/requestChanges": ReviewDecision;
   "review/createFollowUpTask": DevelopmentWorkflowSnapshot;
-  "review/generatePrDraft": PullRequestDraft;
-  "review/getPrDraft": PullRequestDraft | undefined;
-  "review/updatePrDraft": PullRequestDraft;
+  "review/generatePrDraft": PullRequestReview;
+  "review/getPrDraft": PullRequestReview | undefined;
+  "review/updatePrDraft": PullRequestReview;
   "review/getPrChecklist": WorkflowReviewState["checklist"];
   "review/getReadiness": { ready: boolean; blockers: string[]; warnings: string[] };
   "review/approve": ReviewDecision;
@@ -1670,25 +1367,6 @@ export interface WebviewRequestResults {
   "complete/closePartial": WorkflowCompletionRecord;
   "complete/cancelWithChanges": WorkflowCompletionRecord;
   "complete/archive": WorkflowCompletionRecord;
-  "complete/getChangeSet": DeliveryChangeSet | undefined;
-  "complete/updateChangeSet": DeliveryChangeSet;
-  "complete/generateCommitPlan": CommitPlan;
-  "complete/updateCommitPlan": CommitPlan;
-  "complete/approveStaging": GitMutationApproval;
-  "complete/stageChanges": GitActionResult;
-  "complete/approveCommit": GitMutationApproval;
-  "complete/createCommit": GitActionResult;
-  "complete/getPushReadiness": DeliveryReadiness;
-  "complete/approvePush": GitMutationApproval;
-  "complete/push": GitActionResult;
-  "complete/getPrCapabilities": PullRequestProviderCapability;
-  "complete/preparePr": PullRequestDraft;
-  "complete/approvePrCreation": GitMutationApproval;
-  "complete/createPr": PullRequestCreationResult;
-  "complete/confirmAssistedPr": PullRequestCreationResult;
-  "complete/preparePatch": { paths: string[]; totalBytes: number; blockedPaths: string[] };
-  "complete/approvePatchExport": GitMutationApproval;
-  "complete/exportPatch": { path: string; hash: string };
   "orchestration/create": WorkflowInstance;
   "orchestration/get": WorkflowInstance | undefined;
   "orchestration/list": WorkflowInstance[];
@@ -1991,57 +1669,16 @@ export interface WebviewRequestResults {
     report?: WorkflowCompletionReport;
   };
   "completion/getWorkflowReport": WorkflowCompletionReport | undefined;
-  "git/capabilities": GitCapabilities;
-  "git/refresh": GitCapabilities;
-  "git/repositoryState": GitRepositoryState;
-  "git/remotes": GitRepositoryState["remotes"];
-  "git/branches": {
-    current?: string;
-    upstream?: string;
-    defaultBranch?: string;
-    detached: boolean;
-  };
-  "git/diff": {
-    path: string;
-    text: string;
-    binary: boolean;
-    truncated: boolean;
-    totalBytes: number;
-  };
-  "git/readiness": DeliveryReadiness;
-  "delivery/createChangeSet": DeliveryChangeSet;
-  "delivery/getChangeSet": DeliveryChangeSet | undefined;
-  "delivery/includeFile": DeliveryChangeSet;
-  "delivery/excludeFile": DeliveryChangeSet;
-  "delivery/attributeFile": DeliveryChangeSet;
-  "delivery/rebuildChangeSet": DeliveryChangeSet;
-  "commitPlan/create": CommitPlan;
-  "commitPlan/get": CommitPlan | undefined;
-  "commitPlan/update": CommitPlan;
-  "commitPlan/merge": CommitPlan;
-  "commitPlan/split": CommitPlan;
-  "commitPlan/reorder": CommitPlan;
-  "commitPlan/moveFile": CommitPlan;
-  "commitPlan/approve": CommitPlan;
-  "git/stage": GitActionResult;
-  "git/unstage": GitActionResult;
-  "git/createBranch": GitActionResult;
-  "git/commit": GitActionResult;
-  "git/push": GitActionResult;
-  "pullRequest/capabilities": PullRequestProviderCapability;
-  "pullRequest/templates": Array<{ id: string; name: string; body: string }>;
-  "pullRequest/createDraft": PullRequestDraft;
-  "pullRequest/updateDraft": PullRequestDraft;
-  "pullRequest/validate": {
-    ready: boolean;
-    blockers: string[];
-    warnings: string[];
-  };
-  "pullRequest/approve": PullRequestDraft;
-  "pullRequest/create": PullRequestCreationResult;
-  "pullRequest/confirmExternalCreation": PullRequestCreationResult;
-  "pullRequest/status": PullRequestCreationResult | undefined;
-  "pullRequest/refresh": PullRequestCreationResult | undefined;
+  "git/capabilities": { readOnly: true };
+  "git/refresh": { readOnly: true };
+  "git/repositoryState": RepositoryStatus;
+  "git/remotes": { sanitizedRemoteUrl?: string };
+  "git/status": RepositoryStatus;
+  "git/branches": { current?: string; detached: boolean };
+  "git/identity": RepositoryIdentity;
+  "git/diff": RepositoryDiff;
+  "git/history": RepositoryHistoryEntry[];
+  "git/readiness": { ready: true; message: string };
   "execution/route": ExecutionRoutingDecision;
   "request/cancel": undefined;
 }

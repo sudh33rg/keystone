@@ -126,7 +126,6 @@ export class VsCodeRepositoryMonitor implements RepositoryMonitor {
     const rootUri = vscode.Uri.parse(root.uri);
     const relativePath = normalizeRelativePath(posix.relative(rootUri.path, uri.path));
     if (!relativePath || relativePath.startsWith("../")) return undefined;
-    if (relativePath === ".keystone" || relativePath.startsWith(".keystone/")) return undefined;
     if (!this.ignorePolicy.decide(relativePath).included) return undefined;
     return {
       kind,
@@ -165,13 +164,18 @@ export class VsCodeRepositoryMonitor implements RepositoryMonitor {
       const current = await this.git.getMetadata(root.uri);
       if (!this.started || revision !== this.gitCheckRevision) return;
       this.gitState.set(root.uri, current);
-      if (previous?.branch === current.branch && previous?.headCommit === current.headCommit)
+      if (previous?.branch !== current.branch) {
+        requiresFullRebuild = true;
+        firstPrevious ??= previous;
+        firstCurrent ??= current;
         continue;
-      if (
-        !this.workspace.getIndexingConfiguration().onBranchChange &&
-        previous?.branch !== current.branch
-      )
+      }
+      if (previous?.headCommit === current.headCommit) continue;
+      if (!this.workspace.getIndexingConfiguration().onBranchChange) {
+        firstPrevious ??= previous;
+        firstCurrent ??= current;
         continue;
+      }
       const changes: RepositoryChange[] = [];
       let fullRebuild: boolean;
       if (previous) {

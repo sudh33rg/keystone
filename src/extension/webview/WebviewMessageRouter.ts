@@ -36,7 +36,7 @@ import type {
   CompletionDecisionService,
   WorkflowCompletionService,
 } from "../../core/execution/CompletionService";
-import type { DeliveryCoordinator } from "../../core/delivery/GitDeliveryService";
+import type { RepositoryReadService } from "../../core/repository/RepositoryReadService";
 import type { ExecutionRoutingService } from "../../core/workflows/ExecutionRoutingService";
 import type { OrchestrationService } from "../../core/orchestration/OrchestrationService";
 import type { BuildWorkspaceService } from "../../core/workflows/BuildWorkspaceService";
@@ -104,7 +104,7 @@ export interface IntelligenceServiceRegistry {
   validation: ValidationOrchestrator;
   completion: CompletionDecisionService;
   workflowCompletion: WorkflowCompletionService;
-  delivery: DeliveryCoordinator;
+  repository: RepositoryReadService;
   review: ReviewCompletionService;
   prReview?: import("../../core/review/PrReviewService").PrReviewService;
   taskHandoff?: import("../../core/handoff/TaskHandoffService").TaskHandoffService;
@@ -375,8 +375,7 @@ export class WebviewMessageRouter {
 
   private async route(request: WebviewRequest): Promise<void> {
     this.ensureWorkspaceTrust(request);
-    switch (request.type) {
-      case "workflow.create": {
+    switch (request.type) {      case "workflow.create": {
         try {
           const workflow = await this.services.canonicalWorkflow.createWorkflow(
             { intent: request.payload.intent, workType: request.payload.workType, ...(request.payload.specification ? { specification: request.payload.specification } : {}) },
@@ -2505,22 +2504,10 @@ export class WebviewMessageRouter {
         );
         return;
       case "review/getDiff": {
-        const controller = new AbortController();
-        this.queryControllers.set(request.requestId, controller);
-        try {
-          await this.sendSuccess(
-            request.requestId,
-            await this.services.delivery.adapter.diff(
-              this.services.delivery.root,
-              request.payload.path,
-              "working-head",
-              request.payload.maxBytes,
-              controller.signal,
-            ),
-          );
-        } finally {
-          this.queryControllers.delete(request.requestId);
-        }
+        await this.sendSuccess(
+          request.requestId,
+          await this.services.repository.getDiff(request.payload.path),
+        );
         return;
       }
       case "review/attributeChange": {
@@ -2642,13 +2629,6 @@ export class WebviewMessageRouter {
           this.services.review.getState(request.payload.workflowId).checklist,
         );
         return;
-      case "review/getPrDraft":
-        await this.sendSuccess(
-          request.requestId,
-          this.services.review.getState(request.payload.workflowId).prDraft,
-        );
-        return;
-      // Phase 11 — Task Handoff (portable local package; no git/PR/account operations).
       case "taskHandoff/checkEligibility": {
         const svc = this.requireTaskHandoff();
         await this.sendSuccess(request.requestId, svc.checkEligibility(request.payload.workflowId));
@@ -2750,54 +2730,6 @@ export class WebviewMessageRouter {
         await this.sendSuccess(request.requestId, await svc.updatePackage(request.payload.workflowId, request.payload.title, request.payload.description));
         return;
       }
-      case "review/generatePrDraft":
-      case "complete/preparePr": {
-        const workflowId = request.payload.workflowId;
-        const state = await this.services.delivery.repositories.getState(
-          this.services.delivery.root,
-        );
-        const detected = await this.services.delivery.pullRequests.detect(
-          this.services.delivery.root,
-          state,
-        );
-        const capability =
-          detected.capability.detected && detected.capability.draftCreationAvailable
-            ? detected.capability
-            : undefined;
-        if (!capability)
-          throw new Error("No capability-compatible PR draft provider is available.");
-        const changeSet =
-          this.services.delivery.persistence.snapshot.changeSets
-            .filter((item) => item.workflowId === workflowId)
-            .at(-1) ?? (await this.services.delivery.createChangeSet(workflowId));
-        const plan =
-          this.services.delivery.persistence.snapshot.commitPlans
-            .filter((item) => item.changeSetId === changeSet.id)
-            .at(-1) ?? (await this.services.delivery.createCommitPlan(changeSet.id));
-        const draft = await this.services.delivery.drafts.create(
-          changeSet,
-          plan,
-          capability,
-          state.defaultBranch ?? "main",
-        );
-        await this.publishReviewEvent(
-          "review/prDraftChanged",
-          workflowId,
-          "Deterministic PR review package generated; no pull request was created.",
-        );
-        await this.sendSuccess(request.requestId, draft);
-        return;
-      }
-      case "review/updatePrDraft": {
-        const value = await this.services.delivery.updateDraft(request.payload.draft);
-        await this.publishReviewEvent(
-          "review/prDraftChanged",
-          value.workflowId,
-          "User-edited PR draft saved.",
-        );
-        await this.sendSuccess(request.requestId, value);
-        return;
-      }
       case "review/approve":
       case "review/approveWithWarnings":
       case "review/reject": {
@@ -2871,460 +2803,6 @@ export class WebviewMessageRouter {
         await this.sendSuccess(request.requestId, value);
         return;
       }
-      case "complete/getChangeSet": {
-        const current = this.services.delivery.persistence.snapshot.changeSets
-          .filter((item) => item.workflowId === request.payload.workflowId)
-          .at(-1);
-        const value =
-          current ?? (await this.services.delivery.createChangeSet(request.payload.workflowId));
-        await this.publishReviewEvent(
-          "complete/changeSetChanged",
-          request.payload.workflowId,
-          current
-            ? "Current completion change set refreshed in the UI."
-            : "Completion change set created from current repository evidence.",
-        );
-        await this.sendSuccess(request.requestId, value);
-        return;
-      }
-      case "complete/updateChangeSet": {
-        const value = await this.services.delivery.decideFile(
-          request.payload.changeSetId,
-          request.payload.fileId,
-          request.payload.included,
-          request.payload.explanation,
-        );
-        await this.publishReviewEvent(
-          "complete/changeSetChanged",
-          value.workflowId,
-          "Completion change-set selection updated; prior dependent approvals are invalid.",
-        );
-        await this.sendSuccess(request.requestId, value);
-        return;
-      }
-      case "complete/generateCommitPlan": {
-        const value = await this.services.delivery.createCommitPlan(request.payload.changeSetId);
-        const changeSet = this.requireChangeSet(value.changeSetId);
-        await this.publishReviewEvent(
-          "complete/commitPlanChanged",
-          changeSet.workflowId,
-          "Commit plan generated for review.",
-        );
-        await this.sendSuccess(request.requestId, value);
-        return;
-      }
-      case "complete/updateCommitPlan": {
-        const value = await this.services.delivery.commits.save({
-          ...request.payload.commitPlan,
-          status: "draft",
-          updatedAt: new Date().toISOString(),
-        });
-        const changeSet = this.requireChangeSet(value.changeSetId);
-        await this.publishReviewEvent(
-          "complete/commitPlanChanged",
-          changeSet.workflowId,
-          "Commit plan edits saved.",
-        );
-        await this.sendSuccess(request.requestId, value);
-        return;
-      }
-      case "complete/getPushReadiness":
-        await this.sendSuccess(
-          request.requestId,
-          await this.services.delivery.evaluate(request.payload.workflowId),
-        );
-        return;
-      case "complete/getPrCapabilities": {
-        const state = await this.services.delivery.repositories.getState(
-          this.services.delivery.root,
-        );
-        await this.sendSuccess(
-          request.requestId,
-          (await this.services.delivery.pullRequests.detect(this.services.delivery.root, state))
-            .capability,
-        );
-        return;
-      }
-      case "complete/approveStaging": {
-        const review = this.requireCurrentApprovedReview(
-          request.payload.workflowId,
-          request.payload.fingerprint,
-        );
-        const changeSet =
-          this.services.delivery.persistence.snapshot.changeSets
-            .filter((item) => item.workflowId === review.workflow.id)
-            .at(-1) ?? (await this.services.delivery.createChangeSet(review.workflow.id));
-        const repository = await this.services.delivery.repositories.getState(
-          this.services.delivery.root,
-        );
-        const paths = changeSet.files
-          .filter((item) => item.included && !item.sensitive)
-          .map((item) => item.path);
-        if (!paths.length)
-          throw new Error("No reviewed, non-sensitive paths are selected for staging.");
-        await this.sendSuccess(
-          request.requestId,
-          await this.services.delivery.approvals.approve({
-            action: "stage",
-            repositoryId: changeSet.repositoryId,
-            branch: changeSet.branch,
-            changeSetId: changeSet.id,
-            changeSetFingerprint: changeSet.fingerprint,
-            paths,
-            message: repository.fingerprint,
-            risks: changeSet.findings,
-            safelyRetryable: true,
-          }),
-        );
-        return;
-      }
-      case "complete/stageChanges": {
-        const approval = this.services.delivery.approvals.require(
-          request.payload.approvalId,
-          "stage",
-        );
-        const changeSet = this.requireChangeSet(approval.changeSetId!);
-        const result = await this.services.delivery.mutations.stage(
-          this.services.delivery.root,
-          approval.id,
-          changeSet,
-        );
-        await this.publishReviewEvent(
-          "complete/changeSetChanged",
-          changeSet.workflowId,
-          `Staging ${result.status}; only separately approved paths were attempted.`,
-        );
-        await this.sendSuccess(request.requestId, result);
-        return;
-      }
-      case "complete/approveCommit": {
-        const review = this.requireCurrentApprovedReview(
-          request.payload.workflowId,
-          request.payload.fingerprint,
-        );
-        const changeSet = this.services.delivery.persistence.snapshot.changeSets
-          .filter((item) => item.workflowId === review.workflow.id)
-          .at(-1);
-        if (!changeSet) throw new Error("Create and review a completion change set first.");
-        const plan = this.services.delivery.persistence.snapshot.commitPlans
-          .filter((item) => item.changeSetId === changeSet.id)
-          .at(-1);
-        if (!plan) throw new Error("Generate a commit plan first.");
-        const proposed = plan.commits.find((item) => !item.createdCommitHash);
-        if (!proposed)
-          throw new Error("Every proposed commit already has a recorded commit reference.");
-        const message =
-          `${proposed.breaking ? "BREAKING CHANGE: " : ""}${proposed.title}\n\n${proposed.description}`.slice(
-            0,
-            20_000,
-          );
-        await this.sendSuccess(
-          request.requestId,
-          await this.services.delivery.approvals.approve({
-            action: "commit",
-            repositoryId: changeSet.repositoryId,
-            branch: changeSet.branch,
-            changeSetId: changeSet.id,
-            changeSetFingerprint: changeSet.fingerprint,
-            commitPlanId: plan.id,
-            proposedCommitId: proposed.id,
-            paths: [],
-            message,
-            risks: proposed.risks,
-            safelyRetryable: false,
-          }),
-        );
-        return;
-      }
-      case "complete/createCommit": {
-        const approval = this.services.delivery.approvals.require(
-          request.payload.approvalId,
-          "commit",
-        );
-        const changeSet = this.requireChangeSet(approval.changeSetId!);
-        const plan = this.requireCommitPlan(approval.commitPlanId!);
-        const result = await this.services.delivery.mutations.commit(
-          this.services.delivery.root,
-          approval.id,
-          changeSet,
-          plan,
-        );
-        if (result.status === "succeeded")
-          await this.services.delivery.commits.save({
-            ...plan,
-            commits: plan.commits.map((item) =>
-              item.id === approval.proposedCommitId
-                ? {
-                    ...item,
-                    createdCommitHash: result.commitHash,
-                    actualFiles: result.affectedPaths,
-                  }
-                : item,
-            ),
-            status: plan.commits.every(
-              (item) => item.id === approval.proposedCommitId || item.createdCommitHash,
-            )
-              ? "completed"
-              : "partially-created",
-            updatedAt: new Date().toISOString(),
-          });
-        await this.publishReviewEvent(
-          "complete/commitCreated",
-          changeSet.workflowId,
-          `Commit result: ${result.status}.`,
-        );
-        await this.sendSuccess(request.requestId, result);
-        return;
-      }
-      case "complete/approvePush": {
-        const review = this.requireCurrentApprovedReview(
-          request.payload.workflowId,
-          request.payload.fingerprint,
-        );
-        const repository = await this.services.delivery.repositories.getState(
-          this.services.delivery.root,
-        );
-        if (repository.behind > 0 || repository.detachedHead || repository.conflictedFiles.length)
-          throw new Error(
-            "Push approval is blocked by behind-upstream, detached HEAD, or conflicts.",
-          );
-        const remote =
-          repository.defaultRemote ?? repository.remotes.find((item) => item.isDefault)?.name;
-        if (!remote || !repository.branch)
-          throw new Error("A current branch and configured remote are required for push approval.");
-        await this.sendSuccess(
-          request.requestId,
-          await this.services.delivery.approvals.approve({
-            action: "push",
-            repositoryId: repository.repositoryId,
-            branch: repository.branch,
-            paths: [],
-            message: review.repositoryFingerprint,
-            remote,
-            remoteBranch: repository.branch,
-            risks: [
-              "Publishes local commits to the selected remote branch; force-push is not used.",
-            ],
-            safelyRetryable: true,
-          }),
-        );
-        return;
-      }
-      case "complete/push": {
-        const approval = this.services.delivery.approvals.require(
-          request.payload.approvalId,
-          "push",
-        );
-        const result = await this.services.delivery.mutations.push(
-          this.services.delivery.root,
-          approval.id,
-        );
-        const workflowId = this.services.review.persisted.decisions.find(
-          (item) => item.repositoryFingerprint === approval.message,
-        )?.workflowId;
-        if (workflowId)
-          await this.publishReviewEvent(
-            "complete/pushCompleted",
-            workflowId,
-            `Push result: ${result.status}.`,
-          );
-        await this.sendSuccess(request.requestId, result);
-        return;
-      }
-      case "complete/approvePrCreation": {
-        const review = this.requireCurrentApprovedReview(
-          request.payload.workflowId,
-          request.payload.fingerprint,
-        );
-        const draft = this.services.delivery.persistence.snapshot.pullRequestDrafts
-          .filter((item) => item.workflowId === review.workflow.id)
-          .at(-1);
-        if (!draft) throw new Error("Prepare and review a PR draft before approving creation.");
-        const repository = await this.services.delivery.repositories.getState(
-          this.services.delivery.root,
-        );
-        await this.sendSuccess(
-          request.requestId,
-          await this.services.delivery.approvals.approve({
-            action: "create-pr",
-            repositoryId: repository.repositoryId,
-            branch: repository.branch,
-            paths: [],
-            message: draft.fingerprint,
-            risks: draft.riskSummary,
-            safelyRetryable: false,
-          }),
-        );
-        return;
-      }
-      case "complete/createPr": {
-        const approval = this.services.delivery.approvals.require(
-          request.payload.approvalId,
-          "create-pr",
-        );
-        const draft = this.services.delivery.persistence.snapshot.pullRequestDrafts.find(
-          (item) => item.fingerprint === approval.message,
-        );
-        if (!draft) throw new Error("The approved PR draft is unavailable or changed.");
-        const repository = await this.services.delivery.repositories.getState(
-          this.services.delivery.root,
-        );
-        const detected = await this.services.delivery.providers.detect(
-          this.services.delivery.root,
-          repository,
-        );
-        if (!detected.provider)
-          throw new Error("A supported pull-request provider is unavailable.");
-        const result = detected.capability.directCreationAvailable
-          ? await this.services.delivery.creation.create(
-              approval.id,
-              draft,
-              detected.provider,
-              detected.capability,
-            )
-          : await this.services.delivery.creation.assisted(approval.id, draft, detected.provider);
-        await this.publishReviewEvent(
-          "complete/prCreated",
-          draft.workflowId,
-          result.status === "created"
-            ? "Pull request creation was confirmed by the provider."
-            : "PR creation is awaiting explicit external confirmation.",
-        );
-        await this.sendSuccess(request.requestId, result);
-        return;
-      }
-      case "complete/confirmAssistedPr": {
-        const draft = this.services.delivery.persistence.snapshot.pullRequestDrafts
-          .filter((item) => item.workflowId === request.payload.workflowId)
-          .at(-1);
-        if (!draft) throw new Error("No assisted PR draft is awaiting confirmation.");
-        const result = await this.services.delivery.creation.confirmExternal(
-          draft,
-          request.payload.url,
-        );
-        await this.publishReviewEvent(
-          "complete/prCreated",
-          draft.workflowId,
-          "User confirmed externally created pull request; URL retained as evidence.",
-        );
-        await this.sendSuccess(request.requestId, result);
-        return;
-      }
-      case "complete/preparePatch": {
-        const review = this.services.review.getState(request.payload.workflowId);
-        const changeSet =
-          this.services.delivery.persistence.snapshot.changeSets
-            .filter((item) => item.workflowId === request.payload.workflowId)
-            .at(-1) ?? (await this.services.delivery.createChangeSet(request.payload.workflowId));
-        const selected = [...new Set(request.payload.includedPaths)];
-        const blockedPaths = selected.filter((path) => {
-          const file = changeSet.files.find((item) => item.path === path);
-          return !file || file.sensitive || file.binary || !file.included;
-        });
-        let totalBytes = 0;
-        for (const path of selected.filter((item) => !blockedPaths.includes(item)))
-          totalBytes += (
-            await this.services.delivery.adapter.diff(
-              this.services.delivery.root,
-              path,
-              "working-head",
-              100_000,
-            )
-          ).totalBytes;
-        if (
-          review.repositoryFingerprint !==
-          this.services.review.getState(request.payload.workflowId).repositoryFingerprint
-        )
-          throw new Error("Review became stale while preparing the patch preview.");
-        await this.sendSuccess(request.requestId, {
-          paths: selected.slice(0, 5000),
-          totalBytes,
-          blockedPaths,
-        });
-        return;
-      }
-      case "complete/approvePatchExport": {
-        const review = this.requireCurrentApprovedReview(
-          request.payload.workflowId,
-          request.payload.fingerprint,
-        );
-        const changeSet = this.services.delivery.persistence.snapshot.changeSets
-          .filter((item) => item.workflowId === review.workflow.id)
-          .at(-1);
-        if (!changeSet)
-          throw new Error("Prepare and review a change set before patch export approval.");
-        const repository = await this.services.delivery.repositories.getState(
-          this.services.delivery.root,
-        );
-        const paths = changeSet.files
-          .filter((item) => item.included && !item.sensitive && !item.binary)
-          .map((item) => item.path);
-        if (!paths.length)
-          throw new Error("No safe reviewed paths are available for patch export.");
-        await this.sendSuccess(
-          request.requestId,
-          await this.services.delivery.approvals.approve({
-            action: "export-patch",
-            repositoryId: repository.repositoryId,
-            branch: repository.branch,
-            changeSetId: changeSet.id,
-            changeSetFingerprint: changeSet.fingerprint,
-            paths,
-            message: repository.fingerprint,
-            risks: [
-              "Writes a local patch under .keystone/exports; it is never applied automatically.",
-            ],
-            safelyRetryable: true,
-          }),
-        );
-        return;
-      }
-      case "complete/exportPatch": {
-        const approval = this.services.delivery.approvals.require(
-          request.payload.approvalId,
-          "export-patch",
-        );
-        const review = this.services.review.getState(request.payload.workflowId);
-        const changeSet = this.requireChangeSet(approval.changeSetId!);
-        if (
-          changeSet.workflowId !== request.payload.workflowId ||
-          changeSet.fingerprint !== approval.changeSetFingerprint
-        )
-          throw new Error("The reviewed change set changed after patch approval.");
-        const repository = await this.services.delivery.repositories.getState(
-          this.services.delivery.root,
-        );
-        if (repository.fingerprint !== approval.message)
-          throw new Error(
-            "Repository state changed after patch approval; prepare and approve again.",
-          );
-        const parts: string[] = [];
-        for (const path of approval.paths) {
-          const value = await this.services.delivery.adapter.diff(
-            this.services.delivery.root,
-            path,
-            "working-head",
-            100_000,
-          );
-          if (value.binary || value.truncated)
-            throw new Error(`Patch export is blocked for binary or truncated diff ${path}.`);
-          parts.push(value.text);
-        }
-        const text = parts.join("\n");
-        const hash = `sha256:${createHash("sha256").update(text).digest("hex")}`;
-        const directory = join(this.services.delivery.root, ".keystone", "exports");
-        await mkdir(directory, { recursive: true });
-        const name = `workflow-${review.workflow.id}-${Date.now()}.patch`;
-        await writeFile(join(directory, name), text, { encoding: "utf8", mode: 0o600 });
-        await this.services.delivery.approvals.consume(approval.id);
-        await this.publishReviewEvent(
-          "complete/patchExported",
-          review.workflow.id,
-          `Reviewed patch exported as .keystone/exports/${name}.`,
-        );
-        await this.sendSuccess(request.requestId, { path: `.keystone/exports/${name}`, hash });
-        return;
-      }
       case "completion/getWorkflowReport":
         await this.sendSuccess(
           request.requestId,
@@ -3333,473 +2811,51 @@ export class WebviewMessageRouter {
         return;
       case "git/capabilities":
       case "git/refresh":
+      case "git/status":
         await this.sendSuccess(
           request.requestId,
-          await this.services.delivery.capabilities.refresh(this.services.delivery.root),
+          await this.services.repository.getStatus(),
         );
         return;
       case "git/repositoryState":
         await this.sendSuccess(
           request.requestId,
-          await this.services.delivery.repositories.getState(this.services.delivery.root),
+          await this.services.repository.getStatus(),
         );
         return;
       case "git/remotes":
         await this.sendSuccess(
           request.requestId,
-          (await this.services.delivery.repositories.getState(this.services.delivery.root)).remotes,
+          (await this.services.repository.getRepositoryIdentity()).sanitizedRemoteUrl,
         );
         return;
       case "git/branches": {
-        const state = await this.services.delivery.repositories.getState(
-          this.services.delivery.root,
-        );
+        const identity = await this.services.repository.getRepositoryIdentity();
         await this.sendSuccess(request.requestId, {
-          current: state.branch,
-          upstream: state.upstreamBranch,
-          defaultBranch: state.defaultBranch,
-          detached: state.detachedHead,
+          current: identity.branch,
+          detached: identity.branch === undefined,
         });
+        return;
+      }
+      case "git/identity": {
+        await this.sendSuccess(request.requestId, await this.services.repository.getRepositoryIdentity());
+        return;
+      }
+      case "git/history": {
+        await this.sendSuccess(
+          request.requestId,
+          await this.services.repository.getHistory({ limit: request.payload.limit ?? 50 }),
+        );
         return;
       }
       case "git/diff":
       case "build/getDiff": {
-        const controller = new AbortController();
-        this.queryControllers.set(request.requestId, controller);
-        try {
-          await this.sendSuccess(
-            request.requestId,
-            await this.services.delivery.adapter.diff(
-              this.services.delivery.root,
-              request.payload.path,
-              request.payload.mode,
-              request.payload.maxBytes,
-              controller.signal,
-            ),
-          );
-        } finally {
-          this.queryControllers.delete(request.requestId);
-        }
-        return;
-      }
-      case "git/readiness":
         await this.sendSuccess(
           request.requestId,
-          await this.services.delivery.evaluate(request.payload.workflowId),
-        );
-        return;
-      case "delivery/createChangeSet":
-      case "delivery/rebuildChangeSet": {
-        const changeSet = await this.services.delivery.createChangeSet(request.payload.workflowId);
-        await this.postMessage(
-          hostMessage("delivery/changeSetChanged", {
-            changeSetId: changeSet.id,
-            message: "Delivery change set rebuilt from current repository and workflow evidence.",
-          }),
-        );
-        await this.sendSuccess(request.requestId, changeSet);
-        return;
-      }
-      case "delivery/getChangeSet":
-        await this.sendSuccess(
-          request.requestId,
-          this.services.delivery.getChangeSet(request.payload.changeSetId),
-        );
-        return;
-      case "delivery/includeFile":
-      case "delivery/excludeFile": {
-        const changeSet = await this.services.delivery.decideFile(
-          request.payload.changeSetId,
-          request.payload.fileId,
-          request.type === "delivery/includeFile",
-          request.payload.explanation,
-        );
-        await this.postMessage(
-          hostMessage("delivery/changeSetChanged", {
-            changeSetId: changeSet.id,
-            message: "Reviewed file selection changed; dependent approvals must be renewed.",
-          }),
-        );
-        await this.sendSuccess(request.requestId, changeSet);
-        return;
-      }
-      case "delivery/attributeFile": {
-        const changeSet = await this.services.delivery.attributeFile(
-          request.payload.changeSetId,
-          request.payload.fileId,
-          request.payload.attribution,
-          request.payload.explanation,
-        );
-        await this.postMessage(
-          hostMessage("delivery/changeSetChanged", {
-            changeSetId: changeSet.id,
-            message: "File attribution was explicitly updated.",
-          }),
-        );
-        await this.sendSuccess(request.requestId, changeSet);
-        return;
-      }
-      case "commitPlan/create": {
-        const plan = await this.services.delivery.createCommitPlan(
-          request.payload.changeSetId,
-          request.payload.convention,
-        );
-        await this.postMessage(
-          hostMessage("commitPlan/changed", {
-            commitPlanId: plan.id,
-            message: "Deterministic commit plan created for review.",
-          }),
-        );
-        await this.sendSuccess(request.requestId, plan);
-        return;
-      }
-      case "commitPlan/get":
-        await this.sendSuccess(
-          request.requestId,
-          this.services.delivery.getCommitPlan(request.payload.commitPlanId),
-        );
-        return;
-      case "commitPlan/update": {
-        const plan = await this.services.delivery.commits.save({
-          ...request.payload.plan,
-          status: "draft",
-          updatedAt: new Date().toISOString(),
-        });
-        await this.sendSuccess(request.requestId, plan);
-        return;
-      }
-      case "commitPlan/merge": {
-        const current = this.requireCommitPlan(request.payload.commitPlanId);
-        await this.sendSuccess(
-          request.requestId,
-          await this.services.delivery.commits.merge(current, request.payload.commitIds),
+          await this.services.repository.getDiff(request.payload.path),
         );
         return;
       }
-      case "commitPlan/split": {
-        const current = this.requireCommitPlan(request.payload.commitPlanId);
-        await this.sendSuccess(
-          request.requestId,
-          await this.services.delivery.commits.split(
-            current,
-            request.payload.commitId,
-            request.payload.fileIds,
-            request.payload.title,
-          ),
-        );
-        return;
-      }
-      case "commitPlan/reorder": {
-        const current = this.requireCommitPlan(request.payload.commitPlanId);
-        await this.sendSuccess(
-          request.requestId,
-          await this.services.delivery.commits.reorder(current, request.payload.commitIds),
-        );
-        return;
-      }
-      case "commitPlan/moveFile": {
-        const current = this.requireCommitPlan(request.payload.commitPlanId);
-        await this.sendSuccess(
-          request.requestId,
-          await this.services.delivery.commits.moveFile(
-            current,
-            request.payload.fileId,
-            request.payload.targetCommitId,
-          ),
-        );
-        return;
-      }
-      case "commitPlan/approve": {
-        const current = this.requireCommitPlan(request.payload.commitPlanId);
-        const plan = await this.services.delivery.commits.save({
-          ...current,
-          status: "approved",
-          updatedAt: new Date().toISOString(),
-        });
-        await this.sendSuccess(request.requestId, plan);
-        return;
-      }
-      case "git/stage":
-      case "git/unstage": {
-        const changeSet = this.requireChangeSet(request.payload.changeSetId);
-        const repository = await this.services.delivery.repositories.getState(
-          this.services.delivery.root,
-        );
-        const approval = await this.services.delivery.approvals.approve({
-          action: request.type === "git/stage" ? "stage" : "unstage",
-          repositoryId: changeSet.repositoryId,
-          branch: changeSet.branch,
-          changeSetId: changeSet.id,
-          changeSetFingerprint: changeSet.fingerprint,
-          paths: request.payload.paths,
-          message: repository.fingerprint,
-          risks: changeSet.findings,
-          safelyRetryable: true,
-        });
-        const result =
-          request.type === "git/stage"
-            ? await this.services.delivery.mutations.stage(
-                this.services.delivery.root,
-                approval.id,
-                changeSet,
-              )
-            : await this.services.delivery.mutations.unstage(
-                this.services.delivery.root,
-                approval.id,
-                changeSet,
-              );
-        await this.postMessage(
-          hostMessage(
-            result.status === "succeeded" ? "git/actionCompleted" : "git/actionFailed",
-            result.status === "succeeded"
-              ? {
-                  action: approval.action,
-                  resultId: result.id,
-                  message: result.sanitizedOutput,
-                }
-              : { action: approval.action, message: result.sanitizedOutput },
-          ),
-        );
-        await this.sendSuccess(request.requestId, result);
-        return;
-      }
-      case "git/createBranch": {
-        const state = await this.services.delivery.repositories.getState(
-          this.services.delivery.root,
-        );
-        const approval = await this.services.delivery.approvals.approve({
-          action: "create-branch",
-          repositoryId: state.repositoryId,
-          branch: state.branch,
-          paths: [],
-          message: state.fingerprint,
-          remoteBranch: request.payload.branch,
-          risks: ["Creates and switches the current local branch."],
-          safelyRetryable: false,
-        });
-        await this.sendSuccess(
-          request.requestId,
-          await this.services.delivery.mutations.createBranch(
-            this.services.delivery.root,
-            approval.id,
-          ),
-        );
-        return;
-      }
-      case "git/commit": {
-        const changeSet = this.requireChangeSet(request.payload.changeSetId);
-        const plan = this.requireCommitPlan(request.payload.commitPlanId);
-        if (plan.status !== "approved")
-          throw new Error("The commit plan must be explicitly approved before commit creation.");
-        const approval = await this.services.delivery.approvals.approve({
-          action: "commit",
-          repositoryId: changeSet.repositoryId,
-          branch: changeSet.branch,
-          changeSetId: changeSet.id,
-          changeSetFingerprint: changeSet.fingerprint,
-          commitPlanId: plan.id,
-          proposedCommitId: request.payload.proposedCommitId,
-          paths: [],
-          message: request.payload.message,
-          risks: changeSet.findings,
-          safelyRetryable: false,
-        });
-        const result = await this.services.delivery.mutations.commit(
-          this.services.delivery.root,
-          approval.id,
-          changeSet,
-          plan,
-        );
-        if (result.status === "succeeded") {
-          const commits = plan.commits.map((item) =>
-            item.id === request.payload.proposedCommitId
-              ? {
-                  ...item,
-                  createdCommitHash: result.commitHash,
-                  actualFiles: result.affectedPaths,
-                }
-              : item,
-          );
-          const completed = commits.every((item) => item.createdCommitHash);
-          await this.services.delivery.commits.save({
-            ...plan,
-            commits,
-            status: completed ? "completed" : "partially-created",
-            updatedAt: new Date().toISOString(),
-          });
-        }
-        await this.sendSuccess(request.requestId, result);
-        return;
-      }
-      case "git/push": {
-        const state = await this.services.delivery.repositories.getState(
-          this.services.delivery.root,
-        );
-        const approval = await this.services.delivery.approvals.approve({
-          action: "push",
-          repositoryId: state.repositoryId,
-          branch: state.branch,
-          paths: [],
-          remote: request.payload.remote,
-          remoteBranch: request.payload.branch,
-          risks: ["Publishes local commits to the selected remote branch."],
-          safelyRetryable: true,
-        });
-        await this.sendSuccess(
-          request.requestId,
-          await this.services.delivery.mutations.push(this.services.delivery.root, approval.id),
-        );
-        return;
-      }
-      case "pullRequest/capabilities": {
-        const state = await this.services.delivery.repositories.getState(
-          this.services.delivery.root,
-        );
-        const detected = await this.services.delivery.providers.detect(
-          this.services.delivery.root,
-          state,
-        );
-        await this.sendSuccess(request.requestId, detected.capability);
-        return;
-      }
-      case "pullRequest/templates": {
-        const state = await this.services.delivery.repositories.getState(
-          this.services.delivery.root,
-        );
-        const detected = await this.services.delivery.providers.detect(
-          this.services.delivery.root,
-          state,
-        );
-        await this.sendSuccess(
-          request.requestId,
-          detected.provider
-            ? await detected.provider.discoverTemplates(this.services.delivery.root)
-            : [],
-        );
-        return;
-      }
-      case "pullRequest/createDraft": {
-        const changeSet = this.requireChangeSet(request.payload.changeSetId);
-        const plan = this.requireCommitPlan(request.payload.commitPlanId);
-        const state = await this.services.delivery.repositories.getState(
-          this.services.delivery.root,
-        );
-        const detected = await this.services.delivery.providers.detect(
-          this.services.delivery.root,
-          state,
-        );
-        let draft = await this.services.delivery.drafts.create(
-          changeSet,
-          plan,
-          detected.capability,
-          request.payload.baseBranch,
-        );
-        const template = detected.provider
-          ? (await detected.provider.discoverTemplates(this.services.delivery.root))[0]
-          : undefined;
-        if (template?.body.trim())
-          draft = await this.services.delivery.updateDraft({
-            ...draft,
-            body: `${template.body.trim()}\n\n${draft.body}`.slice(0, 20_000),
-          });
-        await this.sendSuccess(request.requestId, draft);
-        return;
-      }
-      case "pullRequest/updateDraft":
-        await this.sendSuccess(
-          request.requestId,
-          await this.services.delivery.updateDraft(request.payload.draft),
-        );
-        return;
-      case "pullRequest/validate": {
-        const draft = this.requireDraft(request.payload.draftId);
-        const state = await this.services.delivery.repositories.getState(
-          this.services.delivery.root,
-        );
-        const detected = await this.services.delivery.providers.detect(
-          this.services.delivery.root,
-          state,
-        );
-        await this.sendSuccess(
-          request.requestId,
-          this.services.delivery.draftValidation.validate(draft, detected.capability, state),
-        );
-        return;
-      }
-      case "pullRequest/approve": {
-        const draft = this.requireDraft(request.payload.draftId);
-        await this.services.delivery.approvals.approve({
-          action: "create-pr",
-          repositoryId: draft.repository,
-          branch: draft.headBranch,
-          paths: [],
-          message: draft.fingerprint,
-          risks: draft.riskSummary,
-          safelyRetryable: false,
-        });
-        const value = {
-          ...draft,
-          status: "approved" as const,
-          updatedAt: new Date().toISOString(),
-        };
-        await this.services.delivery.persistence.update((state) => ({
-          ...state,
-          pullRequestDrafts: state.pullRequestDrafts.map((item) =>
-            item.id === draft.id ? value : item,
-          ),
-        }));
-        await this.sendSuccess(request.requestId, value);
-        return;
-      }
-      case "pullRequest/create": {
-        const draft = this.requireDraft(request.payload.draftId);
-        const state = await this.services.delivery.repositories.getState(
-          this.services.delivery.root,
-        );
-        const detected = await this.services.delivery.providers.detect(
-          this.services.delivery.root,
-          state,
-        );
-        const validation = this.services.delivery.draftValidation.validate(
-          draft,
-          detected.capability,
-          state,
-        );
-        if (!validation.ready || !detected.provider)
-          throw new Error(validation.blockers.join(" ") || "Pull-request provider unavailable.");
-        const approval = this.services.delivery.persistence.snapshot.approvals.find(
-          (item) =>
-            item.action === "create-pr" && item.message === draft.fingerprint && !item.consumedAt,
-        );
-        if (!approval) throw new Error("A current explicit pull-request approval is required.");
-        const result = detected.capability.directCreationAvailable
-          ? await this.services.delivery.creation.create(
-              approval.id,
-              draft,
-              detected.provider,
-              detected.capability,
-            )
-          : await this.services.delivery.creation.assisted(approval.id, draft, detected.provider);
-        await this.sendSuccess(request.requestId, result);
-        return;
-      }
-      case "pullRequest/confirmExternalCreation": {
-        const draft = this.requireDraft(request.payload.draftId);
-        await this.sendSuccess(
-          request.requestId,
-          await this.services.delivery.creation.confirmExternal(draft, request.payload.url),
-        );
-        return;
-      }
-      case "pullRequest/status":
-      case "pullRequest/refresh":
-        await this.sendSuccess(
-          request.requestId,
-          this.services.delivery.persistence.snapshot.pullRequestResults.find(
-            (item) => item.draftId === request.payload.draftId,
-          ),
-        );
-        return;
       case "orchestration/create": {
         const value = await this.services.orchestration.create(
           request.payload.workflowId,
@@ -4148,11 +3204,6 @@ export class WebviewMessageRouter {
     return this.services.nativeShell;
   }
 
-  private requireChangeSet(id: string) {
-    const value = this.services.delivery.getChangeSet(id);
-    if (!value) throw new Error("Delivery change set not found.");
-    return value;
-  }
   private ensureWorkspaceTrust(request: WebviewRequest): void {
     // Production always supplies the trust provider. Treat an omitted provider in
     // isolated read-only harnesses as trusted for backwards-compatible tests.
@@ -4172,14 +3223,6 @@ export class WebviewMessageRouter {
       "validation/run",
       "validation/rerunStep",
       "validation/override",
-      "git/stage",
-      "git/unstage",
-      "git/createBranch",
-      "git/commit",
-      "git/push",
-      "pullRequest/approve",
-      "pullRequest/create",
-      "pullRequest/confirmExternalCreation",
       "orchestration/start",
       "orchestration/startTask",
       "orchestration/retryTask",
@@ -4235,16 +3278,6 @@ export class WebviewMessageRouter {
         at: new Date().toISOString(),
       }),
     );
-  }
-  private requireCommitPlan(id: string) {
-    const value = this.services.delivery.getCommitPlan(id);
-    if (!value) throw new Error("Commit plan not found.");
-    return value;
-  }
-  private requireDraft(id: string) {
-    const value = this.services.delivery.getDraft(id);
-    if (!value) throw new Error("Pull-request draft not found.");
-    return value;
   }
 
   private async sendWorkflow(
@@ -4385,14 +3418,7 @@ export class WebviewMessageRouter {
       | "review/changesRequested"
       | "review/approved"
       | "review/stale"
-      | "review/prDraftChanged"
       | "complete/optionsChanged"
-      | "complete/changeSetChanged"
-      | "complete/commitPlanChanged"
-      | "complete/commitCreated"
-      | "complete/pushCompleted"
-      | "complete/prCreated"
-      | "complete/patchExported"
       | "complete/handoffPrepared"
       | "complete/workflowCompleted"
       | "complete/workflowClosedPartial",

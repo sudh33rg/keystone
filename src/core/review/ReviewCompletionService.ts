@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { DevelopmentWorkflowService } from "../workflows/DevelopmentWorkflowService";
 import type { ExecutionPersistenceStore } from "../persistence/ExecutionPersistenceStore";
 import type { ReviewPersistenceStore } from "../persistence/ReviewPersistenceStore";
-import type { DeliveryCoordinator } from "../delivery/GitDeliveryService";
+import type { RepositoryReadService } from "../repository/RepositoryReadService";
 import {
   CompletionStateSchema,
   FindingDispositionSchema,
@@ -21,14 +21,30 @@ import {
 } from "../../shared/contracts/review";
 import type { ValidationFinding, ValidationRunV2 } from "../../shared/contracts/execution";
 import type { DevelopmentTask } from "../../shared/contracts/delegation";
-import type { GitCapabilities } from "../../shared/contracts/delivery";
+
+/**
+ * Read-only RepositoryCapabilities surface.
+ *
+ * Keystone enforces a permanent local-first boundary: it may inspect repository
+ * state (status, branch, revision, diffs, history, identity) but it can NEVER
+ * stage, commit, push, change branches, or perform remote PR actions. This
+ * service therefore reports only that mutation is unavailable.
+ */
+interface RepositoryCapabilities {
+  schemaVersion: 1;
+  repositoryRoot: string;
+  repositoryDetected: boolean;
+  readOnly: true;
+  diagnostics: ReadonlyArray<{ code: string; severity: "info" | "warning"; message: string }>;
+  refreshedAt: string;
+}
 
 export class ReviewCompletionService {
   constructor(
     private readonly store: ReviewPersistenceStore,
     private readonly workflows: DevelopmentWorkflowService,
     private readonly executions: ExecutionPersistenceStore,
-    private readonly delivery: DeliveryCoordinator,
+    private readonly repository: RepositoryReadService,
   ) {}
 
   initialize(): Promise<unknown> {
@@ -183,16 +199,7 @@ export class ReviewCompletionService {
       checklist: checklist(blockers, changes, findings, notes, requiredTasks, latestRuns),
       readinessBlockers: blockers,
       warnings,
-      ...(decision ? { decision } : {}),
-      ...(this.delivery.persistence.snapshot.pullRequestDrafts
-        .filter((item) => item.workflowId === workflowId)
-        .at(-1)
-        ? {
-            prDraft: this.delivery.persistence.snapshot.pullRequestDrafts
-              .filter((item) => item.workflowId === workflowId)
-              .at(-1),
-          }
-        : {}),
+      decision,
       repositoryFingerprint,
       generatedAt: new Date().toISOString(),
     });
@@ -365,27 +372,7 @@ export class ReviewCompletionService {
       .map((task) => task.id);
     if (partial && !incomplete.length)
       throw new Error("Partial or retained-change closure requires explicit unfinished work.");
-    const deliveryState = this.delivery.persistence.snapshot;
-    const changeSet = deliveryState.changeSets
-      .filter((item) => item.workflowId === workflowId)
-      .at(-1);
-    const plan = changeSet
-      ? deliveryState.commitPlans.filter((item) => item.changeSetId === changeSet.id).at(-1)
-      : undefined;
-    const draft = deliveryState.pullRequestDrafts
-      .filter((item) => item.workflowId === workflowId)
-      .at(-1);
-    const pr = draft
-      ? deliveryState.pullRequestResults.filter((item) => item.draftId === draft.id).at(-1)
-      : undefined;
-    const report = completionReport(
-      state,
-      mode,
-      reason,
-      plan?.commits.flatMap((item) => (item.createdCommitHash ? [item.createdCommitHash] : [])) ??
-        [],
-      pr?.url,
-    );
+    const report = completionReport(state, mode, reason);
     const value = WorkflowCompletionRecordSchema.parse({
       schemaVersion: 1,
       id: crypto.randomUUID(),
@@ -417,10 +404,7 @@ export class ReviewCompletionService {
       securityDisposition: dispositionSummary(state, "security"),
       performanceDisposition: dispositionSummary(state, "performance"),
       documentationDisposition: dispositionSummary(state, "documentation"),
-      commitHashes:
-        plan?.commits.flatMap((item) => (item.createdCommitHash ? [item.createdCommitHash] : [])) ??
-        [],
-      ...(pr?.url ? { prUrl: pr.url } : {}),
+      commitHashes: [],
       handoffPackageIds: [],
       remainingWarnings: [...state.warnings, ...(partial ? [reason] : [])],
       repositoryFingerprint: state.repositoryFingerprint,
@@ -452,33 +436,7 @@ export class ReviewCompletionService {
 
   async getCompletionState(workflowId: string): Promise<CompletionState> {
     const review = this.getState(workflowId);
-    let capabilities: GitCapabilities;
-    let repositoryState;
-    try {
-      capabilities = await this.delivery.capabilities.refresh(this.delivery.root);
-    } catch {
-      capabilities = unavailableCapabilities(this.delivery.root);
-    }
-    if (capabilities.repositoryDetected) {
-      try {
-        repositoryState = await this.delivery.repositories.getState(this.delivery.root);
-      } catch {
-        /* surfaced through capability diagnostics */
-      }
-    }
-    const deliveryState = this.delivery.persistence.snapshot;
-    const changeSet = deliveryState.changeSets
-      .filter((item) => item.workflowId === workflowId)
-      .at(-1);
-    const commitPlan = changeSet
-      ? deliveryState.commitPlans.filter((item) => item.changeSetId === changeSet.id).at(-1)
-      : undefined;
-    const prDraft = deliveryState.pullRequestDrafts
-      .filter((item) => item.workflowId === workflowId)
-      .at(-1);
-    const prResult = prDraft
-      ? deliveryState.pullRequestResults.filter((item) => item.draftId === prDraft.id).at(-1)
-      : undefined;
+    const capabilities = await this.repositoryCapabilities();
     const completion = this.store.snapshot.completions.find(
       (item) => item.workflowId === workflowId,
     );
@@ -486,17 +444,48 @@ export class ReviewCompletionService {
       schemaVersion: 1,
       review,
       options: completionOptions(review, capabilities),
-      gitCapabilities: capabilities,
-      ...(repositoryState ? { repositoryState } : {}),
-      ...(changeSet ? { changeSet } : {}),
-      ...(commitPlan ? { commitPlan } : {}),
-      ...(capabilities.pullRequestProvider
-        ? { prCapabilities: capabilities.pullRequestProvider }
-        : {}),
-      ...(prDraft ? { prDraft } : {}),
-      ...(prResult ? { prResult } : {}),
       ...(completion ? { completion } : {}),
     });
+  }
+
+  /**
+   * Build a read-only repository capabilities report.
+   *
+   * Keystone can inspect repository state but cannot perform Git mutations or
+   * remote/PR actions, so this always reports `readOnly: true` and enumerates
+   * only the inspection operations that are permitted.
+   */
+  private async repositoryCapabilities(): Promise<RepositoryCapabilities> {
+    try {
+      const status = await this.repository.getStatus();
+      return {
+        schemaVersion: 1,
+        repositoryRoot: this.repositoryRoot(),
+        repositoryDetected: status.repositoryDetected,
+        readOnly: true,
+        diagnostics: [],
+        refreshedAt: new Date().toISOString(),
+      };
+    } catch {
+      return {
+        schemaVersion: 1,
+        repositoryRoot: this.repositoryRoot(),
+        repositoryDetected: false,
+        readOnly: true,
+        diagnostics: [
+          {
+            code: "git-read-only-unavailable",
+            severity: "warning",
+            message: "Read-only Git inspection is unavailable; local completion remains available.",
+          },
+        ],
+        refreshedAt: new Date().toISOString(),
+      };
+    }
+  }
+
+  private repositoryRoot(): string {
+    return (this.repository as unknown as { root?: string }).root ?? process.cwd();
   }
 
   private async saveDecision(
@@ -729,26 +718,31 @@ function checklist(
   ];
 }
 
-function completionOptions(review: WorkflowReviewState, capabilities: GitCapabilities) {
+/**
+ * Completion options are restricted to local-only, non-mutating modes.
+ *
+ * Keystone may record completion, hand off remaining work, or close partially /
+ * with retained changes — all without staging, committing, pushing, changing
+ * branches, or creating remote pull requests. The mutation-capable options
+ * (local-commit, pushed-branch, prepared-pr, created-pr, patch-export) have been
+ * removed permanently as part of the read-only Git boundary.
+ */
+function completionOptions(review: WorkflowReviewState, _capabilities: RepositoryCapabilities) {
   const ready = review.summary.completionReady;
   const option = (
     mode: CompletionMode,
     label: string,
     available: boolean,
     explanation: string,
-    mutation: string,
-    approvalRequired: string,
-    capabilityRequired: string,
-    reversible: boolean,
   ) => ({
     mode,
     label,
     available,
     explanation,
-    mutation,
-    approvalRequired,
-    capabilityRequired,
-    reversible,
+    mutation: "none" as const,
+    approvalRequired: "none" as const,
+    capabilityRequired: "none" as const,
+    reversible: true,
   });
   return [
     option(
@@ -758,90 +752,24 @@ function completionOptions(review: WorkflowReviewState, capabilities: GitCapabil
       ready
         ? "Records completion and preserves repository changes without Git mutation."
         : "Approve the current Review first.",
-      "Completion state only; repository files are unchanged.",
-      "Workflow completion confirmation",
-      "None",
-      true,
-    ),
-    option(
-      "local-commit",
-      "Complete with local commit",
-      ready && capabilities.commitAvailable,
-      "Stages only separately approved paths, then creates a separately approved commit.",
-      "Git index and local history.",
-      "Separate staging, commit, and completion approvals",
-      "Git staging and commit",
-      false,
-    ),
-    option(
-      "pushed-branch",
-      "Complete with pushed branch",
-      ready && capabilities.pushAvailable,
-      "Pushes an approved committed branch; never force-pushes by default.",
-      "Remote branch.",
-      "Separate push and completion approvals",
-      "Git remote and push",
-      false,
-    ),
-    option(
-      "prepared-pr",
-      "Prepare PR",
-      ready && Boolean(capabilities.pullRequestProvider?.draftCreationAvailable),
-      "Prepares review content without claiming a pull request exists.",
-      "Stored PR draft only.",
-      "Completion confirmation",
-      "PR draft provider",
-      true,
-    ),
-    option(
-      "created-pr",
-      "Create pull request",
-      ready && Boolean(capabilities.pullRequestProvider?.directCreationAvailable),
-      "Creates a PR only after provider capability and explicit approval are verified.",
-      "Remote provider state.",
-      "Separate PR creation and completion approvals",
-      "Direct PR provider",
-      false,
-    ),
-    option(
-      "patch-export",
-      "Export patch",
-      ready && capabilities.diffAvailable,
-      "Exports only reviewed selected paths after a dedicated approval.",
-      "Writes a local patch artifact.",
-      "Patch export approval",
-      "Git diff",
-      true,
     ),
     option(
       "handed-off",
       "Hand off remaining work",
       review.workflow.tasks.some((task) => task.status !== "completed"),
       "Prepares task-centered continuation evidence; it does not mark unfinished work complete.",
-      "Handoff package state.",
-      "Handoff approval",
-      "Local artifact storage",
-      true,
     ),
     option(
       "closed-partial",
       "Close partially complete",
       review.workflow.tasks.some((task) => task.status !== "completed"),
       "Records completed and incomplete tasks distinctly.",
-      "Workflow completion state only.",
-      "Partial closure confirmation",
-      "None",
-      true,
     ),
     option(
       "cancelled-with-changes",
       "Cancel with retained changes",
       review.workflow.tasks.some((task) => task.status !== "completed"),
       "Cancels workflow state while preserving repository changes.",
-      "Workflow state only; files are unchanged.",
-      "Cancellation confirmation",
-      "None",
-      true,
     ),
   ];
 }
@@ -850,8 +778,6 @@ function completionReport(
   state: WorkflowReviewState,
   mode: CompletionMode,
   reason: string,
-  commits: string[],
-  prUrl?: string,
 ): string {
   return [
     `# ${state.summary.title} — completion report`,
@@ -867,7 +793,7 @@ function completionReport(
     `Documentation: ${dispositionSummary(state, "documentation")}`,
     `Review: ${state.decision?.status ?? "not approved"}`,
     `Completion mode: ${mode}`,
-    `Delivery: ${commits.length ? `commits ${commits.join(", ")}` : "no commit recorded"}${prUrl ? `; PR ${prUrl}` : ""}`,
+    `Delivery: repository changes are preserved locally; no Git mutation, push, or remote PR action is performed.`,
     `Remaining limitations: ${[...state.warnings, reason].join("; ") || "none recorded"}`,
   ]
     .join("\n")
@@ -885,32 +811,6 @@ function dispositionSummary(
         .join("; ")
         .slice(0, 1000)
     : "not triggered";
-}
-
-function unavailableCapabilities(root: string): GitCapabilities {
-  return {
-    schemaVersion: 1 as const,
-    repositoryRoot: root,
-    repositoryDetected: false,
-    gitExtensionAvailable: false,
-    gitExecutableAvailable: false,
-    statusAvailable: false,
-    diffAvailable: false,
-    stagingAvailable: false,
-    commitAvailable: false,
-    branchCreationAvailable: false,
-    pushAvailable: false,
-    remotesAvailable: false,
-    upstreamAvailable: false,
-    diagnostics: [
-      {
-        code: "git-unavailable",
-        severity: "warning" as const,
-        message: "Git capabilities are unavailable; local completion remains available.",
-      },
-    ],
-    refreshedAt: new Date().toISOString(),
-  };
 }
 
 function fingerprint(value: unknown): string {

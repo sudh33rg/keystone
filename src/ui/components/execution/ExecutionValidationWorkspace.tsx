@@ -525,21 +525,7 @@ function ExecutionSummary({ session }: { session: TaskExecutionSession }): React
       {session.metrics.postEditVerifier && session.postEditVerifierResult && (
         <div className="context-preview">
           <h3>Post-edit verification trace</h3>
-          <div className="button-row">
-            <span className={session.postEditVerifierResult.passed ? 'td-state state-passed' : 'td-state state-failed'}>
-              {session.postEditVerifierResult.verdict}
-            </span>
-            <span>{session.postEditVerifierResult.signals.length} signal(s)</span>
-          </div>
-          <ul className="review-list">
-            {session.postEditVerifierResult.signals.map((item, index) => (
-              <li key={index} className={'review-item ' + (item.passed ? 'review-passed' : 'review-failed')}>
-                <span>{item.signal}</span>
-                <span>{item.passed ? 'passed' : 'failed'}</span>
-                <span>{item.details}</span>
-              </li>
-            ))}
-          </ul>
+          {renderVerifierTrace(session.postEditVerifierResult)}
         </div>
       )}
       <p>
@@ -811,4 +797,51 @@ function CompletionView({
 }
 function display(setter: (value: string) => void): (cause: unknown) => void {
   return (cause) => setter(cause instanceof Error ? cause.message : String(cause));
+}
+
+function renderVerifierTrace(verifier: { passed: boolean; verdict: string; signals: Array<{ signal: string; passed: boolean; details: string; evidence?: string[] }> }) {
+  return (
+    <>
+      <div className="button-row">
+        <span className={verifier.passed ? 'td-state state-passed' : 'td-state state-failed'}>
+          {verifier.verdict}
+        </span>
+        <button
+          className="ghost-button"
+          onClick={() => {
+            const text = verifier.signals.map((item) => `${item.signal}: ${item.passed ? 'passed' : 'failed'} — ${item.details}`).join('\n');
+            void navigator.clipboard?.writeText(text);
+          }}
+        >
+          Copy signals
+        </button>
+        <span>{verifier.signals.length} signal(s)</span>
+      </div>
+      <ul className="review-list">
+        {verifier.signals.map((item, index) => (
+          <li key={index} className={'review-item ' + (item.passed ? 'review-passed' : 'review-failed')}>
+            <details>
+              <summary>{item.signal}</summary>
+              <dl>
+                <div>
+                  <dt>Verdict</dt>
+                  <dd>{item.passed ? 'passed' : 'failed'}</dd>
+                </div>
+                <div>
+                  <dt>Details</dt>
+                  <dd>{item.details}</dd>
+                </div>
+                {item.evidence?.length ? (
+                  <div>
+                    <dt>Evidence</dt>
+                    <dd>{item.evidence.join(' ')}</dd>
+                  </div>
+                ) : null}
+              </dl>
+            </details>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
 }

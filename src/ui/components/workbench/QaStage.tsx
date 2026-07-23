@@ -9,7 +9,7 @@ import type {
 } from "../../../shared/contracts/qaTestIntelligence";
 import type { HostBridge } from "../../services/HostBridge";
 
-type LooseRequest = (type: string, payload: unknown) => Promise<unknown>;
+type LooseRequest = (type: string, payload: unknown, options?: { signal?: AbortSignal }) => Promise<unknown>;
 
 const FAILURE_CATEGORIES: FailureCategory[] = [
   "production-defect",
@@ -52,6 +52,11 @@ export function QaStage({ bridge, workflowId, onWorkflowChange }: { bridge: Host
   const [qaMode, setQaMode] = useState<string>("recommend");
   const [testMode, setTestMode] = useState<string>("impacted");
   const [userPrompt, setUserPrompt] = useState<string>("");
+  const [repeatCount, setRepeatCount] = useState<string>("3");
+  const [repeatTestId, setRepeatTestId] = useState<string>("");
+  const [failureTestId, setFailureTestId] = useState<string>("");
+  const [failurePath, setFailurePath] = useState<string>("");
+  const [failureMessage, setFailureMessage] = useState<string>("");
   const recommendations = deriveRecommendations(state, ti, qaMode, userPrompt);
 
   const load = useCallback(() => {
@@ -66,8 +71,33 @@ export function QaStage({ bridge, workflowId, onWorkflowChange }: { bridge: Host
       .catch(report(setError));
   }, [request, workflowId]);
 
-  useEffect(load, [load]);
-  useEffect(loadTi, [loadTi]);
+  useEffect(() => {
+    const controller = new AbortController();
+    request(
+      "impact.load",
+      { correlationId: crypto.randomUUID(), workflowId },
+      { signal: controller.signal },
+    )
+      .then((value) => {
+        if (value) setState(value as ImpactQaAggregate);
+      })
+      .catch(report(setError));
+    return () => controller.abort();
+  }, [request, workflowId]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    request(
+      "testIntelligence.load",
+      { correlationId: crypto.randomUUID(), workflowId },
+      { signal: controller.signal },
+    )
+      .then((value) => {
+        if (value) setTi(value as QaTestIntelligenceAggregate);
+      })
+      .catch(report(setError));
+    return () => controller.abort();
+  }, [request, workflowId]);
 
   useEffect(() => bridge.subscribe((message) => {
     if (message.type !== "qa.progress") return;
@@ -114,7 +144,7 @@ export function QaStage({ bridge, workflowId, onWorkflowChange }: { bridge: Host
   const scenariosFor = (requestId: string): TestScenario[] => ti.scenarios.filter((s) => s.generationRequestId === requestId);
 
   return (
-    <section className="phase7-stage qa-stage" aria-labelledby="qa-title">
+    <section className="qa-stage" aria-labelledby="qa-title">
       <header>
         <span className="eyebrow">Controlled execution</span>
         <h2 id="qa-title">QA</h2>
@@ -231,8 +261,20 @@ export function QaStage({ bridge, workflowId, onWorkflowChange }: { bridge: Host
             </li>
           ))}</ul>
         ) : <p>No failure analyses. Use “Analyze failure” to classify a failing test.</p>}
-        <div className="button-row">
-          <button disabled={Boolean(busy)} onClick={() => { const id = prompt("Test failure id (e.g. test file::name):"); if (!id) return; const path = prompt("Test file path (optional):") ?? undefined; const msg = prompt("Failure message (optional):") ?? undefined; tiAct("analyze-failure", "testIntelligence.createFailureAnalysis", { testFailureId: id, ...(path ? { testFilePath: path } : {}), ...(msg ? { message: msg } : {}) }); }}>Analyze failure</button>
+        <div className="qa-form">
+          <label>
+            Test failure id
+            <input value={failureTestId} onChange={(event) => setFailureTestId(event.target.value)} placeholder="test file::name" />
+          </label>
+          <label>
+            File path
+            <input value={failurePath} onChange={(event) => setFailurePath(event.target.value)} placeholder="optional path" />
+          </label>
+          <label>
+            Failure message
+            <input value={failureMessage} onChange={(event) => setFailureMessage(event.target.value)} placeholder="optional message" />
+          </label>
+          <button className="primary-button" disabled={Boolean(busy) || !failureTestId} onClick={() => tiAct("analyze-failure", "testIntelligence.createFailureAnalysis", { testFailureId: failureTestId, ...(failurePath ? { testFilePath: failurePath } : {}), ...(failureMessage ? { message: failureMessage } : {}) })}>Analyze failure</button>
         </div>
       </section>
       <section><h3>Flaky-Test Analysis</h3>
@@ -241,8 +283,16 @@ export function QaStage({ bridge, workflowId, onWorkflowChange }: { bridge: Host
             <li key={`${c.testId}:${c.environmentFingerprint}:${c.revision}`}><strong>{c.state}</strong> — test <code>{c.testId}</code>, runs {c.runCount}, passes {c.passes}, fails {c.failures}, conf {c.confidence.toFixed(2)}<p>{c.evidenceRequiredForStronger}</p></li>
           ))}</ul>
         ) : <p>No flaky classification yet.</p>}
-        <div className="button-row">
-          <button disabled={Boolean(busy)} onClick={() => { const id = prompt("Test id to repeat:"); if (!id) return; tiAct("repeats", "testIntelligence.requestRepeatedRuns", { testId: id, count: 3, mode: "default" }); }}>Request 3 repeated runs</button>
+        <div className="qa-form">
+          <label>
+            Test id
+            <input value={repeatTestId} onChange={(event) => setRepeatTestId(event.target.value)} />
+          </label>
+          <label>
+            Runs
+            <input type="number" min={1} max={20} value={repeatCount} onChange={(event) => setRepeatCount(event.target.value)} />
+          </label>
+          <button disabled={Boolean(busy) || !repeatTestId} onClick={() => tiAct("repeats", "testIntelligence.requestRepeatedRuns", { testId: repeatTestId, count: Number(repeatCount), mode: "default" })}>Request repeated runs</button>
         </div>
       </section>
       <section><h3>Policy Assessments</h3>
@@ -257,7 +307,17 @@ export function QaStage({ bridge, workflowId, onWorkflowChange }: { bridge: Host
         <button disabled={!state.qaPlan || state.qaPlan.status !== "approved" || Boolean(busy)} onClick={() => act("execute", "qa.execute", { qaPlanId: state.qaPlan!.id })}>Run Approved Tests</button>
         <button disabled={!runningCommandId} onClick={() => { const commandId = runningCommandId; if (!commandId) return; setError(undefined); void request("qa.cancel", { correlationId: crypto.randomUUID(), workflowId, commandId }).catch(report(setError)); }}>Cancel Running Tests</button>
       </section>
-      {output && <details open><summary>Live bounded output</summary><pre className="qa-output">{output}</pre></details>}
+      {output && (
+        <details open>
+          <summary>
+            Live bounded output · {new Date().toLocaleTimeString()} · {output.length.toLocaleString()} chars
+          </summary>
+          <pre className="qa-output">{output}</pre>
+        </details>
+      )}
+      {state.execution && state.execution.status === 'running' && (
+        <p className="bounded-empty">Scan still running. Refresh when new bounded output is emitted.</p>
+      )}
       {state.execution && (
         <section><h3>Test Results</h3><p>Status: {state.execution.status} · {state.execution.commandRuns.length} command(s)</p>
           {state.execution.parsedResults.map((result, index) => (

@@ -48,21 +48,13 @@ import {
   CompletionDecisionService,
   WorkflowCompletionService,
 } from "../core/execution/CompletionService";
-import { DeliveryPersistenceStore } from "../core/persistence/DeliveryPersistenceStore";
-import {
-  ClipboardPullRequestProvider,
-  DeliveryCoordinator,
-  GitHubPullRequestProvider,
-  PullRequestProviderRegistry,
-} from "../core/delivery/GitDeliveryService";
 import { WorkflowFreshnessService } from "../core/freshness/WorkflowFreshnessService";
+import { RepositoryReadService } from "../core/repository/RepositoryReadService";
 import { WorkflowRerunPlanner } from "../core/rerun/WorkflowRerunPlanner";
 import { ActivityService } from "../core/activity/ActivityService";
 import { ApprovalService } from "../core/approval/ApprovalService";
 import { BlockerService } from "../core/blocker/BlockerService";
 import { ResourceLimitService } from "../core/resource/ResourceLimitService";
-import { GitExecutableDeliveryAdapter } from "./git/GitDeliveryAdapter";
-import { VsCodeGitDeliveryAdapter } from "./git/VsCodeGitDeliveryAdapter";
 import { ScopeCorrectionMigration } from "../core/persistence/ScopeCorrectionMigration";
 import { OrchestrationPersistenceStore } from "../core/persistence/OrchestrationPersistenceStore";
 import { OrchestrationService } from "../core/orchestration/OrchestrationService";
@@ -137,14 +129,14 @@ let logger: KeystoneLogger | undefined;
 /** Build a bounded, path-independent repository identity for Task Handoff compatibility. */
 async function buildTaskHandoffRepositoryIdentity(
   svc: RepositoryIdentityService,
-  delivery: { root: string; repositories: { getState(root: string): Promise<{ remotes: Array<{ sanitizedUrl: string; isDefault: boolean }> }> } },
+  repository: RepositoryReadService,
   workspace: { getRoots(): ReadonlyArray<{ name: string; uri: string }> },
 ): Promise<import("../shared/contracts/handoff").HandoffRepositoryIdentity> {
   const roots = workspace.getRoots();
   let remoteUrl: string | undefined;
   try {
-    const state = await delivery.repositories.getState(delivery.root);
-    remoteUrl = state.remotes.find((r) => r.isDefault)?.sanitizedUrl ?? state.remotes[0]?.sanitizedUrl;
+    const identity = await repository.getRepositoryIdentity();
+    remoteUrl = identity.sanitizedRemoteUrl;
   } catch {
     remoteUrl = undefined;
   }
@@ -416,35 +408,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     workflow,
     intelligenceStore,
   );
-  const deliveryStore = new DeliveryPersistenceStore(storageRoot);
-  const deliveryRepositoryRoot = repositoryRoot ?? process.cwd();
-  const deliveryGit = new VsCodeGitDeliveryAdapter(
-    new GitExecutableDeliveryAdapter(() => Boolean(vscode.extensions.getExtension("vscode.git"))),
-  );
-  const githubProvider = new GitHubPullRequestProvider({
-    detected: () =>
-      Promise.resolve(Boolean(vscode.extensions.getExtension("github.vscode-pull-request-github"))),
-    commands: async () => vscode.commands.getCommands(true),
-    openCreate: async () => {
-      const commands = await vscode.commands.getCommands(true);
-      if (!commands.includes("pr.create"))
-        throw new Error("The installed GitHub provider does not expose assisted PR creation.");
-      await vscode.commands.executeCommand("pr.create");
-    },
-  });
-  const clipboardProvider = new ClipboardPullRequestProvider(async (value) => {
-    await vscode.env.clipboard.writeText(value);
-  });
-  const delivery = new DeliveryCoordinator(
-    deliveryRepositoryRoot,
-    deliveryGit,
-    deliveryStore,
-    workflow,
-    executionStore,
-    intelligenceStore,
-    new PullRequestProviderRegistry([githubProvider, clipboardProvider]),
-  );
-  await delivery.initialize();
+  const repositoryRead = new RepositoryReadService(repositoryRoot ?? process.cwd());
 
   // Initialize HealthCheckService with standard health checks
   const healthCheck = new HealthCheckService();
@@ -454,10 +418,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   healthCheck.register(HealthCheckService.createPersistenceCheck(intelligenceStore));
   healthCheck.register(HealthCheckService.createCopilotCheck(copilotIntegrationStore));
   healthCheck.register(HealthCheckService.createWorkflowCheck(workflow));
-  healthCheck.register(HealthCheckService.createDeliveryCheck(delivery));
 
   const reviewStore = new ReviewPersistenceStore(storageRoot);
-  const review = new ReviewCompletionService(reviewStore, workflow, executionStore, delivery);
+  const review = new ReviewCompletionService(reviewStore, workflow, executionStore, repositoryRead);
   await review.initialize();
   workflow.setReviewStateProvider((workflowId) => {
     const state = review.getState(workflowId);
@@ -474,7 +437,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // Phase 11 — Task Handoff (portable local package; no git/PR/account operations).
   const handoffStore = new HandoffPersistenceStore(storageRoot);
   const repositoryIdentityService = new RepositoryIdentityService();
-  const repositoryIdentity = await buildTaskHandoffRepositoryIdentity(repositoryIdentityService, delivery, workspace);
+  const repositoryIdentity = await buildTaskHandoffRepositoryIdentity(repositoryIdentityService, repositoryRead, workspace);
   const handoffService = new TaskHandoffService({
     workflows: {
       getActiveWorkflowId: () => canonicalWorkflow.getActiveWorkflow()?.id ?? null,
@@ -639,7 +602,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     validation,
     completion,
     workflowCompletion,
-    delivery,
+    repository: repositoryRead,
     review,
     prReview,
     taskHandoff: handoffService,

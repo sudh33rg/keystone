@@ -1,14 +1,5 @@
 import { z } from "zod";
 import { DevelopmentWorkflowSnapshotSchema } from "./delegation";
-import {
-  CommitPlanSchema,
-  DeliveryChangeSetSchema,
-  GitCapabilitiesSchema,
-  GitRepositoryStateSchema,
-  PullRequestCreationResultSchema,
-  PullRequestDraftSchema,
-  PullRequestProviderCapabilitySchema,
-} from "./delivery";
 import { ValidationFindingSchema } from "./execution";
 
 export const REVIEW_SCHEMA_VERSION = 1 as const;
@@ -74,9 +65,6 @@ export const ReviewRiskDispositionPayloadSchema = Scope.extend({
   reason: z.string().min(1).max(5000),
   scope: z.string().min(1).max(2000),
 }).strict();
-export const ReviewPrDraftUpdatePayloadSchema = z
-  .object({ draft: PullRequestDraftSchema })
-  .strict();
 export const ReviewDiffPayloadSchema = Scope.extend({
   path: Path,
   maxBytes: z.number().int().min(1000).max(100_000).default(50_000),
@@ -269,7 +257,6 @@ export const WorkflowReviewStateSchema = z
     readinessBlockers: z.array(z.string().max(3000)).max(500),
     warnings: z.array(z.string().max(3000)).max(500),
     decision: ReviewDecisionSchema.optional(),
-    prDraft: PullRequestDraftSchema.optional(),
     repositoryFingerprint: z.string().max(500),
     generatedAt: Timestamp,
   })
@@ -278,11 +265,6 @@ export type WorkflowReviewState = z.infer<typeof WorkflowReviewStateSchema>;
 
 export const CompletionModeSchema = z.enum([
   "local",
-  "local-commit",
-  "pushed-branch",
-  "prepared-pr",
-  "created-pr",
-  "patch-export",
   "handed-off",
   "closed-partial",
   "cancelled-with-changes",
@@ -324,9 +306,6 @@ export const WorkflowCompletionRecordSchema = z
     performanceDisposition: z.string().max(1000),
     documentationDisposition: z.string().max(1000),
     commitHashes: z.array(z.string().max(100)).max(100),
-    pushReference: z.string().max(1000).optional(),
-    prUrl: z.string().url().max(2000).optional(),
-    patchHash: z.string().max(500).optional(),
     handoffPackageIds: z.array(Id).max(100),
     remainingWarnings: z.array(z.string().max(3000)).max(500),
     repositoryFingerprint: z.string().max(500),
@@ -353,13 +332,6 @@ export const CompletionStateSchema = z
     schemaVersion: z.literal(REVIEW_SCHEMA_VERSION),
     review: WorkflowReviewStateSchema,
     options: z.array(CompletionOptionSchema).max(20),
-    gitCapabilities: GitCapabilitiesSchema,
-    repositoryState: GitRepositoryStateSchema.optional(),
-    changeSet: DeliveryChangeSetSchema.optional(),
-    commitPlan: CommitPlanSchema.optional(),
-    prCapabilities: PullRequestProviderCapabilitySchema.optional(),
-    prDraft: PullRequestDraftSchema.optional(),
-    prResult: PullRequestCreationResultSchema.optional(),
     completion: WorkflowCompletionRecordSchema.optional(),
   })
   .strict();

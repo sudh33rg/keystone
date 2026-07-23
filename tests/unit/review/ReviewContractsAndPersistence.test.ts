@@ -32,6 +32,17 @@ describe("Review and optional completion contracts", () => {
       "complete/getState",
       "complete/getOptions",
       "complete/getReport",
+    ] as const) {
+      expect(
+        WebviewRequestSchema.safeParse({
+          ...envelope,
+          type,
+          payload: { workflowId },
+        }).success,
+        type,
+      ).toBe(true);
+    }
+    for (const type of [
       "complete/getChangeSet",
       "complete/getPushReadiness",
       "complete/getPrCapabilities",
@@ -43,7 +54,7 @@ describe("Review and optional completion contracts", () => {
           payload: { workflowId },
         }).success,
         type,
-      ).toBe(true);
+      ).toBe(false);
     }
     expect(
       WebviewRequestSchema.safeParse({
@@ -169,8 +180,11 @@ describe("Review and optional completion contracts", () => {
     const completion = await service.complete(workflowId, "local", "No delivery requested.");
     expect(completion.mode).toBe("local");
     expect(completion.commitHashes).toEqual([]);
-    expect(completion.prUrl).toBeUndefined();
-    expect(completion.report).toContain("no commit recorded");
+    // The completion record carries no remote-PR URL field: the type system
+    // guarantees no push/PR artifact can exist. This is the read-only boundary.
+    expect(completion.report).toContain(
+      "repository changes are preserved locally; no Git mutation",
+    );
   });
 });
 

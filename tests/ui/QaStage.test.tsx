@@ -63,23 +63,16 @@ function tiReply(type: string): unknown {
   return qaAggregate;
 }
 
-describe("QaStage — Phase 8 Test Intelligence sections", () => {
-  beforeEach(() => {
-    vi.spyOn(window, "prompt").mockImplementation((text?: string): string | null => {
-      if (text?.includes("failure id")) return "svc.test.ts::renders";
-      if (text?.includes("Test id to repeat")) return "svc.test.ts::renders";
-      if (text?.includes("file path")) return "svc.test.ts";
-      if (text?.includes("Failure message")) return "TypeError: cannot read property";
-      return null;
-    });
-  });
+describe("QaStage — QA Test Intelligence sections", () => {
+  beforeEach(() => {});
+
   afterEach(() => vi.restoreAllMocks());
 
-  it("renders the Phase 8 sections and dispatches coverage-gap test generation", async () => {
+  it("renders the QA sections and dispatches coverage-gap test generation", async () => {
     const request = vi.fn(async (type: string) => tiReply(type));
     render(<QaStage bridge={{ request, subscribe: () => () => {} } as unknown as HostBridge} workflowId={workflowId} onWorkflowChange={() => {}} />);
 
-    // Phase 8 sections are present.
+    // QA sections are present.
     expect(await screen.findByRole("heading", { name: "Coverage Gaps" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Test Generation Proposals" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Failure Analysis" })).toBeTruthy();
@@ -98,12 +91,14 @@ describe("QaStage — Phase 8 Test Intelligence sections", () => {
     );
   });
 
-  it("dispatches failure analysis from the Analyze failure picker", async () => {
+  it("dispatches failure analysis from the Analyze failure form", async () => {
     const request = vi.fn(async (type: string) => tiReply(type));
     render(<QaStage bridge={{ request, subscribe: () => () => {} } as unknown as HostBridge} workflowId={workflowId} onWorkflowChange={() => {}} />);
 
-    const analyze = await screen.findByRole("button", { name: /Analyze failure/i });
-    fireEvent.click(analyze);
+    fireEvent.change(screen.getByLabelText(/Test failure id/i), { target: { value: "svc.test.ts::renders" } });
+    fireEvent.change(screen.getByLabelText(/File path/i), { target: { value: "svc.test.ts" } });
+    fireEvent.change(screen.getByLabelText(/Failure message/i), { target: { value: "TypeError: cannot read property" } });
+    fireEvent.click(screen.getByRole("button", { name: /Analyze failure/i }));
 
     await waitFor(() =>
       expect(request).toHaveBeenCalledWith(
@@ -117,8 +112,8 @@ describe("QaStage — Phase 8 Test Intelligence sections", () => {
     const request = vi.fn(async (type: string) => tiReply(type));
     render(<QaStage bridge={{ request, subscribe: () => () => {} } as unknown as HostBridge} workflowId={workflowId} onWorkflowChange={() => {}} />);
 
-    const repeats = await screen.findByRole("button", { name: /Request 3 repeated runs/i });
-    fireEvent.click(repeats);
+    fireEvent.change(screen.getByLabelText(/Test id/i), { target: { value: "svc.test.ts::renders" } });
+    fireEvent.click(screen.getByRole("button", { name: /Request repeated runs/i }));
 
     await waitFor(() =>
       expect(request).toHaveBeenCalledWith(

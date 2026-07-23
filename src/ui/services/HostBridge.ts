@@ -57,16 +57,6 @@ import {
   WorkflowCompletionReportSchema,
 } from "../../shared/contracts/execution";
 import {
-  CommitPlanSchema,
-  DeliveryChangeSetSchema,
-  DeliveryReadinessSchema,
-  GitActionResultSchema,
-  GitMutationApprovalSchema,
-  GitCapabilitiesSchema,
-  GitRepositoryStateSchema,
-  PullRequestCreationResultSchema,
-  PullRequestDraftSchema,
-  PullRequestProviderCapabilitySchema,
 } from "../../shared/contracts/delivery";
 import {
   HandoffCompatibilityReportSchema,
@@ -706,11 +696,6 @@ function validateResult(type: WebviewRequestType, value: unknown): unknown {
     case "review/createFollowUpTask":
       return DevelopmentWorkflowSnapshotSchema.parse(value);
     case "review/generatePrDraft":
-    case "review/updatePrDraft":
-    case "complete/preparePr":
-      return PullRequestDraftSchema.parse(value);
-    case "review/getPrDraft":
-      return value === undefined ? undefined : PullRequestDraftSchema.parse(value);
     case "review/getPrChecklist":
       return WorkflowReviewStateSchema.shape.checklist.parse(value);
     case "review/getReadiness":
@@ -726,32 +711,6 @@ function validateResult(type: WebviewRequestType, value: unknown): unknown {
     case "complete/cancelWithChanges":
     case "complete/archive":
       return WorkflowCompletionRecordSchema.parse(value);
-    case "complete/getChangeSet":
-      return value === undefined ? undefined : DeliveryChangeSetSchema.parse(value);
-    case "complete/updateChangeSet":
-      return DeliveryChangeSetSchema.parse(value);
-    case "complete/generateCommitPlan":
-    case "complete/updateCommitPlan":
-      return CommitPlanSchema.parse(value);
-    case "complete/getPushReadiness":
-      return DeliveryReadinessSchema.parse(value);
-    case "complete/getPrCapabilities":
-      return PullRequestProviderCapabilitySchema.parse(value);
-    case "complete/approveStaging":
-    case "complete/approveCommit":
-    case "complete/approvePush":
-    case "complete/approvePrCreation":
-    case "complete/approvePatchExport":
-      return GitMutationApprovalSchema.parse(value);
-    case "complete/stageChanges":
-    case "complete/createCommit":
-    case "complete/push":
-      return GitActionResultSchema.parse(value);
-    case "complete/createPr":
-    case "complete/confirmAssistedPr":
-      return PullRequestCreationResultSchema.parse(value);
-    case "complete/preparePatch":
-    case "complete/exportPatch":
     case "taskHandoff/checkEligibility":
       return value;
     case "taskHandoff/createDraft":
@@ -802,52 +761,14 @@ function validateResult(type: WebviewRequestType, value: unknown): unknown {
       return ExecutionRoutingDecisionSchema.parse(value);
     case "git/capabilities":
     case "git/refresh":
-      return GitCapabilitiesSchema.parse(value);
+    case "git/status":
     case "git/repositoryState":
-      return GitRepositoryStateSchema.parse(value);
-    case "git/readiness":
-      return DeliveryReadinessSchema.parse(value);
-    case "delivery/createChangeSet":
-    case "delivery/rebuildChangeSet":
-    case "delivery/includeFile":
-    case "delivery/excludeFile":
-    case "delivery/attributeFile":
-      return DeliveryChangeSetSchema.parse(value);
-    case "delivery/getChangeSet":
-      return value === undefined ? undefined : DeliveryChangeSetSchema.parse(value);
-    case "commitPlan/create":
-    case "commitPlan/update":
-    case "commitPlan/merge":
-    case "commitPlan/split":
-    case "commitPlan/reorder":
-    case "commitPlan/moveFile":
-    case "commitPlan/approve":
-      return CommitPlanSchema.parse(value);
-    case "commitPlan/get":
-      return value === undefined ? undefined : CommitPlanSchema.parse(value);
-    case "git/stage":
-    case "git/unstage":
-    case "git/createBranch":
-    case "git/commit":
-    case "git/push":
-      return GitActionResultSchema.parse(value);
-    case "pullRequest/capabilities":
-      return PullRequestProviderCapabilitySchema.parse(value);
-    case "pullRequest/createDraft":
-    case "pullRequest/updateDraft":
-    case "pullRequest/approve":
-      return PullRequestDraftSchema.parse(value);
-    case "pullRequest/create":
-    case "pullRequest/confirmExternalCreation":
-    case "pullRequest/status":
-    case "pullRequest/refresh":
-      return value === undefined ? undefined : PullRequestCreationResultSchema.parse(value);
+      return value;
+    case "git/repositoryState":
     case "git/remotes":
     case "git/branches":
     case "git/diff":
     case "build/getDiff":
-    case "pullRequest/templates":
-    case "pullRequest/validate":
       return value;
     case "app/ping":
       return value;
