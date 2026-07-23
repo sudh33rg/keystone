@@ -32,7 +32,7 @@ describe("QA — GraphExportService static HTML export", () => {
       edges: Array.from({ length: 10 }, (_, i) => ({ id: `e:${i}`, sourceId: "n:0", targetId: `n:${i}`, relationship: "contains" })),
     };
     const html = await service.exportSnapshotAsStaticHtml(snapshot, { maxNodes: 3, maxEdges: 4 });
-    const parsed = JSON.parse(html.match(/const data = ({[\s\S]*?});/)?.[1] ?? "{}");
+    const parsed = JSON.parse(html.match(/const data = ({[\s\S]*?});/)?.[1] ?? "{}") as { nodes: unknown[]; edges: unknown[] };
     expect(parsed.nodes).toHaveLength(3);
     expect(parsed.edges).toHaveLength(4);
   });

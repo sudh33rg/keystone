@@ -1,9 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { KeystoneError } from "../../shared/errors/KeystoneError";
 import {
-  ActivitySchema,
-  ActivityStatusSchema,
   type Activity,
   type ActivityStatus,
   type ActivityCategory,
@@ -47,7 +42,7 @@ class ActivityStore {
     if (index >= 0) records[index] = next;
     else records.push(next);
 
-    this.store.update("activityRecords", records);
+    await this.store.update("activityRecords", records);
 
     // Emit the update
     await emitUpdate(next);
@@ -66,7 +61,7 @@ class ActivityStore {
 
     const records = this.store.snapshot.activityRecords ?? [];
     records.push(activityWithId);
-    this.store.update("activityRecords", records);
+    await this.store.update("activityRecords", records);
 
     return activityWithId;
   }

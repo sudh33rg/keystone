@@ -1,15 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
-  PR_REVIEW_SCHEMA_VERSION,
   ReviewContractAssessmentSchema,
-  ContractChangeSchema,
   ReviewTestAssessmentSchema,
   type ContractChange,
   type ReviewFinding as IReviewFinding,
-  type ReviewContractAssessment,
-  type ReviewTestAssessment,
-  type ReviewSecurityPerformanceDecision,
 } from "../../../src/shared/contracts/prReview";
 import { ReviewContractReviewService } from "../../../src/core/review/ReviewContractReviewService";
 import { ReviewTestAdequacyService } from "../../../src/core/review/ReviewTestAdequacyService";
@@ -138,8 +133,8 @@ describe("ReviewContractReviewService", () => {
     const schemaResult = ReviewContractAssessmentSchema.safeParse(assessment);
     expect(schemaResult.success).toBe(true);
     expect((assessment.changes[0] as unknown as ContractChange).classification).toBe("unresolved");
-    expect(assessment.changes.some((change) => (change as unknown as ContractChange).classification === "breaking")).toBe(false);
-    expect(assessment.changes.some((change) => (change as unknown as ContractChange).classification === "unresolved")).toBe(true);
+    expect(assessment.changes.some((change) => (change).classification === "breaking")).toBe(false);
+    expect(assessment.changes.some((change) => (change).classification === "unresolved")).toBe(true);
   });
 
   it("validates contract changes against zod schema", () => {
@@ -174,8 +169,8 @@ describe("ReviewContractReviewService", () => {
       ],
     });
 
-    expect((assessment.changes.find((c) => (c as unknown as ContractChange).id === "additive-1") as unknown as ContractChange | undefined)?.classification).toBe("additive");
-    expect((assessment.changes.find((c) => (c as unknown as ContractChange).id === "breaking-1") as unknown as ContractChange | undefined)?.classification).toBe("breaking");
+    expect((assessment.changes.find((c) => (c).id === "additive-1"))?.classification).toBe("additive");
+    expect((assessment.changes.find((c) => (c).id === "breaking-1"))?.classification).toBe("breaking");
   });
 
   it("exposes hasBreakingChange helper", () => {
@@ -244,7 +239,7 @@ describe("ReviewTestAdequacyService", () => {
 
     const schemaResult = ReviewTestAssessmentSchema.safeParse(assessment);
     expect(schemaResult.success).toBe(true);
-    const typedAssessment = assessment as unknown as ReviewTestAssessment;
+    const typedAssessment = assessment;
     expect(typedAssessment.state).toBe("incomplete");
   });
 
@@ -257,7 +252,7 @@ describe("ReviewTestAdequacyService", () => {
       resultsByTest: { "test-1": "passed" },
     });
 
-    const typedAssessment = assessment as unknown as ReviewTestAssessment;
+    const typedAssessment = assessment;
     expect(typedAssessment.state).toBe("stale");
   });
 
@@ -275,7 +270,7 @@ describe("ReviewTestAdequacyService", () => {
       generatedTestValidationIds: ["gen-1"],
     });
 
-    const typedAssessment = assessment as unknown as ReviewTestAssessment;
+    const typedAssessment = assessment;
     expect(typedAssessment.state).toBe("sufficient");
   });
 
@@ -290,7 +285,7 @@ describe("ReviewTestAdequacyService", () => {
       generatedTestValidationIds: ["gen-1"],
     });
 
-    const typedAssessment = assessment as unknown as ReviewTestAssessment;
+    const typedAssessment = assessment;
     expect(["sufficient-with-warnings", "incomplete"]).toContain(typedAssessment.state);
   });
 
@@ -305,7 +300,7 @@ describe("ReviewTestAdequacyService", () => {
       generatedTestValidationIds: ["gen-1"],
     });
 
-    const typedAssessment = assessment as unknown as ReviewTestAssessment;
+    const typedAssessment = assessment;
     if (!("state" in typedAssessment)) throw new Error("invalid assessment");
     expect(typedAssessment.state).toBe("failed");
   });
@@ -321,7 +316,7 @@ describe("ReviewTestAdequacyService", () => {
       coverageGaps: ["generated coverage gap"],
     });
 
-    const typedAssessment = assessment as unknown as ReviewTestAssessment;
+    const typedAssessment = assessment;
     if (!("state" in typedAssessment)) throw new Error("invalid assessment");
     expect(typedAssessment.state).toBe("incomplete");
   });
@@ -338,7 +333,7 @@ describe("ReviewTestAdequacyService", () => {
       generatedTestValidationIds: ["gen-1"],
     });
 
-    const typedAssessment = assessment as unknown as ReviewTestAssessment;
+    const typedAssessment = assessment;
     expect(typedAssessment.state).toBe("stale");
   });
 
@@ -483,9 +478,9 @@ describe("ReviewSecurityPerformanceService", () => {
     if (schemaResult.data) {
       expect(schemaResult.data.blocked).toBe(true);
       expect(schemaResult.data.acceptedRisks).toHaveLength(1);
-      expect(schemaResult.data.acceptedRisks[0]?.category).toBe("security");
+      expect((schemaResult.data.acceptedRisks[0] as IReviewFinding | undefined)?.category).toBe("security");
       expect(schemaResult.data.confirmedRegressions).toHaveLength(1);
-      expect(schemaResult.data.confirmedRegressions[0]?.id).toBe("perf-regression-1");
+      expect((schemaResult.data.confirmedRegressions[0] as IReviewFinding | undefined)?.id).toBe("perf-regression-1");
     }
   });
 

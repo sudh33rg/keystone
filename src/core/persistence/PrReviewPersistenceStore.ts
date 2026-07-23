@@ -54,7 +54,7 @@ export class PrReviewPersistenceStore {
   async initialize(): Promise<PrReviewPersistentState> {
     if (!this.path) return this.snapshot;
     try {
-      const parsed = JSON.parse(await readFile(this.path, "utf8"));
+      const parsed: unknown = JSON.parse(await readFile(this.path, "utf8"));
       this.state = coalesce(parsed);
     } catch (cause) {
       if (!(cause instanceof Error && "code" in cause && cause.code === "ENOENT")) {

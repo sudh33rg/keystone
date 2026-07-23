@@ -2,26 +2,13 @@ import type { IntelligenceSnapshotReader } from "../../persistence/IntelligenceS
 import type {
   IntelligenceEvidenceRecord,
   IntelligenceFileRecord,
-  IntelligenceRelationshipRecord,
   IntelligenceSnapshot,
   IntelligenceSymbolRecord,
 } from "../../../shared/contracts/intelligence";
 import {
-  IntelligenceQueryResultSchema,
-  IntelligenceQuerySchema,
-  QueryDataSchema,
   type CompiledIntelligenceQuery,
-  type IntelligenceQuery,
-  type IntelligenceQueryResult,
-  type QueryData,
   type QueryDiagnostic,
-  type QueryExplanation,
-  type QueryFlowMetadata,
-  type QueryOperation,
-  type QueryPathStep,
-  type QueryPlan,
   type QueryResultItem,
-  type ResolvedEntity,
 } from "../../../shared/contracts/query";
 
 type Entity = IntelligenceSymbolRecord | IntelligenceFileRecord;
@@ -41,8 +28,8 @@ export class OkfQueryService {
   async query(
     context: QueryContext,
     selector: { id?: string; value?: string },
-  ): Promise<QueryResultItem[]> {
-    const stableId = selector?.id ?? selector?.value;
+): Promise<QueryResultItem[]> {
+  const stableId = selector?.id ?? selector?.value;
     if (stableId) {
       const exact = context.entityById.get(stableId);
       if (exact) {
@@ -97,7 +84,7 @@ function matchesEntityFilters(
   entity: Entity,
   types: readonly string[] | undefined,
   languages: readonly string[] | undefined,
-  context: QueryContext,
+  _context: QueryContext,
 ): boolean {
   if (types?.length && !types.includes(entityType(entity))) return false;
   if (languages?.length && !languages.includes(entity.language)) return false;

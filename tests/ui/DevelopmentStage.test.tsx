@@ -42,7 +42,7 @@ describe("DevelopmentStage", () => {
     expect(screen.getByRole("button", { name: "Confirm Handed Off" })).toBeTruthy();
     expect(screen.getByLabelText("Summary of work completed")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Detect Changes" })).toBeTruthy();
-    expect((screen.getByRole("button", { name: "Complete Development" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole("button", { name: "Complete Development" })).toHaveProperty("disabled", true);
   });
 
   it("renders persisted completion as completed rather than ready", async () => {
@@ -57,6 +57,6 @@ describe("DevelopmentStage", () => {
 
     const heading = await screen.findByRole("heading", { name: "Completion" });
     expect(heading.parentElement?.parentElement?.textContent).toContain("completed");
-    expect((screen.getByRole("button", { name: "Development Completed" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole("button", { name: "Development Completed" })).toHaveProperty("disabled", true);
   });
 });

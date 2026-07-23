@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import {
-  PR_REVIEW_SCHEMA_VERSION,
   ReviewChangeSetSourceSchema,
   type ReviewChangeSetSource,
 } from "../../shared/contracts/prReview";
@@ -58,8 +57,6 @@ export class ReviewChangeSetService {
         "Excluded file paths require a reason in the current review scope contract.",
       );
     }
-
-    const stale = this.computeStale(input.changeSet, current);
 
     const result: ReviewChangeSetSource = {
       ...changeSet,

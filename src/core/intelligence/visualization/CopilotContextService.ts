@@ -9,7 +9,6 @@
 import type {
   IntelligenceSnapshot,
   IntelligenceSymbolRecord,
-  IntelligenceRelationshipRecord,
 } from "../../../shared/contracts/intelligence";
 
 export interface CopilotContextOptions {
@@ -74,7 +73,7 @@ export class CopilotContextService {
       symbolId: symbol.id,
       symbolType: symbol.type,
       name: symbol.name,
-      relativePath: (symbol as any).relativePath,
+      relativePath: undefined,
       confidence: Math.min(1, confidence),
     };
   }

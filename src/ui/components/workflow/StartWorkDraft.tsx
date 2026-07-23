@@ -7,7 +7,7 @@ interface WorkDraft { intent: string; workType: CanonicalWorkflowWorkType; speci
 const DRAFT_KEY = "keystoneStartWorkDraft";
 
 export function StartWorkDraft({ bridge, navigate }: { bridge: HostBridge; navigate: (route: AppRoute) => void }): React.JSX.Element {
-  const restored = useRef(readDraft(bridge)).current;
+  const [restored] = useState(() => readDraft(bridge));
   const [intent, setIntent] = useState(restored.intent);
   const [workType, setWorkType] = useState<CanonicalWorkflowWorkType>(restored.workType);
   const [specification, setSpecification] = useState(restored.specification);
@@ -37,6 +37,8 @@ export function StartWorkDraft({ bridge, navigate }: { bridge: HostBridge; navig
       });
       if (response.type === "workflow.creationFailed") { setError(response.error.message); return; }
       clearDraft(bridge);
+      // Make the new workflow the active canonical workflow so Active Work opens it directly.
+      await bridge.request("workflow.setActiveCanonical", { workflowId: response.workflowId }).catch(() => undefined);
       navigate("/active-work");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Keystone could not create the workflow.");

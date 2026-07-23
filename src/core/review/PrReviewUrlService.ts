@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import type { PrReviewService } from "./PrReviewService";
 import type { ReviewChangeSetSource } from "../../shared/contracts/prReview";
 
@@ -61,9 +60,9 @@ export class PrReviewUrlService {
 
   private parsePrUrl(url: string): ParsedPr {
     const patterns: Array<{ regex: RegExp; provider: ParsedPr["provider"] }> = [
-      { regex: /^https?:\/\/(?:www\.)?github\.com\/(?<owner>[^\/]+)\/(?<repo>[^\/]+)\/pull\/(?<number>\d+)/, provider: "github" },
-      { regex: /^https?:\/\/(?:www\.)?gitlab\.com\/(?<owner>[^\/]+)\/(?<repo>[^\/\?]+)(?:-\/|\/-\/)?merge_requests\/(?<number>\d+)/, provider: "gitlab" },
-      { regex: /^https?:\/\/(?:www\.)?bitbucket\.org\/(?<owner>[^\/]+)\/(?<repo>[^\/]+)\/pull-requests\/(?<number>\d+)/, provider: "bitbucket" },
+      { regex: /^https?:\/\/(?:www\.)?github\.com\/(?<owner>[^/]+)\/(?<repo>[^/]+)\/pull\/(?<number>\d+)/, provider: "github" },
+      { regex: /^https?:\/\/(?:www\.)?gitlab\.com\/(?<owner>[^/]+)\/(?<repo>[^/?]+)(?:-\/|\/-\/)?merge_requests\/(?<number>\d+)/, provider: "gitlab" },
+      { regex: /^https?:\/\/(?:www\.)?bitbucket\.org\/(?<owner>[^/]+)\/(?<repo>[^/]+)\/pull-requests\/(?<number>\d+)/, provider: "bitbucket" },
     ];
 
     for (const pattern of patterns) {

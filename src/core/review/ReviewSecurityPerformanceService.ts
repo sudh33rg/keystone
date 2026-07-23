@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 
-const SecurityPerformanceDecisionSchema = z.object({
+export const SecurityPerformanceDecisionSchema = z.object({
   schemaVersion: z.literal(1),
   id: z.string().uuid(),
   workflowId: z.string().uuid(),

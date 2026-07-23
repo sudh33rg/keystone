@@ -1,11 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { PrReviewPersistenceStore } from "../../../src/core/persistence/PrReviewPersistenceStore";
 import { ReviewReadinessService } from "../../../src/core/review/ReviewReadinessService";
+import type {
+  ContractChange,
+  ReviewContractAssessment,
+  ReviewFinding,
+  ReviewTestAssessment,
+  ReviewTraceabilityAssessment,
+  ReviewTraceabilityLink,
+} from "../../../src/shared/contracts/prReview";
 
 const workflowId = "00000000-0000-4000-8000-000000000001";
 const reviewId = "00000000-0000-4000-8000-000000000002";
 
-function traceability(links: any[] = []) {
+function traceability(links: ReviewTraceabilityLink[] = []): ReviewTraceabilityAssessment {
   return {
     id: "trace-1",
     workflowId,
@@ -14,20 +22,20 @@ function traceability(links: any[] = []) {
     ambiguousLinkIds: [],
     createdAt: new Date().toISOString(),
     contentHash: "sha256:trace",
-  } as any;
+  } as unknown as ReviewTraceabilityAssessment;
 }
 
-function contract(changes: any[] = []) {
+function contract(changes: ContractChange[] = []): ReviewContractAssessment {
   return {
     id: "contract-1",
     workflowId,
     changes,
     createdAt: new Date().toISOString(),
     contentHash: "sha256:contract",
-  } as any;
+  } as unknown as ReviewContractAssessment;
 }
 
-function testAssessment(overrides: any = {}) {
+function testAssessment(overrides: Partial<ReviewTestAssessment> = {}): ReviewTestAssessment {
   return {
     id: "test-1",
     workflowId,
@@ -46,10 +54,10 @@ function testAssessment(overrides: any = {}) {
     createdAt: new Date().toISOString(),
     contentHash: "sha256:test",
     ...overrides,
-  } as any;
+  } as unknown as ReviewTestAssessment;
 }
 
-function finding(overrides: any = {}) {
+function finding(overrides: Partial<ReviewFinding> = {}): ReviewFinding {
   return {
     id: `finding-${Math.random()}`,
     reviewId,
@@ -63,7 +71,7 @@ function finding(overrides: any = {}) {
     createdAt: new Date().toISOString(),
     contentHash: "sha256:finding",
     ...overrides,
-  } as any;
+  } as unknown as ReviewFinding;
 }
 
 describe("ReviewReadinessService", () => {
@@ -75,9 +83,9 @@ describe("ReviewReadinessService", () => {
       workflowId,
       reviewId,
       traceability: traceability([
-        { id: "ac-1", kind: "acceptance-criterion", state: "satisfied", description: "", confidence: 1, explanation: "", evidence: [], implementationRefs: [], validationRefs: [] } as any,
+        { id: "ac-1", kind: "acceptance-criterion", state: "satisfied", description: "", confidence: 1, explanation: "", evidence: [], implementationRefs: [], validationRefs: [] } as unknown as ReviewTraceabilityLink,
       ]),
-      contractAssessment: contract([{ id: "c-1", contractKind: "exported-function", classification: "breaking", confidence: 1, location: "", affectedConsumers: [], behaviouralNote: "", evidenceIds: [] } as any]),
+      contractAssessment: contract([{ id: "c-1", contractKind: "exported-function", classification: "breaking", confidence: 1, location: "", affectedConsumers: [], behaviouralNote: "", evidenceIds: [] } as unknown as ContractChange]),
       testAssessment: testAssessment(),
       findings: [finding()],
       qaCurrent: true,
@@ -100,7 +108,7 @@ describe("ReviewReadinessService", () => {
       workflowId,
       reviewId,
       traceability: traceability([
-        { id: "ac-1", kind: "acceptance-criterion", state: "satisfied", description: "", confidence: 1, explanation: "", evidence: [], implementationRefs: [], validationRefs: [] } as any,
+        { id: "ac-1", kind: "acceptance-criterion", state: "satisfied", description: "", confidence: 1, explanation: "", evidence: [], implementationRefs: [], validationRefs: [] } as unknown as ReviewTraceabilityLink,
       ]),
       contractAssessment: contract(),
       testAssessment: testAssessment(),

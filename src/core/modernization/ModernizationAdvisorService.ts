@@ -1,10 +1,8 @@
-import { createHash } from "node:crypto";
 import { KeystoneLogger } from "../../shared/logging/KeystoneLogger";
 import type { ModernizationPersistence } from "../persistence/ModernizationPersistence";
 import {
   ModernizationAssessment,
   ModernizationAssessmentSchema,
-  ModernizationRecommendationSchema,
 } from "../../shared/contracts/modernization";
 
 export interface ModernizationAdvisorOptions {

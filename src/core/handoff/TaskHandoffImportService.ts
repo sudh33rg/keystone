@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   canonicalSerialize,
   HANDOFF_LIMITS,
@@ -51,7 +51,6 @@ export interface ImportPreview {
 
 function detectHash(content: string): string {
   // Recompute the integrity hash over canonical serialization excluding package.contentHash.
-  const { createHash } = require("node:crypto");
   return `sha256:${createHash("sha256").update(content).digest("hex")}`;
 }
 
@@ -173,7 +172,7 @@ export class TaskHandoffImportService {
   }
 
   /** Accept must re-validate compatibility and confirm no blocking issue remains. */
-  accept(pkg: TaskHandoffPackage, receiverLabel?: string, receiverNotes?: string): TaskHandoff {
+  accept(pkg: TaskHandoffPackage, receiverLabel?: string, _receiverNotes?: string): TaskHandoff {
     const compatibility = this.analyzeCompatibility(pkg);
     if (compatibility.blockingIssues.length > 0) {
       throw new HandoffError(
@@ -213,7 +212,7 @@ export class TaskHandoffImportService {
     return handoff;
   }
 
-  reject(pkg: TaskHandoffPackage, reason?: string): TaskHandoff {
+  reject(pkg: TaskHandoffPackage, _reason?: string): TaskHandoff {
     const now = this.now();
     return {
       schemaVersion: HANDOFF_SCHEMA_VERSION,

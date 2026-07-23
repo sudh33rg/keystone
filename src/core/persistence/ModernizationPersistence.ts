@@ -1,7 +1,6 @@
 import * as fs from "node:fs";
 import { join } from "node:path";
-import { z } from "zod";
-import type { ModernizationPersistentState, ModernizationAssessment } from "../../shared/contracts/modernization";
+import type { ModernizationPersistentState } from "../../shared/contracts/modernization";
 import { ModernizationPersistentStateSchema } from "../../shared/contracts/modernization";
 
 export interface ModernizationPersistence {

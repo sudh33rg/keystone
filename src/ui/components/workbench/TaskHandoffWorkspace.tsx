@@ -46,7 +46,7 @@ export function TaskHandoffWorkspace({
   }, [bridge, workflowId]);
 
   useEffect(() => {
-    void refresh();
+    queueMicrotask(() => { void refresh(); });
   }, [refresh]);
 
   const createDraft = async () => {

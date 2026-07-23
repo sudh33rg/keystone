@@ -28,7 +28,7 @@ export class PostEditVerifierService {
     const signals: VerificationOutcome[] = [];
 
     if (!input.postEditVerifier) {
-      return { passed: true, signals, verdict: "satisfied" } as PostEditVerificationResult;
+      return { passed: true, signals, verdict: "satisfied" };
     }
 
     signals.push(this.checkOutputPresent(output));
@@ -52,13 +52,11 @@ export class PostEditVerifierService {
     const needsRevision = signals.some(
       (signal) => !signal.passed && !signal.details.includes("FATAL"),
     );
-    const failed = !allPassed && !needsRevision;
-
     return {
       passed: allPassed,
       signals,
       verdict: allPassed ? "satisfied" : needsRevision ? "needs_revision" : "failed",
-    } as PostEditVerificationResult;
+    };
   }
 
   private checkOutputPresent(output: string): VerificationOutcome {

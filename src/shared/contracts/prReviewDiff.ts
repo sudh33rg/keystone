@@ -3,7 +3,6 @@ import { z } from "zod";
 export const PR_REVIEW_DIFF_SCHEMA_VERSION = 1 as const;
 const Id = z.string().uuid();
 const Path = z.string().min(1).max(1024);
-const Text = z.string().max(40_000);
 
 export const PullRequestIdentitySchema = z.object({
   provider: z.enum(["github", "gitlab", "bitbucket", "unknown"]),

@@ -3,7 +3,6 @@ import { z } from "zod";
 export const LAYER_DEEP_DIVE_SCHEMA_VERSION = 1 as const;
 const Id = z.string().uuid();
 const Timestamp = z.string().datetime();
-const Text = z.string().max(40_000);
 
 export const LayerDeepDiveLayerSchema = z.enum([
   "qa",

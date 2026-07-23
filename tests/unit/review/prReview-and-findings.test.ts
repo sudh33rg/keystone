@@ -33,8 +33,8 @@ describe("ReviewContractReviewService", () => {
     const schemaResult = ReviewContractAssessmentSchema.safeParse(assessment);
     expect(schemaResult.success).toBe(true);
     if (schemaResult.success) {
-      expect(schemaResult.data!.changes[0]!.contractKind).toBe("exported-function");
-      expect(schemaResult.data!.changes[0]!.classification).toBe("potentially-breaking");
+      expect(schemaResult.data.changes[0]!.contractKind).toBe("exported-function");
+      expect(schemaResult.data.changes[0]!.classification).toBe("potentially-breaking");
     }
   });
 
@@ -52,8 +52,8 @@ describe("ReviewContractReviewService", () => {
     const schemaResult = ReviewContractAssessmentSchema.safeParse(assessment);
     expect(schemaResult.success).toBe(true);
     if (schemaResult.success) {
-      expect(schemaResult.data!.changes[1]!.contractKind).toBe("database-schema");
-      expect(schemaResult.data!.changes[2]!.contractKind).toBe("event-contract");
+      expect(schemaResult.data.changes[1]!.contractKind).toBe("database-schema");
+      expect(schemaResult.data.changes[2]!.contractKind).toBe("event-contract");
     }
   });
 
@@ -69,8 +69,8 @@ describe("ReviewContractReviewService", () => {
     const schemaResult = ReviewContractAssessmentSchema.safeParse(assessment);
     expect(schemaResult.success).toBe(true);
     if (schemaResult.success) {
-      expect(schemaResult.data!.changes[0]!.newShape).toBe("removed");
-      expect(schemaResult.data!.changes[0]!.classification).toBe("destructive");
+      expect(schemaResult.data.changes[0]!.newShape).toBe("removed");
+      expect(schemaResult.data.changes[0]!.classification).toBe("destructive");
     }
   });
 
@@ -86,9 +86,9 @@ describe("ReviewContractReviewService", () => {
     const schemaResult = ReviewContractAssessmentSchema.safeParse(assessment);
     expect(schemaResult.success).toBe(true);
     if (schemaResult.success) {
-      expect(schemaResult.data!.changes[0]!.classification).toBe("unresolved");
-      expect(schemaResult.data!.changes.some((change) => change.classification === "breaking")).toBe(false);
-      expect(schemaResult.data!.changes.some((change) => change.classification === "unresolved")).toBe(true);
+      expect(schemaResult.data.changes[0]!.classification).toBe("unresolved");
+      expect(schemaResult.data.changes.some((change) => change.classification === "breaking")).toBe(false);
+      expect(schemaResult.data.changes.some((change) => change.classification === "unresolved")).toBe(true);
     }
   });
 
@@ -414,7 +414,7 @@ describe("ReviewFindingService", () => {
           requirementIds: ["REQ-SEC-1"],
           createdAt: new Date().toISOString(),
           contentHash: "",
-        } as IReviewFinding,
+        },
       ],
     });
 
@@ -444,7 +444,7 @@ describe("ReviewFindingService", () => {
           requirementIds: [],
           createdAt: new Date().toISOString(),
           contentHash: "",
-        } as IReviewFinding,
+        },
       ],
     });
 
@@ -487,7 +487,7 @@ describe("ReviewFindingService", () => {
           requirementIds: ["REQ-SEC-2"],
           createdAt: new Date().toISOString(),
           contentHash: "",
-        } as IReviewFinding,
+        },
       ],
     });
 
@@ -562,7 +562,7 @@ describe("ReviewFindingService", () => {
           requirementIds: [],
           createdAt: new Date().toISOString(),
           contentHash: "",
-        } as IReviewFinding,
+        },
       ],
     });
 

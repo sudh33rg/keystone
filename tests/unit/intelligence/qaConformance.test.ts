@@ -5,11 +5,16 @@ import { IntelligenceVisualizationService } from "../../../src/core/intelligence
 import { GraphExportService } from "../../../src/core/intelligence/visualization/GraphExportService";
 import { CopilotContextService } from "../../../src/core/intelligence/visualization/CopilotContextService";
 import type { IntelligenceSnapshot } from "../../../src/shared/contracts/intelligence";
+import type { IntelligenceSnapshotReader } from "../../../src/core/persistence/IntelligenceStore";
+import type { ContinuousIntelligenceState } from "../../../src/core/intelligence/runtime/IntelligenceRuntime";
 
 describe("QA — polyglot conformance pipeline", () => {
   it("fires all QA surfaces against a deterministic polyglot snapshot", async () => {
     const snapshot = makeSnapshot();
-    const query = new IntelligenceQueryService({ getSnapshot: () => snapshot } as any, { getState: () => ({}) } as any);
+    new IntelligenceQueryService(
+      { getSnapshot: () => snapshot } as unknown as IntelligenceSnapshotReader,
+      { getState: () => ({}) } as unknown as { getState(): ContinuousIntelligenceState },
+    );
     const search = new FuseSearchService(snapshot);
     const viz = new IntelligenceVisualizationService(snapshot);
 
@@ -48,7 +53,7 @@ describe("QA — polyglot conformance pipeline", () => {
     for (const evidence of snapshot.evidence) allIds.add(evidence.id);
 
     for (const id of allIds) {
-      expect(id).toMatch(/^[A-Za-z0-9][A-Za-z0-9:.\-]{0,199}$/);
+      expect(id).toMatch(/^[A-Za-z0-9][A-Za-z0-9:.-]{0,199}$/);
     }
 
     const schemaViz = await viz.build({ viewType: "schema", direction: "both", maxDepth: 1 });
@@ -171,5 +176,5 @@ function makeSnapshot(): IntelligenceSnapshot {
     evidence,
     diagnostics: [],
     contributions: [],
-  } as any as IntelligenceSnapshot;
+  } as unknown as IntelligenceSnapshot;
 }

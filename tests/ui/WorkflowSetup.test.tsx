@@ -12,7 +12,7 @@ describe("Workflow setup", () => {
     render(<StartWorkDraft bridge={bridge} navigate={vi.fn()} />);
     fireEvent.change(screen.getByLabelText("Intent"), { target: { value: "x".repeat(10_001) } });
     expect(screen.getByText("Intent must be 10,000 characters or fewer.")).toBeTruthy();
-    expect((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole("button", { name: "Continue" })).toHaveProperty("disabled", true);
   });
 
   it("reviews draft values and creates exactly once before opening Active Work", async () => {
@@ -22,7 +22,7 @@ describe("Workflow setup", () => {
     const state: Record<string, unknown> = {};
     const bridge = { request, getWebviewState: () => state, setWebviewState: (value: Record<string, unknown>) => Object.assign(state, value) } as unknown as HostBridge;
     render(<StartWorkDraft bridge={bridge} navigate={navigate} />);
-    expect((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole("button", { name: "Continue" })).toHaveProperty("disabled", true);
     fireEvent.change(screen.getByLabelText("Intent"), { target: { value: "Add refunds" } });
     fireEvent.change(screen.getByLabelText("Work type"), { target: { value: "feature" } });
     fireEvent.change(screen.getByLabelText("Optional specification"), { target: { value: "Refund settled orders." } });

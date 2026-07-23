@@ -201,7 +201,7 @@ export class ReviewTraceabilityService {
 
   private confidence(
     state: TraceabilityState,
-    evidence: ReturnType<ReviewTraceabilityService["aggregateEvidence"]>,
+    _evidence: ReturnType<ReviewTraceabilityService["aggregateEvidence"]>,
   ): number {
     switch (state) {
       case "implemented-and-validated":

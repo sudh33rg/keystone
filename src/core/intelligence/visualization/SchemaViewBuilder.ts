@@ -2,6 +2,7 @@
 import type {
   IntelligenceVisualNode,
   IntelligenceVisualEdge,
+  IntelligenceRelationship,
 } from "../../../shared/contracts/visualization";
 import type { BuilderContext } from "./BaseViewBuilder";
 import { BaseViewBuilder } from "./BaseViewBuilder";
@@ -28,7 +29,7 @@ const SCHEMA_REL_TYPES = new Set([
   "keystone.core.DEFINES_TECHNOLOGY",
 ]);
 
-const REL_TYPE_TO_CANONICAL: Record<string, any> = {
+const REL_TYPE_TO_CANONICAL: Record<string, IntelligenceRelationship> = {
   "keystone.core.DB_TABLE_HAS_COLUMN": "contains",
   "keystone.core.FOREIGN_KEY": "uses",
   "keystone.core.ORM_HAS_FIELD": "contains",

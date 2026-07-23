@@ -60,8 +60,8 @@ describe("QA — FuseSearchService", () => {
     // Every returned id must match a symbol or file id.
     for (const id of ids) {
       const found =
-        SNAPSHOT.symbols.some((s: any) => s.id === id) ||
-        SNAPSHOT.files.some((f: any) => f.id === id);
+        SNAPSHOT.symbols.some((s) => s.id === id) ||
+        SNAPSHOT.files.some((f) => f.id === id);
       expect(found).toBe(true);
     }
   });

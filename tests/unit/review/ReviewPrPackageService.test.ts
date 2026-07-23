@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PrReviewPersistenceStore } from "../../../src/core/persistence/PrReviewPersistenceStore";
 import { ReviewPrPackageService } from "../../../src/core/review/ReviewPrPackageService";
+import type { ReviewTestAssessment } from "../../../src/shared/contracts/prReview";
 
 const workflowId = "00000000-0000-4000-8000-000000000001";
 const reviewId = "00000000-0000-4000-8000-000000000002";
@@ -45,8 +46,8 @@ describe("ReviewPrPackageService", () => {
         remediationValidationIds: [],
         unresolvedFailures: [],
         flakyStateIds: [],
-      } as any,
-      findings: [] as any,
+      } as unknown as ReviewTestAssessment,
+      findings: [],
     });
 
     expect(package_.title).toContain("Add retry with backoff");
@@ -95,8 +96,8 @@ describe("ReviewPrPackageService", () => {
         remediationValidationIds: [],
         unresolvedFailures: [],
         flakyStateIds: [],
-      } as any,
-      findings: [] as any,
+      } as unknown as ReviewTestAssessment,
+      findings: [],
     });
 
     expect(first.userEdited).toBe(false);
@@ -145,8 +146,8 @@ describe("ReviewPrPackageService", () => {
         remediationValidationIds: [],
         unresolvedFailures: [],
         flakyStateIds: [],
-      } as any,
-      findings: [] as any,
+      } as unknown as ReviewTestAssessment,
+      findings: [],
     });
 
     expect(regenerated.title).toBe("User edited PR title");

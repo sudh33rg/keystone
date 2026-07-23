@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import {
-  PR_REVIEW_SCHEMA_VERSION,
   ReviewFindingSchema,
   type ReviewFinding,
 } from "../../shared/contracts/prReview";

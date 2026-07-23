@@ -94,10 +94,10 @@ import {
   KeystoneCommandService,
   KeystoneContextKeyService,
   KeystoneDashboardProvider,
-  KeystoneExplorerProvider,
   KeystoneNotificationService,
   KeystoneStatusBarService,
 } from "./dashboard/KeystoneDashboard";
+import { KeystoneLauncherProvider } from "./dashboard/KeystoneLauncherProvider";
 import { KeystoneInitializationSchema } from "../shared/contracts/nativeShell";
 import type { IntelligenceServiceRegistry } from "./webview/WebviewMessageRouter";
 import { AppRouteSchema } from "../shared/contracts/domain";
@@ -725,6 +725,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const refresh = new KeystoneDashboardRefreshService(
     () => {
       dashboard.refresh();
+      launcher.refresh();
       statusBar.update(dashboard.snapshot);
       void contextKeys.update(
         dashboard.snapshot,
@@ -751,8 +752,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     });
   });
   dashboardReference.current = dashboard;
+  const launcher = new KeystoneLauncherProvider(dashboardViewModels);
   const intelligencePanel = new KeystoneIntelligencePanel(context.extensionUri, intelligenceStore);
-  const explorerProvider = new KeystoneExplorerProvider(intelligenceStore);
   const copilotToggle = new CopilotToggleService(context);
   const graphIndexer = new GraphIndexerWorker(intelligenceStore, intelligenceRuntime, logger);
   const gitHistoryParser = new GitHistoryParser(intelligenceStore, logger);
@@ -860,7 +861,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.window.registerWebviewPanelSerializer(KeystonePanelService.viewType, {
       deserializeWebviewPanel: (panel) => provider.restore(panel),
     }),
-    vscode.window.registerTreeDataProvider("keystone.dashboard", dashboard),
+    vscode.window.registerTreeDataProvider("keystone.launcher", launcher),
     vscode.languages.registerCodeLensProvider(
       [
         { language: "typescript", scheme: "file" },
@@ -962,10 +963,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     notifications,
     commands,
     intelligencePanel,
-    vscode.window.createTreeView("keystone.explorer", {
-      treeDataProvider: explorerProvider,
-      showCollapseAll: true,
-    }),
+    launcher,
     {
       dispose: () => {
         void semanticWorker.dispose();

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { DevelopmentService, DevelopmentServiceError, type DevelopmentPersistence } from "../../../src/core/development/DevelopmentService";
-import { WorkflowService, type WorkflowPersistence } from "../../../src/core/workflow/WorkflowService";
+import { DevelopmentService, DevelopmentServiceError } from "../../../src/core/development/DevelopmentService";
+import { WorkflowService } from "../../../src/core/workflow/WorkflowService";
 
 function memoryPersistence<T>() {
   let value: T | undefined;

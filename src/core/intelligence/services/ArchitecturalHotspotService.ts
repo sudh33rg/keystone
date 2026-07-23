@@ -1,8 +1,6 @@
 import type { IntelligenceSnapshotReader } from "../../persistence/IntelligenceStore";
 import type {
   IntelligenceFileRecord,
-  IntelligenceRelationshipRecord,
-  IntelligenceSymbolRecord,
 } from "../../../shared/contracts/intelligence";
 
 export interface ArchitecturalHotspot {

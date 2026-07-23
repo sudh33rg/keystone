@@ -4,7 +4,6 @@ export const MODERNIZATION_SCHEMA_VERSION = 1 as const;
 const Id = z.string().uuid();
 const Timestamp = z.string().datetime();
 const Path = z.string().min(1).max(1024);
-const Text = z.string().max(40_000);
 
 export const ModernizationCategorySchema = z.enum([
   "framework-upgrade",

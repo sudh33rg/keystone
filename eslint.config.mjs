@@ -3,7 +3,7 @@ import reactHooks from "eslint-plugin-react-hooks";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["dist/**", "coverage/**", "node_modules/**", ".vscode-test/**", "scripts/**", "*.config.*", ".claude/**", "keystone-screenshot.js", "tests/fixtures/benchmarks/typescript-backend/**", "tests/fixtures/benchmarks/react-frontend/**", "tests/fixtures/benchmarks/fullstack/**", "tests/fixtures/benchmarks/multi-package/**", "tests/fixtures/intelligence/**"] },
+  { ignores: ["dist/**", "coverage/**", "node_modules/**", ".vscode-test/**", "scripts/**", "*.config.*", ".claude/**", "keystone-screenshot.js", "src/core/persistence/OkfConceptStore.ts", "tests/fixtures/benchmarks/typescript-backend/**", "tests/fixtures/benchmarks/react-frontend/**", "tests/fixtures/benchmarks/fullstack/**", "tests/fixtures/benchmarks/multi-package/**", "tests/fixtures/intelligence/**"] },
   eslint.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
   {

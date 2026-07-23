@@ -1,15 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { mkdtemp, writeFile, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { TaskHandoffExportService } from "../../../src/core/handoff/TaskHandoffExportService";
+import {
+  TaskHandoffExportService,
+  type HandoffDraftView,
+  type HandoffWorkflowView,
+} from "../../../src/core/handoff/TaskHandoffExportService";
 import { TaskHandoffImportService } from "../../../src/core/handoff/TaskHandoffImportService";
 import { RepositoryIdentityService } from "../../../src/core/handoff/RepositoryIdentityService";
 import {
   HandoffError,
   HANDOFF_SCHEMA_VERSION,
   type HandoffRepositoryIdentity,
-  type TaskHandoffPackage,
 } from "../../../src/shared/contracts/handoff";
 
 const identity = new RepositoryIdentityService().build({
@@ -18,7 +21,7 @@ const identity = new RepositoryIdentityService().build({
   workspaceRootCount: 1,
 });
 
-function makeExportService(workflow: any, draft: any) {
+function makeExportService(workflow: HandoffWorkflowView, draft: HandoffDraftView) {
   return new TaskHandoffExportService({
     workflows: {
       getWorkflow: (id: string) => (id === workflow.id ? workflow : undefined),
@@ -36,7 +39,7 @@ function makeExportService(workflow: any, draft: any) {
   });
 }
 
-const activeWorkflow = {
+const activeWorkflow: HandoffWorkflowView = {
   id: "00000000-0000-4000-8000-000000000001",
   intentText: "Add retry with backoff",
   workType: "feature",
@@ -53,7 +56,7 @@ const activeWorkflow = {
   revision: 3,
 };
 
-const goodDraft = {
+const goodDraft: HandoffDraftView = {
   progressSummary: "Implemented backoff",
   completedWork: [],
   unresolvedWork: [],
@@ -73,7 +76,7 @@ describe("TaskHandoffExportService", () => {
     expect(result.package.schemaVersion).toBe(HANDOFF_SCHEMA_VERSION);
     expect(result.package.package.contentHash.startsWith("sha256:")).toBe(true);
     expect(result.package.package.createdAt).toBeTruthy();
-    const onDisk = JSON.parse(await readFile(target, "utf8"));
+    const onDisk = JSON.parse(await readFile(target, "utf8")) as { package: { id: string } };
     expect(onDisk.package.id).toBe(result.package.package.id);
     await rm(dir, { recursive: true, force: true });
   });
@@ -94,9 +97,6 @@ describe("TaskHandoffExportService", () => {
   });
 
   it("blocks export when a high-confidence secret is present", async () => {
-    const malicious = {
-      ...makeExportService(activeWorkflow, goodDraft),
-    };
     // Inject a privacy scan that reports a critical finding.
     const service = new TaskHandoffExportService({
       workflows: { getWorkflow: (id: string) => (id === activeWorkflow.id ? activeWorkflow : undefined), getActiveWorkflowId: () => activeWorkflow.id, getRevision: () => activeWorkflow.revision },
@@ -117,7 +117,7 @@ describe("TaskHandoffExportService", () => {
   });
 
   it("does not mutate workflow state on export", async () => {
-    const snapshot = JSON.parse(JSON.stringify(activeWorkflow));
+    const snapshot: unknown = JSON.parse(JSON.stringify(activeWorkflow));
     const dir = await mkdtemp(join(tmpdir(), "handoff-"));
     await makeExportService(activeWorkflow, goodDraft).export(activeWorkflow.id, 3, join(dir, "h.keystone-handoff"));
     expect(activeWorkflow).toEqual(snapshot);
@@ -140,7 +140,7 @@ describe("TaskHandoffImportService", () => {
   });
 
   it("rejects an unsupported schema version", () => {
-    const bad = { schemaVersion: 999, package: { id: "x", createdAt: new Date().toISOString(), contentHash: "sha256:" + "a".repeat(64), keystoneVersion: "1" }, repository: identity, workflow: {} as any, continuity: {} as any, references: {} as any, evidence: {} as any, privacy: {} as any };
+    const bad = { schemaVersion: 999, package: { id: "x", createdAt: new Date().toISOString(), contentHash: "sha256:" + "a".repeat(64), keystoneVersion: "1" }, repository: identity, workflow: {}, continuity: {}, references: {}, evidence: {}, privacy: {} };
     const importer = new TaskHandoffImportService({ localIdentity: identity, localReferences: emptyRefs(), repositoryIdentity: new RepositoryIdentityService() });
     expect(() => importer.verify(JSON.stringify(bad))).toThrowError(/schema/);
   });
@@ -171,7 +171,7 @@ describe("TaskHandoffImportService", () => {
     expect(preview.compatibility.repository).toBe("incompatible");
     expect(preview.blocking).toBe(true);
     try {
-      await importer.accept(preview.package);
+      importer.accept(preview.package);
       throw new Error("expected accept to throw");
     } catch (err) {
       expect(err).toBeInstanceOf(HandoffError);

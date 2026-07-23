@@ -64,7 +64,7 @@ export function DevelopmentWorkspace({
         setContext(value);
         setPrepared(prompt);
       })
-      .catch(() => undefined);
+      .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : "The task context could not be loaded. Retry after the workspace finishes loading."));
   }, [bridge, taskId]);
   useEffect(() => {
     if (!taskId || !workflow?.id || !agents.length) return;
@@ -75,7 +75,7 @@ export function DevelopmentWorkspace({
         selectionMode: "recommended",
       })
       .then(setRecommendation)
-      .catch(() => undefined);
+      .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : "The agent recommendation could not be loaded. You can still pick an agent manually."));
   }, [agents.length, bridge, taskId, workflow?.id]);
 
   const run = async <T,>(operation: () => Promise<T>, apply: (value: T) => void): Promise<void> => {

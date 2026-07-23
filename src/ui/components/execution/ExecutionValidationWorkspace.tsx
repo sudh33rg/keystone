@@ -8,7 +8,7 @@ import type {
   ValidationRunV2,
   WorkflowCompletionReport,
 } from "../../../shared/contracts/execution";
-import type { PostEditVerificationResult } from "../../../shared/contracts/postEditVerification";
+
 
 export function ExecutionValidationWorkspace({
   bridge,

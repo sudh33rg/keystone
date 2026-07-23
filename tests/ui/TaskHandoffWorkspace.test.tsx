@@ -76,7 +76,7 @@ describe("TaskHandoffWorkspace", () => {
     // Saving the draft triggers the privacy scan.
     fireEvent.click(await screen.findByRole("button", { name: "Save Draft" }));
     await waitFor(() => expect(screen.getByText(/connection-string/)).toBeTruthy());
-    const exportButton = screen.getByRole("button", { name: "Export" }) as HTMLButtonElement;
-    expect(exportButton.disabled).toBe(true);
+    const exportButton = screen.getByRole("button", { name: "Export" });
+    expect(exportButton).toHaveProperty("disabled", true);
   });
 });

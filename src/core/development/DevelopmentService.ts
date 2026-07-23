@@ -25,11 +25,11 @@ import {
   type DevelopmentWorkItemStatus,
 } from "../../shared/contracts/development";
 
-export interface DevelopmentPersistence { read(): Promise<unknown | undefined>; write(value: DevelopmentPersistentState): Promise<void>; }
+export interface DevelopmentPersistence { read(): Promise<unknown>; write(value: DevelopmentPersistentState): Promise<void>; }
 export class FileDevelopmentPersistence implements DevelopmentPersistence {
   private readonly path: string;
   constructor(root: string, private readonly writer = new AtomicFileWriter()) { this.path = join(root, "workflows", "phase-3-development.json"); }
-  async read(): Promise<unknown | undefined> {
+  async read(): Promise<unknown> {
     try { return JSON.parse(await readFile(this.path, "utf8")) as unknown; }
     catch (cause) { if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") return undefined; return { malformed: true }; }
   }

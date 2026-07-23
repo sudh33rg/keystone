@@ -1,7 +1,6 @@
 import * as fs from "node:fs";
 import { join } from "node:path";
-import { z } from "zod";
-import type { LayerDeepDivePersistentState, LayerDeepDiveRequest, LayerDeepDiveResponse } from "../../shared/contracts/layerDeepDive";
+import type { LayerDeepDivePersistentState } from "../../shared/contracts/layerDeepDive";
 import { LayerDeepDivePersistentStateSchema } from "../../shared/contracts/layerDeepDive";
 
 export interface LayerDeepDivePersistence {

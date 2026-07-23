@@ -1,10 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { KeystoneError } from "../../shared/errors/KeystoneError";
 import {
-  ApprovalSchema,
-  ApprovalStatusSchema,
-  ApprovalTypeSchema,
   type Approval,
   type ApprovalType,
 } from "../../shared/contracts/approval";
@@ -47,7 +41,7 @@ class ApprovalStore {
     if (index >= 0) records[index] = next;
     else records.push(next);
 
-    this.store.update("approvalRecords", records);
+    await this.store.update("approvalRecords", records);
 
     // Emit the update
     await emitUpdate(next);
@@ -65,7 +59,7 @@ class ApprovalStore {
 
     const records = this.store.snapshot.approvalRecords ?? [];
     records.push(approvalWithId);
-    this.store.update("approvalRecords", records);
+    await this.store.update("approvalRecords", records);
 
     return approvalWithId;
   }

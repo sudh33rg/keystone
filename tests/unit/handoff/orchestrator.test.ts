@@ -1,8 +1,7 @@
 import { describe, expect, it, beforeEach } from "vitest";
-import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
+import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { randomUUID } from "node:crypto";
 import { TaskHandoffService } from "../../../src/core/handoff/TaskHandoffService";
 import { HandoffPersistenceStore } from "../../../src/core/persistence/HandoffPersistenceStore";
 import { RepositoryIdentityService } from "../../../src/core/handoff/RepositoryIdentityService";

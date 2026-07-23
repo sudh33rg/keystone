@@ -9,7 +9,7 @@ describe("final UI architecture audit", () => {
   it("keeps exactly four primary destinations and no standalone lifecycle products", () => {
     const navigation = read("src/shared/navigation.ts");
     expect(navigation).toContain('label: "Home"');
-    expect(navigation).toContain('label: "Active Work"');
+    expect(navigation).toContain('label: "Work"');
     expect(navigation).toContain('label: "Intelligence"');
     expect(navigation).toContain('label: "History"');
     for (const obsolete of [
@@ -64,8 +64,7 @@ describe("final UI architecture audit", () => {
     };
     expect(manifest.contributes.viewsContainers.activitybar).toHaveLength(1);
     expect((manifest.contributes.views.keystone ?? []).map((view) => view.id)).toEqual([
-      "keystone.dashboard",
-      "keystone.explorer",
+      "keystone.launcher",
     ]);
   });
 });

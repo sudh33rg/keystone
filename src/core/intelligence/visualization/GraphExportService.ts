@@ -5,6 +5,11 @@
  * Generates a self-contained HTML document embedding the current
  * visualization graph as JSON plus a minimal renderer.
  */
+import type {
+  IntelligenceVisualNode,
+  IntelligenceVisualEdge,
+} from "../../../shared/contracts/visualization";
+
 export interface StaticHtmlExportOptions {
   title?: string;
   maxNodes?: number;
@@ -20,11 +25,13 @@ export class GraphExportService {
     const maxEdges = options.maxEdges ?? 2000;
     const title = options.title ?? "Intelligence snapshot";
 
-    const nodes = Array.isArray((snapshot.nodes as any) ?? (snapshot.symbols as any))
-      ? ((snapshot.nodes as any) ?? (snapshot.symbols as any)).slice(0, maxNodes)
+    const rawNodes = snapshot.nodes ?? snapshot.symbols;
+    const nodes = Array.isArray(rawNodes)
+      ? (rawNodes as IntelligenceVisualNode[]).slice(0, maxNodes)
       : [];
-    const edges = Array.isArray((snapshot.edges as any) ?? (snapshot.relationships as any))
-      ? ((snapshot.edges as any) ?? (snapshot.relationships as any)).slice(0, maxEdges)
+    const rawEdges = snapshot.edges ?? snapshot.relationships;
+    const edges = Array.isArray(rawEdges)
+      ? (rawEdges as IntelligenceVisualEdge[]).slice(0, maxEdges)
       : [];
 
     const escapedTitle = escapeHtml(String(title));

@@ -28,7 +28,7 @@ export function sourceCandidatesForTestPath(testPath: string): string[] {
   if (!stem || !normalized.includes("/")) return [];
 
   const candidates: string[] = [];
-  let current = normalized;
+  const current = normalized;
   let parent = current.slice(0, current.lastIndexOf("/"));
   while (parent) {
     const candidate = `${parent}/${stem}.ts`;

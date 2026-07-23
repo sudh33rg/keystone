@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, rename, rm } from "node:fs/promises";
+import { mkdir, readFile, rename } from "node:fs/promises";
 import { join } from "node:path";
 import { AtomicFileWriter } from "./AtomicFileWriter";
 import { z } from "zod";

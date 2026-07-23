@@ -91,7 +91,7 @@ export class HandoffPersistenceStore {
   async initialize(): Promise<HandoffPersistentState> {
     if (!this.path) return this.snapshot;
     try {
-      const parsed = JSON.parse(await readFile(this.path, "utf8"));
+      const parsed: unknown = JSON.parse(await readFile(this.path, "utf8"));
       this.state = coalesce(parsed);
     } catch (cause) {
       if (!(cause instanceof Error && "code" in cause && cause.code === "ENOENT")) {
@@ -126,9 +126,9 @@ function coalesce(value: unknown): HandoffPersistentState {
     schemaVersion: HANDOFF_SCHEMA_VERSION,
     revision: typeof raw.revision === "number" ? raw.revision + 1 : 1,
     handoffs: (raw.handoffs ?? []).map((h) => TaskHandoffSchema.parse(h)),
-    exports: (raw.exports ?? []) as HandoffExportRecord[],
-    imports: (raw.imports ?? []) as HandoffImportRecord[],
-    acceptances: (raw.acceptances ?? []) as HandoffAcceptanceRecord[],
+    exports: (raw.exports ?? []),
+    imports: (raw.imports ?? []),
+    acceptances: (raw.acceptances ?? []),
     updatedAt: new Date().toISOString(),
   };
 }

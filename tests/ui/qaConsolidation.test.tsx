@@ -6,7 +6,6 @@ import { PRIMARY_NAVIGATION, sectionForRoute } from "../../src/shared/navigation
 import { AppRouteSchema } from "../../src/shared/contracts/domain";
 import { ActiveWork } from "../../src/ui/components/workbench/ActiveWork";
 import type { HostBridge } from "../../src/ui/services/HostBridge";
-import type { DevelopmentWorkflowSnapshot } from "../../src/shared/contracts/delegation";
 import { ContextualBlockerList } from "../../src/ui/components/ContextualBlocker";
 
 function fakeBridge(): HostBridge {

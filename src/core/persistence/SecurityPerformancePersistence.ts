@@ -1,9 +1,7 @@
 import * as fs from "node:fs";
 import { join } from "node:path";
-import { z } from "zod";
 import type {
   SecurityPerformancePersistentState,
-  SecurityPerformanceWorkerRun,
 } from "../../shared/contracts/securityPerformanceWorker";
 import { SecurityPerformancePersistentStateSchema } from "../../shared/contracts/securityPerformanceWorker";
 

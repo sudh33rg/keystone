@@ -200,7 +200,7 @@ export class ReviewReadinessService {
       contentHash: hash({ gates, counts, evidence, decision }),
     });
 
-    this.store.update((state) => ({
+    void this.store.update((state) => ({
       ...state,
       readinessDecisions: [
         ...state.readinessDecisions.filter((d) => d.reviewId !== input.reviewId),

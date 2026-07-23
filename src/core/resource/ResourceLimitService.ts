@@ -1,8 +1,5 @@
 import { KeystoneError } from "../../shared/errors/KeystoneError";
 import {
-  ResourceLimitExceededSchema,
-  ResourceLimitSchema,
-  ResourceLimitStateSchema,
   type ResourceLimit,
   type ResourceLimitState,
 } from "../../shared/contracts/resourceLimits";

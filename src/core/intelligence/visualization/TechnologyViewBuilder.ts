@@ -2,10 +2,11 @@
 import type {
   IntelligenceVisualNode,
   IntelligenceVisualEdge,
+  IntelligenceRelationship,
 } from "../../../shared/contracts/visualization";
+import type { IntelligenceRelationshipRecord } from "../../../shared/contracts/intelligence";
 import type { BuilderContext } from "./BaseViewBuilder";
 import { BaseViewBuilder } from "./BaseViewBuilder";
-import { symbolKind } from "./mapping";
 
 const PHASE_C_TYPES = new Set([
   "keystone.core.Database",
@@ -49,7 +50,7 @@ export class TechnologyViewBuilder extends BaseViewBuilder {
     return { nodes, edges };
   }
 
-  private buildTechnologyEdge(rel: any): IntelligenceVisualEdge {
+  private buildTechnologyEdge(rel: IntelligenceRelationshipRecord): IntelligenceVisualEdge {
     const relationship = this.mapRelationship(rel.type);
     return this.buildEdge(rel, {
       relationship,
@@ -57,7 +58,7 @@ export class TechnologyViewBuilder extends BaseViewBuilder {
     });
   }
 
-  private mapRelationship(type: string): any {
+  private mapRelationship(type: string): IntelligenceRelationship {
     if (type.includes("DEFINES_TECHNOLOGY")) return "contains";
     if (type.includes("USES_TECHNOLOGY")) return "uses";
     if (type.includes("FOREIGN_KEY")) return "uses";

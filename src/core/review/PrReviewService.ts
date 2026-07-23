@@ -330,7 +330,6 @@ export class PrReviewService {
   /** spec §35 — recompute staleness and refresh affected sections. */
   async refresh(workflowId: string): Promise<PullRequestReview> {
     const current = this.getReview(workflowId);
-    const state = this.review.getState(workflowId);
     const fresh = PullRequestReviewSchema.parse({
       ...current,
       status: "revalidating",
@@ -506,7 +505,7 @@ export class PrReviewService {
       configurationOrMigration: "No migration or configuration schema changes detected by the review.",
       testEvidence: `${validationLine}\nTest adequacy: ${test?.state ?? "unavailable"}.`,
       security: security
-        ? `Security decision ${security.metadata.status}; risk level ${security.risk.level}. Open findings: ${security.findings.filter((f) => f.status === "open").length}.`
+        ? `Security decision ${security.metadata.status}; risk level ${security.risk.level}. Open findings: ${security.findings.filter((f: { status?: string }) => f.status === "open").length}.`
         : "Security evidence not loaded for this review.",
       performance: performance
         ? `Performance decision ${performance.metadata.status}; risk level ${performance.risk.level}. Static candidates: ${performance.findings.length}; runtime-confirmed: ${performance.runtimeEvidence.length}.`
@@ -695,7 +694,7 @@ function guidance(
   const items: string[] = [];
   const publicContract = findings.find((f) => f.category === "contract");
   if (publicContract) items.push("Review changed public response/export contract for behavioural compatibility.");
-  if (security?.findings.some((f) => f.severity === "high" || f.severity === "critical"))
+  if (security?.findings.some((f: { severity?: string }) => f.severity === "high" || f.severity === "critical"))
     items.push("Verify authorization behaviour in the changed route.");
   if (performance?.runtimeEvidence.length)
     items.push("Verify the selected performance baseline against the measured evidence.");

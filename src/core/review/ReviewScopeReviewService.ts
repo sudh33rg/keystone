@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import {
   PR_REVIEW_SCHEMA_VERSION,
   ReviewScopeAssessmentSchema,
-  ReviewScopeAreaSchema,
   type ReviewScopeAssessment,
   type ReviewScopeArea,
 } from "../../shared/contracts/prReview";

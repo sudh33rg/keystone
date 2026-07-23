@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
   HandoffPrivacyFindingCategorySchema,
-  HandoffPrivacyFindingSchema,
   HandoffPrivacyReportSchema,
   PrivacyConfidenceSchema,
   PrivacySeveritySchema,
@@ -155,7 +154,7 @@ export class HandoffPrivacyService {
       for (const rule of RULES) {
         const matches = text.match(new RegExp(rule.pattern.source, rule.pattern.flags));
         if (!matches || matches.length === 0) continue;
-        const full = matches[0]!;
+        const full = matches[0];
         if (full.length < 4 && rule.category !== "path-traversal") continue;
         findings.push({
           id: randomUUID(),

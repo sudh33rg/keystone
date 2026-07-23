@@ -1,6 +1,10 @@
 /** Fuzzy search over intelligence symbols/files using Fuse.js. */
 import Fuse from "fuse.js";
-import type { IntelligenceSnapshot } from "../../../shared/contracts/intelligence";
+import type {
+  IntelligenceSnapshot,
+  IntelligenceSymbolRecord,
+  IntelligenceFileRecord,
+} from "../../../shared/contracts/intelligence";
 
 export interface FuzzySearchOptions {
   kind: "name" | "qualified-name" | "path" | "route" | "database";
@@ -38,7 +42,7 @@ export class FuseSearchService {
   ): Array<{ id: string; name: string; qualifiedName?: string }> {
     const out: Array<{ id: string; name: string; qualifiedName?: string }> = [];
 
-    const considerSymbol = (s: any) => {
+    const considerSymbol = (s: IntelligenceSymbolRecord) => {
       if (entityTypes && entityTypes.length > 0) {
         const nodeKind = symbolNodeKind(s.type);
         if (!entityTypes.includes(nodeKind)) return;
@@ -49,7 +53,7 @@ export class FuseSearchService {
           break;
         case "route":
           if (s.type === "keystone.core.Route") {
-            const qn = s.qualifiedName ?? `${s.properties?.method ?? ""} ${s.properties?.routePath ?? ""}`;
+            const qn = s.qualifiedName ?? `${String(s.properties?.method ?? "")} ${String(s.properties?.routePath ?? "")}`;
             out.push({ id: s.id, name: s.name, qualifiedName: qn });
           }
           break;
@@ -63,7 +67,7 @@ export class FuseSearchService {
       }
     };
 
-    const considerFile = (f: any) => {
+    const considerFile = (f: IntelligenceFileRecord) => {
       if (entityTypes && entityTypes.length > 0 && !entityTypes.includes("file")) return;
       if (kind === "path" || kind === "name") out.push({ id: f.id, name: f.relativePath });
     };

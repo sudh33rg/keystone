@@ -1,10 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { KeystoneError } from "../../shared/errors/KeystoneError";
 import {
-  FreshnessRecordSchema,
-  FreshnessStatusSchema,
-  FreshnessUpdateSchema,
   type FreshnessRecord,
   type FreshnessStatus,
   type FreshnessUpdate,
@@ -45,7 +39,7 @@ class FreshnessStore {
     if (index >= 0) records[index] = next;
     else records.push(next);
 
-    this.store.update("freshnessRecords", records);
+    await this.store.update("freshnessRecords", records);
   }
 
   async emitUpdate(update: FreshnessUpdate): Promise<void> {
@@ -132,7 +126,7 @@ export class WorkflowFreshnessService {
     recordId: string,
     recordType: string,
     reason?: string,
-    invalidatedBy?: string,
+    _invalidatedBy?: string,
   ): Promise<void> {
     const status: FreshnessStatus = reason ? "stale" : "invalid";
     const update: FreshnessUpdate = {
@@ -191,7 +185,7 @@ export class WorkflowFreshnessService {
   /**
    * Get the freshness status of a record.
    */
-  getStatus(recordId: string, recordType: string): FreshnessStatus {
+  getStatus(recordId: string, _recordType: string): FreshnessStatus {
     const record = this.store.getRecord(recordId);
     return record ? record.status : "unknown";
   }
@@ -224,7 +218,7 @@ export class WorkflowFreshnessService {
   /**
    * Check if a workflow is fresh.
    */
-  async isWorkflowFresh(workflowId: string): Promise<boolean> {
+  async isWorkflowFresh(_workflowId: string): Promise<boolean> {
     const records = this.store.getAllRecords();
     const workflowRecords = records.filter(
       (r) => r.recordType.includes("workflow") || r.recordType.includes("specification") || r.recordType.includes("context") || r.recordType.includes("delegation") || r.recordType.includes("execution"),

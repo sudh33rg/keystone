@@ -1074,25 +1074,16 @@
     "views": {
       "keystone": [
         {
-          "id": "keystone.dashboard",
-          "name": "Dashboard"
-        },
-        {
-          "id": "keystone.explorer",
-          "name": "Intelligence Explorer"
+          "id": "keystone.launcher",
+          "name": "Keystone"
         }
       ]
     },
     "viewsWelcome": [
       {
-        "view": "keystone.dashboard",
-        "contents": "Open a folder to use repository-aware Keystone features.\n[Open Folder](command:keystone.openFolder)\n\n[Open Keystone](command:keystone.open)",
+        "view": "keystone.launcher",
+        "contents": "Open a folder to use Keystone.\n[Open Folder](command:keystone.openFolder)",
         "when": "!keystone.workspaceAvailable"
-      },
-      {
-        "view": "keystone.explorer",
-        "contents": "Intelligence Explorer requires an indexed repository.\n[Open Intelligence Explorer](command:keystone.intelligence.open)",
-        "when": "keystone.intelligenceReady"
       }
     ],
     "commands": [
@@ -1199,13 +1190,8 @@
     "menus": {
       "view/title": [
         {
-          "command": "keystone.dashboard.refresh",
-          "when": "view == keystone.dashboard",
-          "group": "navigation"
-        },
-        {
           "command": "keystone.open",
-          "when": "view == keystone.dashboard",
+          "when": "view == keystone.launcher",
           "group": "navigation"
         }
       ],

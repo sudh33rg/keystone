@@ -56,9 +56,9 @@ export function IntelligenceCanvasWorkspace({
   const [showRelationships, setShowRelationships] = useState(false);
   const [summary, setSummary] = useState<string>();
   const [selectedPath, setSelectedPath] = useState<{ entityIds: string[]; edgeIds: string[]; evidenceIds: string[] }>();
-  const [busy, setBusy] = useState(false);
+  const [_busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
-  const [files, setFiles] = useState<Array<{ id: string; relativePath: string; analysisLevel?: string }>>([]);
+  const [files] = useState<Array<{ id: string; relativePath: string; analysisLevel?: string }>>([]);
   const stale = Boolean(graph && graph.intelligenceRevision !== intelligenceRevision);
 
   const loadGraph = useCallback((rootId: string, nextMode = mode, nextDepth = depth, nextRelationships = relationships, direction: "inbound" | "outbound" | "both" = "both"): void => {
@@ -74,8 +74,8 @@ export function IntelligenceCanvasWorkspace({
     }).catch(report(setError)).finally(() => setBusy(false));
   }, [depth, intelligenceRevision, mode, relationships, request]);
 
-  useEffect(() => { if (initialEntityId) loadGraph(initialEntityId); }, [initialEntityId]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (initialGraph) setGraph(initialGraph); }, [initialGraph]);
+  useEffect(() => { if (initialEntityId) queueMicrotask(() => loadGraph(initialEntityId)); }, [initialEntityId]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (initialGraph) queueMicrotask(() => setGraph(initialGraph)); }, [initialGraph]);
 
   const search = (): void => {
     setBusy(true);

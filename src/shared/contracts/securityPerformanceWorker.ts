@@ -4,7 +4,6 @@ export const SECURITY_PERFORMANCE_WORKER_SCHEMA_VERSION = 1 as const;
 const Id = z.string().uuid();
 const Timestamp = z.string().datetime();
 const Path = z.string().min(1).max(1024);
-const Text = z.string().max(40_000);
 
 export const SecurityWorkerStatusSchema = z.object({
   phase: z.enum(["idle", "scanning", "analyzing", "complete", "error"]),

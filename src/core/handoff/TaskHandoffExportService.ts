@@ -180,7 +180,7 @@ export class TaskHandoffExportService {
     return { package: finalPackage, savedUri: targetPath };
   }
 
-  private assemble(workflow: HandoffWorkflowView, draft: HandoffDraftView): TaskHandoffPackage {
+  private assemble(workflow: HandoffWorkflowView, _draft: HandoffDraftView): TaskHandoffPackage {
     const evidence = this.deps.evidence.buildBundle(workflow.id) as Record<string, unknown>;
     const references = this.deps.references.buildManifest(workflow.id) as Record<string, unknown>;
     const continuity = this.deps.continuity.buildContinuity(workflow.id) as Record<string, unknown>;

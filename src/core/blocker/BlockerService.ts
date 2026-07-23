@@ -1,12 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { KeystoneError } from "../../shared/errors/KeystoneError";
 import {
-  BlockerCategorySchema,
-  BlockerDecisionSchema,
-  BlockerRequestSchema,
-  BlockerSchema,
-  BlockerSeveritySchema,
   type Blocker,
   type BlockerCategory,
   type BlockerSeverity,
@@ -50,7 +42,7 @@ class BlockerStore {
     if (index >= 0) records[index] = next;
     else records.push(next);
 
-    this.store.update("blockerRecords", records);
+    await this.store.update("blockerRecords", records);
 
     // Emit the update
     await emitUpdate(next);
@@ -68,7 +60,7 @@ class BlockerStore {
 
     const records = this.store.snapshot.blockerRecords ?? [];
     records.push(blockerWithId);
-    this.store.update("blockerRecords", records);
+    await this.store.update("blockerRecords", records);
 
     return blockerWithId;
   }

@@ -1,6 +1,4 @@
-import { createHash } from "node:crypto";
 import {
-  PR_REVIEW_SCHEMA_VERSION,
   ChangedSymbolSchema,
   type ChangedSymbol,
 } from "../../shared/contracts/prReview";
@@ -168,8 +166,4 @@ function deriveChangeType(file: ChangedFile, symbol: SymbolIndex): ChangedSymbol
       (range.newStartLine ?? range.oldStartLine ?? 0) === symbol.range.startLine,
   );
   return signatureRange ? "signature-changed" : "modified";
-}
-
-function hash(value: unknown): string {
-  return `sha256:${createHash("sha256").update(JSON.stringify(value)).digest("hex")}`;
 }

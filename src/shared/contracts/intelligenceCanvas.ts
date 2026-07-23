@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { SourceRangeSchema, type SourceRange } from "./intelligence";
+import { type SourceRange } from "./intelligence";
 
 export const INTELLIGENCE_CANVAS_RELATIONSHIPS = [
   "contains", "imports", "depends-on", "calls", "implements", "extends",

@@ -42,7 +42,7 @@ export function QueryWorkspace({
       void bridge
         .request("intelligence/query/suggestions", { input, limit: 8 })
         .then((value) => setSuggestions(value.items))
-        .catch(() => undefined);
+        .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : "Query suggestions are temporarily unavailable. You can still run the query."));
     }, 120);
     return () => window.clearTimeout(timer);
   }, [bridge, input]);

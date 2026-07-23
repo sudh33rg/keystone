@@ -149,7 +149,6 @@ describe("ReviewChangeSetService", () => {
   });
 
   it("becomes stale after workspace changes", () => {
-    const service = new ReviewChangeSetService();
     const oldChangeSet: ReviewChangeSetSource = {
       baseRevision: "old",
       currentRevision: "old",
