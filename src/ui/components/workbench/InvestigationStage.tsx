@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { CanonicalWorkflow } from "../../../shared/contracts/canonicalWorkflow";
 import type { InvestigationState } from "../../../shared/contracts/stageWorkspace";
+import type { StageEvidence } from "../../../shared/contracts/stageWorkspace";
 import type { HostBridge } from "../../services/HostBridge";
 
 interface InvestigationStageProps {
@@ -14,7 +15,7 @@ export function InvestigationStage({ bridge, workflowId, onWorkflowChange }: Inv
   const [busy, setBusy] = useState<string>();
   const [error, setError] = useState<{ message: string; action: string }>();
   const [answerDrafts, setAnswerDrafts] = useState<Record<string, string>>({});
-  const [evidenceDrafts, setEvidenceDrafts] = useState<Record<string, string>>({});
+  const [evidenceDrafts, setEvidenceDrafts] = useState<Record<string, StageEvidence[]>>({});
   const [newQuestion, setNewQuestion] = useState("");
   const [conclusion, setConclusion] = useState("");
   const [limitations, setLimitations] = useState("");
@@ -51,13 +52,7 @@ export function InvestigationStage({ bridge, workflowId, onWorkflowChange }: Inv
   const saveAnswer = useCallback(
     async (questionId: string): Promise<void> => {
       const answer = answerDrafts[questionId] ?? "";
-      const evidenceText = evidenceDrafts[questionId] ?? "";
-      const evidence = evidenceText
-        .split(/\n+/)
-        .map((line) => line.trim())
-        .filter(Boolean)
-        .slice(0, 30)
-        .map((reference) => ({ kind: "file" as const, reference, label: reference }));
+      const evidence = (evidenceDrafts[questionId] ?? []).slice(0, 30);
       await perform("save-answer", () =>
         bridge.request("stage.investigation.upsertQuestion", { workflowId, questionId, answer, ...(evidence.length ? { evidence } : {}) }),
       );
@@ -127,7 +122,16 @@ export function InvestigationStage({ bridge, workflowId, onWorkflowChange }: Inv
               {!readOnly && (
                 <div className="answer-form">
                   <label className="field-stack"><small>Answer</small><textarea aria-label={`Answer for ${question.text}`} rows={2} value={answerDrafts[question.id] ?? question.answer} onChange={(event) => setAnswerDrafts((drafts) => ({ ...drafts, [question.id]: event.target.value }))} /></label>
-                  <label className="field-stack"><small>Evidence (one file path per line)</small><textarea aria-label={`Evidence for ${question.text}`} rows={1} value={evidenceDrafts[question.id] ?? question.evidence.map((item) => item.reference).join("\n")} onChange={(event) => setEvidenceDrafts((drafts) => ({ ...drafts, [question.id]: event.target.value }))} /></label>
+                  <EvidencePicker
+                    label={`Evidence for ${question.text}`}
+                    selected={evidenceDrafts[question.id] ?? question.evidence}
+                    onChange={(next) => setEvidenceDrafts((drafts) => ({ ...drafts, [question.id]: next }))}
+                    onOpen={(reference) => { void bridge.request("intelligence/source/open", { relativePath: reference }); }}
+                    onSearch={async (searchQuery) => {
+                      const result = await bridge.request("intelligence/search", { query: searchQuery, limit: 30 });
+                      return result.items.map((item) => ({ id: item.id, name: item.qualifiedName, relativePath: item.relativePath, kind: item.type }));
+                    }}
+                  />
                   <button className="ghost-button" disabled={Boolean(busy)} onClick={() => void saveAnswer(question.id)}>Save Answer</button>
                 </div>
               )}
@@ -167,3 +171,74 @@ export function InvestigationStage({ bridge, workflowId, onWorkflowChange }: Inv
     </section>
   );
 }
+
+interface EvidencePickerProps {
+  label: string;
+  selected: StageEvidence[];
+  onChange: (next: StageEvidence[]) => void;
+  onOpen: (reference: string) => void;
+  onSearch: (query: string) => Promise<Array<{ id: string; name: string; relativePath: string; kind: string }>>;
+}
+
+function EvidencePicker({ label, selected, onChange, onOpen, onSearch }: EvidencePickerProps): React.JSX.Element {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<Array<{ id: string; name: string; relativePath: string; kind: string }>>([]);
+  const [busy, setBusy] = useState(false);
+
+  const search = useCallback(async (): Promise<void> => {
+    if (!query.trim()) return;
+    setBusy(true);
+    try {
+      setResults(await onSearch(query.trim()));
+    } catch {
+      setResults([]);
+    } finally {
+      setBusy(false);
+    }
+  }, [onSearch, query]);
+
+  const toggle = (item: { id: string; name: string; relativePath: string; kind: string }): void => {
+    const exists = selected.some((entry) => entry.reference === item.relativePath);
+    if (exists) {
+      onChange(selected.filter((entry) => entry.reference !== item.relativePath));
+    } else {
+      const kind: StageEvidence["kind"] = item.kind === "file" || item.kind === "document" || item.kind === "test" || item.kind === "module" || item.kind === "flow" || item.kind === "graph-entity" || item.kind === "symbol" ? item.kind : "file";
+      onChange([...selected, { kind, reference: item.relativePath, label: item.name }].slice(0, 30));
+    }
+  };
+
+  return (
+    <div className="evidence-picker">
+      <small>{label}</small>
+      <div className="evidence-search">
+        <input aria-label={`Search intelligence for ${label}`} placeholder="Search symbols and files…" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void search(); }} />
+        <button className="ghost-button" type="button" disabled={busy || !query.trim()} onClick={() => void search()}>Search</button>
+      </div>
+      {results.length > 0 && (
+        <ul className="evidence-results">
+          {results.map((item) => (
+            <li key={item.id}>
+              <label>
+                <input type="checkbox" checked={selected.some((entry) => entry.reference === item.relativePath)} onChange={() => toggle(item)} />
+                <span>{item.name}</span>
+                <small>{item.relativePath}</small>
+              </label>
+            </li>
+          ))}
+        </ul>
+      )}
+      {selected.length > 0 && (
+        <ul className="evidence-selected">
+          {selected.map((entry) => (
+            <li key={entry.reference}>
+              <button className="link-button" type="button" onClick={() => onOpen(entry.reference)}>{entry.label}</button>
+              <button className="ghost-button" type="button" onClick={() => onChange(selected.filter((item) => item.reference !== entry.reference))}>Remove</button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+

@@ -9,6 +9,7 @@ import { ImpactAnalysisStage } from "./ImpactAnalysisStage";
 import { QaStage } from "./QaStage";
 import { UnderstandStage } from "./UnderstandStage";
 import { InvestigationStage } from "./InvestigationStage";
+import { PlanStage } from "./PlanStage";
 import { CompleteStage } from "./CompleteStage";
 import { TaskHandoffWorkspace } from "./TaskHandoffWorkspace";
 
@@ -23,6 +24,7 @@ interface StageComponentProps {
 const STAGE_REGISTRY: Record<string, (props: StageComponentProps) => React.JSX.Element> = {
   understand: (props) => <UnderstandStage bridge={props.bridge} workflowId={props.workflowId} onWorkflowChange={props.onWorkflowChange} />,
   investigation: (props) => <InvestigationStage bridge={props.bridge} workflowId={props.workflowId} onWorkflowChange={props.onWorkflowChange} />,
+  plan: (props) => <PlanStage bridge={props.bridge} workflowId={props.workflowId} onWorkflowChange={props.onWorkflowChange} />,
   complete: (props) => <CompleteStage bridge={props.bridge} workflowId={props.workflowId} navigate={props.navigate} onWorkflowChange={props.onWorkflowChange} />,
   development: (props) => <DevelopmentStage bridge={props.bridge} workflowId={props.workflowId} onWorkflowChange={props.onWorkflowChange} />,
   "impact-analysis": (props) => <ImpactAnalysisStage bridge={props.bridge} workflowId={props.workflowId} onWorkflowChange={props.onWorkflowChange} />,

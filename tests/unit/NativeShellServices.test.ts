@@ -47,12 +47,10 @@ describe("native shell services", () => {
       expect.objectContaining({ id: "keystone" }),
     ]);
     expect(manifest.contributes.views.keystone).toEqual([
-      expect.objectContaining({ id: "keystone.dashboard" }),
-      expect.objectContaining({ id: "keystone.explorer" }),
+      expect.objectContaining({ id: "keystone.launcher" }),
     ]);
     expect(manifest.contributes.viewsWelcome).toEqual([
-      expect.objectContaining({ view: "keystone.dashboard" }),
-      expect.objectContaining({ view: "keystone.explorer" }),
+      expect.objectContaining({ view: "keystone.launcher" }),
     ]);
   });
 

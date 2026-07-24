@@ -24,7 +24,7 @@ describe("Phase 10 route consolidation", () => {
   it("exposes only the four canonical primary destinations", () => {
     expect(PRIMARY_NAVIGATION.map((item) => item.label)).toEqual([
       "Home",
-      "Active Work",
+      "Work",
       "Intelligence",
       "History",
     ]);

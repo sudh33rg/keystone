@@ -228,6 +228,7 @@ export function UnderstandStage({ bridge, workflowId, onWorkflowChange }: Unders
 
       <details className="stage-panel">
         <summary>Copilot configuration — {state.configuration.agentAvailable ? state.configuration.agentLabel : "Copilot unavailable"}</summary>
+        {state.configuration.discoveryNotice && <p className="warning-line" role="status">{state.configuration.discoveryNotice}</p>}
         <dl className="config-grid">
           <div><dt>Delegation mode</dt><dd>{modeLabel(state.configuration.mode)}</dd></div>
           <div><dt>Agent</dt><dd>{state.configuration.agentLabel}{state.configuration.agentAvailable ? "" : " (unavailable)"}</dd></div>

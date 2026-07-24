@@ -11,9 +11,11 @@ import {
 import {
   StageDelegationModeSchema,
   StageEvidenceSchema,
+  PlanTaskSchema,
   StageResultSourceSchema,
   type CompleteState,
   type InvestigationState,
+  type PlanState,
   type UnderstandState,
 } from "./stageWorkspace";
 import {
@@ -326,6 +328,14 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
   request("stage.investigation.complete", z.object({ workflowId: z.string().uuid() }).strict()),
   request("stage.complete.load", z.object({ workflowId: z.string().uuid() }).strict()),
   request("stage.complete.archive", z.object({ workflowId: z.string().uuid() }).strict()),
+  request("stage.plan.load", z.object({ workflowId: z.string().uuid() }).strict()),
+  request("stage.plan.setConfiguration", z.object({ workflowId: z.string().uuid(), mode: StageDelegationModeSchema.optional(), skill: z.string().max(200).optional() }).strict()),
+  request("stage.plan.generateContext", z.object({ workflowId: z.string().uuid() }).strict()),
+  request("stage.plan.approveContext", z.object({ workflowId: z.string().uuid(), packageId: z.string().uuid(), revision: z.number().int().positive() }).strict()),
+  request("stage.plan.delegate", z.object({ workflowId: z.string().uuid() }).strict()),
+  request("stage.plan.capturePlan", z.object({ workflowId: z.string().uuid(), planResult: z.string().min(1).max(200_000), tasks: z.array(PlanTaskSchema).max(60).optional(), validationExpectations: z.array(z.string().max(2_000)).max(30).optional() }).strict()),
+  request("stage.plan.approvePlan", z.object({ workflowId: z.string().uuid() }).strict()),
+  request("stage.plan.complete", z.object({ workflowId: z.string().uuid() }).strict()),
   request("development.initialize", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid() }).strict()),
   request("development.load", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid() }).strict()),
   request("development.updateObjective", z.object({ correlationId: z.string().min(1).max(200), workflowId: z.string().uuid(), workItemId: z.string().uuid(), objective: z.string().max(10_001) }).strict()),
@@ -1270,6 +1280,14 @@ export interface WebviewRequestResults {
   "stage.investigation.complete": { state: InvestigationState; workflow: CanonicalWorkflow };
   "stage.complete.load": CompleteState;
   "stage.complete.archive": CanonicalWorkflow;
+  "stage.plan.load": PlanState;
+  "stage.plan.setConfiguration": PlanState;
+  "stage.plan.generateContext": PlanState;
+  "stage.plan.approveContext": PlanState;
+  "stage.plan.delegate": PlanState;
+  "stage.plan.capturePlan": PlanState;
+  "stage.plan.approvePlan": PlanState;
+  "stage.plan.complete": { state: PlanState; workflow: CanonicalWorkflow };
   "development.initialize": DevelopmentAggregate;
   "development.load": DevelopmentAggregate;
   "development.updateObjective": DevelopmentAggregate;

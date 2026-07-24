@@ -4,11 +4,12 @@ import { AtomicFileWriter } from "../persistence/AtomicFileWriter";
 import type { IntelligenceSnapshotReader } from "../persistence/IntelligenceStore";
 import type { IntelligenceSnapshot } from "../../shared/contracts/intelligence";
 import type { CopilotAdapter } from "../copilot/CopilotAdapter";
+import type { ExecutionConfigurationService } from "../development/ExecutionConfigurationService";
+import type { DevelopmentSkillService } from "../development/DevelopmentSkillService";
+import type { DevelopmentContextPackageService, DevelopmentContextBuildInput } from "../context/DevelopmentContextPackageService";
 import type { WorkflowService } from "../workflow/WorkflowService";
 import type { CanonicalWorkflow } from "../../shared/contracts/canonicalWorkflow";
 import { canonicalWorkTypeLabel } from "../../shared/contracts/canonicalWorkflow";
-import { KeystoneGptApproxTokenizer } from "../context/TokenCounterRegistry";
-import { normalizeContent } from "../context/compressionUtils";
 import {
   STAGE_WORKSPACE_SCHEMA_VERSION,
   StageWorkspacePersistentStateSchema,
@@ -16,6 +17,9 @@ import {
   type IntentAnalysis,
   type InvestigationQuestion,
   type InvestigationState,
+  type PlanPrimaryAction,
+  type PlanState,
+  type PlanTask,
   type StageContextPackage,
   type StageCopilotConfiguration,
   type StageDelegationMode,
@@ -31,6 +35,9 @@ import {
   type UnderstandState,
   type UnderstandingSection,
 } from "../../shared/contracts/stageWorkspace";
+
+/** Reads bounded source content for a workspace-relative path (optionally a line range). */
+export type ScopeContentReader = (path: string, range?: { startLine: number; endLine: number }) => Promise<string>;
 
 export class StageWorkspaceError extends Error {
   constructor(public readonly code: string, message: string, public readonly recoverable = true) {
@@ -77,7 +84,6 @@ const UNDERSTAND_AREAS = [
  */
 export class StageWorkspaceService {
   private state: StageWorkspacePersistentState = emptyState();
-  private readonly tokenizer = new KeystoneGptApproxTokenizer();
 
   constructor(
     private readonly persistence: StageWorkspacePersistence,
@@ -85,6 +91,10 @@ export class StageWorkspaceService {
     private readonly intelligence: IntelligenceSnapshotReader,
     private readonly copilot: CopilotAdapter,
     private readonly startIntelligenceScan?: () => Promise<void>,
+    private readonly executionConfiguration?: ExecutionConfigurationService,
+    private readonly contextPackages?: DevelopmentContextPackageService,
+    private readonly readScopeContent?: ScopeContentReader,
+    private readonly skills?: DevelopmentSkillService,
     private readonly now: () => string = () => new Date().toISOString(),
     private readonly createId: () => string = randomUUID,
   ) {}
@@ -103,7 +113,7 @@ export class StageWorkspaceService {
     const stage = this.requireStage(workflow, "understand");
     const existing = this.state.understand[stage.id];
     const intelligenceState = this.intelligenceState();
-    const configuration = await this.buildConfiguration(existing?.configuration.mode, existing?.configuration.skill);
+    const configuration = await this.buildConfiguration(workflowId, stage.id, existing?.configuration.mode, existing?.configuration.skill);
     const base: UnderstandState = existing
       ? { ...existing, intelligence: intelligenceState, configuration }
       : {
@@ -143,7 +153,7 @@ export class StageWorkspaceService {
         "INTELLIGENCE_UNAVAILABLE",
         "Repository Intelligence has no snapshot yet. Initialize Repository Intelligence first.",
       );
-    const analysis = this.buildAnalysis(workflow, snapshot);
+    const analysis = await this.buildAnalysis(workflow, snapshot);
     const next = this.recompute({ ...state, analysis, contextPackage: undefined, prompt: undefined });
     await this.saveUnderstand(next);
     return next;
@@ -192,7 +202,7 @@ export class StageWorkspaceService {
 
   async setConfiguration(workflowId: string, input: { mode?: StageDelegationMode; skill?: string }): Promise<UnderstandState> {
     const state = await this.loadUnderstand(workflowId);
-    const configuration = await this.buildConfiguration(input.mode ?? state.configuration.mode, input.skill ?? state.configuration.skill);
+    const configuration = await this.buildConfiguration(workflowId, state.stageId, input.mode ?? state.configuration.mode, input.skill ?? state.configuration.skill);
     const next = this.recompute({ ...state, configuration });
     await this.saveUnderstand(next);
     return next;
@@ -203,7 +213,7 @@ export class StageWorkspaceService {
     const state = await this.loadUnderstand(workflowId);
     if (!state.analysis?.approved)
       throw new StageWorkspaceError("ANALYSIS_NOT_APPROVED", "Approve the intent analysis before generating context.");
-    const contextPackage = this.buildContextPackage(workflow, state);
+    const contextPackage = await this.buildContextPackage(workflow, state);
     const next = this.recompute({ ...state, contextPackage, prompt: undefined });
     await this.saveUnderstand(next);
     return next;
@@ -412,6 +422,143 @@ export class StageWorkspaceService {
     return workflow;
   }
 
+  // ── Plan ──────────────────────────────────────────────────────────────
+
+  async loadPlan(workflowId: string): Promise<PlanState> {
+    const workflow = this.requireWorkflow(workflowId);
+    const stage = this.requirePlanStage(workflow);
+    const existing = this.state.plan?.[stage.id];
+    const understand = Object.values(this.state.understand).find((item) => item.workflowId === workflowId);
+    const configuration = await this.buildConfiguration(workflowId, stage.id, existing?.configuration.mode, existing?.configuration.skill, "plan");
+    const objective = existing?.objective
+      || understand?.analysis?.objective
+      || (workflow.specification ? workflow.specification.text : workflow.intent.text);
+    const understanding = understand?.analysis?.sections ?? [];
+    const base: PlanState = existing
+      ? { ...existing, configuration, objective, understanding }
+      : {
+          schemaVersion: STAGE_WORKSPACE_SCHEMA_VERSION,
+          workflowId,
+          stageId: stage.id,
+          objective,
+          understanding,
+          configuration,
+          delegations: [],
+          tasks: [],
+          validationExpectations: [],
+          planResult: "",
+          planApproved: false,
+          primaryAction: "generate-context",
+          completion: { allowed: false, unmet: [] },
+          updatedAt: this.now(),
+        };
+    const next = this.recomputePlan(base, stage.status === "completed");
+    await this.savePlan(next);
+    return next;
+  }
+
+  async setPlanConfiguration(workflowId: string, input: { mode?: StageDelegationMode; skill?: string }): Promise<PlanState> {
+    const state = await this.loadPlan(workflowId);
+    const configuration = await this.buildConfiguration(workflowId, state.stageId, input.mode ?? state.configuration.mode, input.skill ?? state.configuration.skill, "plan");
+    const next = this.recomputePlan({ ...state, configuration });
+    await this.savePlan(next);
+    return next;
+  }
+
+  async generatePlanContext(workflowId: string): Promise<PlanState> {
+    const workflow = this.requireWorkflow(workflowId);
+    const state = await this.loadPlan(workflowId);
+    const understand = Object.values(this.state.understand).find((item) => item.workflowId === workflowId);
+    const scopeItems = understand?.analysis?.scope ?? [];
+    if (scopeItems.filter((item) => item.included).length === 0)
+      throw new StageWorkspaceError(
+        "PLAN_SCOPE_EMPTY",
+        "No approved Understand scope is available for planning. Complete the Understand stage with an approved scope first.",
+      );
+    const snapshot = this.intelligence.getSnapshot();
+    const contextPackage = await this.buildPackageFromScope({
+      workflow,
+      stageId: state.stageId,
+      stageKind: "plan",
+      objective: state.objective,
+      objectiveRevision: (snapshot?.manifest.generation ?? 0) + scopeItems.length,
+      intelligenceRevision: snapshot?.manifest.generation ?? 0,
+      scopeItems,
+      skillId: state.configuration.skill,
+      previous: state.contextPackage,
+    });
+    const next = this.recomputePlan({ ...state, contextPackage, prompt: undefined });
+    await this.savePlan(next);
+    return next;
+  }
+
+  async approvePlanContext(workflowId: string, packageId: string, revision: number): Promise<PlanState> {
+    const state = await this.loadPlan(workflowId);
+    const pkg = state.contextPackage;
+    if (!pkg || pkg.id !== packageId || pkg.revision !== revision)
+      throw new StageWorkspaceError("CONTEXT_REVISION_MISMATCH", "The planning context package changed. Review the latest revision before approving.");
+    if (pkg.status === "stale")
+      throw new StageWorkspaceError("CONTEXT_STALE", "The planning context package is stale. Regenerate it before approving.");
+    const workflow = this.requireWorkflow(workflowId);
+    const approved: StageContextPackage = { ...pkg, status: "approved", approvedAt: this.now() };
+    const prompt = this.buildPlanPrompt(workflow, { ...state, contextPackage: approved });
+    const next = this.recomputePlan({ ...state, contextPackage: approved, prompt });
+    await this.savePlan(next);
+    return next;
+  }
+
+  async delegatePlan(workflowId: string): Promise<PlanState> {
+    const state = await this.loadPlan(workflowId);
+    if (!state.prompt || state.contextPackage?.status !== "approved")
+      throw new StageWorkspaceError("PROMPT_NOT_READY", "Approve the planning context package to prepare the exact prompt before delegating.");
+    const record = await this.performPlanDelegation(state, state.configuration.mode);
+    const next = this.recomputePlan({ ...state, delegations: [...state.delegations, record] });
+    await this.savePlan(next);
+    return next;
+  }
+
+  async capturePlan(
+    workflowId: string,
+    input: { planResult: string; tasks?: PlanTask[]; validationExpectations?: string[] },
+  ): Promise<PlanState> {
+    const state = await this.loadPlan(workflowId);
+    if (!input.planResult.trim())
+      throw new StageWorkspaceError("PLAN_RESULT_REQUIRED", "A captured plan is required.");
+    const next = this.recomputePlan({
+      ...state,
+      planResult: input.planResult.trim().slice(0, 200_000),
+      tasks: (input.tasks ?? state.tasks).slice(0, 60),
+      validationExpectations: (input.validationExpectations ?? state.validationExpectations).map((item) => item.trim()).filter(Boolean).slice(0, 30),
+      planApproved: false,
+    });
+    await this.savePlan(next);
+    return next;
+  }
+
+  async approvePlan(workflowId: string): Promise<PlanState> {
+    const state = await this.loadPlan(workflowId);
+    if (!state.planResult.trim())
+      throw new StageWorkspaceError("PLAN_RESULT_MISSING", "Capture a plan before approving it.");
+    if (state.tasks.length === 0)
+      throw new StageWorkspaceError("PLAN_TASKS_MISSING", "The plan must contain at least one proposed implementation task before approval.");
+    const next = this.recomputePlan({ ...state, planApproved: true });
+    await this.savePlan(next);
+    return next;
+  }
+
+  async completePlan(workflowId: string): Promise<{ state: PlanState; workflow: CanonicalWorkflow }> {
+    const state = await this.loadPlan(workflowId);
+    const gate = this.planCompletionGate(state);
+    if (!gate.allowed)
+      throw new StageWorkspaceError("COMPLETION_BLOCKED", `Plan cannot complete yet: ${gate.unmet.join(" ")}`);
+    // Completing Plan marks Development ready via the workflow service; this keeps
+    // stage ordering host-computed and renders the existing DevelopmentStage next.
+    const workflow = await this.workflows.completeStage(workflowId, state.stageId);
+    const completed = this.recomputePlan({ ...state, completedAt: this.now() }, true);
+    await this.savePlan(completed);
+    return { state: completed, workflow };
+  }
+
   // ── Private helpers ───────────────────────────────────────────────────
 
   private requireWorkflow(workflowId: string): CanonicalWorkflow {
@@ -424,6 +571,132 @@ export class StageWorkspaceService {
     const stage = workflow.stages.find((item) => item.type === type);
     if (!stage) throw new StageWorkspaceError("STAGE_NOT_FOUND", `This workflow has no ${type} stage.`);
     return stage;
+  }
+
+  private requirePlanStage(workflow: CanonicalWorkflow) {
+    const stage = workflow.stages.find((item) => item.type === "plan");
+    if (!stage) throw new StageWorkspaceError("STAGE_NOT_FOUND", "This workflow has no plan stage.");
+    return stage;
+  }
+
+  private planCompletionGate(state: PlanState): { allowed: boolean; unmet: string[] } {
+    const unmet: string[] = [];
+    if (state.contextPackage?.status !== "approved") unmet.push("The planning context package is not approved.");
+    if (!state.delegations.length) unmet.push("No delegation or manual execution record exists for the plan.");
+    if (!state.planResult.trim()) unmet.push("No plan has been captured.");
+    if (state.tasks.length === 0) unmet.push("The plan has no proposed implementation tasks.");
+    if (!state.planApproved) unmet.push("The plan has not been approved.");
+    return { allowed: unmet.length === 0, unmet };
+  }
+
+  private recomputePlan(state: PlanState, completed = Boolean(state.completedAt)): PlanState {
+    const completion = this.planCompletionGate(state);
+    const primaryAction: PlanPrimaryAction = completed || state.completedAt
+      ? "stage-completed"
+      : !state.contextPackage || state.contextPackage.status === "stale"
+        ? "generate-context"
+        : state.contextPackage.status !== "approved"
+          ? "review-approve-context"
+          : !state.delegations.some((item) => item.status !== "failed")
+            ? "delegate"
+            : !state.planResult.trim() || state.tasks.length === 0
+              ? "capture-plan"
+              : !state.planApproved
+                ? "approve-plan"
+                : completion.allowed
+                  ? "complete-plan"
+                  : "capture-plan";
+    return { ...state, primaryAction, completion, updatedAt: this.now() };
+  }
+
+  private buildPlanPrompt(workflow: CanonicalWorkflow, state: PlanState): StagePrompt {
+    const pkg = state.contextPackage!;
+    const lines = [
+      "# Keystone Plan stage",
+      "",
+      "## Original intent",
+      workflow.intent.text,
+      ...(workflow.specification ? ["", "## Specification", workflow.specification.text] : []),
+      "",
+      "## Planning objective",
+      state.objective,
+      "",
+      "## Repository understanding",
+      ...(state.understanding.length
+        ? state.understanding.map((item) => `- ${item.title} [${item.confidence}]: ${item.statement}`)
+        : ["- No approved Understand sections are available."]),
+      "",
+      "## Selected skill",
+      state.configuration.skill || "none selected",
+      "",
+      "## Approved instructions",
+      ...(state.configuration.instructions.length ? state.configuration.instructions.map((item) => `- ${item}`) : ["- none selected"]),
+      "",
+      "## Compressed planning context",
+      pkg.content,
+      "",
+      "## Task",
+      "Produce a bounded implementation plan for the objective using only the supplied evidence. For each proposed task include: a title, a concrete detail, dependencies on other tasks, affected files/areas, and acceptance criteria. Also list the validation expectations for the whole plan.",
+      "",
+      "## Expected output",
+      "- An ordered list of implementation tasks with dependencies and acceptance criteria.",
+      "- The affected files or areas for each task, cited from the evidence.",
+      "- Validation expectations (tests, checks) for the plan overall.",
+      "",
+      "## Restrictions",
+      "- Do not invent files, symbols, or behavior not present in the evidence.",
+      "- Keep the plan bounded to the objective and approved scope.",
+    ];
+    const content = lines.join("\n");
+    return {
+      id: this.createId(),
+      revision: (state.prompt?.revision ?? 0) + 1,
+      content,
+      contentHash: createHash("sha256").update(content).digest("hex"),
+      contextPackageRevision: pkg.revision,
+      preparedAt: this.now(),
+    };
+  }
+
+  private async performPlanDelegation(state: PlanState, mode: StageDelegationMode): Promise<StageDelegationRecord> {
+    const prompt = state.prompt!;
+    const base = {
+      id: this.createId(),
+      workflowId: state.workflowId,
+      stageId: state.stageId,
+      promptRevision: prompt.revision,
+      contextPackageRevision: prompt.contextPackageRevision,
+      executionProfileRevision: 0,
+      createdAt: this.now(),
+    };
+    if (mode === "manual")
+      return { ...base, mode, capabilityUsed: "manual", status: "manual", statusDetail: "Manual planning selected. No prompt was sent anywhere." };
+    if (mode === "chat-open") {
+      try {
+        await this.copilot.copyPrompt(prompt.content);
+        await this.copilot.openCopilot();
+        return { ...base, mode, capabilityUsed: "workbench.action.chat.open", status: "copied-chat-opened", statusDetail: "Prompt copied. Copilot Chat opened. Paste the prompt to run it — Keystone did not submit it." };
+      } catch (cause) {
+        return { ...base, mode, capabilityUsed: "workbench.action.chat.open", status: "failed", statusDetail: "Copilot Chat could not be opened.", failureReason: cause instanceof Error ? cause.message : String(cause) };
+      }
+    }
+    try {
+      await this.copilot.copyPrompt(prompt.content);
+      return { ...base, mode, capabilityUsed: "clipboard", status: "copied", statusDetail: "Prompt copied to the clipboard. Paste it into Copilot Chat manually." };
+    } catch (cause) {
+      return { ...base, mode, capabilityUsed: "clipboard", status: "failed", statusDetail: "The prompt could not be copied.", failureReason: cause instanceof Error ? cause.message : String(cause) };
+    }
+  }
+
+  private async savePlan(state: PlanState): Promise<void> {
+    const next: StageWorkspacePersistentState = {
+      ...this.state,
+      revision: this.state.revision + 1,
+      plan: { ...(this.state.plan ?? {}), [state.stageId]: state },
+      updatedAt: this.now(),
+    };
+    await this.persistence.write(next);
+    this.state = next;
   }
 
   private intelligenceState(): StageIntelligenceState {
@@ -440,24 +713,94 @@ export class StageWorkspaceService {
     };
   }
 
-  private async buildConfiguration(mode?: StageDelegationMode, skill?: string): Promise<StageCopilotConfiguration> {
-    const capabilities = this.copilot.getCapabilities() ?? (await this.copilot.refreshCapabilities().catch(() => undefined));
+  private async buildConfiguration(
+    workflowId: string,
+    stageId: string,
+    mode?: StageDelegationMode,
+    skill?: string,
+    stageKind?: string,
+  ): Promise<StageCopilotConfiguration> {
+    // Capability discovery: attempt a real refresh when nothing is cached. A
+    // failure is recorded truthfully (below) rather than silently swallowed —
+    // the configuration surfaces manual/clipboard fallback with the reason.
+    let discoveryError: string | undefined;
+    let capabilities = this.copilot.getCapabilities();
+    if (!capabilities) {
+      try {
+        capabilities = await this.copilot.refreshCapabilities();
+      } catch (cause) {
+        discoveryError = cause instanceof Error ? cause.message : String(cause);
+      }
+    }
     const chatAvailable = capabilities?.chatAvailable ?? false;
     const clipboardAvailable = capabilities?.supportedInvocationMethods.includes("clipboard-v1") ?? true;
-    const agents = chatAvailable ? await this.copilot.discoverAgents().catch(() => []) : [];
-    const agent = agents[0];
-    const resolvedMode: StageDelegationMode = mode && (mode !== "chat-open" || chatAvailable) ? mode : chatAvailable ? "chat-open" : clipboardAvailable ? "clipboard" : "manual";
+
+    // Real execution configuration aggregate: discovered/manual agents, skills,
+    // discovered repository instructions, and conflicts. The stage never invents
+    // an agent or a fixed instruction list.
+    const configWorkItemId = stageKind ? `${stageKind}:${stageId}` : stageId;
+    const aggregate = this.executionConfiguration
+      ? await this.executionConfiguration.load(workflowId, configWorkItemId)
+      : undefined;
+
+    const availableAgents = aggregate
+      ? aggregate.agents.filter((agent) => agent.availability === "available")
+      : [];
+    const manualProfiles = aggregate?.manualAgents ?? [];
+    // Never auto-select when more than one option exists; only a single
+    // unambiguous available agent is treated as selected.
+    const selectedAgent = availableAgents.length === 1 ? availableAgents[0] : undefined;
+    const agentDiscoveryUnavailable = aggregate === undefined;
+
+    const agentId = selectedAgent?.id ?? "";
+    const agentLabel = selectedAgent
+      ? selectedAgent.displayName
+      : availableAgents.length > 1
+        ? "Multiple agents available — select one"
+        : agentDiscoveryUnavailable
+          ? manualProfiles.length
+            ? `${manualProfiles.length} manual profile(s) — local configuration only`
+            : "Agent discovery unavailable"
+          : "No Copilot agent discovered";
+
+    // Real skills from DevelopmentSkillService via the aggregate; keep the caller's
+    // selection when it still exists, otherwise leave it unselected.
+    const skillDefs = aggregate?.skills ?? [];
+    const resolvedSkill = skill && skillDefs.some((item) => item.id === skill)
+      ? skill
+      : skillDefs[0]?.id ?? "";
+
+    // Real discovered instructions (available only); no hard-coded instruction text.
+    const instructions = (aggregate?.instructions ?? [])
+      .filter((item) => item.availability === "available")
+      .map((item) => `${item.name} (${item.workspaceRelativePath})`)
+      .slice(0, 30);
+
+    const resolvedMode: StageDelegationMode =
+      mode && (mode !== "chat-open" || chatAvailable)
+        ? mode
+        : chatAvailable
+          ? "chat-open"
+          : clipboardAvailable
+            ? "clipboard"
+            : "manual";
+
+    const discoveryNotice = discoveryError
+      ? `Copilot capability discovery failed: ${discoveryError}. Manual and clipboard handoff remain available.`
+      : agentDiscoveryUnavailable
+        ? manualProfiles.length
+          ? "Runtime agent discovery is unavailable. Showing previously configured manual profiles as non-authoritative local configuration."
+          : "Runtime agent discovery is unavailable. Use manual configuration or clipboard handoff."
+        : undefined;
+
     return {
       mode: resolvedMode,
-      agentId: agent?.id ?? "copilot-chat",
-      agentLabel: agent?.displayName ?? (chatAvailable ? "GitHub Copilot Chat" : "No Copilot agent detected"),
-      agentAvailable: chatAvailable,
-      skill: skill ?? "repository-understanding",
-      instructions: [
-        "Base every statement only on the supplied evidence package.",
-        "Cite the file, symbol, or document supporting each important claim.",
-        "State unresolved or low-confidence areas explicitly instead of guessing.",
-      ],
+      agentId,
+      agentLabel,
+      agentAvailable: Boolean(selectedAgent),
+      skill: resolvedSkill,
+      instructions,
+      ...(discoveryNotice ? { discoveryNotice } : {}),
       capabilities: [
         { id: "chat-open", label: "Open Copilot Chat with prompt", available: chatAvailable, detail: chatAvailable ? "workbench.action.chat.open is registered." : "Copilot Chat is not available in this environment." },
         { id: "clipboard", label: "Copy prompt to clipboard", available: clipboardAvailable, detail: "Copies the exact approved prompt for manual paste." },
@@ -466,7 +809,7 @@ export class StageWorkspaceService {
     };
   }
 
-  private buildAnalysis(workflow: CanonicalWorkflow, snapshot: IntelligenceSnapshot): IntentAnalysis {
+  private async buildAnalysis(workflow: CanonicalWorkflow, snapshot: IntelligenceSnapshot): Promise<IntentAnalysis> {
     const intent = workflow.intent.text.toLowerCase();
     const terms = intent.split(/[^a-z0-9]+/).filter((term) => term.length > 2);
     const files = snapshot.files;
@@ -475,8 +818,54 @@ export class StageWorkspaceService {
     const tests = files.filter((file) => file.category === "test" || file.isTest);
     const source = files.filter((file) => file.category === "source");
     const languages = countTop(files.map((file) => file.language), 6);
-    const modules = countTop(source.map((file) => file.relativePath.split("/").slice(0, 2).join("/")), 8);
-    const entryCandidates = source.filter((file) => /(^|\/)(extension|main|index|app)\.[a-z]+$/.test(file.relativePath)).slice(0, 6);
+
+    // Resolve major modules from real entities + relationships, not directory
+    // counts alone: rank each top-level module area by indexed symbols and the
+    // relationship edges that cross into it (structural importance).
+    const fileById = new Map(files.map((file) => [file.id, file] as const));
+    const moduleArea = (relativePath: string): string => relativePath.split("/").slice(0, 2).join("/");
+    const moduleStats = new Map<string, { files: number; symbols: number; edges: number }>();
+    for (const file of source) {
+      const area = moduleArea(file.relativePath);
+      const stat = moduleStats.get(area) ?? { files: 0, symbols: 0, edges: 0 };
+      stat.files += 1;
+      moduleStats.set(area, stat);
+    }
+    for (const symbol of snapshot.symbols) {
+      const owner = symbol.ownerFileId ? fileById.get(symbol.ownerFileId) : undefined;
+      if (!owner) continue;
+      const stat = moduleStats.get(moduleArea(owner.relativePath));
+      if (stat) stat.symbols += 1;
+    }
+    // Relationship fan-in per file: also feeds entry-point detection below.
+    const fanIn = new Map<string, number>();
+    for (const rel of snapshot.relationships) {
+      const targetFile = rel.targetFileId ?? snapshot.symbols.find((s) => s.id === rel.targetId)?.ownerFileId;
+      if (targetFile) fanIn.set(targetFile, (fanIn.get(targetFile) ?? 0) + 1);
+      const ownerFile = rel.ownerFileId;
+      if (ownerFile) {
+        const stat = moduleStats.get(moduleArea(fileById.get(ownerFile)?.relativePath ?? ""));
+        if (stat) stat.edges += 1;
+      }
+    }
+    const modules = [...moduleStats.entries()]
+      .map(([name, stat]) => [name, stat] as const)
+      .sort((a, b) => (b[1].symbols + b[1].edges) - (a[1].symbols + a[1].edges) || b[1].files - a[1].files)
+      .slice(0, 8);
+
+    // Entry points from semantic/CPG evidence: exported symbols with high
+    // relationship fan-in, plus conventional filenames as a fallback signal.
+    const exportedByFanIn = snapshot.symbols
+      .filter((symbol) => symbol.exported && symbol.ownerFileId)
+      .map((symbol) => ({ symbol, fanIn: fanIn.get(symbol.ownerFileId!) ?? 0 }))
+      .filter((entry) => entry.fanIn > 0)
+      .sort((a, b) => b.fanIn - a.fanIn)
+      .slice(0, 6);
+    const conventionalEntries = source.filter((file) => /(^|\/)(extension|main|index|app)\.[a-z]+$/.test(file.relativePath)).slice(0, 6);
+    const entryEvidence: StageEvidence[] = exportedByFanIn.length
+      ? exportedByFanIn.map((entry) => ({ kind: "symbol" as const, reference: entry.symbol.id, label: `${entry.symbol.qualifiedName} (${entry.fanIn} refs)` }))
+      : conventionalEntries.map((file) => fileEvidence(file.relativePath, "file"));
+
     const broadIntent = /what is|overview|explain|understand|repo|repository|architecture/.test(intent);
     const matched = broadIntent
       ? []
@@ -484,7 +873,7 @@ export class StageWorkspaceService {
     const scopeFiles = [
       ...manifests.slice(0, 3),
       ...docs.slice(0, 5),
-      ...entryCandidates,
+      ...conventionalEntries,
       ...(matched.length ? matched : source.slice(0, 10)),
     ];
     const seen = new Set<string>();
@@ -492,7 +881,7 @@ export class StageWorkspaceService {
     for (const file of scopeFiles) {
       if (seen.has(file.id)) continue;
       seen.add(file.id);
-      const isMatched = matched.includes(file) || entryCandidates.includes(file);
+      const isMatched = matched.includes(file) || conventionalEntries.includes(file);
       scope.push({
         id: file.id,
         kind: file.category === "documentation" ? "document" : file.isTest || file.category === "test" ? "test" : "file",
@@ -507,14 +896,22 @@ export class StageWorkspaceService {
       seen.add(test.id);
       scope.push({ id: test.id, kind: "test", reference: test.relativePath, label: test.relativePath, confidence: "inferred", included: true });
     }
+
+    // Read and summarize real documentation excerpts instead of only reporting
+    // that documentation exists.
+    const docExcerpt = await this.summarizeDocuments(docs.slice(0, 3));
+
     const topSymbols = snapshot.symbols.filter((symbol) => symbol.type === "class" && symbol.exported).slice(0, 12);
+    const relResolved = snapshot.relationships.filter((rel) => rel.resolution === "exact" || rel.derivation === "resolved").length;
     const sections: UnderstandingSection[] = [
-      section("Repository purpose", docs.length ? `Documentation is present (${docs.slice(0, 3).map((file) => file.relativePath).join(", ")}); the repository's stated purpose is described there.` : "No documentation files were indexed; the repository purpose is not confirmed by evidence.", docs.length ? "confirmed" : "unresolved", docs.slice(0, 3).map((file) => fileEvidence(file.relativePath, "document"))),
+      section("Repository purpose", docExcerpt
+        ? `From ${docExcerpt.source}: ${docExcerpt.text}`
+        : "No documentation files were indexed; the repository purpose is not confirmed by evidence.", docExcerpt ? "confirmed" : "unresolved", docs.slice(0, 3).map((file) => fileEvidence(file.relativePath, "document"))),
       section("Main technologies", `Indexed languages: ${languages.map(([name, count]) => `${name} (${count} files)`).join(", ") || "none detected"}.`, languages.length ? "confirmed" : "unresolved", manifests.slice(0, 3).map((file) => fileEvidence(file.relativePath, "file"))),
-      section("Important modules", `Largest module areas by file count: ${modules.map(([name, count]) => `${name} (${count})`).join(", ") || "none"}.`, modules.length ? "confirmed" : "unresolved", modules.slice(0, 5).map(([name]) => ({ kind: "module" as const, reference: name, label: name }))),
-      section("Entry points", entryCandidates.length ? `Likely entry points: ${entryCandidates.map((file) => file.relativePath).join(", ")}.` : "No conventional entry-point file names were found; entry points are unresolved.", entryCandidates.length ? "inferred" : "unresolved", entryCandidates.map((file) => fileEvidence(file.relativePath, "file"))),
+      section("Important modules", modules.length ? `Major modules by indexed symbols and relationship edges: ${modules.map(([name, stat]) => `${name} (${stat.symbols} symbols, ${stat.edges} edges, ${stat.files} files)`).join(", ")}.` : "No source modules were indexed.", modules.length ? "confirmed" : "unresolved", modules.slice(0, 5).map(([name]) => ({ kind: "module" as const, reference: name, label: name }))),
+      section("Entry points", exportedByFanIn.length ? `Entry points resolved from exported symbols with the highest relationship fan-in: ${exportedByFanIn.map((entry) => entry.symbol.qualifiedName).join(", ")}.` : conventionalEntries.length ? `No high-fan-in exported entry symbols were resolved; conventional entry-point filenames: ${conventionalEntries.map((file) => file.relativePath).join(", ")}.` : "Entry points are unresolved from both semantic evidence and filename convention.", exportedByFanIn.length ? "confirmed" : conventionalEntries.length ? "inferred" : "unresolved", entryEvidence),
       section("Key exported classes", topSymbols.length ? `Exported classes include: ${topSymbols.map((symbol) => symbol.name).join(", ")}.` : "No exported class symbols were indexed.", topSymbols.length ? "confirmed" : "unresolved", topSymbols.slice(0, 8).map((symbol) => ({ kind: "symbol" as const, reference: symbol.id, label: symbol.qualifiedName }))),
-      section("Relationships and flows", `${snapshot.relationships.length} relationships are indexed; major control and data flows are derived from these edges.`, snapshot.relationships.length ? "inferred" : "unresolved", []),
+      section("Relationships and flows", snapshot.relationships.length ? `${snapshot.relationships.length} relationships are indexed (${relResolved} exactly resolved); control and data flows are derived from these edges.` : "No relationships are indexed; flows are unresolved.", relResolved ? "confirmed" : snapshot.relationships.length ? "inferred" : "unresolved", []),
       section("Tests", tests.length ? `${tests.length} test files are indexed (e.g. ${tests.slice(0, 3).map((file) => file.relativePath).join(", ")}).` : "No test files were indexed.", tests.length ? "confirmed" : "unresolved", tests.slice(0, 3).map((file) => fileEvidence(file.relativePath, "test"))),
     ];
     const ambiguities = [] as IntentAnalysis["ambiguities"];
@@ -544,48 +941,209 @@ export class StageWorkspaceService {
     };
   }
 
-  private buildContextPackage(workflow: CanonicalWorkflow, state: UnderstandState): StageContextPackage {
+  /** Read a bounded excerpt from the highest-signal documentation file. */
+  private async summarizeDocuments(docs: IntelligenceSnapshot["files"]): Promise<{ source: string; text: string } | undefined> {
+    if (!this.readScopeContent || docs.length === 0) return undefined;
+    // Prefer a README-like doc; fall back to the first indexed document.
+    const preferred = docs.find((file) => /readme/i.test(file.relativePath)) ?? docs[0]!;
+    try {
+      const content = await this.readScopeContent(preferred.relativePath);
+      const text = content
+        .replace(/```[\s\S]*?```/g, " ")
+        .split(/\r?\n/)
+        .map((line) => line.replace(/^#+\s*/, "").replace(/[*_`>#-]/g, "").trim())
+        .filter((line) => line.length > 30)
+        .slice(0, 3)
+        .join(" ");
+      if (!text) return undefined;
+      return { source: preferred.relativePath, text: text.slice(0, 600) };
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Build the Understand context package by delegating to Keystone's canonical
+   * context-compression pipeline (DevelopmentContextPackageService): real
+   * tokenizer, deduplication, structural/summary compression, budget
+   * optimization, and required-fact completeness validation. This service is a
+   * thin adapter — it does not implement its own compression, fixed per-file
+   * token additions, or hand-rolled fact coverage.
+   */
+  private async buildContextPackage(workflow: CanonicalWorkflow, state: UnderstandState): Promise<StageContextPackage> {
     const analysis = state.analysis!;
-    const included = analysis.scope.filter((item) => item.included);
-    const sections = analysis.sections.map((item) => `${item.title} [${item.confidence}]: ${item.statement}`);
-    const rawParts = [
-      `Intent: ${workflow.intent.text}`,
-      ...(workflow.specification ? [`Specification: ${workflow.specification.text}`] : []),
-      `Objective: ${analysis.objective}`,
-      ...sections,
-      ...included.map((item) => `${item.kind}: ${item.reference}`),
-    ];
-    const candidateText = rawParts.join("\n");
-    const compressedText = normalizeContent(candidateText);
-    const candidateTokens = this.tokenizer.count(candidateText) + included.length * 40;
-    const compressedTokens = this.tokenizer.count(compressedText);
-    const reduction = candidateTokens > 0 ? Math.max(0, Math.min(100, Math.round(((candidateTokens - compressedTokens) / candidateTokens) * 100))) : 0;
-    const items = included.map((item) => ({
+    return this.buildPackageFromScope({
+      workflow,
+      stageId: state.stageId,
+      stageKind: "understand",
+      objective: analysis.objective,
+      objectiveRevision: analysis.intelligenceRevision + analysis.scope.length,
+      intelligenceRevision: analysis.intelligenceRevision,
+      scopeItems: analysis.scope,
+      skillId: state.configuration.skill,
+      previous: state.contextPackage,
+    });
+  }
+
+  /**
+   * Shared context-package builder used by every stage (Understand, Plan). It
+   * delegates to Keystone's canonical DevelopmentContextPackageService: real
+   * tokenizer, dedup, structural/summary compression, budget optimization, and
+   * required-fact completeness validation. No stage implements its own
+   * compression, fixed per-file token additions, or hand-rolled fact coverage.
+   */
+  private async buildPackageFromScope(input: {
+    workflow: CanonicalWorkflow;
+    stageId: string;
+    stageKind: string;
+    objective: string;
+    objectiveRevision: number;
+    intelligenceRevision: number;
+    scopeItems: StageScopeItem[];
+    skillId: string;
+    previous: StageContextPackage | undefined;
+  }): Promise<StageContextPackage> {
+    const { workflow, stageId, stageKind, scopeItems } = input;
+    if (!this.contextPackages || !this.readScopeContent)
+      throw new StageWorkspaceError(
+        "CONTEXT_PIPELINE_UNAVAILABLE",
+        "The context-compression pipeline is not available in this environment. Open the workspace in the Extension Development Host to generate a real context package.",
+        false,
+      );
+    const included = scopeItems.filter((item) => item.included);
+    // Read bounded real source content for every included file/symbol scope item.
+    const scope: DevelopmentContextBuildInput["scope"] = [];
+    for (const item of included) {
+      if (item.kind !== "file" && item.kind !== "test" && item.kind !== "document") continue;
+      let content: string;
+      try {
+        content = (await this.readScopeContent(item.reference)).slice(0, 200_000);
+      } catch (cause) {
+        throw new StageWorkspaceError(
+          "SCOPE_CONTENT_UNREADABLE",
+          `Selected scope item '${item.reference}' could not be read: ${cause instanceof Error ? cause.message : String(cause)}. Exclude it or reindex the repository.`,
+        );
+      }
+      scope.push({ id: item.id, kind: "file", workspaceRelativePath: item.reference, content });
+    }
+    if (scope.length === 0)
+      throw new StageWorkspaceError("CONTEXT_SCOPE_EMPTY", "No readable file scope is selected. Include at least one repository file before generating context.");
+
+    // Real selected skill (from DevelopmentSkillService) and discovered instructions.
+    const skill = this.resolveSkillDefinition(input.skillId);
+    const instructions = await this.resolveSelectedInstructions(workflow.id, stageId, stageKind);
+
+    const workItemId = `${stageKind}:${stageId}`;
+    const buildInput: DevelopmentContextBuildInput = {
+      workflowId: workflow.id,
+      stageId,
+      workItemId,
+      executionProfileId: `${stageKind}:${stageId}`,
+      intent: workflow.intent.text,
+      workType: canonicalWorkTypeLabel(workflow.intent.workType),
+      ...(workflow.specification ? { specification: workflow.specification.text } : {}),
+      objective: input.objective,
+      objectiveRevision: input.objectiveRevision,
+      ...(workflow.specification ? { specificationRevision: workflow.specification.revision } : {}),
+      budgetTokens: 12_000,
+      pinnedItemIds: [],
+      scope,
+      skill: { id: skill.id, name: skill.name, content: skill.promptFragment, contentHash: skill.contentHash },
+      instructions,
+    };
+
+    // Freshness: reuse the persisted package unless a real input changed.
+    await this.contextPackages.invalidate(workItemId, "Regenerating from the current approved scope.");
+    const built = await this.contextPackages.build(buildInput);
+
+    const previous = input.previous;
+    const measurement = built.metrics.tokenizerMeasurement === "exact-local" ? "measured" : "estimated";
+    const items = built.items.map((item) => ({
       id: item.id,
-      label: item.label,
-      kind: item.kind,
-      tokens: this.tokenizer.count(item.reference) + 40,
-      included: true,
+      label: item.title,
+      kind: contextItemKind(item.sourceType),
+      tokens: item.tokenCount,
+      included: item.included,
+      ...(item.reasons[0] ? { reason: item.reasons[0] } : {}),
     }));
-    const requiredFacts = analysis.requiredFacts.map((fact) => ({
-      fact,
-      covered: sections.some((text) => text.toLowerCase().includes(fact.toLowerCase().split(" ")[0] ?? "")),
+    const excludedItems = built.exclusions.map((entry) => ({
+      id: entry.item.id,
+      label: entry.item.title,
+      kind: contextItemKind(entry.item.sourceType),
+      tokens: entry.item.tokenCount,
+      included: false,
+      reason: entry.detail ?? entry.reason,
     }));
-    const previous = state.contextPackage;
     return {
       id: this.createId(),
       revision: (previous?.revision ?? 0) + 1,
-      status: "generated",
-      candidateTokens,
-      compressedTokens,
-      reductionPercent: reduction,
-      tokenMeasurement: "estimated",
-      items: items.slice(0, 300),
-      requiredFacts,
-      intelligenceRevision: analysis.intelligenceRevision,
-      content: compressedText.slice(0, 500_000),
+      // A blocked package (missing critical facts) is surfaced as "stale" so the
+      // stage gate refuses approval per the pipeline's completeness policy.
+      status: built.metadata.status === "blocked" ? "stale" : "generated",
+      candidateTokens: built.rawBaseline.tokenCount,
+      compressedTokens: built.compressed.tokenCount,
+      reductionPercent: Math.max(0, Math.min(100, built.compressed.reductionPercentage)),
+      tokenMeasurement: measurement,
+      items: [...items, ...excludedItems].slice(0, 300),
+      requiredFacts: built.requiredFacts.map((fact) => ({ fact: fact.description, covered: fact.state === "satisfied" })),
+      intelligenceRevision: input.intelligenceRevision,
+      content: this.renderPackageContent(built, skill.name, instructions).slice(0, 500_000),
       generatedAt: this.now(),
     };
+  }
+
+  /** Resolve the selected Development skill via the real DevelopmentSkillService. */
+  private resolveSkillDefinition(skillId: string) {
+    if (!this.skills)
+      throw new StageWorkspaceError("SKILL_SERVICE_UNAVAILABLE", "The skill service is unavailable in this environment.", false);
+    const builtIn = this.skills.builtInDevelopmentSkill();
+    const testGen = this.skills.builtInTestGenerationSkill();
+    const all = this.skills.list([builtIn, testGen], ["development", "qa", "investigation", "understand"]);
+    return all.find((item) => item.id === skillId) ?? all[0] ?? builtIn;
+  }
+
+  /** Resolve the user-selected repository instructions from the real execution configuration. */
+  private async resolveSelectedInstructions(
+    workflowId: string,
+    stageId: string,
+    stageKind = "understand",
+  ): Promise<DevelopmentContextBuildInput["instructions"]> {
+    if (!this.executionConfiguration) return [];
+    const workItemId = `${stageKind}:${stageId}`;
+    const aggregate = await this.executionConfiguration.load(workflowId, workItemId);
+    const selectedIds = aggregate.profile?.instructionIds ?? [];
+    const sources = aggregate.instructions.filter(
+      (item) => item.availability === "available" && selectedIds.includes(item.id),
+    );
+    const instructions: DevelopmentContextBuildInput["instructions"] = [];
+    for (const source of sources) {
+      try {
+        const preview = await this.executionConfiguration.previewInstruction(source.id);
+        instructions.push({ id: source.id, name: source.name, path: source.workspaceRelativePath, content: preview.content, contentHash: source.contentHash ?? "" });
+      } catch {
+        // A configured instruction that cannot be previewed is skipped; the
+        // aggregate's diagnostics already surface its unavailability to the UI.
+      }
+    }
+    return instructions;
+  }
+
+  /** Render a bounded human-readable view of the real compressed package for display. */
+  private renderPackageContent(
+    built: { sections: Array<{ title: string; group: string; itemIds: string[]; tokenCount: number }>; items: Array<{ id: string; title: string; contentMode: string; tokenCount: number; content: string }> },
+    skillName: string,
+    instructions: DevelopmentContextBuildInput["instructions"],
+  ): string {
+    const lines: string[] = ["# Compressed context package", "", `Skill: ${skillName}`, `Instructions: ${instructions.length ? instructions.map((item) => item.name).join(", ") : "none selected"}`, ""];
+    for (const section of built.sections) {
+      lines.push(`## ${section.title} (${section.group}, ${section.tokenCount} tokens)`);
+      for (const itemId of section.itemIds) {
+        const item = built.items.find((candidate) => candidate.id === itemId);
+        if (item) lines.push(`- ${item.title} [${item.contentMode}, ${item.tokenCount} tokens]`);
+      }
+      lines.push("");
+    }
+    return lines.join("\n");
   }
 
   private buildPrompt(workflow: CanonicalWorkflow, state: UnderstandState): StagePrompt {
@@ -825,7 +1383,7 @@ export class StageWorkspaceService {
 }
 
 function emptyState(updatedAt = new Date().toISOString()): StageWorkspacePersistentState {
-  return { schemaVersion: STAGE_WORKSPACE_SCHEMA_VERSION, revision: 0, understand: {}, investigation: {}, updatedAt };
+  return { schemaVersion: STAGE_WORKSPACE_SCHEMA_VERSION, revision: 0, understand: {}, investigation: {}, plan: {}, updatedAt };
 }
 
 function section(title: string, statement: string, confidence: UnderstandingSection["confidence"], evidence: StageEvidence[]): UnderstandingSection {
@@ -834,6 +1392,25 @@ function section(title: string, statement: string, confidence: UnderstandingSect
 
 function fileEvidence(path: string, kind: StageEvidence["kind"]): StageEvidence {
   return { kind, reference: path, label: path };
+}
+
+/** Map a real ContextItem sourceType onto the stage evidence-kind vocabulary. */
+function contextItemKind(sourceType: string): StageEvidence["kind"] {
+  switch (sourceType) {
+    case "symbol":
+      return "symbol";
+    case "call-flow":
+    case "data-flow":
+      return "flow";
+    case "dependency":
+      return "graph-entity";
+    case "instruction":
+    case "specification":
+      return "document";
+    case "repository-file":
+    default:
+      return "file";
+  }
 }
 
 function countTop(values: string[], top: number): Array<[string, number]> {

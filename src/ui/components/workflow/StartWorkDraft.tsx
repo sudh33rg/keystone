@@ -37,8 +37,20 @@ export function StartWorkDraft({ bridge, navigate }: { bridge: HostBridge; navig
       });
       if (response.type === "workflow.creationFailed") { setError(response.error.message); return; }
       clearDraft(bridge);
-      // Make the new workflow the active canonical workflow so Active Work opens it directly.
-      await bridge.request("workflow.setActiveCanonical", { workflowId: response.workflowId }).catch(() => undefined);
+      // Open the created workflow explicitly: persist its id as the selected
+      // workflow so Active Work opens THIS workflow directly, even if marking it
+      // the active canonical workflow later fails. Do not silently navigate to a
+      // previously active workflow.
+      const createdId = response.workflow.id;
+      selectWorkflow(bridge, createdId);
+      // Best-effort sync of the active-canonical pointer; navigation does not
+      // depend on it because the created id is already selected above. A failure
+      // here is non-fatal and surfaced to the console rather than swallowed.
+      void bridge
+        .request("workflow.setActiveCanonical", { workflowId: createdId })
+        .catch((cause: unknown) => {
+          console.warn("Keystone could not set the created workflow active; opening it by id instead.", cause);
+        });
       navigate("/active-work");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Keystone could not create the workflow.");
@@ -85,4 +97,10 @@ function clearDraft(bridge: HostBridge): void {
   const current = bridge.getWebviewState?.();
   if (!current || typeof current !== "object") return;
   const next = { ...current } as Record<string, unknown>; delete next[DRAFT_KEY]; delete next.keystoneSelectedWorkflowId; bridge.setWebviewState?.(next);
+}
+
+/** Persist the selected workflow id so Active Work opens exactly this workflow. */
+function selectWorkflow(bridge: HostBridge, workflowId: string): void {
+  const current = bridge.getWebviewState?.();
+  bridge.setWebviewState?.({ ...(current && typeof current === "object" ? current : {}), keystoneSelectedWorkflowId: workflowId });
 }

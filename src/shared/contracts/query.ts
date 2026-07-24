@@ -27,6 +27,8 @@ export const QueryOperationSchema = z.enum([
   "FORWARD_SLICE",
   "CONDITIONS_FOR",
   "OKF_CONCEPT",
+  "IMPACT",
+  "ARCHITECTURE",
 ]);
 export type QueryOperation = z.infer<typeof QueryOperationSchema>;
 

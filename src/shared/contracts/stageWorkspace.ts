@@ -76,6 +76,7 @@ export const StageCopilotConfigurationSchema = z.object({
   skill: z.string().max(200),
   instructions: z.array(z.string().max(2_000)).max(30),
   capabilities: z.array(StageCapabilitySchema).max(20),
+  discoveryNotice: z.string().max(2_000).optional(),
 }).strict();
 
 export const StageContextItemSchema = z.object({
@@ -209,6 +210,46 @@ export const InvestigationStateSchema = z.object({
   updatedAt: z.string().datetime(),
 }).strict();
 
+export const PlanTaskSchema = z.object({
+  id: z.string().min(1).max(200),
+  title: z.string().min(1).max(500),
+  detail: z.string().max(4_000),
+  dependencies: z.array(z.string().max(200)).max(30),
+  affectedAreas: z.array(z.string().max(1_000)).max(60),
+  acceptanceCriteria: z.array(z.string().max(2_000)).max(30),
+  evidence: z.array(StageEvidenceSchema).max(20),
+}).strict();
+
+export const PlanPrimaryActionSchema = z.enum([
+  "generate-context",
+  "review-approve-context",
+  "delegate",
+  "capture-plan",
+  "approve-plan",
+  "complete-plan",
+  "stage-completed",
+]);
+
+export const PlanStateSchema = z.object({
+  schemaVersion: z.literal(STAGE_WORKSPACE_SCHEMA_VERSION),
+  workflowId: z.string().uuid(),
+  stageId: z.string().uuid(),
+  objective: z.string().max(10_000),
+  understanding: z.array(UnderstandingSectionSchema).max(40),
+  configuration: StageCopilotConfigurationSchema,
+  contextPackage: StageContextPackageSchema.optional(),
+  prompt: StagePromptSchema.optional(),
+  delegations: z.array(StageDelegationRecordSchema).max(50),
+  tasks: z.array(PlanTaskSchema).max(60),
+  validationExpectations: z.array(z.string().max(2_000)).max(30),
+  planResult: z.string().max(200_000),
+  planApproved: z.boolean(),
+  primaryAction: PlanPrimaryActionSchema,
+  completion: StageCompletionGateSchema,
+  completedAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime(),
+}).strict();
+
 export const CompleteStateSchema = z.object({
   schemaVersion: z.literal(STAGE_WORKSPACE_SCHEMA_VERSION),
   workflowId: z.string().uuid(),
@@ -234,6 +275,7 @@ export const StageWorkspacePersistentStateSchema = z.object({
   revision: z.number().int().nonnegative(),
   understand: z.record(z.string(), UnderstandStateSchema),
   investigation: z.record(z.string(), InvestigationStateSchema),
+  plan: z.record(z.string(), PlanStateSchema).optional(),
   updatedAt: z.string().datetime(),
 }).strict();
 
@@ -256,5 +298,8 @@ export type UnderstandPrimaryAction = z.infer<typeof UnderstandPrimaryActionSche
 export type UnderstandState = z.infer<typeof UnderstandStateSchema>;
 export type InvestigationQuestion = z.infer<typeof InvestigationQuestionSchema>;
 export type InvestigationState = z.infer<typeof InvestigationStateSchema>;
+export type PlanTask = z.infer<typeof PlanTaskSchema>;
+export type PlanPrimaryAction = z.infer<typeof PlanPrimaryActionSchema>;
+export type PlanState = z.infer<typeof PlanStateSchema>;
 export type CompleteState = z.infer<typeof CompleteStateSchema>;
 export type StageWorkspacePersistentState = z.infer<typeof StageWorkspacePersistentStateSchema>;

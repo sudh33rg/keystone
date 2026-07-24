@@ -28,8 +28,8 @@ export class OkfQueryService {
   async query(
     context: QueryContext,
     selector: { id?: string; value?: string },
-): Promise<QueryResultItem[]> {
-  const stableId = selector?.id ?? selector?.value;
+  ): Promise<QueryResultItem[]> {
+    const stableId = selector?.id ?? selector?.value;
     if (stableId) {
       const exact = context.entityById.get(stableId);
       if (exact) {

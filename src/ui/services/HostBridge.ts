@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { HomeStateSchema } from "../../shared/contracts/home";
 import { CanonicalWorkflowSchema, WorkflowCreatedResponseSchema, WorkflowCreationFailedResponseSchema } from "../../shared/contracts/canonicalWorkflow";
-import { CompleteStateSchema, InvestigationStateSchema, UnderstandStateSchema } from "../../shared/contracts/stageWorkspace";
+import { CompleteStateSchema, InvestigationStateSchema, PlanStateSchema, UnderstandStateSchema } from "../../shared/contracts/stageWorkspace";
 import { DevelopmentAggregateSchema } from "../../shared/contracts/development";
 import { ExecutionConfigurationAggregateSchema, InstructionPreviewSchema, SkillDefinitionSchema } from "../../shared/contracts/executionConfiguration";
 import {
@@ -295,6 +295,16 @@ function validateResult(type: WebviewRequestType, value: unknown): unknown {
       return CompleteStateSchema.parse(value);
     case "stage.complete.archive":
       return CanonicalWorkflowSchema.parse(value);
+    case "stage.plan.load":
+    case "stage.plan.setConfiguration":
+    case "stage.plan.generateContext":
+    case "stage.plan.approveContext":
+    case "stage.plan.delegate":
+    case "stage.plan.capturePlan":
+    case "stage.plan.approvePlan":
+      return PlanStateSchema.parse(value);
+    case "stage.plan.complete":
+      return z.object({ state: PlanStateSchema, workflow: CanonicalWorkflowSchema }).parse(value);
     case "development.initialize":
     case "development.load":
     case "development.updateObjective":

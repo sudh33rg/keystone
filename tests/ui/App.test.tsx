@@ -76,7 +76,7 @@ describe("App", () => {
     expect(await screen.findByText("fixture-repository")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Start New Work" })).toBeTruthy();
     expect(
-      ["Home", "Active Work", "Intelligence", "History"].every((name) =>
+      ["Home", "Work", "Intelligence", "History"].every((name) =>
         screen.getByRole("button", { name }),
       ),
     ).toBe(true);

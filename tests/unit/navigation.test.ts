@@ -5,7 +5,7 @@ describe("product navigation", () => {
   it("exposes only the four workflow-oriented primary destinations", () => {
     expect(PRIMARY_NAVIGATION.map((item) => item.label)).toEqual([
       "Home",
-      "Active Work",
+      "Work",
       "Intelligence",
       "History",
     ]);

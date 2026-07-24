@@ -431,6 +431,14 @@ export class WebviewMessageRouter {
       case "stage.investigation.complete":
       case "stage.complete.load":
       case "stage.complete.archive":
+      case "stage.plan.load":
+      case "stage.plan.setConfiguration":
+      case "stage.plan.generateContext":
+      case "stage.plan.approveContext":
+      case "stage.plan.delegate":
+      case "stage.plan.capturePlan":
+      case "stage.plan.approvePlan":
+      case "stage.plan.complete":
         await this.routeStageWorkspace(request);
         return;
       case "development.initialize": {
@@ -3611,6 +3619,22 @@ export class WebviewMessageRouter {
           await this.sendSuccess(request.requestId, service.loadComplete(request.payload.workflowId)); return;
         case "stage.complete.archive":
           await this.sendSuccess(request.requestId, await service.archiveWorkflow(request.payload.workflowId)); return;
+        case "stage.plan.load":
+          await this.sendSuccess(request.requestId, await service.loadPlan(request.payload.workflowId)); return;
+        case "stage.plan.setConfiguration":
+          await this.sendSuccess(request.requestId, await service.setPlanConfiguration(request.payload.workflowId, { ...(request.payload.mode ? { mode: request.payload.mode } : {}), ...(request.payload.skill ? { skill: request.payload.skill } : {}) })); return;
+        case "stage.plan.generateContext":
+          await this.sendSuccess(request.requestId, await service.generatePlanContext(request.payload.workflowId)); return;
+        case "stage.plan.approveContext":
+          await this.sendSuccess(request.requestId, await service.approvePlanContext(request.payload.workflowId, request.payload.packageId, request.payload.revision)); return;
+        case "stage.plan.delegate":
+          await this.sendSuccess(request.requestId, await service.delegatePlan(request.payload.workflowId)); return;
+        case "stage.plan.capturePlan":
+          await this.sendSuccess(request.requestId, await service.capturePlan(request.payload.workflowId, { planResult: request.payload.planResult, ...(request.payload.tasks ? { tasks: request.payload.tasks } : {}), ...(request.payload.validationExpectations ? { validationExpectations: request.payload.validationExpectations } : {}) })); return;
+        case "stage.plan.approvePlan":
+          await this.sendSuccess(request.requestId, await service.approvePlan(request.payload.workflowId)); return;
+        case "stage.plan.complete":
+          await this.sendSuccess(request.requestId, await service.completePlan(request.payload.workflowId)); return;
         default:
           return;
       }

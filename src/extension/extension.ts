@@ -339,6 +339,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     intelligenceStore,
     copilot,
     () => { intelligenceRuntime.start(); return Promise.resolve(); },
+    executionConfiguration,
+    new DevelopmentContextPackageService(contextStore),
+    developmentHost ? (path, range) => developmentHost.readScopeContent(path, range) : undefined,
+    skillService,
   );
   await stageWorkspace.initialize();
   const agents = new CopilotAgentRegistry(copilot, delegationStore);
