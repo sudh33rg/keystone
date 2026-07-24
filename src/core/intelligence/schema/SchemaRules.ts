@@ -82,6 +82,9 @@ export function looksLikeRouteSurface(language: string, content: string): boolea
     return /\.(get|post|put|delete|patch)\(\s*["'`]/.test(content) || /@(Get|Post|Put|Delete|Patch|Controller)\(/.test(content);
   }
   if (language === "java") return /@(GetMapping|PostMapping|PutMapping|DeleteMapping|RequestMapping|RestController)/.test(content);
+  if (language === "csharp") {
+    return /\[(HttpGet|HttpPost|HttpPut|HttpDelete|HttpPatch|Route)(\(|\])/.test(content) || /\.Map(Get|Post|Put|Delete|Patch)\(\s*["'`]/.test(content);
+  }
   return false;
 }
 

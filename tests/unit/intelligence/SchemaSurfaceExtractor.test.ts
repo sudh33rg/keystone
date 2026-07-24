@@ -85,6 +85,16 @@ def downgrade():
     op.drop_table("users")
 `;
 
+const ROUTES_CSHARP = `
+[ApiController]
+public class UsersController : ControllerBase {
+  [HttpGet("/users")]
+  public IActionResult ListUsers() => Ok(db.query(User));
+  [HttpPost("/orgs")]
+  public IActionResult CreateOrg() => Ok();
+}
+`;
+
 describe("Phase C — SchemaRules", () => {
   it("detects SQL DDL by content", () => {
     expect(looksLikeSqlDdl("schema.sql", "sql", "CREATE TABLE x (id INT);")).toBe(true);
@@ -102,6 +112,8 @@ describe("Phase C — SchemaRules", () => {
   it("detects route surfaces", () => {
     expect(looksLikeRouteSurface("python", ROUTES_PY)).toBe(true);
     expect(looksLikeRouteSurface("python", "def f(): pass")).toBe(false);
+    expect(looksLikeRouteSurface("csharp", ROUTES_CSHARP)).toBe(true);
+    expect(looksLikeRouteSurface("csharp", "public class Plain {}")).toBe(false);
   });
 });
 
@@ -151,6 +163,14 @@ describe("Phase C — SchemaSurfaceExtractor", () => {
     expect(routes.length).toBeGreaterThan(0);
     expect(routes.some((r) => r.name.includes("GET /users"))).toBe(true);
     expect(result.relationships.some((r) => r.type === "keystone.core.ROUTE_EXPOSES")).toBe(true);
+  });
+
+  it("parses ASP.NET attribute routes into Route symbols", async () => {
+    const svc = new SchemaSurfaceExtractor();
+    svc.enabled = true;
+    const result = await svc.extract("UsersController.cs", "csharp", ROUTES_CSHARP, testProvider());
+    const routes = result.symbols.filter((s) => s.kind === "route").map((s) => s.name).sort();
+    expect(routes).toEqual(["GET /users", "POST /orgs"]);
   });
 
   it("is inert when disabled", async () => {

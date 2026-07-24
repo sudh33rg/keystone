@@ -326,6 +326,9 @@ export function QueryWorkspace({
                       <p>{(item.details.riskFactors as string[]).join(" · ")}</p>
                     )}
                   </button>
+                  {item.okfConcept && (
+                    <OkfConceptCard concept={item.okfConcept} onInspect={inspect} />
+                  )}
                   <div className="query-item-actions">
                     <button onClick={() => followUp("dependencies", item.id)}>Dependencies</button>
                     <button onClick={() => followUp("impact", item.id)}>Impact</button>
@@ -653,6 +656,83 @@ function FlowPath({
         </small>
       </details>
     </article>
+  );
+}
+
+function OkfConceptCard({
+  concept,
+  onInspect,
+}: {
+  concept: NonNullable<IntelligenceQueryResult["data"]["items"][number]["okfConcept"]>;
+  onInspect: (id: string) => void;
+}): React.JSX.Element {
+  const hasMethods = concept.methods.length > 0;
+  const hasCalls = concept.calls.length > 0;
+  const hasCalledBy = concept.calledBy.length > 0;
+  const hasImports = concept.imports.length > 0;
+  if (!hasMethods && !hasCalls && !hasCalledBy && !hasImports && !concept.description) {
+    return <p className="okf-concept-description">{concept.description || "OKF concept"}</p>;
+  }
+  return (
+    <div className="okf-concept-card" aria-label="OKF concept detail">
+      {concept.description && <p className="okf-concept-description">{concept.description}</p>}
+      <div className="okf-concept-grid">
+        {hasMethods && (
+          <section aria-label="Methods">
+            <strong>Methods</strong>
+            <ul>
+              {concept.methods.map((method) => (
+                <li key={method.id}>
+                  <button onClick={() => onInspect(method.id)}>{method.name}</button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+        {hasCalls && (
+          <section aria-label="Calls">
+            <strong>Calls</strong>
+            <ul>
+              {concept.calls.map((call) => (
+                <li key={call.id}>
+                  <button onClick={() => onInspect(call.id)}>{call.name}</button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+        {hasCalledBy && (
+          <section aria-label="Called by">
+            <strong>Called by</strong>
+            <ul>
+              {concept.calledBy.map((caller) => (
+                <li key={caller.id}>
+                  <button onClick={() => onInspect(caller.id)}>{caller.name}</button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+        {hasImports && (
+          <section aria-label="Imports">
+            <strong>Imports</strong>
+            <ul>
+              {concept.imports.map((imp) => (
+                <li key={imp.id}>
+                  <button onClick={() => onInspect(imp.id)}>{imp.name}</button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+      </div>
+      {concept.evidenceIds.length > 0 && (
+        <p className="okf-concept-evidence-count">
+          {concept.evidenceIds.length} supporting evidence record
+          {concept.evidenceIds.length === 1 ? "" : "s"}
+        </p>
+      )}
+    </div>
   );
 }
 

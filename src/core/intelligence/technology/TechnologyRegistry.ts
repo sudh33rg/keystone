@@ -46,9 +46,23 @@ const FRAMEWORK_RULES: Record<string, string> = {
   nestjs: "NestJS",
   koa: "Koa",
   next: "Next.js",
+  nuxt: "Nuxt",
+  remix: "Remix",
+  "@remix-run/node": "Remix",
+  astro: "Astro",
+  svelte: "Svelte",
+  "@sveltejs/kit": "SvelteKit",
+  "solid-js": "SolidJS",
   "@angular/core": "Angular",
   react: "React",
   vue: "Vue",
+  // Mobile / cross-platform
+  "react-native": "React Native",
+  expo: "Expo",
+  "expo-modules-core": "Expo",
+  flutter: "Flutter",
+  ionic: "Ionic",
+  "@ionic/core": "Ionic",
   // Go
   gin: "Gin",
   echo: "Echo",
@@ -67,13 +81,26 @@ const FRAMEWORK_RULES: Record<string, string> = {
   springboot: "Spring Boot",
   micronaut: "Micronaut",
   quarkus: "Quarkus",
+  play: "Play Framework",
+  "play-framework": "Play Framework",
+  // .NET / C#
+  "microsoft.aspnetcore.app": "ASP.NET Core",
+  "microsoft.aspnetcore": "ASP.NET Core",
+  aspnetcore: "ASP.NET Core",
+  blazor: "Blazor",
+  "microsoft.aspnetcore.components": "Blazor",
+  // Elixir
+  phoenix: "Phoenix",
   // Ruby
   rails: "Rails",
   sinatra: "Sinatra",
   hanami: "Hanami",
   // PHP
   laravel: "Laravel",
+  "laravel/framework": "Laravel",
   symfony: "Symfony",
+  "drupal/core": "Drupal",
+  drupal: "Drupal",
 };
 
 const ORM_RULES: Record<string, string> = {

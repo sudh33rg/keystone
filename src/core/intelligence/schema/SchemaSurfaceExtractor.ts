@@ -317,7 +317,9 @@ async function parseRoutes(
       ? /@(app|router)\.(get|post|put|delete|patch)\(\s*["'`]([^"'`]+)["'`]/
       : language === "java"
         ? /@(Get|Post|Put|Delete|Patch|Request)Mapping\(\s*["'`]([^"'`]+)["'`]/
-        : /\.(get|post|put|delete|patch)\(\s*["'`]([^"'`]+)["'`]|@(Get|Post|Put|Delete|Patch)\(\s*["'`]([^"'`]+)["'`]/;
+        : language === "csharp"
+          ? /\[Http(Get|Post|Put|Delete|Patch)\(\s*["'`]([^"'`]+)["'`]|\.Map(Get|Post|Put|Delete|Patch)\(\s*["'`]([^"'`]+)["'`]/
+          : /\.(get|post|put|delete|patch)\(\s*["'`]([^"'`]+)["'`]|@(Get|Post|Put|Delete|Patch)\(\s*["'`]([^"'`]+)["'`]/;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!;
@@ -328,8 +330,17 @@ async function parseRoutes(
         ? (r[2] ?? r[1] ?? "get")
         : language === "java"
           ? (r[1] ?? "get")
-          : (r[1] ?? r[3] ?? r[4] ?? "get");
-    const path = language === "python" ? (r[3] ?? "/") : language === "java" ? (r[2] ?? "/") : (r[2] ?? r[4] ?? "/");
+          : language === "csharp"
+            ? (r[1] ?? r[3] ?? "get")
+            : (r[1] ?? r[3] ?? r[4] ?? "get");
+    const path =
+      language === "python"
+        ? (r[3] ?? "/")
+        : language === "java"
+          ? (r[2] ?? "/")
+          : language === "csharp"
+            ? (r[2] ?? r[4] ?? "/")
+            : (r[2] ?? r[4] ?? "/");
     const method = verb.toUpperCase();
     const routeId = await provider.entity("route", `${method} ${path}`, `${method}#${path}`);
     symbols.push({

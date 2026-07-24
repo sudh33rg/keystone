@@ -84,6 +84,36 @@ describe("complete deterministic query engine", () => {
     expect(result.resolvedSeeds[0]?.ambiguous).toBe(true);
     expect(result.diagnostics.some((item) => item.code === "ambiguous-seed")).toBe(true);
   });
+  it("reranks search results toward a center entity when centerEntityId is set", async () => {
+    const { engine } = fixture();
+    const base = query("SEARCH", "Order");
+    const plain = await engine.query(base);
+    const centered = await engine.query({
+      ...base,
+      filters: { confidenceAtLeast: 0, centerEntityId: "entity:repository" },
+    });
+    const centeredItem = centered.data.items.find((item) => item.id === "entity:service");
+    const plainItem = plain.data.items.find((item) => item.id === "entity:service");
+    expect(centeredItem).toBeDefined();
+    expect(plainItem).toBeDefined();
+    expect(centeredItem!.score).toBeGreaterThan(plainItem!.score);
+    expect(centeredItem!.rankingReasons.some((reason) => reason.includes("graph distance"))).toBe(
+      true,
+    );
+  });
+  it("ignores centerEntityId for unreachable or unknown centers", async () => {
+    const { engine } = fixture();
+    const result = await engine.query({
+      ...query("SEARCH", "Order"),
+      filters: { confidenceAtLeast: 0, centerEntityId: "entity:does-not-exist" },
+    });
+    expect(result.data.items.length).toBeGreaterThan(0);
+    expect(
+      result.data.items.every(
+        (item) => !item.rankingReasons.some((reason) => reason.includes("graph distance")),
+      ),
+    ).toBe(true);
+  });
   it("searches qualified names and paginates through bounded limits", async () => {
     const { engine } = fixture();
     const first = await engine.query({
@@ -538,6 +568,21 @@ describe("complete deterministic query engine", () => {
         (item) => item.id === "entity:cancel" && item.group === "untested-cpg-branch",
       ),
     ).toBe(true);
+  });
+
+  it("exposes SECURITY_SCAN with attack-surface sections and metrics", async () => {
+    const { engine } = fixture();
+    const result = await engine.query(queryNoSeed("SECURITY_SCAN"));
+    expect(result.data.kind).toBe("security-scan");
+    expect(result.data.sections.attackSurface).toBeDefined();
+    expect(result.data.sections.sensitiveData).toBeDefined();
+    expect(result.data.metrics.attackSurfaceEntries).toBeGreaterThanOrEqual(0);
+    expect(result.data.metrics.scannedEntryPoints).toBeGreaterThan(0);
+  });
+
+  it("SECURITY_SCAN requires no seed and is reachable via the natural-language parser", () => {
+    const parsed = new QueryCompiler().compile("security scan", { generation: 2 });
+    expect(parsed.query?.operation).toBe("SECURITY_SCAN");
   });
 
   it("compares retained generations for signature, route, and schema changes", async () => {

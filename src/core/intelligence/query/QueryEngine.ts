@@ -27,6 +27,7 @@ import {
 import { QueryCache } from "./QueryCache";
 import { QueryCompiler } from "./QueryParser";
 import { OkfQueryService } from "./OkfQueryService";
+import { SecurityScanQueryService } from "./SecurityScanQueryService";
 
 type Entity = IntelligenceSymbolRecord | IntelligenceFileRecord;
 type Classification = QueryResultItem["classification"];
@@ -163,6 +164,48 @@ export class QueryContext {
       return value ? [value] : [];
     });
   }
+  /**
+   * Bounded, undirected BFS distance from a center entity, memoized per center.
+   * Used by the graph-distance reranker (`filters.centerEntityId`). Returns
+   * undefined when the entity is unreachable within the depth/node bounds.
+   */
+  distanceFrom(centerId: string, entityId: string): number | undefined {
+    if (this.distanceCenter !== centerId) {
+      this.distanceCenter = centerId;
+      this.distanceMap = this.computeDistances(centerId);
+    }
+    return this.distanceMap?.get(entityId);
+  }
+  private distanceCenter?: string;
+  private distanceMap?: Map<string, number>;
+  private computeDistances(centerId: string): Map<string, number> {
+    const distances = new Map<string, number>([[centerId, 0]]);
+    if (!this.entityById.has(centerId)) return distances;
+    const maxDepth = Math.min(this.query.limits.depth, 6);
+    const maxNodes = 5000;
+    let frontier = [centerId];
+    for (let depth = 1; depth <= maxDepth && frontier.length; depth++) {
+      const next: string[] = [];
+      for (const id of frontier) {
+        const neighborIds = [
+          ...(this.incoming.get(id) ?? []),
+          ...(this.outgoing.get(id) ?? []),
+        ];
+        for (const relationshipId of neighborIds) {
+          const relationship = this.relationshipById.get(relationshipId);
+          if (!relationship) continue;
+          const neighbor =
+            relationship.sourceId === id ? relationship.targetId : relationship.sourceId;
+          if (distances.has(neighbor)) continue;
+          distances.set(neighbor, depth);
+          next.push(neighbor);
+          if (distances.size >= maxNodes) return distances;
+        }
+      }
+      frontier = next;
+    }
+    return distances;
+  }
 }
 
 export const RANKING_WEIGHTS = Object.freeze({
@@ -179,6 +222,7 @@ export const RANKING_WEIGHTS = Object.freeze({
   pinned: 70,
   confidence: 100,
   centrality: 5,
+  proximity: 300,
 });
 export class ResultRanker {
   score(
@@ -267,6 +311,15 @@ export class ResultRanker {
     if (centrality) {
       score += Math.min(centrality, 20) * RANKING_WEIGHTS.centrality;
       reasons.push(`graph degree ${centrality}`);
+    }
+    const centerId = context.query.filters.centerEntityId;
+    if (centerId && centerId !== entity.id) {
+      const distance = context.distanceFrom(centerId, entity.id);
+      if (distance !== undefined && distance > 0) {
+        const proximity = Math.round(RANKING_WEIGHTS.proximity / distance);
+        score += proximity;
+        reasons.push(`graph distance ${distance} from center`);
+      }
     }
     return { score, reasons };
   }
@@ -1732,7 +1785,9 @@ export class QueryPlanner {
     const requiresSeeds =
       query.operation === "PATH"
         ? 2
-        : ["SEARCH", "CYCLES", "ARCHITECTURE", "DIFFERENCE_BETWEEN"].includes(query.operation)
+        : ["SEARCH", "CYCLES", "ARCHITECTURE", "DIFFERENCE_BETWEEN", "SECURITY_SCAN"].includes(
+              query.operation,
+            )
           ? 0
           : 1;
     const cpgRequired = [
@@ -1801,6 +1856,7 @@ export class QueryExecutor {
   readonly dependencies = new DependencyQueryService(this.traversal);
   readonly usages = new UsageQueryService();
   readonly tests = new TestQueryService();
+  readonly security = new SecurityScanQueryService();
   readonly okf: OkfQueryService;
   readonly changes: ChangeQueryService;
   readonly cpg: CpgQueryFacade;
@@ -1882,8 +1938,10 @@ export class QueryExecutor {
       case "CONDITIONS_FOR":
         return this.cpg.execute(context, resolved);
       case "OKF_CONCEPT": {
+        const seedSelector = resolved[0]?.selector;
         const results = await this.okf.query(context, {
           id: resolved[0]?.selected?.id,
+          value: seedSelector?.value ?? seedSelector?.id,
         });
         return QueryDataSchema.parse({
           kind: "okf-concepts",
@@ -1895,6 +1953,8 @@ export class QueryExecutor {
           metrics: { concepts: results.length },
         });
       }
+      case "SECURITY_SCAN":
+        return this.security.scan(context);
     }
   }
 }

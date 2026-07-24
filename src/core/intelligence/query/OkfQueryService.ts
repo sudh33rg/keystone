@@ -2,6 +2,7 @@ import type { IntelligenceSnapshotReader } from "../../persistence/IntelligenceS
 import type {
   IntelligenceEvidenceRecord,
   IntelligenceFileRecord,
+  IntelligenceRelationshipRecord,
   IntelligenceSnapshot,
   IntelligenceSymbolRecord,
 } from "../../../shared/contracts/intelligence";
@@ -13,12 +14,22 @@ import {
 
 type Entity = IntelligenceSymbolRecord | IntelligenceFileRecord;
 
+type OkfConcept = NonNullable<QueryResultItem["okfConcept"]>;
+
+const METHOD_TYPES = new Set(["keystone.core.Method", "keystone.core.Function"]);
+const CALL_TYPES = new Set(["keystone.core.CALLS"]);
+const IMPORT_TYPES = new Set(["keystone.core.IMPORTS", "keystone.core.RE_EXPORTS"]);
+const DECLARE_TYPES = new Set(["keystone.core.DECLARES", "keystone.core.CONTAINS"]);
+
 /**
  * OKF Query Service
  *
  * Provides queries for Open Knowledge Graph concepts derived from
  * the intelligence layer. Returns concepts as structured data
- * with full provenance evidence.
+ * with full provenance evidence. Each concept is enriched from the
+ * existing snapshot graph with its declared methods, outgoing calls,
+ * incoming callers, imports, a description drawn from evidence, and
+ * the evidence ids that back it.
  */
 export class OkfQueryService {
   constructor(
@@ -29,9 +40,8 @@ export class OkfQueryService {
     context: QueryContext,
     selector: { id?: string; value?: string },
   ): Promise<QueryResultItem[]> {
-    const stableId = selector?.id ?? selector?.value;
-    if (stableId) {
-      const exact = context.entityById.get(stableId);
+    if (selector?.id) {
+      const exact = context.entityById.get(selector.id);
       if (exact) {
         if (
           !matchesEntityFilters(
@@ -42,12 +52,14 @@ export class OkfQueryService {
           )
         )
           return [];
-        const score = selector.id === stableId ? 1200 : 900;
-        return [toItem(exact, score, ["OKF concept entity"])] as QueryResultItem[];
+        const score = 1200;
+        return [this.withConcept(toItem(exact, score, ["OKF concept entity"]), exact, context)];
       }
       return [];
     }
 
+    // No resolved stable id — fall back to ranked value search across entities.
+    if (!selector?.value) return [];
     const results: QueryResultItem[] = [];
     let index = 0;
     for (const entity of context.entityById.values()) {
@@ -63,9 +75,19 @@ export class OkfQueryService {
         continue;
       const score = rankOkfEntity(entity, selector ?? {});
       if (score < 200) continue;
-      results.push(toItem(entity, score, ["OKF concept entity"]));
+      results.push(this.withConcept(toItem(entity, score, ["OKF concept entity"]), entity, context));
     }
-    return results.sort((a, b) => b.score - a.score);
+    return results
+      .sort((a, b) => b.score - a.score)
+      .slice(0, context.query.limits.results);
+  }
+
+  private withConcept(
+    item: QueryResultItem,
+    entity: Entity,
+    context: QueryContext,
+  ): QueryResultItem {
+    return { ...item, okfConcept: buildOkfConcept(entity, context) };
   }
 }
 
@@ -78,6 +100,80 @@ interface QueryContext {
   readonly diagnostics: QueryDiagnostic[];
   check(): void;
   yield(index: number, interval?: number): Promise<void>;
+  relationships(
+    id: string,
+    direction: "incoming" | "outgoing" | "both",
+  ): IntelligenceRelationshipRecord[];
+}
+
+function buildOkfConcept(entity: Entity, context: QueryContext): OkfConcept {
+  const outgoing = context.relationships(entity.id, "outgoing");
+  const incoming = context.relationships(entity.id, "incoming");
+
+  const methods: OkfConcept["methods"] = [];
+  for (const relationship of outgoing) {
+    if (!DECLARE_TYPES.has(relationship.type)) continue;
+    const child = context.entityById.get(relationship.targetId);
+    if (!child || !("type" in child) || !METHOD_TYPES.has(child.type)) continue;
+    if (methods.length >= 50) break;
+    methods.push({
+      id: child.id,
+      name: entityName(child),
+      line: "range" in child ? child.range.startLine : 0,
+    });
+  }
+
+  const calls: OkfConcept["calls"] = [];
+  for (const relationship of outgoing) {
+    if (!CALL_TYPES.has(relationship.type)) continue;
+    const target = context.entityById.get(relationship.targetId);
+    if (!target) continue;
+    if (calls.length >= 100) break;
+    calls.push({ id: target.id, name: entityName(target) });
+  }
+
+  const calledBy: OkfConcept["calledBy"] = [];
+  for (const relationship of incoming) {
+    if (!CALL_TYPES.has(relationship.type)) continue;
+    const source = context.entityById.get(relationship.sourceId);
+    if (!source) continue;
+    if (calledBy.length >= 100) break;
+    calledBy.push({ id: source.id, name: entityName(source) });
+  }
+
+  const imports: OkfConcept["imports"] = [];
+  const importScopeId = "fileId" in entity ? entity.fileId : entity.id;
+  for (const relationship of context.relationships(importScopeId, "outgoing")) {
+    if (!IMPORT_TYPES.has(relationship.type)) continue;
+    const target = context.entityById.get(relationship.targetId);
+    if (!target) continue;
+    if (imports.length >= 100) break;
+    imports.push({ id: target.id, name: entityName(target) });
+  }
+
+  const evidenceIds = ("evidenceIds" in entity ? entity.evidenceIds : []).slice(0, 30);
+  const description = firstEvidenceStatement(evidenceIds, context);
+
+  return {
+    description,
+    methods,
+    calls: dedupeRefs(calls),
+    calledBy: dedupeRefs(calledBy),
+    imports: dedupeRefs(imports),
+    evidenceIds,
+  };
+}
+
+function dedupeRefs<T extends { id: string }>(refs: T[]): T[] {
+  return [...new Map(refs.map((ref) => [ref.id, ref])).values()];
+}
+
+function firstEvidenceStatement(evidenceIds: string[], context: QueryContext): string {
+  for (const id of evidenceIds) {
+    const evidence = context.evidenceById.get(id);
+    if (evidence?.statement) return evidence.statement.slice(0, 1000);
+  }
+  return "";
 }
 
 function matchesEntityFilters(

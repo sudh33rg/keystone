@@ -69,6 +69,24 @@ describe("Phase B — TechnologyRegistry", () => {
     expect(matchKeyword("rabbitmq")?.kind).toBe("external-service");
   });
 
+  it("matches extended framework keywords (mobile, .NET, JVM, PHP, meta-frameworks)", () => {
+    expect(matchKeyword("react-native")?.name).toBe("React Native");
+    expect(matchKeyword("expo")?.name).toBe("Expo");
+    expect(matchKeyword("aspnetcore")?.name).toBe("ASP.NET Core");
+    expect(matchKeyword("microsoft.aspnetcore.app")?.name).toBe("ASP.NET Core");
+    expect(matchKeyword("blazor")?.name).toBe("Blazor");
+    expect(matchKeyword("play")?.name).toBe("Play Framework");
+    expect(matchKeyword("phoenix")?.name).toBe("Phoenix");
+    expect(matchKeyword("drupal")?.name).toBe("Drupal");
+    expect(matchKeyword("nuxt")?.name).toBe("Nuxt");
+    expect(matchKeyword("remix")?.name).toBe("Remix");
+    expect(matchKeyword("@sveltejs/kit")?.name).toBe("SvelteKit");
+    expect(matchKeyword("ionic")?.name).toBe("Ionic");
+    for (const keyword of ["react-native", "expo", "aspnetcore", "blazor", "play", "phoenix", "drupal"]) {
+      expect(matchKeyword(keyword)?.kind).toBe("framework");
+    }
+  });
+
   it("parses dependency lists from known manifests", () => {
     const fromPy = parseManifestDependencies("pyproject.toml", PYPROJECT);
     const detected = detectFromDependencies(fromPy).map((d) => d.name).sort();

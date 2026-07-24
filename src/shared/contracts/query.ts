@@ -27,8 +27,7 @@ export const QueryOperationSchema = z.enum([
   "FORWARD_SLICE",
   "CONDITIONS_FOR",
   "OKF_CONCEPT",
-  "IMPACT",
-  "ARCHITECTURE",
+  "SECURITY_SCAN",
 ]);
 export type QueryOperation = z.infer<typeof QueryOperationSchema>;
 
@@ -80,6 +79,7 @@ export const QueryFiltersSchema = z
     compareTo: z.string().min(1).optional(),
     currentFile: z.string().max(1024).optional(),
     pinnedEntityIds: z.array(z.string().min(1)).max(50).optional(),
+    centerEntityId: z.string().min(1).optional(),
     publicOnly: z.boolean().optional(),
   })
   .strict();
@@ -228,6 +228,24 @@ export const QueryResultItemSchema = z
     rankingReasons: z.array(z.string()).max(20),
     group: z.string().optional(),
     details: z.record(z.string(), PrimitiveSchema).optional(),
+    okfConcept: z
+      .object({
+        description: z.string().max(1000),
+        methods: z
+          .array(
+            z.object({
+              id: z.string(),
+              name: z.string(),
+              line: z.number().int().nonnegative(),
+            }),
+          )
+          .max(50),
+        calls: z.array(z.object({ id: z.string(), name: z.string() })).max(100),
+        calledBy: z.array(z.object({ id: z.string(), name: z.string() })).max(100),
+        imports: z.array(z.object({ id: z.string(), name: z.string() })).max(100),
+        evidenceIds: z.array(z.string()).max(30),
+      })
+      .optional(),
   })
   .strict();
 export type QueryResultItem = z.infer<typeof QueryResultItemSchema>;

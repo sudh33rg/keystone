@@ -368,6 +368,15 @@ button:focus-visible { outline: 2px solid var(--vscode-focusBorder, #7aa2f7); ou
 .query-item-actions { display: flex; gap: 4px; margin-top: 8px; }
 .query-item-actions button, .query-sections details button { color: var(--ks-accent); background: transparent; border: 1px solid var(--ks-border); padding: 4px 6px; }
 .query-items small, .query-explanation span, .query-explanation small { display: block; color: var(--ks-muted); }
+.okf-concept-card { margin-top: 8px; border-top: 1px dashed var(--ks-border); padding-top: 8px; }
+.okf-concept-description { color: var(--ks-muted); margin: 0 0 6px; }
+.okf-concept-grid { display: flex; flex-wrap: wrap; gap: 12px; }
+.okf-concept-grid section { min-width: 110px; }
+.okf-concept-grid strong { display: block; font-size: 11px; text-transform: uppercase; color: var(--ks-muted); margin-bottom: 4px; }
+.okf-concept-grid ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 3px; }
+.okf-concept-grid button { color: var(--ks-accent); background: transparent; border: 0; padding: 0; text-align: left; cursor: pointer; }
+.okf-concept-grid button:hover { text-decoration: underline; }
+.okf-concept-evidence-count { color: var(--ks-muted); font-size: 12px; margin: 8px 0 0; }
 .query-path ol { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; padding: 0; }
 .query-path li { padding: 0; background: var(--vscode-list-hoverBackground); }
 .query-path li button { padding: 6px 9px; color: inherit; background: transparent; border: 0; text-align: left; }
