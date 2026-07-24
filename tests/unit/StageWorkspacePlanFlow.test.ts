@@ -120,7 +120,9 @@ function seedUnderstand(workflow: CanonicalWorkflow): StageWorkspacePersistentSt
         workItemId: randomUUID(),
         completion: { allowed: true, unmet: [] },
         intelligence: { status: "ready", generation: 1, files: 5, symbols: 20, relationships: 12, message: "ready" },
-        configuration: { mode: "clipboard", agentId: "", agentLabel: "", agentAvailable: false, skill: "", instructions: [], capabilities: [], agentOptions: [], skillOptions: [], conflicts: [] },
+        configuration: { mode: "clipboard", agentId: "", agentLabel: "", agentAvailable: false, skill: "keystone-development", instructions: [], capabilities: [], agentOptions: [], manualAgentOptions: [], skillOptions: [], instructionOptions: [], conflicts: [] },
+        selectedInstructionIds: [],
+        conflictResolutions: [],
         delegations: [],
         analysis: {
           id: randomUUID(),
@@ -182,7 +184,7 @@ describe("StageWorkspaceService Plan stage", () => {
   });
 
   it("completing the plan stage marks Development ready (feature -> development)", async () => {
-    await service.setPlanConfiguration(workflow.id, { mode: "clipboard" });
+    await service.setPlanConfiguration(workflow.id, { mode: "clipboard", skill: "keystone-development" });
     const plan = await service.generatePlanContext(workflow.id);
     await service.approvePlanContext(workflow.id, plan.contextPackage!.id, plan.contextPackage!.revision);
     await service.delegatePlan(workflow.id);
@@ -195,7 +197,7 @@ describe("StageWorkspaceService Plan stage", () => {
   });
 
   it("blocks completion until context is approved, a result is captured, and a task exists", async () => {
-    await service.setPlanConfiguration(workflow.id, { mode: "clipboard" });
+    await service.setPlanConfiguration(workflow.id, { mode: "clipboard", skill: "keystone-development" });
     await service.generatePlanContext(workflow.id);
     // Before any approval/capture, completion must be blocked.
     await expect(service.completePlan(workflow.id)).rejects.toThrow(/cannot complete yet/);

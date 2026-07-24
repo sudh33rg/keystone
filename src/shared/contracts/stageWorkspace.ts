@@ -72,6 +72,16 @@ export const StageCapabilitySchema = z.object({
   detail: z.string().max(2_000),
 }).strict();
 
+export const StageInstructionOptionSchema = z.object({
+  id: z.string().min(1).max(200),
+  name: z.string().min(1).max(500),
+  path: z.string().min(1).max(10_000),
+  source: z.string().min(1).max(100),
+  availability: z.enum(["available", "missing", "unreadable", "unsupported"]),
+  selected: z.boolean(),
+}).strict();
+export type StageInstructionOption = z.infer<typeof StageInstructionOptionSchema>;
+
 export const StageCopilotConfigurationSchema = z.object({
   mode: StageDelegationModeSchema,
   agentId: z.string().max(200),
@@ -90,7 +100,12 @@ export const StageCopilotConfigurationSchema = z.object({
     displayName: z.string().min(1).max(200),
     availability: z.enum(["available", "unavailable"]).optional(),
   }).passthrough()).max(200),
+  manualAgentOptions: z.array(z.object({
+    id: z.string().uuid(),
+    displayName: z.string().min(1).max(200),
+  }).strict()).max(200),
   skillOptions: z.array(SkillDefinitionSchema).max(200),
+  instructionOptions: z.array(StageInstructionOptionSchema).max(100),
   conflicts: z.array(InstructionConflictSchema).max(100),
 }).strict();
 
@@ -117,6 +132,9 @@ export const StageContextPackageSchema = z.object({
   content: z.string().max(500_000),
   generatedAt: z.string().datetime(),
   approvedAt: z.string().datetime().optional(),
+  executionProfileId: z.string().uuid().optional(),
+  executionProfileRevision: z.number().int().positive().optional(),
+  executionProfileContentHash: z.string().max(200).optional(),
 }).strict();
 
 export const StagePromptSchema = z.object({
@@ -126,6 +144,9 @@ export const StagePromptSchema = z.object({
   contentHash: z.string().min(1).max(200),
   contextPackageRevision: z.number().int().positive(),
   preparedAt: z.string().datetime(),
+  executionProfileId: z.string().uuid().optional(),
+  executionProfileRevision: z.number().int().positive().optional(),
+  executionProfileContentHash: z.string().max(200).optional(),
 }).strict();
 
 export const StageDelegationStatusSchema = z.enum(["chat-opened", "copied-chat-opened", "copied", "manual", "failed"]);
@@ -140,6 +161,8 @@ export const StageDelegationRecordSchema = z.object({
   promptRevision: z.number().int().positive(),
   contextPackageRevision: z.number().int().positive(),
   executionProfileRevision: z.number().int().nonnegative(),
+  executionProfileId: z.string().uuid().optional(),
+  executionProfileContentHash: z.string().max(200).optional(),
   failureReason: z.string().max(4_000).optional(),
   createdAt: z.string().datetime(),
 }).strict();
@@ -184,6 +207,13 @@ export const UnderstandPrimaryActionSchema = z.enum([
 
 export const StageCompletionGateSchema = z.object({ allowed: z.boolean(), unmet: z.array(z.string().max(500)).max(20) }).strict();
 
+export const StageConflictResolutionSchema = z.object({
+  conflictId: z.string().min(1).max(200),
+  resolution: z.enum(["win-first", "win-second", "exclude-first", "exclude-second", "acknowledge"]),
+  note: z.string().max(2_000).optional(),
+}).strict();
+export type StageConflictResolution = z.infer<typeof StageConflictResolutionSchema>;
+
 export const UnderstandStateSchema = z.object({
   schemaVersion: z.literal(STAGE_WORKSPACE_SCHEMA_VERSION),
   workflowId: z.string().uuid(),
@@ -193,13 +223,17 @@ export const UnderstandStateSchema = z.object({
   intelligence: StageIntelligenceStateSchema,
   analysis: IntentAnalysisSchema.optional(),
   configuration: StageCopilotConfigurationSchema,
+  selectedInstructionIds: z.array(z.string().min(1).max(200)).max(100),
+  conflictResolutions: z.array(StageConflictResolutionSchema).max(100),
   contextPackage: StageContextPackageSchema.optional(),
   prompt: StagePromptSchema.optional(),
   delegations: z.array(StageDelegationRecordSchema).max(50),
   result: StageResultSchema.optional(),
   validation: StageValidationSchema.optional(),
   primaryAction: UnderstandPrimaryActionSchema,
+  executionProfileId: z.string().uuid().optional(),
   executionProfileRevision: z.number().int().nonnegative().optional(),
+  executionProfileContentHash: z.string().max(200).optional(),
   completedAt: z.string().datetime().optional(),
   updatedAt: z.string().datetime(),
 }).strict();
@@ -264,6 +298,10 @@ export const PlanStateSchema = z.object({
   planResult: z.string().max(200_000),
   planApproved: z.boolean(),
   primaryAction: PlanPrimaryActionSchema,
+  selectedInstructionIds: z.array(z.string().min(1).max(200)).max(100).optional(),
+  executionProfileId: z.string().uuid().optional(),
+  executionProfileRevision: z.number().int().nonnegative().optional(),
+  executionProfileContentHash: z.string().max(200).optional(),
   completion: StageCompletionGateSchema,
   completedAt: z.string().datetime().optional(),
   updatedAt: z.string().datetime(),

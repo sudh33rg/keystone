@@ -3592,9 +3592,16 @@ export class WebviewMessageRouter {
         case "stage.understand.resolveAmbiguity":
           await this.sendSuccess(request.requestId, await service.resolveAmbiguity(request.payload.workflowId, request.payload.ambiguityId, request.payload.resolution)); return;
         case "stage.understand.setConfiguration": {
-          const currentState = await service.loadUnderstand(request.payload.workflowId);
-          await this.sendSuccess(request.requestId, await service.setConfiguration(request.payload.workflowId, { ...(request.payload.mode ? { mode: request.payload.mode } : {}), ...(request.payload.skill ? { skill: request.payload.skill } : {}), workItemId: currentState.workItemId })); return;
+          await this.sendSuccess(request.requestId, await service.setConfiguration(request.payload.workflowId, {
+            ...(request.payload.mode ? { mode: request.payload.mode } : {}),
+            ...(request.payload.skill ? { skill: request.payload.skill } : {}),
+            ...(request.payload.agentId !== undefined ? { agentId: request.payload.agentId } : {}),
+            ...(request.payload.instructionIds ? { instructionIds: request.payload.instructionIds } : {}),
+            ...(request.payload.conflictResolutions ? { conflictResolutions: request.payload.conflictResolutions } : {}),
+          })); return;
         }
+        case "stage.understand.previewInstruction":
+          await this.sendSuccess(request.requestId, await service.previewInstruction(request.payload.instructionId)); return;
         case "stage.understand.generateContext":
           await this.sendSuccess(request.requestId, await service.generateContext(request.payload.workflowId)); return;
         case "stage.understand.approveContext":

@@ -44,7 +44,14 @@ export function UnderstandStage({ bridge, workflowId, onWorkflowChange }: Unders
   const [excludeDraft, setExcludeDraft] = useState<{ itemId: string; reason: string }>();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [draftAgentId, setDraftAgentId] = useState(state?.configuration.agentId ?? "");
+  const [draftManualAgentId, setDraftManualAgentId] = useState("");
   const [draftSkill, setDraftSkill] = useState(state?.configuration.skill ?? "");
+  const [draftInstructionIds, setDraftInstructionIds] = useState<string[]>(state?.selectedInstructionIds ?? []);
+  const [draftConflictResolutions, setDraftConflictResolutions] = useState<Record<string, string>>(
+    Object.fromEntries((state?.conflictResolutions ?? []).map((item) => [item.conflictId, item.resolution])),
+  );
+  const [modeDraft, setModeDraft] = useState<StageDelegationMode>(state?.configuration.mode ?? "clipboard");
+  const [previewContent, setPreviewContent] = useState<{ id: string; content: string }>();
 
   const perform = useCallback(
     async (label: string, operation: () => Promise<UnderstandState>): Promise<UnderstandState | undefined> => {
@@ -71,11 +78,21 @@ export function UnderstandStage({ bridge, workflowId, onWorkflowChange }: Unders
   useEffect(() => {
     if (state) {
       queueMicrotask(() => {
-        setDraftAgentId(state.configuration.agentId);
-        setDraftSkill(state.configuration.skill);
+        const config = state.configuration;
+        setDraftAgentId(config.agentId);
+        setDraftManualAgentId("");
+        const persistedSkill = config.skill;
+        // Automatic selection only when exactly one valid skill exists and none is persisted.
+        const onlySkill = config.skillOptions.length === 1 ? config.skillOptions[0]?.id ?? "" : "";
+        const autoSkill = persistedSkill || onlySkill;
+        setDraftSkill(autoSkill);
+        setDraftInstructionIds(state.selectedInstructionIds ?? []);
+        setDraftConflictResolutions(
+          Object.fromEntries((state.conflictResolutions ?? []).map((item) => [item.conflictId, item.resolution])),
+        );
       });
     }
-  }, [state?.configuration.agentId, state?.configuration.skill]);
+  }, [state?.configuration.agentId, state?.configuration.skill, state?.selectedInstructionIds, state?.conflictResolutions]);
 
   const runPrimary = useCallback(async (): Promise<void> => {
     if (!state) return;
@@ -133,6 +150,45 @@ export function UnderstandStage({ bridge, workflowId, onWorkflowChange }: Unders
     reader.onerror = () => setError({ message: "The selected file could not be read.", action: "file-import" });
     reader.readAsText(file);
   }, []);
+
+  const effectiveAgentId = draftAgentId || draftManualAgentId;
+
+  const dirty =
+    modeDraft !== state?.configuration.mode ||
+    effectiveAgentId !== state?.configuration.agentId ||
+    draftSkill !== state?.configuration.skill ||
+    JSON.stringify([...draftInstructionIds].sort()) !== JSON.stringify([...(state?.selectedInstructionIds ?? []).slice().sort()]) ||
+    JSON.stringify(Object.entries(draftConflictResolutions).sort()) !== JSON.stringify((state?.conflictResolutions ?? []).map((item) => [item.conflictId, item.resolution]).sort());
+
+  const dirtyConflictsBlock = Boolean(
+    state?.configuration.conflicts.some((conflict) => conflict.severity === "error" && !draftConflictResolutions[conflict.id]),
+  );
+
+  const saveConfig = useCallback(async (): Promise<void> => {
+    const resolutions = Object.entries(draftConflictResolutions)
+      .filter(([, value]) => Boolean(value))
+      .map(([conflictId, resolution]) => ({ conflictId, resolution: resolution as "win-first" | "win-second" | "exclude-first" | "exclude-second" | "acknowledge" }));
+    await perform("save-config", () =>
+      bridge.request("stage.understand.setConfiguration", {
+        workflowId,
+        mode: modeDraft,
+        agentId: effectiveAgentId,
+        skill: draftSkill,
+        instructionIds: draftInstructionIds,
+        conflictResolutions: resolutions,
+      }),
+    );
+  }, [bridge, perform, workflowId, modeDraft, effectiveAgentId, draftSkill, draftInstructionIds, draftConflictResolutions]);
+
+  const previewInstruction = useCallback(async (instructionId: string): Promise<void> => {
+    try {
+      const preview = await bridge.request("stage.understand.previewInstruction", { instructionId });
+      const content = typeof preview === "string" ? preview : (preview as { content?: string })?.content ?? "";
+      setPreviewContent({ id: instructionId, content });
+    } catch (cause) {
+      setError({ message: cause instanceof Error ? cause.message : "The instruction could not be previewed.", action: "preview-instruction" });
+    }
+  }, [bridge]);
 
   if (!state)
     return (
@@ -237,37 +293,33 @@ export function UnderstandStage({ bridge, workflowId, onWorkflowChange }: Unders
         </>
       )}
 
-      <details className="stage-panel">
-        <summary>Copilot configuration — {state.configuration.agentAvailable ? state.configuration.agentLabel : "Copilot unavailable"}</summary>
+      <details className="stage-panel" open>
+        <summary>Execution configuration — {state.configuration.agentAvailable ? state.configuration.agentLabel : "Copilot unavailable"}</summary>
         {state.configuration.discoveryNotice && <p className="warning-line" role="status">{state.configuration.discoveryNotice}</p>}
-        <dl className="config-grid">
-          <div><dt>Delegation mode</dt><dd>{modeLabel(state.configuration.mode)}</dd></div>
-          <div><dt>Agent</dt><dd>{state.configuration.agentLabel}{state.configuration.agentAvailable ? "" : " (unavailable)"}</dd></div>
-          <div><dt>Skill</dt><dd>{state.configuration.skill}</dd></div>
-        </dl>
+
         <div className="capability-list">
           {state.configuration.capabilities.map((capability) => (
             <label key={capability.id} className={capability.available ? "capability" : "capability unavailable"}>
-              <input type="radio" name="delegation-mode" disabled={!capability.available || Boolean(busy)} checked={state.configuration.mode === capability.id} onChange={() => void perform("set-mode", () => bridge.request("stage.understand.setConfiguration", { workflowId, mode: capability.id as StageDelegationMode }))} />
+              <input type="radio" name="delegation-mode" disabled={!capability.available || Boolean(busy)} checked={state.configuration.mode === capability.id} onChange={() => setModeDraft(capability.id as StageDelegationMode)} />
               <span><strong>{capability.label}</strong> {capability.available ? "" : "— unavailable"}<small>{capability.detail}</small></span>
             </label>
           ))}
         </div>
 
         <fieldset className="exec-config" disabled={Boolean(busy)}>
-          <legend>Execution configuration</legend>
+          <legend>Agent and skill</legend>
           <div className="field">
-            <label htmlFor="understand-agent">Agent (discovered or manual)</label>
+            <label htmlFor="understand-agent">Discovered Copilot agent</label>
             <select
               id="understand-agent"
               value={draftAgentId}
-              onChange={(event) => setDraftAgentId(event.target.value)}
+              onChange={(event) => { setDraftAgentId(event.target.value); setDraftManualAgentId(""); }}
             >
               <option value="">— none selected —</option>
               {state.configuration.agentOptions.map((agent) => {
                 const a = agent as { id: string; displayName?: string; availability?: string };
                 return (
-                  <option key={a.id} value={a.id}>
+                  <option key={a.id} value={a.id} disabled={a.availability === "unavailable"}>
                     {a.displayName ?? a.id}
                     {a.availability && a.availability !== "available" ? " (unavailable)" : ""}
                   </option>
@@ -276,13 +328,26 @@ export function UnderstandStage({ bridge, workflowId, onWorkflowChange }: Unders
             </select>
           </div>
           <div className="field">
-            <label htmlFor="understand-skill">Skill</label>
+            <label htmlFor="understand-manual-agent">Manual agent profile</label>
+            <select
+              id="understand-manual-agent"
+              value={draftManualAgentId}
+              onChange={(event) => { setDraftManualAgentId(event.target.value); setDraftAgentId(""); }}
+            >
+              <option value="">— none selected —</option>
+              {state.configuration.manualAgentOptions.map((agent) => (
+                <option key={agent.id} value={agent.id}>{agent.displayName}</option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="understand-skill">Keystone skill</label>
             <select
               id="understand-skill"
               value={draftSkill}
               onChange={(event) => setDraftSkill(event.target.value)}
             >
-              <option value="">— none selected —</option>
+              <option value="">— select a skill —</option>
               {state.configuration.skillOptions.map((option) => (
                 <option key={option.id} value={option.id}>{option.name}</option>
               ))}
@@ -290,38 +355,80 @@ export function UnderstandStage({ bridge, workflowId, onWorkflowChange }: Unders
             {state.configuration.skillOptions.length === 0 && (
               <small className="field-hint">No skills available for this stage.</small>
             )}
+            {!draftSkill && <p className="field-error">A valid skill must be selected before saving.</p>}
           </div>
         </fieldset>
 
-        {state.configuration.conflicts.length > 0 && (
-          <div className="conflict-list" role="status">
-            <strong>Instruction conflicts</strong>
-            <ul>
-              {state.configuration.conflicts.map((conflict) => (
-                <li key={conflict.id} className={`conflict-${conflict.severity}`}>
-                  <span className="conflict-category">{conflict.category}</span> — {conflict.recommendedResolution}
-                  {conflict.state === "conflict" || conflict.severity === "error" ? " (blocking)" : ""}
-                </li>
-              ))}
+        {state.configuration.instructionOptions.length > 0 && (
+          <fieldset className="exec-config" disabled={Boolean(busy)}>
+            <legend>Repository instructions</legend>
+            <ul className="instruction-list">
+              {state.configuration.instructionOptions.map((instruction) => {
+                const selected = draftInstructionIds.includes(instruction.id);
+                const availabilityLabel = instruction.availability === "available" ? "available" : instruction.availability;
+                return (
+                  <li key={instruction.id} className={`instruction-item ${instruction.availability !== "available" ? "unavailable" : ""}`}>
+                    <label className="instruction-toggle">
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        disabled={instruction.availability !== "available"}
+                        onChange={() => setDraftInstructionIds((ids) => ids.includes(instruction.id) ? ids.filter((id) => id !== instruction.id) : [...ids, instruction.id])}
+                      />
+                      <span>
+                        <strong>{instruction.name}</strong>
+                        <small>{instruction.source} · {availabilityLabel}</small>
+                        <small className="instruction-path">{instruction.path}</small>
+                      </span>
+                    </label>
+                    <button className="ghost-button" type="button" disabled={instruction.availability !== "available"} onClick={() => void previewInstruction(instruction.id)}>Preview</button>
+                  </li>
+                );
+              })}
             </ul>
-          </div>
+          </fieldset>
         )}
 
-        <details className="instructions-block">
-          <summary>Repository instructions ({state.configuration.instructions.length})</summary>
-          <ul>{state.configuration.instructions.map((line) => <li key={line}>{line}</li>)}</ul>
-        </details>
+        {state.configuration.conflicts.length > 0 && (
+          <fieldset className="exec-config conflict-fieldset" disabled={Boolean(busy)}>
+            <legend>Instruction conflicts</legend>
+            {state.configuration.conflicts.map((conflict) => {
+              const resolution = draftConflictResolutions[conflict.id];
+              const blocking = conflict.severity === "error" && !resolution;
+              return (
+                <div key={conflict.id} className={`conflict-item conflict-${conflict.severity}${blocking ? " blocking" : ""}`}>
+                  <p><span className="conflict-category">{conflict.category}</span> — {conflict.recommendedResolution}{blocking ? " (blocking)" : ""}</p>
+                  <div className="button-row">
+                    <button className={`ghost-button ${resolution === "win-first" ? "selected" : ""}`} type="button" onClick={() => setDraftConflictResolutions((r) => ({ ...r, [conflict.id]: "win-first" }))}>Win first</button>
+                    <button className={`ghost-button ${resolution === "win-second" ? "selected" : ""}`} type="button" onClick={() => setDraftConflictResolutions((r) => ({ ...r, [conflict.id]: "win-second" }))}>Win second</button>
+                    <button className={`ghost-button ${resolution === "exclude-first" ? "selected" : ""}`} type="button" onClick={() => setDraftConflictResolutions((r) => ({ ...r, [conflict.id]: "exclude-first" }))}>Exclude first</button>
+                    <button className={`ghost-button ${resolution === "exclude-second" ? "selected" : ""}`} type="button" onClick={() => setDraftConflictResolutions((r) => ({ ...r, [conflict.id]: "exclude-second" }))}>Exclude second</button>
+                    <button className={`ghost-button ${resolution === "acknowledge" ? "selected" : ""}`} type="button" onClick={() => setDraftConflictResolutions((r) => ({ ...r, [conflict.id]: "acknowledge" }))}>Acknowledge</button>
+                  </div>
+                </div>
+              );
+            })}
+          </fieldset>
+        )}
 
         <div className="button-row">
           <button
             className="primary-button"
-            disabled={Boolean(busy) || (draftAgentId === state.configuration.agentId && draftSkill === state.configuration.skill)}
-            onClick={() => void perform("save-config", () => bridge.request("stage.understand.setConfiguration", { workflowId, agentId: draftAgentId, skill: draftSkill }))}
+            disabled={Boolean(busy) || !draftSkill || dirtyConflictsBlock || !dirty}
+            onClick={() => void saveConfig()}
           >
-            Save execution configuration
+            {!draftSkill ? "Select a skill" : "Save execution configuration"}
           </button>
+          {dirtyConflictsBlock && <p className="field-error">Resolve every blocking instruction conflict before saving.</p>}
         </div>
       </details>
+
+      {previewContent && (
+        <details className="stage-panel" open>
+          <summary>Instruction preview</summary>
+          <pre className="prompt-preview" tabIndex={0}>{previewContent.content}</pre>
+        </details>
+      )}
 
       {pkg && (
         <details className="stage-panel" open={pkg.status !== "approved"}>
@@ -450,10 +557,6 @@ function guidance(state: UnderstandState): string {
     case "complete-stage": return "All requirements are satisfied. Complete Understand to advance to the next stage.";
     case "stage-completed": return "Understand is complete. The next stage is open.";
   }
-}
-
-function modeLabel(mode: StageDelegationMode): string {
-  return mode === "chat-open" ? "Open Copilot Chat with prompt" : mode === "clipboard" ? "Copy prompt to clipboard" : "Manual work";
 }
 
 function delegationLabel(status: string): string {

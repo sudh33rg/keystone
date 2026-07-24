@@ -6,6 +6,7 @@ import type { IntelligenceSnapshot } from "../../shared/contracts/intelligence";
 import type { CopilotAdapter } from "../copilot/CopilotAdapter";
 import type { ExecutionConfigurationService } from "../development/ExecutionConfigurationService";
 import type { DevelopmentSkillService } from "../development/DevelopmentSkillService";
+import type { DiscoveredAgent, InstructionPreview, ManualAgentConfiguration } from "../../shared/contracts/executionConfiguration";
 import type { DevelopmentContextPackageService, DevelopmentContextBuildInput } from "../context/DevelopmentContextPackageService";
 import type { WorkflowService } from "../workflow/WorkflowService";
 import type { CanonicalWorkflow } from "../../shared/contracts/canonicalWorkflow";
@@ -25,6 +26,7 @@ import {
   type StageDelegationMode,
   type StageDelegationRecord,
   type StageEvidence,
+  type StageInstructionOption,
   type StageIntelligenceState,
   type StagePrompt,
   type StageResult,
@@ -144,7 +146,7 @@ export class StageWorkspaceService {
     const existing = this.state.understand[stage.id];
     const workItemId = existing?.workItemId ?? this.createId();
     const intelligenceState = this.intelligenceState();
-    const configuration = await this.buildConfiguration(workflowId, stage.id, workItemId, existing?.configuration.mode, existing?.configuration.skill, undefined, undefined);
+    const configuration = await this.buildConfiguration(workflowId, stage.id, workItemId, existing?.configuration.mode, existing?.configuration.skill, undefined, undefined, existing?.selectedInstructionIds ?? []);
     const base: UnderstandState = existing
       ? { ...existing, workItemId, intelligence: intelligenceState, configuration }
       : {
@@ -155,6 +157,8 @@ export class StageWorkspaceService {
           completion: { allowed: false, unmet: [] },
           intelligence: intelligenceState,
           configuration,
+          selectedInstructionIds: [],
+          conflictResolutions: [],
           delegations: [],
           primaryAction: "initialize-intelligence",
           updatedAt: this.now(),
@@ -232,15 +236,100 @@ export class StageWorkspaceService {
     return next;
   }
 
-  async setConfiguration(workflowId: string, input: { mode?: StageDelegationMode; skill?: string; agentId?: string; workItemId?: string }): Promise<UnderstandState> {
+  async setConfiguration(workflowId: string, input: { mode?: StageDelegationMode; skill?: string; agentId?: string; instructionIds?: string[]; conflictResolutions?: Array<{ conflictId: string; resolution: "win-first" | "win-second" | "exclude-first" | "exclude-second" | "acknowledge"; note?: string }>; workItemId?: string }): Promise<UnderstandState> {
     const state = await this.loadUnderstand(workflowId);
     if (input.workItemId && input.workItemId !== state.workItemId) {
       throw new StageWorkspaceError("WORK_ITEM_ID_MISMATCH", "The provided work-item ID does not match the persisted stage state.");
     }
-    const configuration = await this.buildConfiguration(workflowId, state.stageId, state.workItemId, input.mode ?? state.configuration.mode, input.skill ?? state.configuration.skill, input.agentId ?? state.configuration.agentId, undefined);
-    const next = this.recompute({ ...state, configuration });
+    const workItemId = state.workItemId;
+    const mode = input.mode ?? state.configuration.mode;
+    const skill = input.skill ?? state.configuration.skill;
+    const agentId = input.agentId ?? state.configuration.agentId;
+    const selectedInstructionIds = input.instructionIds ?? state.selectedInstructionIds;
+    const conflictResolutions = input.conflictResolutions ?? state.conflictResolutions;
+
+    // Resolve and validate the skill through the real service — no silent fallback.
+    const skillStatus = this.resolveSkillDefinition(skill);
+    if (!skillStatus.resolved) {
+      throw new StageWorkspaceError("SKILL_UNRESOLVED", "A valid Keystone skill must be selected before saving the execution configuration.");
+    }
+
+    // Agent requirement gate: a mode that needs an agent must have exactly one
+    // selected valid agent (discovered or manual). Clipboard/chat modes require it;
+    // manual mode does not. Block saving with a structured error when missing.
+    if (mode !== "manual" && this.executionConfiguration) {
+      const aggregate = await this.executionConfiguration.load(workflowId, workItemId);
+      const validAgents = [...aggregate.agents.filter((a) => a.availability === "available"), ...aggregate.manualAgents.filter((a) => a.commandAvailable !== false)];
+      const selectedValid = agentId ? validAgents.some((a) => a.id === agentId) : validAgents.length === 1;
+      if (!selectedValid) {
+        throw new StageWorkspaceError(
+          "AGENT_REQUIRED",
+          mode === "chat-open"
+            ? "A Copilot agent is required to open the chat. Select a discovered or manual agent before saving."
+            : "An execution agent is required for clipboard handoff. Select a discovered or manual agent before saving.",
+          false,
+        );
+      }
+    }
+    // Persist the authoritative execution profile through the real service when available.
+    let executionProfileId = state.executionProfileId;
+    let executionProfileRevision = state.executionProfileRevision;
+    let executionProfileContentHash = state.executionProfileContentHash;
+    if (this.executionConfiguration) {
+      const capability = this.capabilityForMode(mode);
+      const draft = {
+        workflowId,
+        workItemId,
+        executionCapabilityId: capability,
+        ...(agentId ? { agentConfigurationId: agentId } : {}),
+        skillId: skillStatus.id,
+        instructionIds: selectedInstructionIds,
+        conflictResolutions: conflictResolutions.map((item) => ({ conflictId: item.conflictId, resolution: item.resolution, ...(item.note ? { note: item.note } : {}) })),
+      };
+      try {
+        const aggregate = await this.executionConfiguration.saveProfile(draft, workItemId);
+        const profile = aggregate.profile;
+        if (!profile) throw new StageWorkspaceError("EXECUTION_PROFILE_SAVE_FAILED", "The execution profile could not be saved.");
+        // Persist the profile's OWN version, never the global service revision.
+        executionProfileId = profile.id;
+        executionProfileRevision = profile.revision ?? this.executionConfiguration.revision;
+        executionProfileContentHash = profile.contentHash;
+      } catch (cause) {
+        const err = cause as { name?: string; code?: string; message?: string };
+        if (err?.name === "ExecutionConfigurationError") {
+          throw new StageWorkspaceError("EXECUTION_PROFILE_SAVE_FAILED", err.message ?? "The execution profile could not be saved.", false);
+        }
+        throw cause;
+      }
+    }
+
+    const configuration = await this.buildConfiguration(workflowId, state.stageId, workItemId, mode, skill, agentId, undefined, selectedInstructionIds);
+    const next = this.recompute({
+      ...state,
+      configuration,
+      selectedInstructionIds,
+      conflictResolutions,
+      executionProfileId,
+      executionProfileRevision,
+      executionProfileContentHash,
+      // Any configuration change invalidates the approved context and prepared prompt
+      // for this exact work item only.
+      contextPackage: state.contextPackage ? { ...state.contextPackage, status: "stale" } : undefined,
+      prompt: undefined,
+    });
     await this.saveUnderstand(next);
     return next;
+  }
+
+  /** Preview a repository instruction's bounded content through the real execution configuration service. */
+  async previewInstruction(instructionId: string): Promise<InstructionPreview> {
+    if (!this.executionConfiguration)
+      throw new StageWorkspaceError("INSTRUCTION_PREVIEW_UNAVAILABLE", "Instruction preview is unavailable in this environment.", false);
+    return this.executionConfiguration.previewInstruction(instructionId);
+  }
+
+  private capabilityForMode(mode: StageDelegationMode): string {
+    return mode === "chat-open" ? "chat-open" : mode === "manual" ? "manual" : "clipboard";
   }
 
   async generateContext(workflowId: string): Promise<UnderstandState> {
@@ -248,8 +337,35 @@ export class StageWorkspaceService {
     const state = await this.loadUnderstand(workflowId);
     if (!state.analysis?.approved)
       throw new StageWorkspaceError("ANALYSIS_NOT_APPROVED", "Approve the intent analysis before generating context.");
+
+    // Verify a saved execution profile exists and is still current (reload by
+    // persisted workflow id + work-item UUID). Generating context from an unsaved
+    // or stale display configuration is prohibited.
+    if (this.executionConfiguration) {
+      if (!state.executionProfileId)
+        throw new StageWorkspaceError("EXECUTION_PROFILE_REQUIRED", "Save a valid execution profile before generating context.");
+      const aggregate = await this.executionConfiguration.load(workflowId, state.workItemId);
+      const profile = aggregate.profile;
+      if (!profile)
+        throw new StageWorkspaceError("EXECUTION_PROFILE_REQUIRED", "Save a valid execution profile before generating context.");
+      if (profile.id !== state.executionProfileId)
+        throw new StageWorkspaceError("EXECUTION_PROFILE_REQUIRED", "The saved execution profile no longer matches this stage. Re-save the configuration.");
+      const profileVersion = profile.revision ?? 0;
+      if ((profile.contentHash !== state.executionProfileContentHash) || (profileVersion !== (state.executionProfileRevision ?? 0)))
+        throw new StageWorkspaceError("EXECUTION_PROFILE_STALE", "The execution profile changed after it was saved. Re-save the configuration to regenerate context.");
+    }
+
     const contextPackage = await this.buildContextPackage(workflow, state);
-    const next = this.recompute({ ...state, contextPackage, prompt: undefined });
+    const next = this.recompute({
+      ...state,
+      contextPackage: {
+        ...contextPackage,
+        executionProfileId: state.executionProfileId,
+        executionProfileRevision: state.executionProfileRevision,
+        executionProfileContentHash: state.executionProfileContentHash,
+      },
+      prompt: undefined,
+    });
     await this.saveUnderstand(next);
     return next;
   }
@@ -271,6 +387,8 @@ export class StageWorkspaceService {
 
   async delegate(workflowId: string): Promise<UnderstandState> {
     const state = await this.loadUnderstand(workflowId);
+    // A changed/stale execution profile must block delegation before any prompt gate.
+    await this.verifyExecutionProfile(state.workflowId, state.workItemId, state.executionProfileId, state.executionProfileRevision, state.executionProfileContentHash);
     if (!state.prompt || state.contextPackage?.status !== "approved")
       throw new StageWorkspaceError("PROMPT_NOT_READY", "Approve the context package to prepare the exact prompt before delegating.");
     const mode = state.configuration.mode;
@@ -514,8 +632,21 @@ export class StageWorkspaceService {
         "No approved Understand scope is available for planning. Complete the Understand stage with an approved scope first.",
       );
     const snapshot = this.intelligence.getSnapshot();
+    // Verify the saved execution profile is still current before building context.
+    if (this.executionConfiguration) {
+      if (!state.executionProfileId)
+        throw new StageWorkspaceError("EXECUTION_PROFILE_REQUIRED", "Save a valid execution profile before generating the plan context.");
+      const aggregate = await this.executionConfiguration.load(workflowId, state.workItemId);
+      const profile = aggregate.profile;
+      if (!profile || profile.id !== state.executionProfileId)
+        throw new StageWorkspaceError("EXECUTION_PROFILE_REQUIRED", "The saved execution profile no longer matches this stage. Re-save the configuration.");
+      const profileVersion = profile.revision ?? 0;
+      if (profile.contentHash !== state.executionProfileContentHash || profileVersion !== (state.executionProfileRevision ?? 0))
+        throw new StageWorkspaceError("EXECUTION_PROFILE_STALE", "The execution profile changed after it was saved. Re-save the configuration to regenerate context.");
+    }
     const contextPackage = await this.buildPackageFromScope({
       workflow,
+      workItemId: state.workItemId,
       stageId: state.stageId,
       stageKind: "plan",
       objective: state.objective,
@@ -523,9 +654,13 @@ export class StageWorkspaceService {
       intelligenceRevision: snapshot?.manifest.generation ?? 0,
       scopeItems,
       skillId: state.configuration.skill,
+      selectedInstructionIds: state.selectedInstructionIds ?? [],
+      executionProfileId: state.executionProfileId,
+      executionProfileRevision: state.executionProfileRevision,
+      executionProfileContentHash: state.executionProfileContentHash,
       previous: state.contextPackage,
     });
-    const next = this.recomputePlan({ ...state, contextPackage, prompt: undefined });
+    const next = this.recomputePlan({ ...state, contextPackage: { ...contextPackage, executionProfileId: state.executionProfileId, executionProfileRevision: state.executionProfileRevision, executionProfileContentHash: state.executionProfileContentHash }, prompt: undefined });
     await this.savePlan(next);
     return next;
   }
@@ -693,18 +828,24 @@ export class StageWorkspaceService {
       contentHash: createHash("sha256").update(content).digest("hex"),
       contextPackageRevision: pkg.revision,
       preparedAt: this.now(),
+      executionProfileId: state.executionProfileId,
+      executionProfileRevision: state.executionProfileRevision,
+      executionProfileContentHash: state.executionProfileContentHash,
     };
   }
 
   private async performPlanDelegation(state: PlanState, mode: StageDelegationMode): Promise<StageDelegationRecord> {
     const prompt = state.prompt!;
+    await this.verifyExecutionProfile(state.workflowId, state.workItemId, state.executionProfileId, state.executionProfileRevision, state.executionProfileContentHash);
     const base = {
       id: this.createId(),
       workflowId: state.workflowId,
       stageId: state.stageId,
       promptRevision: prompt.revision,
       contextPackageRevision: prompt.contextPackageRevision,
-      executionProfileRevision: 0,
+      executionProfileRevision: state.executionProfileRevision ?? 0,
+      executionProfileId: state.executionProfileId,
+      executionProfileContentHash: state.executionProfileContentHash,
       createdAt: this.now(),
     };
     if (mode === "manual")
@@ -759,6 +900,7 @@ export class StageWorkspaceService {
       skill?: string,
       agentId?: string,
       _stageKind?: string,
+      selectedInstructionIds: string[] = [],
     ): Promise<StageCopilotConfiguration> {
       // Capability discovery: attempt a real refresh when nothing is cached. A
       // failure is recorded truthfully (below) rather than silently swallowed —
@@ -786,29 +928,43 @@ export class StageWorkspaceService {
         ? aggregate.agents.filter((agent) => agent.availability === "available")
         : [];
       const manualProfiles = aggregate?.manualAgents ?? [];
-      // Determine the agent selection: prefer an explicit agentId from the caller
-      // (UI); fall back to single-ambiguous auto-selection only when not supplied.
-      const explicitAgent = agentId ? (availableAgents.find((item) => item.id === agentId) ?? manualProfiles.find((item) => item.id === agentId)) : undefined;
-      const selectedAgent = explicitAgent ?? (availableAgents.length === 1 ? availableAgents[0] : undefined);
+      // Build one combined list of valid discovered agents and valid manual profiles.
+      const validManualProfiles = manualProfiles.filter((item) => item.commandAvailable !== false);
+      const combinedValidAgents: Array<DiscoveredAgent | ManualAgentConfiguration> = [...availableAgents, ...validManualProfiles];
+      // Auto-select only when the combined list contains exactly one valid option.
+      // When multiple options exist, require explicit selection. When no valid agent
+      // exists, leave it unselected (a mode that needs one will be blocked at save).
+      const explicitAgent = agentId
+        ? (availableAgents.find((item) => item.id === agentId) ?? manualProfiles.find((item) => item.id === agentId))
+        : undefined;
+      const selectedAgent =
+        explicitAgent ??
+        (combinedValidAgents.length === 1
+          ? combinedValidAgents[0]
+          : undefined);
       const agentDiscoveryUnavailable = aggregate === undefined;
 
       const derivedAgentId = selectedAgent?.id ?? "";
       const agentLabel = selectedAgent
         ? selectedAgent.displayName
-        : availableAgents.length > 1
+        : combinedValidAgents.length > 1
           ? "Multiple agents available — select one"
           : agentDiscoveryUnavailable
             ? manualProfiles.length
               ? `${manualProfiles.length} manual profile(s) — local configuration only`
               : "Agent discovery unavailable"
-            : "No Copilot agent discovered";
+            : "No execution agent available";
 
-      // Real skills from DevelopmentSkillService via the aggregate; keep the caller's
-      // selection when it still exists, otherwise leave it unselected.
+      // Real skills from DevelopmentSkillService (authoritative) with a fallback to
+      // the execution-configuration aggregate's skill list. Keep the caller's
+      // selection when the skill service confirms it exists; only clear it when the
+      // skill is genuinely unknown. When neither source is available, preserve the
+      // caller's selection rather than silently wiping it.
       const skillDefs = aggregate?.skills ?? [];
-      const resolvedSkill = skill && skillDefs.some((item) => item.id === skill)
-        ? skill
-        : "";
+      const knownSkillIds = this.skills
+        ? this.skills.list([this.skills.builtInDevelopmentSkill(), this.skills.builtInTestGenerationSkill()], ["development", "qa", "investigation", "understand"]).map((item) => item.id)
+        : skillDefs.map((item) => item.id);
+      const resolvedSkill = skill && knownSkillIds.includes(skill) ? skill : (skill && knownSkillIds.length === 0 ? skill : "");
 
       // Real discovered instructions (available only); no hard-coded instruction text.
       const instructions = (aggregate?.instructions ?? [])
@@ -833,6 +989,15 @@ export class StageWorkspaceService {
             : "Runtime agent discovery is unavailable. Use manual configuration or clipboard handoff."
           : undefined;
 
+      const instructionOptions: StageInstructionOption[] = (aggregate?.instructions ?? []).map((source) => ({
+        id: source.id,
+        name: source.name,
+        path: source.workspaceRelativePath,
+        source: source.sourceType,
+        availability: source.availability,
+        selected: selectedInstructionIds.includes(source.id),
+      }));
+
       return {
         mode: resolvedMode,
         agentId: derivedAgentId || agentId || "",
@@ -844,7 +1009,9 @@ export class StageWorkspaceService {
           ...(aggregate?.agents ?? []),
           ...(aggregate?.manualAgents ?? []),
         ],
+        manualAgentOptions: aggregate?.manualAgents ?? [],
         skillOptions: aggregate?.skills ?? [],
+        instructionOptions,
         conflicts: aggregate?.conflicts ?? [],
         ...(discoveryNotice ? { discoveryNotice } : {}),
         capabilities: [
@@ -1020,6 +1187,7 @@ export class StageWorkspaceService {
     const analysis = state.analysis!;
     return this.buildPackageFromScope({
       workflow,
+      workItemId: state.workItemId,
       stageId: state.stageId,
       stageKind: "understand",
       objective: analysis.objective,
@@ -1027,6 +1195,10 @@ export class StageWorkspaceService {
       intelligenceRevision: analysis.intelligenceRevision,
       scopeItems: analysis.scope,
       skillId: state.configuration.skill,
+      selectedInstructionIds: state.selectedInstructionIds,
+      executionProfileId: state.executionProfileId,
+      executionProfileRevision: state.executionProfileRevision,
+      executionProfileContentHash: state.executionProfileContentHash,
       previous: state.contextPackage,
     });
   }
@@ -1040,6 +1212,7 @@ export class StageWorkspaceService {
    */
   private async buildPackageFromScope(input: {
     workflow: CanonicalWorkflow;
+    workItemId: string;
     stageId: string;
     stageKind: string;
     objective: string;
@@ -1047,9 +1220,13 @@ export class StageWorkspaceService {
     intelligenceRevision: number;
     scopeItems: StageScopeItem[];
     skillId: string;
+    selectedInstructionIds: string[];
+    executionProfileId?: string;
+    executionProfileRevision?: number;
+    executionProfileContentHash?: string;
     previous: StageContextPackage | undefined;
   }): Promise<StageContextPackage> {
-    const { workflow, stageId, stageKind, scopeItems } = input;
+    const { workflow, workItemId, stageId, scopeItems } = input;
     if (!this.contextPackages || !this.readScopeContent)
       throw new StageWorkspaceError(
         "CONTEXT_PIPELINE_UNAVAILABLE",
@@ -1076,15 +1253,18 @@ export class StageWorkspaceService {
       throw new StageWorkspaceError("CONTEXT_SCOPE_EMPTY", "No readable file scope is selected. Include at least one repository file before generating context.");
 
     // Real selected skill (from DevelopmentSkillService) and discovered instructions.
-    const skill = this.resolveSkillDefinition(input.skillId);
-    const instructions = await this.resolveSelectedInstructions(workflow.id, stageId, stageKind);
+    const skillStatus = this.resolveSkillDefinition(input.skillId);
+    if (!skillStatus.resolved) {
+      throw new StageWorkspaceError("SKILL_UNRESOLVED", "A valid Keystone skill must be selected before generating context.", false);
+    }
+    const skill = { id: skillStatus.id, name: skillStatus.name, content: skillStatus.promptFragment, contentHash: skillStatus.contentHash };
+    const instructions = await this.resolveSelectedInstructions(workflow.id, workItemId, input.selectedInstructionIds);
 
-    const workItemId = `${stageKind}:${stageId}`;
     const buildInput: DevelopmentContextBuildInput = {
       workflowId: workflow.id,
       stageId,
       workItemId,
-      executionProfileId: `${stageKind}:${stageId}`,
+      executionProfileId: input.executionProfileId ?? workItemId,
       intent: workflow.intent.text,
       workType: canonicalWorkTypeLabel(workflow.intent.workType),
       ...(workflow.specification ? { specification: workflow.specification.text } : {}),
@@ -1094,7 +1274,7 @@ export class StageWorkspaceService {
       budgetTokens: 12_000,
       pinnedItemIds: [],
       scope,
-      skill: { id: skill.id, name: skill.name, content: skill.promptFragment, contentHash: skill.contentHash },
+      skill: { id: skill.id, name: skill.name, content: skill.content, contentHash: skill.contentHash },
       instructions,
     };
 
@@ -1146,29 +1326,37 @@ export class StageWorkspaceService {
       intelligenceRevision: input.intelligenceRevision,
       content: contextString,
       generatedAt: this.now(),
+      executionProfileId: input.executionProfileId,
+      executionProfileRevision: input.executionProfileRevision,
+      executionProfileContentHash: input.executionProfileContentHash,
     };
   }
 
-  /** Resolve the selected Development skill via the real DevelopmentSkillService. */
-  private resolveSkillDefinition(skillId: string) {
+  /**
+   * Resolve the selected Development skill via the real DevelopmentSkillService.
+   * No silent fallback: when the selection is empty, missing, stale, or invalid,
+   * this reports `resolved: false` so the caller can block instead of guessing.
+   */
+  private resolveSkillDefinition(skillId: string): { resolved: boolean; id: string; name: string; contentHash: string; promptFragment: string } {
     if (!this.skills)
-      throw new StageWorkspaceError("SKILL_SERVICE_UNAVAILABLE", "The skill service is unavailable in this environment.", false);
+      return { resolved: false, id: "", name: "", contentHash: "", promptFragment: "" };
     const builtIn = this.skills.builtInDevelopmentSkill();
     const testGen = this.skills.builtInTestGenerationSkill();
     const all = this.skills.list([builtIn, testGen], ["development", "qa", "investigation", "understand"]);
-    return all.find((item) => item.id === skillId) ?? all[0] ?? builtIn;
+    const found = all.find((item) => item.id === skillId);
+    if (!found) return { resolved: false, id: "", name: "", contentHash: "", promptFragment: "" };
+    return { resolved: true, id: found.id, name: found.name, contentHash: found.contentHash, promptFragment: found.promptFragment };
   }
 
   /** Resolve the user-selected repository instructions from the real execution configuration. */
   private async resolveSelectedInstructions(
     workflowId: string,
-    stageId: string,
-    stageKind = "understand",
+    workItemId: string,
+    selectedInstructionIds?: string[],
   ): Promise<DevelopmentContextBuildInput["instructions"]> {
     if (!this.executionConfiguration) return [];
-    const workItemId = `${stageKind}:${stageId}`;
     const aggregate = await this.executionConfiguration.load(workflowId, workItemId);
-    const selectedIds = aggregate.profile?.instructionIds ?? [];
+    const selectedIds = selectedInstructionIds ?? aggregate.profile?.instructionIds ?? [];
     const sources = aggregate.instructions.filter(
       (item) => item.availability === "available" && selectedIds.includes(item.id),
     );
@@ -1252,18 +1440,27 @@ export class StageWorkspaceService {
       contentHash: createHash("sha256").update(content).digest("hex"),
       contextPackageRevision: pkg.revision,
       preparedAt: this.now(),
+      executionProfileId: state.executionProfileId,
+      executionProfileRevision: state.executionProfileRevision,
+      executionProfileContentHash: state.executionProfileContentHash,
     };
   }
 
   private async performDelegation(state: UnderstandState, mode: StageDelegationMode): Promise<StageDelegationRecord> {
     const prompt = state.prompt!;
+    // Immediately before delegation, reload the saved profile and verify it still
+    // matches the profile used to prepare the context package and prompt. A changed
+    // (or missing) profile marks the context/prompt stale and blocks delegation.
+    await this.verifyExecutionProfile(state.workflowId, state.workItemId, state.executionProfileId, state.executionProfileRevision, state.executionProfileContentHash);
     const base = {
       id: this.createId(),
       workflowId: state.workflowId,
       stageId: state.stageId,
       promptRevision: prompt.revision,
       contextPackageRevision: prompt.contextPackageRevision,
-      executionProfileRevision: 0,
+      executionProfileRevision: state.executionProfileRevision ?? 0,
+      executionProfileId: state.executionProfileId,
+      executionProfileContentHash: state.executionProfileContentHash,
       createdAt: this.now(),
     };
     if (mode === "manual")
@@ -1283,6 +1480,28 @@ export class StageWorkspaceService {
     } catch (cause) {
       return { ...base, mode, capabilityUsed: "clipboard", status: "failed", statusDetail: "The prompt could not be copied.", failureReason: cause instanceof Error ? cause.message : String(cause) };
     }
+  }
+
+  /**
+   * Reload the saved execution profile for this work item and confirm it still
+   * matches the profile that was used to prepare the context package and prompt.
+   * If the profile is missing, was replaced, or its content changed, mark the
+   * context package and prepared prompt stale and block delegation with a clear
+   * regeneration action. This uses the profile's own version (revision +
+   * contentHash), so an unrelated workflow's profile change does NOT invalidate
+   * this stage.
+   */
+  private async verifyExecutionProfile(workflowId: string, workItemId: string, expectedProfileId: string | undefined, expectedRevision: number | undefined, expectedHash: string | undefined): Promise<void> {
+    if (!this.executionConfiguration) return;
+    if (!expectedProfileId)
+      throw new StageWorkspaceError("EXECUTION_PROFILE_MISSING", "Save the execution profile before delegating. The prompt references no saved profile.", false);
+    const aggregate = await this.executionConfiguration.load(workflowId, workItemId);
+    const profile = aggregate.profile;
+    if (!profile || profile.id !== expectedProfileId)
+      throw new StageWorkspaceError("EXECUTION_PROFILE_CHANGED", "The saved execution profile changed. Regenerate the context and prompt before delegating.", false);
+    const profileVersion = profile.revision ?? 0;
+    if (profileVersion !== (expectedRevision ?? 0) || profile.contentHash !== expectedHash)
+      throw new StageWorkspaceError("EXECUTION_PROFILE_CHANGED", "The saved execution profile changed. Regenerate the context and prompt before delegating.", false);
   }
 
   private buildValidation(state: UnderstandState): StageValidation {

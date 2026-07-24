@@ -283,6 +283,8 @@ function validateResult(type: WebviewRequestType, value: unknown): unknown {
     case "stage.understand.validateResult":
     case "stage.understand.acceptWarnings":
       return UnderstandStateSchema.parse(value);
+    case "stage.understand.previewInstruction":
+      return InstructionPreviewSchema.parse(value);
     case "stage.understand.complete":
       return z.object({ state: UnderstandStateSchema, workflow: CanonicalWorkflowSchema }).parse(value);
     case "stage.investigation.load":

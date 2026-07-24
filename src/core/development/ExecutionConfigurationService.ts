@@ -14,6 +14,7 @@ import {
   type InstructionPreview,
   type InstructionSource,
   type ManualAgentConfiguration,
+  type ProfileConflictResolution,
   type SkillDefinition,
 } from "../../shared/contracts/executionConfiguration";
 
@@ -40,6 +41,8 @@ export interface ExecutionConfigurationDependencies {
 
 export interface ExecutionProfileDraft {
   workflowId: string; workItemId: string; executionCapabilityId: string; agentConfigurationId?: string; skillId: string; instructionIds: string[];
+  /** Conflict resolutions selected in the UI; applied centrally to derive the effective instruction set. */
+  conflictResolutions?: ProfileConflictResolution[];
 }
 
 export class ExecutionConfigurationService {
@@ -77,7 +80,14 @@ export class ExecutionConfigurationService {
     if (!capability || capability.availability !== "available") throw new ExecutionConfigurationError("capability-unavailable", "The selected execution mode is not currently available.");
     const skill = aggregate.skills.find((item) => item.id === draft.skillId && (item.applicableStageTypes.includes("development") || item.applicableStageTypes.includes("qa")));
     if (!skill) throw new ExecutionConfigurationError("skill-not-found", "The selected Development skill was not found or is not applicable.");
-    const instructions = draft.instructionIds.map((id) => aggregate.instructions.find((item) => item.id === id));
+    // Validate the original selection first so a bad ID is reported before resolutions apply.
+    const selectedInstructions = draft.instructionIds.map((id) => aggregate.instructions.find((item) => item.id === id));
+    if (selectedInstructions.some((item) => !item)) throw new ExecutionConfigurationError("instruction-not-found", "A selected instruction was not found.");
+    // Apply the caller's conflict resolutions centrally to derive the effective instruction set.
+    const resolutions = draft.conflictResolutions ?? [];
+    const selectionConflicts = await this.detect(selectedInstructions as InstructionSource[]);
+    const effectiveInstructionIds = applyConflictResolutions(draft.instructionIds, selectionConflicts, resolutions);
+    const instructions = effectiveInstructionIds.map((id) => aggregate.instructions.find((item) => item.id === id));
     if (instructions.some((item) => !item)) throw new ExecutionConfigurationError("instruction-not-found", "A selected instruction was not found.");
     if (instructions.some((item) => item!.availability !== "available" || !item!.contentHash)) throw new ExecutionConfigurationError("instruction-unreadable", "Every selected instruction must be readable and unchanged.");
     let agent: ManualAgentConfiguration | DiscoveredAgent | undefined;
@@ -89,13 +99,17 @@ export class ExecutionConfigurationService {
         if (!supported) throw new ExecutionConfigurationError("command-not-registered", "The selected agent does not support the registered chat-command handoff.");
       }
     }
+    // Re-detect on the effective set: exclusions/winner picks must genuinely eliminate
+    // blocking conflicts. `acknowledge` never bypasses an error-severity conflict.
     const conflicts = await this.detect(instructions as InstructionSource[]);
-    if (conflicts.some((item) => item.severity === "error")) throw new ExecutionConfigurationError("instruction-conflict", "Resolve blocking instruction conflicts before saving configuration.");
+    if (conflicts.some((item) => item.severity === "error")) throw new ExecutionConfigurationError("instruction-conflict", "Resolve blocking instruction conflicts before saving configuration. Acknowledgment cannot bypass a blocking conflict.");
     const timestamp = this.now(); const existing = this.state.profiles.find((item) => item.workflowId === draft.workflowId && item.workItemId === draft.workItemId);
     const instructionHashes = Object.fromEntries((instructions as InstructionSource[]).map((item) => [item.id, item.contentHash!]));
     const instructionPaths = Object.fromEntries((instructions as InstructionSource[]).map((item) => [item.id, item.workspaceRelativePath]));
-    const contentHash = hash({ executionCapabilityId: capability.id, agentConfigurationId: agent?.id, skillId: skill.id, skillHash: skill.contentHash, instructionIds: draft.instructionIds, instructionHashes, instructionPaths });
-    const profile: DevelopmentExecutionProfile = { id: existing?.id ?? this.createId(), workflowId: draft.workflowId, workItemId: draft.workItemId, executionCapabilityId: capability.id, ...(agent ? { agentConfigurationId: agent.id } : {}), skillId: skill.id, instructionIds: [...new Set(draft.instructionIds)], status: "valid", validation: { capabilityAvailable: true, skillAvailable: true, instructionsAvailable: true, conflictsResolved: true }, instructionHashes, instructionPaths, skillHash: skill.contentHash, contentHash, createdAt: existing?.createdAt ?? timestamp, updatedAt: timestamp };
+    const contentHash = hash({ executionCapabilityId: capability.id, agentConfigurationId: agent?.id, skillId: skill.id, skillHash: skill.contentHash, instructionIds: effectiveInstructionIds, selectedInstructionIds: draft.instructionIds, conflictResolutions: resolutions, instructionHashes, instructionPaths });
+    // conflictsResolved is truthful: true only when no blocking conflict survives the applied resolutions.
+    const conflictsResolved = !conflicts.some((item) => item.severity === "error");
+    const profile: DevelopmentExecutionProfile = { id: existing?.id ?? this.createId(), workflowId: draft.workflowId, workItemId: draft.workItemId, executionCapabilityId: capability.id, ...(agent ? { agentConfigurationId: agent.id } : {}), skillId: skill.id, instructionIds: [...new Set(effectiveInstructionIds)], selectedInstructionIds: [...new Set(draft.instructionIds)], conflictResolutions: resolutions, revision: (existing?.revision ?? 0) + 1, status: "valid", validation: { capabilityAvailable: true, skillAvailable: true, instructionsAvailable: true, conflictsResolved }, instructionHashes, instructionPaths, skillHash: skill.contentHash, contentHash, createdAt: existing?.createdAt ?? timestamp, updatedAt: timestamp };
     await this.commit({ ...this.state, profiles: existing ? replace(this.state.profiles, profile) : [...this.state.profiles, profile], correlations: { ...this.state.correlations, [correlationId]: profile.id } }, timestamp);
     await this.dependencies.invalidatePrompt(draft.workItemId);
     return this.load(draft.workflowId, draft.workItemId);
@@ -143,6 +157,8 @@ export class ExecutionConfigurationService {
   }
   manualInstructionPaths(): string[] { return [...this.state.manualInstructionPaths]; }
   manualAgents(): ManualAgentConfiguration[] { return this.state.manualAgents.map((item) => ({ ...item })); }
+  /** Monotonic revision of the persisted execution-configuration state. Increments on every commit (profile save, manual agent change, instruction path add), so callers can detect profile staleness. */
+  get revision(): number { return this.state.revision; }
 
   private async detect(sources: InstructionSource[]): Promise<InstructionConflict[]> {
     const unavailable = sources.filter((item) => item.availability !== "available"); const available = sources.filter((item) => item.availability === "available");
@@ -164,3 +180,38 @@ export class ExecutionConfigurationService {
 function emptyState(updatedAt = new Date().toISOString(), skills: SkillDefinition[] = []): ExecutionConfigurationPersistentState { return { schemaVersion: EXECUTION_CONFIGURATION_SCHEMA_VERSION, revision: 0, manualAgents: [], manualInstructionPaths: [], skills, profiles: [], correlations: {}, updatedAt }; }
 function replace<T extends { id: string }>(items: T[], value: T): T[] { return items.map((item) => item.id === value.id ? value : item); }
 function hash(value: unknown): string { return createHash("sha256").update(JSON.stringify(value)).digest("hex"); }
+
+/**
+ * Apply UI-selected conflict resolutions to the original instruction selection,
+ * producing the effective instruction set. Winner/exclusion choices remove the
+ * losing/excluded instruction. `acknowledge` never changes the set and never
+ * bypasses a blocking (error-severity) conflict.
+ */
+function applyConflictResolutions(selectedIds: string[], conflicts: InstructionConflict[], resolutions: ProfileConflictResolution[]): string[] {
+  const removed = new Set<string>();
+  for (const resolution of resolutions) {
+    const conflict = conflicts.find((item) => item.id === resolution.conflictId);
+    if (!conflict) continue;
+    const [first, second] = conflict.instructionIds;
+    switch (resolution.resolution) {
+      case "exclude-first":
+        if (first) removed.add(first);
+        break;
+      case "exclude-second":
+        if (second) removed.add(second);
+        break;
+      case "win-first":
+        // The first instruction wins; every other party to the conflict is removed.
+        for (const id of conflict.instructionIds.slice(1)) removed.add(id);
+        break;
+      case "win-second":
+        if (first) removed.add(first);
+        for (const id of conflict.instructionIds.slice(2)) removed.add(id);
+        break;
+      case "acknowledge":
+        if (conflict.severity === "error") throw new ExecutionConfigurationError("instruction-conflict", "A blocking instruction conflict cannot be resolved by acknowledgment. Exclude an instruction or pick a winner.");
+        break;
+    }
+  }
+  return selectedIds.filter((id) => !removed.has(id));
+}

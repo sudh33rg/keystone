@@ -39,8 +39,18 @@ export const InstructionConflictSchema = z.object({
   instructionIds: z.array(z.string().min(1)).min(1), sourcePaths: z.array(z.string().min(1)).min(1), evidence: z.array(z.string().min(1).max(500)).min(1), recommendedResolution: z.string().min(1).max(2000),
 }).strict();
 
+export const ConflictResolutionChoiceSchema = z.enum(["win-first", "win-second", "exclude-first", "exclude-second", "acknowledge"]);
+export const ProfileConflictResolutionSchema = z.object({
+  conflictId: z.string().min(1).max(200),
+  resolution: ConflictResolutionChoiceSchema,
+  note: z.string().max(2000).optional(),
+}).strict();
+
 export const DevelopmentExecutionProfileSchema = z.object({
   id: z.string().uuid(), workflowId: z.string().uuid(), workItemId: z.string().uuid(), executionCapabilityId: z.string().min(1).max(200), agentConfigurationId: z.string().min(1).max(500).optional(), skillId: z.string().min(1).max(200), instructionIds: z.array(z.string().min(1).max(200)).max(100),
+  selectedInstructionIds: z.array(z.string().min(1).max(200)).max(100).optional(),
+  conflictResolutions: z.array(ProfileConflictResolutionSchema).max(50).optional(),
+  revision: z.number().int().positive().optional(),
   status: z.enum(["draft", "valid", "invalid", "stale"]), validation: z.object({ capabilityAvailable: z.boolean(), skillAvailable: z.boolean(), instructionsAvailable: z.boolean(), conflictsResolved: z.boolean() }).strict(),
   instructionHashes: z.record(z.string(), z.string().regex(/^[a-f0-9]{64}$/)), instructionPaths: z.record(z.string(), z.string().min(1).max(10_000)).optional(), skillHash: z.string().regex(/^[a-f0-9]{64}$/), contentHash: z.string().regex(/^[a-f0-9]{64}$/), createdAt: z.string().datetime(), updatedAt: z.string().datetime(),
 }).strict();
@@ -56,6 +66,8 @@ export const ExecutionConfigurationPersistentStateSchema = z.object({
 }).strict();
 
 export type ExecutionCapability = z.infer<typeof ExecutionCapabilitySchema>;
+export type ConflictResolutionChoice = z.infer<typeof ConflictResolutionChoiceSchema>;
+export type ProfileConflictResolution = z.infer<typeof ProfileConflictResolutionSchema>;
 export type ManualAgentConfiguration = z.infer<typeof ManualAgentConfigurationSchema>;
 export type DiscoveredAgent = z.infer<typeof DiscoveredAgentSchema>;
 export type InstructionSource = z.infer<typeof InstructionSourceSchema>;

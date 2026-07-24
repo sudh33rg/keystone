@@ -1,9 +1,15 @@
 # Keystone Intelligence Enhancement Implementation Plan
 
-> **Revised 2026-07-24.** The original 12-phase plan was written before large parts of
-> the intelligence layer landed. This revision reconciles the plan against the current
-> codebase and folds in extraction opportunities identified from the reference repos
-> under `/Users/sudheer/workspace/refs/check/` (see "Reference-Repo Findings" at the end).
+> **Revised 2026-07-24.** The original 12-phase plan was written
+> before large parts of the intelligence layer landed. This revision reconciles the plan
+> against the current codebase and folds in extraction opportunities identified from the
+> reference repos under `/Users/sudheer/workspace/refs/check/` (see "Reference-Repo
+> Findings" at the end).
+>
+> **Incremental freshness is delivered exclusively by Keystone-owned runtime services.**
+> Runtime file watching, repository revision detection, branch-state observation, startup
+> reconciliation, manual refresh, change collection, scheduling, and incremental ingestion
+> run through `ChangeCollector`, `IngestionScheduler`, and `StartupReconciler`.
 >
 > Guiding constraints (unchanged): **additive only** — no new runtime deps unless
 > justified, no contract/type breaks (optional fields only), no probabilistic/LLM
@@ -104,31 +110,7 @@ Extend `SchemaSurfaceExtractor.test.ts` / technology tests with per-framework fi
 
 ---
 
-## Phase 3: Git-hook incremental sync *(NEW, from codegraph)*
-
-### Overview
-Keystone refreshes the snapshot via runtime file-watch (`ChangeCollector` /
-`IngestionScheduler`), but has **no git post-commit/post-merge/post-checkout refresh**.
-After branch switches / pulls the watcher can miss bulk changes. codegraph's
-`sync/git-hooks.ts` is a clean, self-contained, marker-delimited **idempotent** hook
-installer to port.
-
-### Implementation
-1. New service `src/core/intelligence/runtime/GitHookSyncService.ts` — installs
-   marker-delimited `post-commit` / `post-merge` / `post-checkout` hooks that trigger a
-   bounded reconcile (reuse `StartupReconciler` / `IngestionScheduler`), guarded so it
-   no-ops when not a git repo.
-2. Idempotent install/uninstall preserving user-authored hook content (copy the
-   `MARKER_BEGIN`/`MARKER_END` approach).
-3. Off by default; opt-in via config, surfaced through existing settings plumbing.
-
-### Verification
-Unit test over a temp git repo: install → hooks contain marker block once (idempotent on
-re-install); uninstall removes only the marked block.
-
----
-
-## Phase 4: SECURITY_SCAN query operation *(completes original P6/P7/P9)*
+## Phase 3: SECURITY_SCAN query operation *(completes original P6/P7/P9)*
 
 ### Overview
 `SecurityIntelligenceServices.ts` already implements the analysis (attack surface, trust
@@ -149,7 +131,7 @@ disabled flag short-circuits.
 
 ---
 
-## Phase 5: Repository overview — Architecture & Dependencies tabs *(completes P8/P10)*
+## Phase 4: Repository overview — Architecture & Dependencies tabs *(completes P8/P10)*
 
 ### Overview
 `IntelligenceOverview.tsx` shows counts. Add graph tabs backed by the **existing**
@@ -169,7 +151,7 @@ Tabs render community/dependency graphs; empty-state handled; no new deps in
 
 ---
 
-## Phase 6: Complete OKF concept enrichment *(finishes original P1 — currently a stub)*
+## Phase 5: Complete OKF concept enrichment *(finishes original P1 — currently a stub)*
 
 ### Overview
 `OkfQueryService` today only resolves + ranks entities — it returns bare
@@ -178,12 +160,12 @@ identical to `SEARCH`. The original plan's promise (methods, calls, called-by, i
 description, evidence) was never implemented. This phase delivers it, fixes the dead-code
 handler bug, and adds coverage.
 
-### 6.1 Fix the engine handler bug (blocker)
+### 5.1 Fix the engine handler bug (blocker)
 `QueryEngine.ts:1885` calls `this.okf.query(context, { id: resolved[0]?.selected?.id })`
 — it never forwards `value`, so the service's search-mode branch and `rankOkfEntity` are
 unreachable. Pass both: `{ id: resolved[0]?.selected?.id, value: <raw seed value> }`.
 
-### 6.2 Add the `okfConcept` result shape (additive schema)
+### 5.2 Add the `okfConcept` result shape (additive schema)
 Extend `QueryResultItemSchema` in `src/shared/contracts/query.ts` with an **optional**
 `okfConcept` object (additive, non-breaking):
 ```typescript
@@ -197,7 +179,7 @@ okfConcept: z.object({
 }).optional()
 ```
 
-### 6.3 Build the concept in `OkfQueryService`
+### 5.3 Build the concept in `OkfQueryService`
 Add `buildOkfConcept(entity, context)` that derives, from the **existing** snapshot
 graph (no new indexing):
 - **methods** — `DECLARES`/`contains` children of the entity that are Method/Function.
@@ -211,13 +193,13 @@ Reuse `context.incoming` / `context.outgoing` adjacency already built by `QueryC
 Attach the object to the resolved item(s); keep the ranked-search fallback for value
 queries.
 
-### 6.4 Test coverage (currently zero)
+### 5.4 Test coverage (currently zero)
 Add `tests/unit/intelligence/query/OkfConcept.test.ts` asserting: exact-id lookup returns
 one item with a populated `okfConcept` (methods/calls/calledBy/imports); value search
 returns ranked concepts; entity with no relationships yields empty arrays not `undefined`;
 evidence excerpt populates `description`.
 
-### 6.5 UI rendering (optional, follow-on)
+### 5.5 UI rendering (optional, follow-on)
 Add an `okf-concepts` branch in `QueryWorkspace.tsx` that renders the concept card
 (description + methods/calls/called-by/imports lists) instead of falling through to the
 generic result list.
@@ -236,6 +218,11 @@ passes; manual `okf <symbol>` query returns an enriched concept.
   covers this interactively; static Mermaid is optional and low value.
 - **Standalone "tools" duplicating views (P11, P12):** the canvas/overview surfaces
   already provide these; standalone tools would fork UI state.
+- **Out-of-process sync mechanisms:** not planned. Runtime file watching, repository
+  revision detection, branch-state observation, startup reconciliation, manual refresh,
+  change collection, scheduling, and incremental ingestion through Keystone-owned runtime
+  services (`ChangeCollector`, `IngestionScheduler`, `StartupReconciler`) are the approved
+  freshness mechanisms.
 
 ---
 
@@ -243,11 +230,11 @@ passes; manual `okf <symbol>` query returns an enriched concept.
 
 Evaluated `/Users/sudheer/workspace/refs/check/` (10 repos). Verdict: Keystone's
 intelligence layer is stronger than all of them; only **3 narrow, additive borrows**
-are worth doing (now Phases 1–3 above).
+are worth doing (now Phases 1–2 above; security + overview are internal).
 
 | Repo | Net-new value | Action |
 |---|---|---|
-| **codegraph** (TS, tree-sitter→SQLite→MCP) | 21 framework resolvers; git-hook sync | Phases 2 & 3 |
+| **codegraph** (TS, tree-sitter→SQLite→MCP) | 21 framework resolvers | Phase 2 |
 | **graphiti** (Py temporal KG) | node-distance / MMR / RRF rerankers | Phase 1 (node-distance) |
 | Keystone-Part01 | doc stubs (<500 B) | none |
 | codepropertygraph (Joern/Scala) | formal CPG schema | none — Keystone has `CpgQueryService` |
@@ -257,21 +244,21 @@ are worth doing (now Phases 1–3 above).
 
 **Skip criteria applied:** anything LLM-driven, model-weight based, agent-orchestration,
 or requiring a new runtime/graph DB (Neo4j, Scala/Bazel) — these re-introduce coupling or
-non-determinism Keystone deliberately avoids.
+non-determinism Keystone deliberately avoids. Anything introducing out-of-process state
+that conflicts with Keystone's in-process reconciliation pipeline was likewise excluded.
 
 ---
 
 ## Suggested order
 
 1. **Phase 0** (cleanup, minutes)
-2. **Phase 6.1** (OKF handler bug fix — one-liner, unblocks OKF entirely)
-3. **Phase 6.2–6.4** (OKF enrichment + tests — finishes the original headline feature)
+2. **Phase 5.1** (OKF handler bug fix — one-liner, unblocks OKF entirely)
+3. **Phase 5.2–5.4** (OKF enrichment + tests — finishes the original headline feature)
 4. **Phase 2** (framework breadth — lowest risk, high value, pure rule additions)
 5. **Phase 1** (node-distance reranker — best querying-quality payoff)
-6. **Phase 3** (git-hook sync)
-7. **Phase 4** (SECURITY_SCAN — exposes existing engine)
-8. **Phase 5** (overview tabs — UI polish on existing builders)
-9. **Phase 6.5** (OKF UI card — follow-on polish)
+6. **Phase 3** (SECURITY_SCAN — exposes existing engine)
+7. **Phase 4** (overview tabs — UI polish on existing builders)
+8. **Phase 5.5** (OKF UI card — follow-on polish)
 
 ## Summary of changes
 
@@ -280,16 +267,20 @@ non-determinism Keystone deliberately avoids.
 | 0 | Fix duplicate enum entries | No | internal bug |
 | 1 | Node-distance/diversity reranker | No (optional filter field) | graphiti |
 | 2 | More framework/route rules | No (additive rules) | codegraph |
-| 3 | Git-hook incremental sync | No (opt-in service) | codegraph |
-| 4 | SECURITY_SCAN query op + UI | No (additive op) | internal (engine exists) |
-| 5 | Overview Architecture/Dependencies tabs | No (reuse builders) | internal |
-| 6 | Complete OKF concept enrichment + bug fix + tests | No (optional `okfConcept` field) | internal (stub → done) |
+| 3 | SECURITY_SCAN query op + UI | No (additive op) | internal (engine exists) |
+| 4 | Overview Architecture/Dependencies tabs | No (reuse builders) | internal |
+| 5 | Complete OKF concept enrichment + bug fix + tests | No (optional `okfConcept` field) | internal (stub → done) |
 
 **All changes remain additive.** No existing functionality is modified or removed.
 
 ### Correction log
-- **2026-07-24:** Original plan marked OKF (P1) and IMPACT (P2) as deliverables to build.
-  A later revision wrongly marked both **DONE**. End-to-end trace shows: **IMPACT/blast
-  radius, FLOW, and ARCHITECTURE are genuinely complete and tested**, but **OKF is a stub**
-  (no concept enrichment, dead-code handler path, zero tests, no UI). Phase 6 added to
-  actually finish it.
+- **2026-07-24 (first revision):** Original plan marked OKF (P1) and IMPACT (P2) as
+  deliverables to build. A later revision wrongly marked both **DONE**. End-to-end trace
+  shows: **IMPACT/blast radius, FLOW, and ARCHITECTURE are genuinely complete and tested**,
+  but **OKF is a stub** (no concept enrichment, dead-code handler path, zero tests, no UI).
+  Phase 5 added to finish OKF.
+- **2026-07-24 revision:** Incremental freshness is delivered by Keystone-owned runtime
+  services only — runtime file watching, repository revision detection, branch-state
+  observation, startup reconciliation, manual refresh, change collection, scheduling, and
+  incremental ingestion. Phases 4–6 renumbered to 3–5; all phase references in tables,
+  suggested order, and reference-repo findings updated.
