@@ -290,9 +290,9 @@ export class StageWorkspaceService {
         const aggregate = await this.executionConfiguration.saveProfile(draft, workItemId);
         const profile = aggregate.profile;
         if (!profile) throw new StageWorkspaceError("EXECUTION_PROFILE_SAVE_FAILED", "The execution profile could not be saved.");
-        // Persist the profile's OWN version, never the global service revision.
+        // Persist the profile's OWN version exclusively, never the global service revision.
         executionProfileId = profile.id;
-        executionProfileRevision = profile.revision ?? this.executionConfiguration.revision;
+        executionProfileRevision = profile.revision;
         executionProfileContentHash = profile.contentHash;
       } catch (cause) {
         const err = cause as { name?: string; code?: string; message?: string };
@@ -655,7 +655,7 @@ export class StageWorkspaceService {
       scopeItems,
       skillId: state.configuration.skill,
       selectedInstructionIds: state.selectedInstructionIds ?? [],
-      executionProfileId: state.executionProfileId,
+      executionProfileId: state.executionProfileId!,
       executionProfileRevision: state.executionProfileRevision,
       executionProfileContentHash: state.executionProfileContentHash,
       previous: state.contextPackage,
@@ -1196,7 +1196,7 @@ export class StageWorkspaceService {
       scopeItems: analysis.scope,
       skillId: state.configuration.skill,
       selectedInstructionIds: state.selectedInstructionIds,
-      executionProfileId: state.executionProfileId,
+      executionProfileId: state.executionProfileId!,
       executionProfileRevision: state.executionProfileRevision,
       executionProfileContentHash: state.executionProfileContentHash,
       previous: state.contextPackage,
@@ -1221,7 +1221,7 @@ export class StageWorkspaceService {
     scopeItems: StageScopeItem[];
     skillId: string;
     selectedInstructionIds: string[];
-    executionProfileId?: string;
+    executionProfileId: string;
     executionProfileRevision?: number;
     executionProfileContentHash?: string;
     previous: StageContextPackage | undefined;
@@ -1264,7 +1264,7 @@ export class StageWorkspaceService {
       workflowId: workflow.id,
       stageId,
       workItemId,
-      executionProfileId: input.executionProfileId ?? workItemId,
+      executionProfileId: input.executionProfileId,
       intent: workflow.intent.text,
       workType: canonicalWorkTypeLabel(workflow.intent.workType),
       ...(workflow.specification ? { specification: workflow.specification.text } : {}),

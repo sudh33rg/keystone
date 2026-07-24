@@ -273,6 +273,86 @@ that conflicts with Keystone's in-process reconciliation pipeline was likewise e
 
 **All changes remain additive.** No existing functionality is modified or removed.
 
+---
+
+## Phase 6: Guided Intelligence experience layer *(NEW — discovery-first UX over the existing engine)*
+
+### Problem
+Every capability above (semantic graph, CPG, architecture/dependency builders, flows,
+impact, security/performance, schema/route/messaging extraction, OKF, evidence,
+provenance, confidence, context packages) already exists and is deterministic — but it is
+**fragmented and exposed mainly as generic graph/query tools**. A developer who knows
+nothing about the repository cannot open Intelligence and understand the system through
+visible buttons, guided submenus, diagrams and progressive drill-down; they must learn
+internal query names, graph terminology, symbol identifiers and repository paths.
+
+### Design (additive layer — zero changes to the deep engine)
+A thin orchestration + presentation layer sits **on top of** the existing
+`IntelligenceQueryService` (`unified()` + `overview()`) and `CpgQueryService`. It
+introduces **no second source of truth** and no new extraction — it only reshapes existing
+query results into a guided, discovery-friendly envelope.
+
+- **Canonical guided contract** — `src/shared/contracts/guidedIntelligence.ts`:
+  `GuidedRequest` (view + action + optional entity/orientation/limits) and `GuidedResult`
+  (answer summary, entities, canonical `GuidedDiagram`, ordered `flowPaths`, ranked
+  evidence, confidence, limitations, diagnostics, orientation breadcrumbs, follow-up
+  actions, context candidates, generation). The canonical `GuidedDiagram` models
+  `nodes`/`edges`/`containers`/`steps`/`orientation`/`legend` with typed `NodeKind`,
+  `EdgeInteraction` (http-request, database-read/write, event-publish/subscribe,
+  queue-send/receive, foreign-key, calls, imports, …), and `ConfidenceCategory`
+  (exact → resolved → cpg-assisted → convention-based → structurally-inferred →
+  candidate → unresolved).
+- **Deterministic mapping helpers** — `src/core/intelligence/guided/diagramMapping.ts`:
+  pure, dependency-free functions (`classifyInteraction`, `classifyNodeKind`,
+  `classifyConfidence`, `toGuidedNode`, `toGuidedEdge`, `buildDiagramForResult`,
+  `buildContextCandidates`). Relationship `type` literals (`keystone.core.READS_FROM`,
+  `WRITES_TO`, `EMITS`, `CONSUMES`, `ROUTE_EXPOSES`, `FOREIGN_KEY`, …) map
+  deterministically to edge interactions; entity types map to node kinds; unresolved /
+  candidate relationships render dashed. Extracted as pure functions specifically so they
+  are unit-testable in isolation and reusable across every guided submenu.
+- **Orchestration facade** — `src/core/intelligence/guided/IntelligenceOrchestrationService.ts`:
+  accepts a `GuidedRequest`, picks the correct existing `QueryOperation`
+  (ARCHITECTURE / FLOW / CONTROL_FLOW / DATA_FLOW / DATA_USAGE / DEPENDENCIES),
+  calls `IntelligenceQueryService.unified(...)`, and assembles one `GuidedResult` with
+  diagram, orientation breadcrumbs, follow-ups and context candidates. `overview()`
+  produces the repository orientation (name/type, readiness, generation, languages,
+  detected technologies) plus "Start exploring" and "Ask a question" follow-ups.
+- **Transport** — additive `intelligence/guided` request/response wired through
+  `messages.ts`, `WebviewMessageRouter.ts`, and `HostBridge.ts`. The existing
+  `intelligence/*` messages and the `/intelligence` route are left untouched.
+- **UI** — `src/ui/components/intelligence/GuidedIntelligence.tsx` on a new
+  `/intelligence-guided` route: full-width workspace, visible secondary navigation
+  (all submenus shown as buttons — slice-1 six enabled, the rest visibly present and
+  labelled as later slices, no "Coming soon" placeholders, no overflow hiding),
+  orientation strip with breadcrumbs, Overview with "Start exploring" grid + Ask panel,
+  semantic diagram renderer (hierarchical for system-landscape, left-to-right / swimlanes
+  for flows), colour-and-shape legend (not colour-only), dashed inferred edges, entity
+  list with confidence badges, and a shared one-click context tray with token estimate.
+
+### Slice 1 status (DONE ✅ — gated)
+Overview, Systems, Architecture, Flows, Messaging, and Data-and-Database render real
+repository data through the contracts above. Covered by
+`tests/unit/intelligence/GuidedIntelligenceOrchestration.test.ts` (13 tests):
+relationship→interaction classification, entity→node-kind mapping, confidence
+categorisation, system-landscape diagram construction, ordered-flow correctness with
+orientation (left-to-right default, top-to-bottom for startup), messaging
+producer→consumer classification, database read/write classification, evidence
+propagation onto edges, unresolved→dashed handling, context-candidate selection, and the
+service-level `overview()` / `run()` envelopes.
+
+### Later slices (same contracts, no engine changes)
+APIs/Routes, Dependencies, Code, Tests, Impact, Security, Performance, OKF, Explore, and
+Ask submenus are added by extending `operationForView` + the orchestration mappers and
+enabling their already-visible secondary-nav buttons — no new transport or contract work.
+
+### Guarantees
+Purely additive: no existing Intelligence capability, view builder, query operation,
+schema/route/messaging extractor, CPG service, security/performance service, OKF path,
+evidence/provenance/confidence, or context-package integration is modified, simplified,
+duplicated or removed. Global navigation stays Home / Work / Intelligence / History. No
+new runtime dependency; the semantic diagram renderer is dependency-free SVG and is
+interchangeable with the existing `@xyflow/react` builders in a later slice.
+
 ### Correction log
 - **2026-07-24 (first revision):** Original plan marked OKF (P1) and IMPACT (P2) as
   deliverables to build. A later revision wrongly marked both **DONE**. End-to-end trace

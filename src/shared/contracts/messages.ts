@@ -123,6 +123,7 @@ import {
   type QuerySuggestionsResult,
   type QueryTemplatesResult,
 } from "./query";
+import { GuidedRequestSchema, type GuidedResult } from "./guidedIntelligence";
 import {
   AgentRecommendationPayloadSchema,
   AgentSelectionPayloadSchema,
@@ -619,6 +620,7 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
   request("intelligence/cpg", IntelligenceQuerySchema),
   request("intelligence/cpg/scope", CpgScopeQuerySchema),
   request("intelligence/cpg/slice", CpgSliceQuerySchema),
+  request("intelligence/guided", GuidedRequestSchema),
   request(
     "intelligence/exported-symbols",
     z.object({ fileId: z.string().min(1).optional() }).strict(),
@@ -1544,6 +1546,7 @@ export interface WebviewRequestResults {
   "intelligence/cpg": IntelligenceQueryResult;
   "intelligence/cpg/scope": CpgQueryResult | undefined;
   "intelligence/cpg/slice": CpgSliceResult | undefined;
+  "intelligence/guided": GuidedResult;
   "intelligence/source/open": undefined;
   "workflow/capture": DevelopmentWorkflowSnapshot;
   "workflow/list": DevelopmentWorkflowSnapshot[];

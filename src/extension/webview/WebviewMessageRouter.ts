@@ -7,6 +7,7 @@ import type { VsCodeDevelopmentAdapter } from "../development/VsCodeDevelopmentA
 import type { ExecutionConfigurationService } from "../../core/development/ExecutionConfigurationService";
 import type { DevelopmentScopeItem } from "../../shared/contracts/development";
 import type { IntelligenceQueryService } from "../../core/intelligence/IntelligenceQueryService";
+import { IntelligenceOrchestrationService } from "../../core/intelligence/guided/IntelligenceOrchestrationService";
 import type { IntelligenceGraphSliceService } from "../../core/intelligence/canvas/IntelligenceGraphSliceService";
 import type { IntelligenceEngineeringQueryService } from "../../core/intelligence/canvas/IntelligenceEngineeringQueryService";
 import type { ImpactQaService } from "../../core/impactQa/ImpactQaService";
@@ -25,6 +26,7 @@ import { HandoffError } from "../../shared/contracts/handoff";
 import type { KeystoneLogger } from "../../shared/logging/KeystoneLogger";
 import type { CpgQueryService } from "../../core/intelligence/cpg/CpgQueryService";
 import type { IntelligenceQuery } from "../../shared/contracts/query";
+import { GuidedRequestSchema } from "../../shared/contracts/guidedIntelligence";
 import type { CopilotAdapter } from "../../core/copilot/CopilotAdapter";
 import type { CopilotAgentRegistry } from "../../core/copilot/AgentRegistry";
 import type { DelegationService } from "../../core/copilot/DelegationService";
@@ -676,6 +678,16 @@ export class WebviewMessageRouter {
         const overview = await this.services.intelligenceQuery.overview();
         await this.postMessage(hostMessage("intelligence/updated", overview));
         await this.sendSuccess(request.requestId, overview);
+        return;
+      }
+      case "intelligence/guided": {
+        const orchestration = new IntelligenceOrchestrationService(this.services.intelligenceQuery, this.services.cpgQuery);
+        const payload = GuidedRequestSchema.parse(request.payload ?? {});
+        if (payload.view === "overview" && !payload.entityId && !payload.entityValue) {
+          await this.sendSuccess(request.requestId, await orchestration.overview(payload));
+        } else {
+          await this.sendSuccess(request.requestId, await orchestration.run(payload));
+        }
         return;
       }
       case "intelligence/diagnostics":

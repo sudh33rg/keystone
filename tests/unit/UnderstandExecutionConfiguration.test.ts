@@ -466,3 +466,121 @@ describe("Understand execution configuration — conflicts, agents, and profile 
     await expect(service.delegate(workflow.id)).rejects.toThrow(/execution profile changed/i);
   });
 });
+
+// Regression: no execution-profile fallbacks remain. The real persisted profile id
+// must be used (never the work-item id), and a missing profile must fail with
+// EXECUTION_PROFILE_REQUIRED rather than being silently substituted.
+describe("Understand execution configuration — no profile fallbacks", () => {
+  let workflow: CanonicalWorkflow;
+  let exec: { service: ExecutionConfigurationService; read: () => unknown; invalidations: () => number };
+  let stored: unknown;
+  let mem: { get: () => unknown; set: (v: unknown) => void };
+  let service: StageWorkspaceService;
+
+  const instrA = { id: "instruction:a", name: "a.md", workspaceRelativePath: ".github/a.md", uri: "file:///repo/.github/a.md", sourceType: "repository" as const, contentHash: "a".repeat(64), sizeBytes: 20, availability: "available" as const };
+  const instrB = { id: "instruction:b", name: "b.md", workspaceRelativePath: ".github/b.md", uri: "file:///repo/.github/b.md", sourceType: "repository" as const, contentHash: "b".repeat(64), sizeBytes: 20, availability: "available" as const };
+  const fallbackSkill = { id: "keystone-development", name: "Development", description: "Implement", applicableStageTypes: ["development"], promptFragment: "Implement and list files changed.", expectedOutput: { summaryRequired: true, changedFilesRequired: true, testsRequired: true, assumptionsRequired: true }, source: "keystone-built-in" as const, contentHash: "c".repeat(64).toString().slice(0, 64), version: 1 };
+
+  function localConflictFixture() {
+    let persistence: unknown; let invalidations = 0;
+    const serviceHolder: { current?: ExecutionConfigurationService } = {};
+    const svc = new ExecutionConfigurationService(
+      { read: async () => persistence, write: async (value) => { persistence = structuredClone(value); } },
+      {
+        discoverCapabilities: async () => ({ capabilities: [capability], agents: [], manualAgents: serviceHolder.current?.manualAgents() ?? [], diagnostics: [] }),
+        discoverInstructions: async () => ({ sources: [instrA, instrB], diagnostics: [] }),
+        previewInstruction: async (path: string) => {
+          const source = path.endsWith("a.md") ? instrA : instrB;
+          return { ...source, content: path.endsWith("a.md") ? "Require tests." : "Forbid tests." };
+        },
+        listSkills: () => [fallbackSkill],
+        conflicts: () => [],
+        invalidatePrompt: async () => { invalidations += 1; },
+      },
+    );
+    serviceHolder.current = svc;
+    return { service: svc, read: () => persistence, invalidations: () => invalidations };
+  }
+
+  beforeEach(async () => {
+    workflow = makeWorkflow();
+    exec = localConflictFixture();
+    await exec.service.initialize();
+    await exec.service.createManualAgent({ displayName: "Conflicting Manual Agent", chatCommandId: "workbench.action.chat.open" }, "seed-agent-2");
+    const understandStage = workflow.stages.find((item) => item.type === "understand")!;
+    stored = {
+      schemaVersion: 1,
+      revision: 1,
+      understand: {
+        [understandStage.id]: {
+          schemaVersion: 1,
+          workflowId: workflow.id,
+          stageId: understandStage.id,
+          workItemId: crypto.randomUUID(),
+          completion: { allowed: false, unmet: [] },
+          intelligence: { status: "ready", generation: 1, files: 5, symbols: 20, relationships: 12, message: "ready" },
+          configuration: { mode: "clipboard", agentId: "", agentLabel: "", agentAvailable: false, skill: "", instructions: [], capabilities: [], agentOptions: [], manualAgentOptions: [], skillOptions: [], instructionOptions: [], conflicts: [] },
+          selectedInstructionIds: [],
+          conflictResolutions: [],
+          delegations: [],
+          analysis: {
+            id: crypto.randomUUID(),
+            objective: "Understand the caching intent",
+            sections: [{ title: "Repository purpose", statement: "A VS Code extension.", confidence: "confirmed", evidence: [] }],
+            scope: [{ id: crypto.randomUUID(), kind: "file", reference: "src/cache.ts", label: "src/cache.ts", confidence: "confirmed", included: true }],
+            assumptions: [], ambiguities: [], requiredFacts: ["Relevant files"], recommendedNextAction: "Generate context", intelligenceRevision: 1, contentHash: "x", approved: true, createdAt: new Date().toISOString(),
+          },
+          primaryAction: "generate-context",
+          updatedAt: new Date().toISOString(),
+        },
+      },
+      investigation: {},
+      updatedAt: new Date().toISOString(),
+    };
+    mem = { get: () => stored, set: (v) => { stored = v; } };
+    service = new StageWorkspaceService(
+      { read: async () => stored, write: async (v) => { stored = v; } },
+      stubWorkflowService(workflow),
+      stubIntelligence(),
+      stubCopilot(),
+      undefined,
+      exec.service,
+      stubContextPackages(),
+      stubReadScopeContent,
+      new DevelopmentSkillService(),
+    );
+    await service.initialize();
+  });
+
+  afterEach(() => { mem.set(undefined); });
+
+  it("throws EXECUTION_PROFILE_REQUIRED instead of substituting the work-item id", async () => {
+    // No profile was saved for this stage, so executionProfileId is undefined.
+    const state = await service.loadUnderstand(workflow.id);
+    expect(state.executionProfileId).toBeUndefined();
+    // Generating context must fail loudly — it must NOT fall back to workItemId.
+    await expect(service.generateContext(workflow.id))
+      .rejects.toThrow(/EXECUTION_PROFILE_REQUIRED|Save a valid execution profile/);
+    // The persisted state must never record the work-item id as a profile id.
+    const after = await service.loadUnderstand(workflow.id);
+    expect(after.executionProfileId).toBeUndefined();
+    expect(after.workItemId).not.toBe(after.executionProfileId);
+  });
+
+  it("uses the profile-specific revision exclusively (no global service revision fallback)", async () => {
+    const saved = await service.setConfiguration(workflow.id, {
+      mode: "clipboard", skill: "keystone-development", agentId: "", instructionIds: [instrA.id], conflictResolutions: [],
+    });
+    // The persisted profile carries its own revision; the stage records exactly that.
+    const aggregate = await exec.service.load(workflow.id, saved.workItemId);
+    expect(aggregate.profile?.revision).toBe(saved.executionProfileRevision);
+    expect(saved.executionProfileRevision).toBeGreaterThan(0);
+    // Re-saving bumps the profile-specific revision; the stage tracks the new one.
+    const resaved = await service.setConfiguration(workflow.id, {
+      mode: "clipboard", skill: "keystone-development", agentId: "", instructionIds: [instrB.id], conflictResolutions: [{ conflictId: "conflict:x", resolution: "win-first" }],
+    });
+    expect(resaved.executionProfileRevision).toBe((aggregate.profile?.revision ?? 0) + 1);
+    const resavedAggregate = await exec.service.load(workflow.id, resaved.workItemId);
+    expect(resaved.executionProfileRevision).toBe(resavedAggregate.profile?.revision);
+  });
+});

@@ -38,6 +38,7 @@ import {
   QuerySuggestionsResultSchema,
   QueryTemplatesResultSchema,
 } from "../../shared/contracts/query";
+import { GuidedResultSchema } from "../../shared/contracts/guidedIntelligence";
 import {
   AgentRecommendationSchema,
   CopilotAgentDescriptorSchema,
@@ -467,6 +468,8 @@ function validateResult(type: WebviewRequestType, value: unknown): unknown {
     case "intelligence/changes":
     case "intelligence/cpg":
       return IntelligenceQueryResultSchema.parse(value);
+    case "intelligence/guided":
+      return GuidedResultSchema.parse(value);
     case "intelligence/query/compile":
       return QueryCompilationSchema.parse(value);
     case "intelligence/query/suggestions":

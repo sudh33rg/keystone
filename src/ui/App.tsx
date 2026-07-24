@@ -20,6 +20,10 @@ const IntelligenceOverviewRoute = lazy(async () => {
   const module = await import("./components/intelligence/IntelligenceOverview");
   return { default: module.IntelligenceOverview };
 });
+const GuidedIntelligenceRoute = lazy(async () => {
+  const module = await import("./components/intelligence/GuidedIntelligence");
+  return { default: module.GuidedIntelligence };
+});
 const ActiveWorkRoute = lazy(async () => {
   const module = await import("./components/workbench/ActiveWork");
   return { default: module.ActiveWork };
@@ -282,6 +286,10 @@ export function App({ bridge }: AppProps): React.JSX.Element {
                   .catch(showError(setError));
               }}
             />
+          </Suspense>
+        ) : activeRoute === "/intelligence-guided" ? (
+          <Suspense fallback={<RouteLoadingView label="Guided Intelligence" />}>
+            <GuidedIntelligenceRoute bridge={bridge} />
           </Suspense>
         ) : activeRoute === "/active-work" ? (
           <Suspense fallback={<RouteLoadingView label="Active Work" />}>
