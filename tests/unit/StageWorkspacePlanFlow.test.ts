@@ -117,8 +117,10 @@ function seedUnderstand(workflow: CanonicalWorkflow): StageWorkspacePersistentSt
         schemaVersion: STAGE_WORKSPACE_SCHEMA_VERSION,
         workflowId: workflow.id,
         stageId: understandStage.id,
+        workItemId: randomUUID(),
+        completion: { allowed: true, unmet: [] },
         intelligence: { status: "ready", generation: 1, files: 5, symbols: 20, relationships: 12, message: "ready" },
-        configuration: { mode: "clipboard", agentId: "", agentLabel: "", agentAvailable: false, skill: "", instructions: [], capabilities: [] },
+        configuration: { mode: "clipboard", agentId: "", agentLabel: "", agentAvailable: false, skill: "", instructions: [], capabilities: [], agentOptions: [], skillOptions: [], conflicts: [] },
         delegations: [],
         analysis: {
           id: randomUUID(),
@@ -139,7 +141,7 @@ function seedUnderstand(workflow: CanonicalWorkflow): StageWorkspacePersistentSt
         result: undefined,
         validation: undefined,
         primaryAction: "stage-completed",
-        completion: { allowed: true, unmet: [] },
+        completedAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       },
     },
@@ -301,5 +303,66 @@ describe("StageWorkspaceService capability discovery notice", () => {
     await service.initialize();
     const understand = await service.loadUnderstand(workflow.id);
     expect(understand.configuration.discoveryNotice).toContain("Copilot capability discovery failed");
+  });
+});
+
+describe("StageWorkspaceService workItemId migration and consistency", () => {
+  function seedUnderstandWithoutWorkItemId(workflow: CanonicalWorkflow): StageWorkspacePersistentState {
+    const understandStage = workflow.stages.find((item) => item.type === "understand")!;
+    const base = seedUnderstand(workflow);
+    const stage = base.understand[understandStage.id]!;
+    // Simulate an older persisted record lacking workItemId.
+    const { workItemId: _drop, ...rest } = stage as Record<string, unknown>;
+    base.understand[understandStage.id] = rest as typeof stage;
+    return base;
+  }
+
+  function buildService(workflow: CanonicalWorkflow, mem: ReturnType<typeof inMemoryPersistence>): StageWorkspaceService {
+    return new StageWorkspaceService(
+      mem.persistence,
+      stubWorkflowService(workflow),
+      stubIntelligence(),
+      stubCopilot(),
+      undefined,
+      undefined,
+      stubContextPackages(),
+      stubReadScopeContent(),
+      new DevelopmentSkillService(),
+    );
+  }
+
+  it("migrates a missing workItemId once and reuses it across state and context package", async () => {
+    const workflow = makeWorkflow();
+    const mem = inMemoryPersistence();
+    mem.set(seedUnderstandWithoutWorkItemId(workflow));
+    const service = buildService(workflow, mem);
+
+    await service.initialize();
+    const first = await service.loadUnderstand(workflow.id);
+    expect(first.workItemId).toMatch(/^[0-9a-f-]{36}$/);
+
+    // A second load must reuse the migrated id (no regeneration).
+    const second = await service.loadUnderstand(workflow.id);
+    expect(second.workItemId).toBe(first.workItemId);
+
+    // The persisted state must carry the same id (single assignment).
+    const persisted = mem.get() as StageWorkspacePersistentState;
+    const persistedStage = Object.values(persisted.understand)[0]!;
+    expect(persistedStage.workItemId).toBe(first.workItemId);
+
+    // The configuration surfaces the same workItemId-derived agent context.
+    expect(second.configuration.agentId).toBe(first.configuration.agentId);
+  });
+
+  it("rejects a configuration save whose workItemId diverges from persisted state", async () => {
+    const workflow = makeWorkflow();
+    const mem = inMemoryPersistence();
+    mem.set(seedUnderstand(workflow));
+    const service = buildService(workflow, mem);
+    await service.initialize();
+
+    await expect(
+      service.setConfiguration(workflow.id, { mode: "clipboard", workItemId: "11111111-1111-1111-1111-111111111111" }),
+    ).rejects.toThrow(/does not match the persisted stage state/);
   });
 });

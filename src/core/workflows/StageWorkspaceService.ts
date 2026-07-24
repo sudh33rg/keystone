@@ -103,7 +103,37 @@ export class StageWorkspaceService {
     const stored = await this.persistence.read();
     if (stored === undefined) return;
     const parsed = StageWorkspacePersistentStateSchema.safeParse(stored);
-    if (parsed.success) this.state = parsed.data;
+    if (!parsed.success) return;
+    this.state = parsed.data;
+    let changed = false;
+    for (const stageId of Object.keys(this.state.understand)) {
+      const stage = this.state.understand[stageId];
+      if (stage && !stage.workItemId) {
+        stage.workItemId = this.createId();
+        changed = true;
+      }
+    }
+    for (const stageId of Object.keys(this.state.investigation)) {
+      const stage = this.state.investigation[stageId];
+      if (stage && !stage.workItemId) {
+        stage.workItemId = this.createId();
+        changed = true;
+      }
+    }
+    if (changed || this.state.plan) {
+      for (const stageId of Object.keys(this.state.plan ?? {})) {
+        const stage = this.state.plan?.[stageId];
+        if (stage && !stage.workItemId) {
+          stage.workItemId = this.createId();
+          changed = true;
+        }
+      }
+    }
+    if (changed) await this.persistState();
+  }
+
+  private async persistState(): Promise<void> {
+    await this.persistence.write(this.state);
   }
 
   // ── Understand ────────────────────────────────────────────────────────
@@ -112,19 +142,21 @@ export class StageWorkspaceService {
     const workflow = this.requireWorkflow(workflowId);
     const stage = this.requireStage(workflow, "understand");
     const existing = this.state.understand[stage.id];
+    const workItemId = existing?.workItemId ?? this.createId();
     const intelligenceState = this.intelligenceState();
-    const configuration = await this.buildConfiguration(workflowId, stage.id, existing?.configuration.mode, existing?.configuration.skill);
+    const configuration = await this.buildConfiguration(workflowId, stage.id, workItemId, existing?.configuration.mode, existing?.configuration.skill, undefined, undefined);
     const base: UnderstandState = existing
-      ? { ...existing, intelligence: intelligenceState, configuration }
+      ? { ...existing, workItemId, intelligence: intelligenceState, configuration }
       : {
           schemaVersion: STAGE_WORKSPACE_SCHEMA_VERSION,
           workflowId,
           stageId: stage.id,
+          workItemId,
+          completion: { allowed: false, unmet: [] },
           intelligence: intelligenceState,
           configuration,
           delegations: [],
           primaryAction: "initialize-intelligence",
-          completion: { allowed: false, unmet: [] },
           updatedAt: this.now(),
         };
     const next = this.recompute(base, stage.status === "completed");
@@ -200,9 +232,12 @@ export class StageWorkspaceService {
     return next;
   }
 
-  async setConfiguration(workflowId: string, input: { mode?: StageDelegationMode; skill?: string }): Promise<UnderstandState> {
+  async setConfiguration(workflowId: string, input: { mode?: StageDelegationMode; skill?: string; agentId?: string; workItemId?: string }): Promise<UnderstandState> {
     const state = await this.loadUnderstand(workflowId);
-    const configuration = await this.buildConfiguration(workflowId, state.stageId, input.mode ?? state.configuration.mode, input.skill ?? state.configuration.skill);
+    if (input.workItemId && input.workItemId !== state.workItemId) {
+      throw new StageWorkspaceError("WORK_ITEM_ID_MISMATCH", "The provided work-item ID does not match the persisted stage state.");
+    }
+    const configuration = await this.buildConfiguration(workflowId, state.stageId, state.workItemId, input.mode ?? state.configuration.mode, input.skill ?? state.configuration.skill, input.agentId ?? state.configuration.agentId, undefined);
     const next = this.recompute({ ...state, configuration });
     await this.saveUnderstand(next);
     return next;
@@ -428,18 +463,20 @@ export class StageWorkspaceService {
     const workflow = this.requireWorkflow(workflowId);
     const stage = this.requirePlanStage(workflow);
     const existing = this.state.plan?.[stage.id];
+    const workItemId = existing?.workItemId ?? this.createId();
     const understand = Object.values(this.state.understand).find((item) => item.workflowId === workflowId);
-    const configuration = await this.buildConfiguration(workflowId, stage.id, existing?.configuration.mode, existing?.configuration.skill, "plan");
+    const configuration = await this.buildConfiguration(workflowId, stage.id, workItemId, existing?.configuration.mode, existing?.configuration.skill, undefined, "plan");
     const objective = existing?.objective
       || understand?.analysis?.objective
       || (workflow.specification ? workflow.specification.text : workflow.intent.text);
     const understanding = understand?.analysis?.sections ?? [];
     const base: PlanState = existing
-      ? { ...existing, configuration, objective, understanding }
+      ? { ...existing, workItemId, configuration, objective, understanding }
       : {
           schemaVersion: STAGE_WORKSPACE_SCHEMA_VERSION,
           workflowId,
           stageId: stage.id,
+          workItemId,
           objective,
           understanding,
           configuration,
@@ -457,9 +494,10 @@ export class StageWorkspaceService {
     return next;
   }
 
-  async setPlanConfiguration(workflowId: string, input: { mode?: StageDelegationMode; skill?: string }): Promise<PlanState> {
+  async setPlanConfiguration(workflowId: string, input: { mode?: StageDelegationMode; skill?: string; workItemId?: string }): Promise<PlanState> {
     const state = await this.loadPlan(workflowId);
-    const configuration = await this.buildConfiguration(workflowId, state.stageId, input.mode ?? state.configuration.mode, input.skill ?? state.configuration.skill, "plan");
+    const nextMode = input.mode ?? state.configuration.mode;
+    const configuration = await this.buildConfiguration(workflowId, state.stageId, state.workItemId, nextMode, input.skill ?? state.configuration.skill, undefined, "plan");
     const next = this.recomputePlan({ ...state, configuration });
     await this.savePlan(next);
     return next;
@@ -714,100 +752,108 @@ export class StageWorkspaceService {
   }
 
   private async buildConfiguration(
-    workflowId: string,
-    stageId: string,
-    mode?: StageDelegationMode,
-    skill?: string,
-    stageKind?: string,
-  ): Promise<StageCopilotConfiguration> {
-    // Capability discovery: attempt a real refresh when nothing is cached. A
-    // failure is recorded truthfully (below) rather than silently swallowed —
-    // the configuration surfaces manual/clipboard fallback with the reason.
-    let discoveryError: string | undefined;
-    let capabilities = this.copilot.getCapabilities();
-    if (!capabilities) {
-      try {
-        capabilities = await this.copilot.refreshCapabilities();
-      } catch (cause) {
-        discoveryError = cause instanceof Error ? cause.message : String(cause);
+      workflowId: string,
+      stageId: string,
+      workItemId: string,
+      mode?: StageDelegationMode,
+      skill?: string,
+      agentId?: string,
+      _stageKind?: string,
+    ): Promise<StageCopilotConfiguration> {
+      // Capability discovery: attempt a real refresh when nothing is cached. A
+      // failure is recorded truthfully (below) rather than silently swallowed —
+      // the configuration surfaces manual/clipboard fallback with the reason.
+      let discoveryError: string | undefined;
+      let capabilities = this.copilot.getCapabilities();
+      if (!capabilities) {
+        try {
+          capabilities = await this.copilot.refreshCapabilities();
+        } catch (cause) {
+          discoveryError = cause instanceof Error ? cause.message : String(cause);
+        }
       }
-    }
-    const chatAvailable = capabilities?.chatAvailable ?? false;
-    const clipboardAvailable = capabilities?.supportedInvocationMethods.includes("clipboard-v1") ?? true;
+      const chatAvailable = capabilities?.chatAvailable ?? false;
+      const clipboardAvailable = capabilities?.supportedInvocationMethods.includes("clipboard-v1") ?? true;
 
-    // Real execution configuration aggregate: discovered/manual agents, skills,
-    // discovered repository instructions, and conflicts. The stage never invents
-    // an agent or a fixed instruction list.
-    const configWorkItemId = stageKind ? `${stageKind}:${stageId}` : stageId;
-    const aggregate = this.executionConfiguration
-      ? await this.executionConfiguration.load(workflowId, configWorkItemId)
-      : undefined;
-
-    const availableAgents = aggregate
-      ? aggregate.agents.filter((agent) => agent.availability === "available")
-      : [];
-    const manualProfiles = aggregate?.manualAgents ?? [];
-    // Never auto-select when more than one option exists; only a single
-    // unambiguous available agent is treated as selected.
-    const selectedAgent = availableAgents.length === 1 ? availableAgents[0] : undefined;
-    const agentDiscoveryUnavailable = aggregate === undefined;
-
-    const agentId = selectedAgent?.id ?? "";
-    const agentLabel = selectedAgent
-      ? selectedAgent.displayName
-      : availableAgents.length > 1
-        ? "Multiple agents available — select one"
-        : agentDiscoveryUnavailable
-          ? manualProfiles.length
-            ? `${manualProfiles.length} manual profile(s) — local configuration only`
-            : "Agent discovery unavailable"
-          : "No Copilot agent discovered";
-
-    // Real skills from DevelopmentSkillService via the aggregate; keep the caller's
-    // selection when it still exists, otherwise leave it unselected.
-    const skillDefs = aggregate?.skills ?? [];
-    const resolvedSkill = skill && skillDefs.some((item) => item.id === skill)
-      ? skill
-      : skillDefs[0]?.id ?? "";
-
-    // Real discovered instructions (available only); no hard-coded instruction text.
-    const instructions = (aggregate?.instructions ?? [])
-      .filter((item) => item.availability === "available")
-      .map((item) => `${item.name} (${item.workspaceRelativePath})`)
-      .slice(0, 30);
-
-    const resolvedMode: StageDelegationMode =
-      mode && (mode !== "chat-open" || chatAvailable)
-        ? mode
-        : chatAvailable
-          ? "chat-open"
-          : clipboardAvailable
-            ? "clipboard"
-            : "manual";
-
-    const discoveryNotice = discoveryError
-      ? `Copilot capability discovery failed: ${discoveryError}. Manual and clipboard handoff remain available.`
-      : agentDiscoveryUnavailable
-        ? manualProfiles.length
-          ? "Runtime agent discovery is unavailable. Showing previously configured manual profiles as non-authoritative local configuration."
-          : "Runtime agent discovery is unavailable. Use manual configuration or clipboard handoff."
+      // Real execution configuration aggregate: discovered/manual agents, skills,
+      // discovered repository instructions, and conflicts. The stage never invents
+      // an agent or a fixed instruction list.
+      const aggregate = this.executionConfiguration
+        ? await this.executionConfiguration.load(workflowId, workItemId)
         : undefined;
 
-    return {
-      mode: resolvedMode,
-      agentId,
-      agentLabel,
-      agentAvailable: Boolean(selectedAgent),
-      skill: resolvedSkill,
-      instructions,
-      ...(discoveryNotice ? { discoveryNotice } : {}),
-      capabilities: [
-        { id: "chat-open", label: "Open Copilot Chat with prompt", available: chatAvailable, detail: chatAvailable ? "workbench.action.chat.open is registered." : "Copilot Chat is not available in this environment." },
-        { id: "clipboard", label: "Copy prompt to clipboard", available: clipboardAvailable, detail: "Copies the exact approved prompt for manual paste." },
-        { id: "manual", label: "Manual work", available: true, detail: "Record work you performed yourself." },
-      ],
-    };
-  }
+      const availableAgents = aggregate
+        ? aggregate.agents.filter((agent) => agent.availability === "available")
+        : [];
+      const manualProfiles = aggregate?.manualAgents ?? [];
+      // Determine the agent selection: prefer an explicit agentId from the caller
+      // (UI); fall back to single-ambiguous auto-selection only when not supplied.
+      const explicitAgent = agentId ? (availableAgents.find((item) => item.id === agentId) ?? manualProfiles.find((item) => item.id === agentId)) : undefined;
+      const selectedAgent = explicitAgent ?? (availableAgents.length === 1 ? availableAgents[0] : undefined);
+      const agentDiscoveryUnavailable = aggregate === undefined;
+
+      const derivedAgentId = selectedAgent?.id ?? "";
+      const agentLabel = selectedAgent
+        ? selectedAgent.displayName
+        : availableAgents.length > 1
+          ? "Multiple agents available — select one"
+          : agentDiscoveryUnavailable
+            ? manualProfiles.length
+              ? `${manualProfiles.length} manual profile(s) — local configuration only`
+              : "Agent discovery unavailable"
+            : "No Copilot agent discovered";
+
+      // Real skills from DevelopmentSkillService via the aggregate; keep the caller's
+      // selection when it still exists, otherwise leave it unselected.
+      const skillDefs = aggregate?.skills ?? [];
+      const resolvedSkill = skill && skillDefs.some((item) => item.id === skill)
+        ? skill
+        : "";
+
+      // Real discovered instructions (available only); no hard-coded instruction text.
+      const instructions = (aggregate?.instructions ?? [])
+        .filter((item) => item.availability === "available")
+        .map((item) => `${item.name} (${item.workspaceRelativePath})`)
+        .slice(0, 30);
+
+      const resolvedMode: StageDelegationMode =
+        mode && (mode !== "chat-open" || chatAvailable)
+          ? mode
+          : chatAvailable
+            ? "chat-open"
+            : clipboardAvailable
+              ? "clipboard"
+              : "manual";
+
+      const discoveryNotice = discoveryError
+        ? `Copilot capability discovery failed: ${discoveryError}. Manual and clipboard handoff remain available.`
+        : agentDiscoveryUnavailable
+          ? manualProfiles.length
+            ? "Runtime agent discovery is unavailable. Showing previously configured manual profiles as non-authoritative local configuration."
+            : "Runtime agent discovery is unavailable. Use manual configuration or clipboard handoff."
+          : undefined;
+
+      return {
+        mode: resolvedMode,
+        agentId: derivedAgentId || agentId || "",
+        agentLabel,
+        agentAvailable: Boolean(selectedAgent),
+        skill: resolvedSkill,
+        instructions,
+        agentOptions: [
+          ...(aggregate?.agents ?? []),
+          ...(aggregate?.manualAgents ?? []),
+        ],
+        skillOptions: aggregate?.skills ?? [],
+        conflicts: aggregate?.conflicts ?? [],
+        ...(discoveryNotice ? { discoveryNotice } : {}),
+        capabilities: [
+          { id: "chat-open", label: "Open Copilot Chat with prompt", available: chatAvailable, detail: chatAvailable ? "workbench.action.chat.open is registered." : "Copilot Chat is not available in this environment." },
+          { id: "clipboard", label: "Copy prompt to clipboard", available: clipboardAvailable, detail: "Copies the exact approved prompt for manual paste." },
+          { id: "manual", label: "Manual work", available: true, detail: "Record work you performed yourself." },
+        ],
+      };
+    }
 
   private async buildAnalysis(workflow: CanonicalWorkflow, snapshot: IntelligenceSnapshot): Promise<IntentAnalysis> {
     const intent = workflow.intent.text.toLowerCase();
@@ -1074,6 +1120,17 @@ export class StageWorkspaceService {
       included: false,
       reason: entry.detail ?? entry.reason,
     }));
+    // Build the actual context string from the compressed content of each item.
+    let contextString = "";
+    for (const item of built.items) {
+      // Assume item.content is the compressed string (as produced by the compression pipeline).
+      contextString += item.content + "\n\n";
+    }
+    // Trim to avoid exceeding the max length.
+    if (contextString.length > 500_000) {
+      contextString = contextString.slice(0, 500_000);
+    }
+
     return {
       id: this.createId(),
       revision: (previous?.revision ?? 0) + 1,
@@ -1087,7 +1144,7 @@ export class StageWorkspaceService {
       items: [...items, ...excludedItems].slice(0, 300),
       requiredFacts: built.requiredFacts.map((fact) => ({ fact: fact.description, covered: fact.state === "satisfied" })),
       intelligenceRevision: input.intelligenceRevision,
-      content: this.renderPackageContent(built, skill.name, instructions).slice(0, 500_000),
+      content: contextString,
       generatedAt: this.now(),
     };
   }
@@ -1168,6 +1225,9 @@ export class StageWorkspaceService {
       "",
       "## Instructions",
       ...state.configuration.instructions.map((item) => `- ${item}`),
+      "",
+      "## Compressed context package (actual evidence)",
+      pkg.content,
       "",
       "## Task",
       "Based only on the supplied evidence, explain: repository purpose; architecture and modules; activation/runtime flow; persistence; test strategy; the Repository Intelligence implementation; the workflow implementation; the context-compression implementation; the Copilot delegation mechanism; incomplete areas; and architectural risks.",
@@ -1344,6 +1404,7 @@ export class StageWorkspaceService {
       schemaVersion: STAGE_WORKSPACE_SCHEMA_VERSION,
       workflowId: workflow.id,
       stageId,
+      workItemId: this.createId(),
       objective: understand?.analysis?.objective ?? workflow.intent.text,
       questions: seedTexts.map((text, index) => ({ id: this.createId(), text, required: index < 4, status: "open", answer: "", evidence: [] })),
       limitations: [],

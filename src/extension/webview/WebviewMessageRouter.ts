@@ -3591,8 +3591,10 @@ export class WebviewMessageRouter {
           await this.sendSuccess(request.requestId, await service.setScopeItemIncluded(request.payload.workflowId, request.payload.itemId, request.payload.included, request.payload.reason)); return;
         case "stage.understand.resolveAmbiguity":
           await this.sendSuccess(request.requestId, await service.resolveAmbiguity(request.payload.workflowId, request.payload.ambiguityId, request.payload.resolution)); return;
-        case "stage.understand.setConfiguration":
-          await this.sendSuccess(request.requestId, await service.setConfiguration(request.payload.workflowId, { ...(request.payload.mode ? { mode: request.payload.mode } : {}), ...(request.payload.skill ? { skill: request.payload.skill } : {}) })); return;
+        case "stage.understand.setConfiguration": {
+          const currentState = await service.loadUnderstand(request.payload.workflowId);
+          await this.sendSuccess(request.requestId, await service.setConfiguration(request.payload.workflowId, { ...(request.payload.mode ? { mode: request.payload.mode } : {}), ...(request.payload.skill ? { skill: request.payload.skill } : {}), workItemId: currentState.workItemId })); return;
+        }
         case "stage.understand.generateContext":
           await this.sendSuccess(request.requestId, await service.generateContext(request.payload.workflowId)); return;
         case "stage.understand.approveContext":

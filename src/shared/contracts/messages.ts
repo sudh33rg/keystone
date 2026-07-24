@@ -314,7 +314,7 @@ export const WebviewRequestSchema = z.discriminatedUnion("type", [
   request("stage.understand.approveAnalysis", z.object({ workflowId: z.string().uuid() }).strict()),
   request("stage.understand.setScopeItem", z.object({ workflowId: z.string().uuid(), itemId: z.string().min(1).max(500), included: z.boolean(), reason: z.string().max(2_000).optional() }).strict()),
   request("stage.understand.resolveAmbiguity", z.object({ workflowId: z.string().uuid(), ambiguityId: z.string().min(1).max(200), resolution: z.string().min(1).max(2_000) }).strict()),
-  request("stage.understand.setConfiguration", z.object({ workflowId: z.string().uuid(), mode: StageDelegationModeSchema.optional(), skill: z.string().max(200).optional() }).strict()),
+  request("stage.understand.setConfiguration", z.object({ workflowId: z.string().uuid(), mode: StageDelegationModeSchema.optional(), skill: z.string().max(200).optional(), agentId: z.string().max(200).optional() }).strict()),
   request("stage.understand.generateContext", z.object({ workflowId: z.string().uuid() }).strict()),
   request("stage.understand.approveContext", z.object({ workflowId: z.string().uuid(), packageId: z.string().uuid(), revision: z.number().int().positive() }).strict()),
   request("stage.understand.delegate", z.object({ workflowId: z.string().uuid() }).strict()),

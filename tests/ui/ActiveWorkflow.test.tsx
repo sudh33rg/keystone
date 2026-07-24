@@ -10,6 +10,7 @@ function understandState(overrides: Partial<UnderstandState> = {}): UnderstandSt
     schemaVersion: 1,
     workflowId: overrides.workflowId ?? crypto.randomUUID(),
     stageId: overrides.stageId ?? crypto.randomUUID(),
+    workItemId: overrides.workItemId ?? crypto.randomUUID(),
     intelligence: { status: "unavailable", generation: 0, files: 0, symbols: 0, relationships: 0, message: "Repository Intelligence has not indexed this repository yet." },
     configuration: {
       mode: "clipboard",
@@ -23,6 +24,9 @@ function understandState(overrides: Partial<UnderstandState> = {}): UnderstandSt
         { id: "clipboard", label: "Copy prompt to clipboard", available: true, detail: "Copies the exact approved prompt for manual paste." },
         { id: "manual", label: "Manual work", available: true, detail: "Record work you performed yourself." },
       ],
+      agentOptions: [],
+      skillOptions: [],
+      conflicts: [],
     },
     delegations: [],
     primaryAction: "initialize-intelligence",

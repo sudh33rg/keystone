@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  InstructionConflictSchema,
+  SkillDefinitionSchema,
+} from "./executionConfiguration";
 
 export const STAGE_WORKSPACE_SCHEMA_VERSION = 1 as const;
 
@@ -77,6 +81,17 @@ export const StageCopilotConfigurationSchema = z.object({
   instructions: z.array(z.string().max(2_000)).max(30),
   capabilities: z.array(StageCapabilitySchema).max(20),
   discoveryNotice: z.string().max(2_000).optional(),
+  // Real execution-configuration options surfaced for the stage UI. These are
+  // read from the ExecutionConfigurationService aggregate and never invented.
+  // Both discovered agents and manual agent profiles share id/displayName/
+  // availability, so a structural union keeps the UI simple without losing data.
+  agentOptions: z.array(z.object({
+    id: z.string().min(1).max(500),
+    displayName: z.string().min(1).max(200),
+    availability: z.enum(["available", "unavailable"]).optional(),
+  }).passthrough()).max(200),
+  skillOptions: z.array(SkillDefinitionSchema).max(200),
+  conflicts: z.array(InstructionConflictSchema).max(100),
 }).strict();
 
 export const StageContextItemSchema = z.object({
@@ -173,6 +188,8 @@ export const UnderstandStateSchema = z.object({
   schemaVersion: z.literal(STAGE_WORKSPACE_SCHEMA_VERSION),
   workflowId: z.string().uuid(),
   stageId: z.string().uuid(),
+  workItemId: z.string().uuid(),
+  completion: StageCompletionGateSchema,
   intelligence: StageIntelligenceStateSchema,
   analysis: IntentAnalysisSchema.optional(),
   configuration: StageCopilotConfigurationSchema,
@@ -182,7 +199,7 @@ export const UnderstandStateSchema = z.object({
   result: StageResultSchema.optional(),
   validation: StageValidationSchema.optional(),
   primaryAction: UnderstandPrimaryActionSchema,
-  completion: StageCompletionGateSchema,
+  executionProfileRevision: z.number().int().nonnegative().optional(),
   completedAt: z.string().datetime().optional(),
   updatedAt: z.string().datetime(),
 }).strict();
@@ -200,6 +217,7 @@ export const InvestigationStateSchema = z.object({
   schemaVersion: z.literal(STAGE_WORKSPACE_SCHEMA_VERSION),
   workflowId: z.string().uuid(),
   stageId: z.string().uuid(),
+  workItemId: z.string().uuid(),
   objective: z.string().max(10_000),
   questions: z.array(InvestigationQuestionSchema).max(60),
   limitations: z.array(z.string().max(2_000)).max(30),
@@ -234,6 +252,7 @@ export const PlanStateSchema = z.object({
   schemaVersion: z.literal(STAGE_WORKSPACE_SCHEMA_VERSION),
   workflowId: z.string().uuid(),
   stageId: z.string().uuid(),
+  workItemId: z.string().uuid(),
   objective: z.string().max(10_000),
   understanding: z.array(UnderstandingSectionSchema).max(40),
   configuration: StageCopilotConfigurationSchema,

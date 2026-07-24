@@ -1,80 +1,81 @@
-# Main Workspace Vertical Slice Evidence
+# Main Workspace Vertical Slice — Evidence and Verification
 
-This document summarizes the completion of the main intent-to-Copilot workspace as real integration work in the Keystone VS Code extension.
+> Scope: contract repair for the Understand / Investigation / Plan stage-state
+> shapes, authoritative `workItemId` ownership in the extension host, and real
+> execution-configuration controls in the Understand workspace.
+> No Intelligence / OKF / query-engine behavior was changed — those layers were
+> preserved intact.
 
-## Overview
+## Summary
 
-The goal was to replace parallel/simplified logic in `StageWorkspaceService` with thin orchestration adapters over existing real services (intelligence query, graph, context pipeline, execution-configuration, CopilotAgentRegistry, etc.), while retaining the existing top navigation, workflow header, horizontal stage rail, Understand UI, Investigation UI, and Complete UI.
+This slice repairs broken stage-state contracts and wires real execution
+configuration into the Understand workspace UI. It does **not** implement
+Investigation delegation, Plan task cards, Security/Performance/PR-Review
+surfaces, packaging cleanup, Git mutation, or remote PR integration.
 
-## Changes Made
+### Changes
 
-### 1. Plan Stage Implementation (Core Requirement)
-- Added a new `plan` stage to the workflow, enabling Feature workflows to progress from Understand → Plan → Development.
-- **Contracts**: Added `PlanTaskSchema`, `PlanPrimaryActionSchema`, `PlanStateSchema` to `src/shared/contracts/stageWorkspace.ts`.
-- **Messages**: Added request/result mappings for `stage.plan.*` in `src/shared/contracts/messages.ts`.
-- **HostBridge**: Added validation cases for `stage.plan.*` in `src/ui/services/HostBridge.ts`.
-- **Router**: Added dispatch and handling cases in `src/extension/webview/WebviewMessageRouter.ts`.
-- **Service**: 
-  - Refactored `buildContextPackage` into a shared `buildPackageFromScope` used by both Understand and Plan stages.
-  - Implemented full Plan orchestration (`loadPlan`, `setPlanConfiguration`, `generatePlanContext`, `approvePlanContext`, `delegatePlan`, `capturePlan`, `approvePlan`, `completePlan`).
-  - The Plan stage reuses the real `DevelopmentContextPackageService` pipeline (tokenization, deduplication, compression, completeness validation) instead of implementing a fake one.
-  - Uses real `DevelopmentSkillService`, `ExecutionConfigurationService`, and `IntelligenceSnapshotReader` for skill, configuration, and intelligence data.
-  - `completePlan` calls `workflows.completeStage` to mark the Development stage as ready, enabling the Feature workflow to proceed.
-- **UI**: 
-  - Added `src/ui/components/workbench/PlanStage.tsx` (mirroring the structure of Understand/Investigation stages).
-  - Added `"plan": (props) => <PlanStage ... />` to `STAGE_REGISTRY` in `src/ui/components/workbench/ActiveWork.tsx`.
+1. **`src/shared/contracts/stageWorkspace.ts`**
+   - `UnderstandStateSchema` / `InvestigationStateSchema`: restored `completion`
+     and `completedAt` (they had been incorrectly dropped). Removed `executedAt`
+     (no consistent implemented meaning across schema/service/persistence/UI).
+   - `StageCopilotConfigurationSchema`: added real, aggregate-backed options —
+     `agentOptions` (discovered + manual agents), `skillOptions`, and
+     `conflicts`. These are read from `ExecutionConfigurationService` and never
+     invented in the UI.
 
-### 2. Evidence Depth Improvements (Understand Stage)
-- Enhanced `buildAnalysis` in `StageWorkspaceService.ts` to:
-  - Read real documentation excerpts via `readScopeContent` (summarizes README-like files).
-  - Resolve major modules using real symbol and relationship data (not just directory counts).
-  - Determine entry points from relationship fan-in (exported symbols with high relationship count) as a semantic signal, falling back to conventional filenames.
-- Added a test verifying that a documentation excerpt is included in the Understand analysis and that entry points are resolved from fan-in evidence.
+2. **`src/shared/contracts/messages.ts`**
+   - `stage.understand.setConfiguration` request payload: `workItemId` is no
+     longer sent by the webview. The extension host owns the authoritative
+     `workItemId` from persisted state.
 
-### 3. Investigation Evidence Picker
-- Replaced the free-text "one file path per line" evidence textarea with a real `EvidencePicker` component that:
-  - Queries the `intelligence/search` endpoint for symbols/files.
-  - Lets the user select results as structured evidence (kind/file/reference/label).
-  - Allows opening selected evidence in the editor via `intelligence/source/open`.
-- Added tests for the new picker (implicitly via the Plan flow tests that exercise the Investigation stage).
+3. **`src/core/workflows/StageWorkspaceService.ts`**
+   - `initialize()` migrates persisted Understand/Investigation/Plan records that
+     lack a `workItemId`, assigning one UUID and persisting it once.
+   - `loadUnderstand()` / `loadPlan()` / `buildInvestigationSeed()` reuse a single
+     `workItemId` per stage instance for state, execution config, context,
+     prompt, and delegation records.
+   - `setConfiguration()` validates any caller-supplied `workItemId` against the
+     persisted state and throws `WORK_ITEM_ID_MISMATCH` on divergence.
+   - `buildConfiguration()` now surfaces `agentOptions`, `skillOptions`, and
+     `conflicts` from the `ExecutionConfigurationService` aggregate, and honors an
+     explicit `agentId` selection passed from the UI (falling back to
+     single-ambiguous auto-selection only when none is supplied).
 
-### 4. Removal of Non-Integrated Logic and Silent Failures
-- **Removed silent catches**:
-  - The capability-discovery failure in `buildConfiguration` now surfaces a `discoveryNotice` in the configuration (visible in the UI) instead of being swallowed.
-  - Removed the silent catch in `StartWorkDraft.tsx` that prevented workflow navigation; now persists the created workflow ID and navigates explicitly.
-- **Removed unused dependencies**:
-  - Deleted `lint-staged` and `husky` from `package.json` (they were declared but unused, causing an engine mismatch with the declared Node >=20 baseline).
-  - Removed 4 packages, eliminating the engine warning.
-- **Cleaned up prior WIP**:
-  - Fixed a malformed `okfConcept` insertion in `src/shared/contracts/query.ts` that was breaking the `QueryResultItemSchema`.
-  - Corrected the return type of `OkfQueryService.query` back to `Promise<QueryResultItem[]>` (it had been changed to `QueryData` without updating the body).
-  - Removed unused enum values `SECURITY_SCAN` and `OVERVIEW_ARCHITECTURE` from `QueryOperationSchema` to restore exhaustiveness in `QueryEngine.execute`.
+4. **`src/extension/webview/WebviewMessageRouter.ts`**
+   - `stage.understand.setConfiguration` handler resolves the authoritative
+     `workItemId` from persisted state and validates against a supplied value.
 
-### 5. Test Coverage
-- Added five focused test groups in `tests/unit/StageWorkspacePlanFlow.test.ts`:
-  1. Plan stage loads correctly for a Feature workflow.
-  2. Completing the Plan stage marks the Development stage ready (verifying the Feature→Development completion criterion).
-  3. Completion is blocked until context is approved, a result is captured, and at least one task exists.
-  4. Understand analysis extracts a real documentation excerpt and resolves entry points from relationship fan-in (using a valid IntelligenceSnapshot).
-  5. Configuration surfaces a truthful `discoveryNotice` when capability refresh fails.
-- All tests pass (862/862). TypeScript and ESLint have zero errors.
+5. **`src/ui/components/workbench/UnderstandStage.tsx`**
+   - Added real execution-configuration controls: agent `<select>` (discovered or
+     manual), skill `<select>`, instruction-conflict banner, and a **Save
+     execution configuration** button wired to `stage.understand.setConfiguration`
+     with `agentId` + `skill`. Draft selection syncs from server state.
 
-## Verification
+6. **`src/ui/components/intelligence/QueryWorkspace.tsx`**
+   - `OkfConceptCard` verified intact (renders real OKF concept detail). No change
+     required — an earlier in-session edit had corrupted the file; it was restored
+     from git.
 
-- **TypeScript**: `tsc --noEmit` exits with code 0.
-- **Linting**: `eslint . --quiet` exits with code 0.
-- **Unit Tests**: `vitest run` reports 862 passing tests.
-- **Build**: `npm run build` produces a VSIX bundle without errors.
-- The built webapp contains the string "Plan" (as a stage label) and does not contain any occurrence of "Phase 3" (indicating no leftover placeholder text from a prior incomplete implementation).
+7. **Tests**
+   - `tests/ui/ActiveWorkflow.test.tsx` and `tests/unit/StageWorkspacePlanFlow.test.ts`
+     fixtures updated for the new required config fields (`agentOptions`,
+     `skillOptions`, `conflicts`).
 
-## Limitations
+## Verification (run from repo root)
 
-- The extension cannot be run in the Extension Development Host in this environment because the host machine lacks a graphical VS Code installation (no `/Applications/Visual Studio Code.app` and `DISPLAY` is unset). Therefore, end-to-end GUI journeys could not be executed. However, the unit and integration tests cover the core logic, and the build output confirms the UI text is present.
+| Gate | Command | Result |
+|------|---------|--------|
+| Typecheck | `npm run typecheck` (`tsc --noEmit`) | exit 0 |
+| Lint | `npm run lint` (`eslint . --quiet`) | 0 errors (remaining items are pre-existing `max-lines`/`max-params` warnings on test files) |
+| Tests | `npm test` (`vitest run`) | 881/881 passing |
+| Build | `npm run build` | success |
 
-## Conclusion
+## Notes / non-goals
 
-The main intent-to-Copilot workspace has been realized as a real integration:
-- The StageWorkflowService now orchestrates existing services rather than reimplementing them.
-- The Plan stage is a first-class citizen in the workflow, enabling Feature workflows to proceed to Development.
-- All UI from the baseline (top nav, workflow header, stage rail, Understand/Investigation/Complete) is retained and unchanged.
-- The implementation is verified by a clean build, passing lint, and a comprehensive test suite.
+- Investigation delegation UI, Plan task cards, Security/Performance/PR-Review,
+  Task Handoff, packaging cleanup, Git mutation, and remote-PR integration are out
+  of scope for this slice.
+- No `workItemId` is sent from the webview; the extension host is the authority.
+- UI journeys requiring the VS Code Extension Development Host (EDH) are not
+  automatable in a headless environment and were not visually verified.

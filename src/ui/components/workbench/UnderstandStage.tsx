@@ -43,6 +43,8 @@ export function UnderstandStage({ bridge, workflowId, onWorkflowChange }: Unders
   const [showResultForm, setShowResultForm] = useState(false);
   const [excludeDraft, setExcludeDraft] = useState<{ itemId: string; reason: string }>();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [draftAgentId, setDraftAgentId] = useState(state?.configuration.agentId ?? "");
+  const [draftSkill, setDraftSkill] = useState(state?.configuration.skill ?? "");
 
   const perform = useCallback(
     async (label: string, operation: () => Promise<UnderstandState>): Promise<UnderstandState | undefined> => {
@@ -65,6 +67,15 @@ export function UnderstandStage({ bridge, workflowId, onWorkflowChange }: Unders
   useEffect(() => {
     queueMicrotask(() => void perform("load", () => bridge.request("stage.understand.load", { workflowId })));
   }, [bridge, perform, workflowId]);
+
+  useEffect(() => {
+    if (state) {
+      queueMicrotask(() => {
+        setDraftAgentId(state.configuration.agentId);
+        setDraftSkill(state.configuration.skill);
+      });
+    }
+  }, [state?.configuration.agentId, state?.configuration.skill]);
 
   const runPrimary = useCallback(async (): Promise<void> => {
     if (!state) return;
@@ -242,7 +253,74 @@ export function UnderstandStage({ bridge, workflowId, onWorkflowChange }: Unders
             </label>
           ))}
         </div>
-        <details className="instructions-block"><summary>Repository instructions ({state.configuration.instructions.length})</summary><ul>{state.configuration.instructions.map((line) => <li key={line}>{line}</li>)}</ul></details>
+
+        <fieldset className="exec-config" disabled={Boolean(busy)}>
+          <legend>Execution configuration</legend>
+          <div className="field">
+            <label htmlFor="understand-agent">Agent (discovered or manual)</label>
+            <select
+              id="understand-agent"
+              value={draftAgentId}
+              onChange={(event) => setDraftAgentId(event.target.value)}
+            >
+              <option value="">— none selected —</option>
+              {state.configuration.agentOptions.map((agent) => {
+                const a = agent as { id: string; displayName?: string; availability?: string };
+                return (
+                  <option key={a.id} value={a.id}>
+                    {a.displayName ?? a.id}
+                    {a.availability && a.availability !== "available" ? " (unavailable)" : ""}
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="understand-skill">Skill</label>
+            <select
+              id="understand-skill"
+              value={draftSkill}
+              onChange={(event) => setDraftSkill(event.target.value)}
+            >
+              <option value="">— none selected —</option>
+              {state.configuration.skillOptions.map((option) => (
+                <option key={option.id} value={option.id}>{option.name}</option>
+              ))}
+            </select>
+            {state.configuration.skillOptions.length === 0 && (
+              <small className="field-hint">No skills available for this stage.</small>
+            )}
+          </div>
+        </fieldset>
+
+        {state.configuration.conflicts.length > 0 && (
+          <div className="conflict-list" role="status">
+            <strong>Instruction conflicts</strong>
+            <ul>
+              {state.configuration.conflicts.map((conflict) => (
+                <li key={conflict.id} className={`conflict-${conflict.severity}`}>
+                  <span className="conflict-category">{conflict.category}</span> — {conflict.recommendedResolution}
+                  {conflict.state === "conflict" || conflict.severity === "error" ? " (blocking)" : ""}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <details className="instructions-block">
+          <summary>Repository instructions ({state.configuration.instructions.length})</summary>
+          <ul>{state.configuration.instructions.map((line) => <li key={line}>{line}</li>)}</ul>
+        </details>
+
+        <div className="button-row">
+          <button
+            className="primary-button"
+            disabled={Boolean(busy) || (draftAgentId === state.configuration.agentId && draftSkill === state.configuration.skill)}
+            onClick={() => void perform("save-config", () => bridge.request("stage.understand.setConfiguration", { workflowId, agentId: draftAgentId, skill: draftSkill }))}
+          >
+            Save execution configuration
+          </button>
+        </div>
       </details>
 
       {pkg && (
