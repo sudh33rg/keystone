@@ -1,0 +1,1282 @@
+
+> keystone@1.0.0 verify
+> npm run verify:structure && npm run typecheck && npm run lint && npm run test && npm run verify:runtime && npm run build && npm run package && npm run verify:package
+
+
+> keystone@1.0.0 verify:structure
+> node scripts/check-active-boundary.mjs
+
+Active boundary verified: 120 reachable monolithic source files, npm lockfile present, no legacy engines, no arbitrary ingestion caps, and Git remains read-only.
+
+> keystone@1.0.0 typecheck
+> node scripts/typecheck.mjs
+
+tsconfig.json: 116 files, 0 diagnostic(s).
+tsconfig.webview.json: 5 files, 0 diagnostic(s).
+
+> keystone@1.0.0 lint
+> node scripts/lint.mjs
+
+Linted 122 active source file(s).
+
+> keystone@1.0.0 test
+> node scripts/test.mjs
+
+▶ ApplicationStore
+  ✔ versions and broadcasts shared state (1.09479ms)
+✔ ApplicationStore (1.723216ms)
+▶ CpgShardStore
+  ✔ writes compressed shards atomically, reuses unchanged content, and removes stale shards (30.798965ms)
+✔ CpgShardStore (31.616393ms)
+▶ buildTypeScriptCpg
+  ✔ builds stable AST and evaluation-order layers with honest capabilities (9.770711ms)
+  ✔ adds control dependence for conditional branches (1.066538ms)
+  ✔ selects JavaScript language and JSX parsing from the extension (1.16128ms)
+✔ buildTypeScriptCpg (12.727864ms)
+▶ analyzeTypeScriptProject
+  ✔ uses tsconfig aliases and the type checker to bind calls to declarations (663.943125ms)
+✔ analyzeTypeScriptProject (664.88707ms)
+▶ analyzeDeadCode
+  ✔ reports only unexported, unreferenced symbols and preserves confidence (1.792059ms)
+✔ analyzeDeadCode (2.422117ms)
+▶ analyzeRepositoryGraph
+  ✔ detects hubs, cycles, orphans, and reverse transitive impact (8.114073ms)
+✔ analyzeRepositoryGraph (8.799154ms)
+▶ buildRepositoryEvolution
+  ✔ degrades safely outside a git repository while preserving temporal change counts (5.502214ms)
+✔ buildRepositoryEvolution (6.202777ms)
+▶ buildIntelligenceFindings
+  ✔ normalizes graph and analyzer evidence with stable IDs (9.559861ms)
+✔ buildIntelligenceFindings (10.207345ms)
+▶ evaluateIntelligenceHealth
+  ✔ reports degraded health for incomplete discovery and unresolved evidence (1.138696ms)
+✔ evaluateIntelligenceHealth (1.780722ms)
+▶ planIncrementalUpdate
+  ✔ distinguishes unchanged, implementation, structural, added, and deleted files (6.971992ms)
+  ✔ skips an identical repository and chooses file-local work for implementation changes (0.197274ms)
+  ✔ uses architecture and full rebuild thresholds (1.22885ms)
+✔ planIncrementalUpdate (9.160912ms)
+▶ repository intelligence pipeline
+  ✔ executes all stages in canonical order and summarizes active families (1116.075276ms)
+  ✔ classifies an unchanged persisted repository for incremental skipping (1123.871607ms)
+  ✔ updates canonical cognitive knowledge without accumulating stale run entities (977.589467ms)
+  ✔ does not write index artifacts when persistence is disabled (346.134113ms)
+  ✔ honors cancellation before ordered stage execution (1.439504ms)
+✔ repository intelligence pipeline (3566.120161ms)
+▶ retrieveRepositoryIntelligence
+  ✔ combines lexical matches with graph neighbors (7.8429ms)
+  ✔ uses optional semantic scores and degrades safely on failure (2.015731ms)
+✔ retrieveRepositoryIntelligence (10.61637ms)
+▶ runtime verification and remediation gate
+  ✔ correlates runtime evidence and allows only bounded, validated, approved remediation (8.710732ms)
+  ✔ degrades safely without runtime evidence or validation (7.835949ms)
+✔ runtime verification and remediation gate (17.32465ms)
+▶ repository intelligence heuristics
+  ✔ does not classify ordinary language substrings as security or performance risks (2.245724ms)
+  ✔ retains specific security and performance evidence (0.901763ms)
+  ✔ does not emit control-flow keywords as method symbols (5.799507ms)
+  ✔ represents repeated imports of the same target as one graph edge (0.587875ms)
+✔ repository intelligence heuristics (10.565013ms)
+▶ language adapter conformance
+  ✔ executes every declared language and artifact frontend (30.156028ms)
+  ✔ indexes every registered category plus an unknown text language through OKF and CPG end to end (1302.229436ms)
+✔ language adapter conformance (1333.293106ms)
+▶ LanguageCapabilityRegistry
+  ✔ identifies broad language coverage (0.999027ms)
+✔ LanguageCapabilityRegistry (1.667032ms)
+▶ language semantic enrichment
+  ✔ merges installed language-service semantics without replacing deterministic evidence (23.061052ms)
+  ✔ indexes unknown text extensions through the universal frontend (8.182886ms)
+  ✔ reuses unchanged semantic intelligence and enriches only changed files incrementally (126.757123ms)
+✔ language semantic enrichment (158.909283ms)
+▶ authoritative OKF intelligence
+  ✔ produces every profile family, validates it, links projections, and retains deletion lifecycle (1921.823413ms)
+✔ authoritative OKF intelligence (1922.850913ms)
+▶ CoverageIndexManager
+  ✔ should start with no index (1.758199ms)
+  ✔ should update the index (0.349501ms)
+  ✔ should get tests for a file (0.230333ms)
+  ✔ should get tests for a line (0.292285ms)
+  ✔ should get affected tests from changed files (git diff inversion) (0.455489ms)
+  ✔ should return empty for unchanged files (0.24182ms)
+  ✔ should clear the index (0.21447ms)
+  ✔ should detect staleness after threshold (0.156233ms)
+✔ CoverageIndexManager (4.811455ms)
+▶ CoverageAdapter
+  ✔ should create vitest adapter (0.193448ms)
+  ✔ should create jest adapter (0.110354ms)
+  ✔ should throw for unsupported framework (0.135762ms)
+✔ CoverageAdapter (0.572292ms)
+▶ VitestAdapter.parseCoverage
+  ✔ should parse vitest V8 coverage format (4.399271ms)
+  ✔ should return empty array for invalid JSON (0.108331ms)
+  ✔ should return empty array when no coverage map found (0.072929ms)
+✔ VitestAdapter.parseCoverage (4.662383ms)
+▶ JestAdapter.parseCoverage
+  ✔ should parse jest coverage format (0.220989ms)
+  ✔ should return empty array for invalid JSON (0.089102ms)
+✔ JestAdapter.parseCoverage (0.376461ms)
+▶ failure remediation planning
+  ✔ creates an approval-gated plan without applying or weakening tests (0.990475ms)
+✔ failure remediation planning (1.624098ms)
+▶ Risk Scoring
+  ✔ should compute risk scores for files (0.933971ms)
+  ✔ should classify risk tiers correctly (0.212296ms)
+  ✔ should identify risk factors (0.938698ms)
+  ✔ should get files by tier (0.19495ms)
+  ✔ should get high risk files (0.267589ms)
+  ✔ should sort files by risk score (0.212296ms)
+  ✔ should handle files with no risk (0.14792ms)
+  ✔ should handle files with maximum risk (0.18131ms)
+✔ Risk Scoring (3.985284ms)
+▶ SDLCEngine
+  ✔ unlocks specification and design through evidence-backed approvals (2.597589ms)
+  ✔ creates presentable R&D documentation and small user/quality stories before execution (1.021531ms)
+  ✔ executes the complete 16-story intent-led SDLC with approvals, delegation, validation, findings, and read-only PR review (1.898316ms)
+  ✔ blocks completion when criteria, validation, blockers, or severe findings are unresolved (0.354708ms)
+✔ SDLCEngine (6.630374ms)
+▶ TaskWorkspaceManager
+  ✔ creates incrementing task folders, updates progress, and archives before deletion (28.636284ms)
+  ✔ copies task artifacts for handoff and reconstructs received packages (35.75788ms)
+  ✔ recovers the latest task, binds delegation, preserves status metadata, and archives cancellation truthfully (32.196796ms)
+  ✔ materializes an accepted modernization plan into the same numbered lifecycle (9.252618ms)
+  ✔ materializes a verified handoff as an idempotent active task workspace (16.152043ms)
+✔ TaskWorkspaceManager (124.155118ms)
+▶ parseValidationOutput
+  ✔ extracts vitest-style passed test counts (2.188148ms)
+  ✔ extracts errors from stderr (2.063232ms)
+  ✔ extracts jest-style suite, test, and snapshot counts (0.266497ms)
+  ✔ extracts pytest summary counts (0.443871ms)
+  ✔ extracts Go test package and test counts (0.178566ms)
+  ✔ extracts cargo test result counts (0.155201ms)
+  ✔ extracts Maven Surefire counts (0.157304ms)
+  ✔ extracts ESLint and TypeScript compiler counts (0.223252ms)
+✔ parseValidationOutput (6.637985ms)
+▶ runValidationCommand
+  ✔ returns passed for zero exit code (14.225264ms)
+  ✔ returns failed for non-zero exit code (3.660761ms)
+✔ runValidationCommand (18.692576ms)
+▶ ValueEdgeClient
+  ✔ imports a feature and publishes approved draft user and quality stories without persisting a secret (16.764115ms)
+✔ ValueEdgeClient (17.444507ms)
+▶ Browser View server
+  ✔ uses a one-time bootstrap and an HttpOnly same-origin session (52.805417ms)
+  ✔ sends current and subsequent shared state to reconnecting clients (4042.701072ms)
+✔ Browser View server (4096.84343ms)
+▶ task-state restorer
+  ✔ warns but does not block repository mismatch (0.614405ms)
+  ✔ contains no Git execution primitive (0.264604ms)
+  ✔ requires the exact manual confirmation before metadata restore (0.489269ms)
+✔ task-state restorer (2.129972ms)
+▶ session security
+  ✔ redacts credentials without returning their value (1.482778ms)
+  ✔ encrypts handoffs and rejects an incorrect passphrase (142.1263ms)
+  ✔ requires a sufficiently long creation passphrase (0.403321ms)
+✔ session security (144.869915ms)
+▶ task-state package
+  ✔ creates a deterministic integrity-protected package (4.694821ms)
+  ✔ rejects malformed and unknown package fields before restoration (1.157573ms)
+  ✔ round-trips an encrypted portable package (97.858839ms)
+✔ task-state package (104.632225ms)
+ℹ tests 90
+ℹ suites 33
+ℹ pass 90
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 6819.672652
+
+> keystone@1.0.0 verify:runtime
+> node scripts/verify-final.mjs
+
+{
+  "verifiedAt": "2026-07-31T18:08:09.199Z",
+  "registeredLanguageAndArtifactCategories": 43,
+  "languageConformance": [
+    {
+      "id": "typescript",
+      "label": "TypeScript",
+      "frontend": "typescript-compiler",
+      "parser": "typescript",
+      "conformance": "compiler-backed",
+      "baseline": "compiler",
+      "capabilities": {
+        "parsing": "deep",
+        "symbols": "deep",
+        "imports": "deep",
+        "calls": "deep",
+        "controlFlow": "semantic",
+        "dataFlow": "semantic",
+        "cpg": "deep",
+        "tests": "semantic"
+      },
+      "fixture": "userService.ts",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "javascript",
+      "label": "JavaScript",
+      "frontend": "typescript-compiler",
+      "parser": "typescript",
+      "conformance": "compiler-backed",
+      "baseline": "compiler",
+      "capabilities": {
+        "parsing": "deep",
+        "symbols": "deep",
+        "imports": "deep",
+        "calls": "deep",
+        "controlFlow": "semantic",
+        "dataFlow": "semantic",
+        "cpg": "deep",
+        "tests": "semantic"
+      },
+      "fixture": "sample.test.js",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "python",
+      "label": "Python",
+      "frontend": "indent-grammar",
+      "parser": "deterministic-adapter",
+      "conformance": "deterministic-grammar",
+      "baseline": "deterministic-structural",
+      "capabilities": {
+        "parsing": "structural",
+        "symbols": "structural",
+        "imports": "structural",
+        "calls": "structural",
+        "controlFlow": "structural",
+        "dataFlow": "universal",
+        "cpg": "structural",
+        "tests": "structural"
+      },
+      "fixture": "sample.py",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "java",
+      "label": "Java",
+      "frontend": "brace-grammar",
+      "parser": "deterministic-adapter",
+      "conformance": "deterministic-grammar",
+      "baseline": "deterministic-structural",
+      "capabilities": {
+        "parsing": "structural",
+        "symbols": "structural",
+        "imports": "structural",
+        "calls": "structural",
+        "controlFlow": "structural",
+        "dataFlow": "universal",
+        "cpg": "structural",
+        "tests": "structural"
+      },
+      "fixture": "Sample.java",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "csharp",
+      "label": "C#",
+      "frontend": "brace-grammar",
+      "parser": "deterministic-adapter",
+      "conformance": "deterministic-grammar",
+      "baseline": "deterministic-structural",
+      "capabilities": {
+        "parsing": "structural",
+        "symbols": "structural",
+        "imports": "structural",
+        "calls": "structural",
+        "controlFlow": "structural",
+        "dataFlow": "universal",
+        "cpg": "structural",
+        "tests": "structural"
+      },
+      "fixture": "Sample.cs",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "go",
+      "label": "Go",
+      "frontend": "brace-grammar",
+      "parser": "deterministic-adapter",
+      "conformance": "deterministic-grammar",
+      "baseline": "deterministic-structural",
+      "capabilities": {
+        "parsing": "structural",
+        "symbols": "structural",
+        "imports": "structural",
+        "calls": "structural",
+        "controlFlow": "structural",
+        "dataFlow": "universal",
+        "cpg": "structural",
+        "tests": "structural"
+      },
+      "fixture": "sample.go",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "rust",
+      "label": "Rust",
+      "frontend": "brace-grammar",
+      "parser": "deterministic-adapter",
+      "conformance": "deterministic-grammar",
+      "baseline": "deterministic-structural",
+      "capabilities": {
+        "parsing": "structural",
+        "symbols": "structural",
+        "imports": "structural",
+        "calls": "structural",
+        "controlFlow": "structural",
+        "dataFlow": "universal",
+        "cpg": "structural",
+        "tests": "structural"
+      },
+      "fixture": "sample.rs",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "kotlin",
+      "label": "Kotlin",
+      "frontend": "brace-grammar",
+      "parser": "deterministic-adapter",
+      "conformance": "deterministic-grammar",
+      "baseline": "deterministic-structural",
+      "capabilities": {
+        "parsing": "structural",
+        "symbols": "structural",
+        "imports": "structural",
+        "calls": "structural",
+        "controlFlow": "structural",
+        "dataFlow": "universal",
+        "cpg": "structural",
+        "tests": "structural"
+      },
+      "fixture": "Sample.kt",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "c",
+      "label": "C",
+      "frontend": "brace-grammar",
+      "parser": "deterministic-adapter",
+      "conformance": "deterministic-grammar",
+      "baseline": "deterministic-structural",
+      "capabilities": {
+        "parsing": "structural",
+        "symbols": "structural",
+        "imports": "structural",
+        "calls": "structural",
+        "controlFlow": "structural",
+        "dataFlow": "universal",
+        "cpg": "structural",
+        "tests": "structural"
+      },
+      "fixture": "sample.c",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "cpp",
+      "label": "C++",
+      "frontend": "brace-grammar",
+      "parser": "deterministic-adapter",
+      "conformance": "deterministic-grammar",
+      "baseline": "deterministic-structural",
+      "capabilities": {
+        "parsing": "structural",
+        "symbols": "structural",
+        "imports": "structural",
+        "calls": "structural",
+        "controlFlow": "structural",
+        "dataFlow": "universal",
+        "cpg": "structural",
+        "tests": "structural"
+      },
+      "fixture": "sample.cpp",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "php",
+      "label": "PHP",
+      "frontend": "brace-grammar",
+      "parser": "deterministic-adapter",
+      "conformance": "deterministic-grammar",
+      "baseline": "deterministic-structural",
+      "capabilities": {
+        "parsing": "structural",
+        "symbols": "structural",
+        "imports": "structural",
+        "calls": "structural",
+        "controlFlow": "structural",
+        "dataFlow": "universal",
+        "cpg": "structural",
+        "tests": "structural"
+      },
+      "fixture": "sample.php",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "ruby",
+      "label": "Ruby",
+      "frontend": "indent-grammar",
+      "parser": "deterministic-adapter",
+      "conformance": "deterministic-grammar",
+      "baseline": "deterministic-structural",
+      "capabilities": {
+        "parsing": "structural",
+        "symbols": "structural",
+        "imports": "structural",
+        "calls": "structural",
+        "controlFlow": "structural",
+        "dataFlow": "universal",
+        "cpg": "structural",
+        "tests": "structural"
+      },
+      "fixture": "sample.rb",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "swift",
+      "label": "Swift",
+      "frontend": "brace-grammar",
+      "parser": "deterministic-adapter",
+      "conformance": "deterministic-grammar",
+      "baseline": "deterministic-structural",
+      "capabilities": {
+        "parsing": "structural",
+        "symbols": "structural",
+        "imports": "structural",
+        "calls": "structural",
+        "controlFlow": "structural",
+        "dataFlow": "universal",
+        "cpg": "structural",
+        "tests": "structural"
+      },
+      "fixture": "Sample.swift",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "scala",
+      "label": "Scala",
+      "frontend": "brace-grammar",
+      "parser": "deterministic-adapter",
+      "conformance": "deterministic-grammar",
+      "baseline": "deterministic-structural",
+      "capabilities": {
+        "parsing": "structural",
+        "symbols": "structural",
+        "imports": "structural",
+        "calls": "structural",
+        "controlFlow": "structural",
+        "dataFlow": "universal",
+        "cpg": "structural",
+        "tests": "structural"
+      },
+      "fixture": "Sample.scala",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "dart",
+      "label": "Dart",
+      "frontend": "brace-grammar",
+      "parser": "deterministic-adapter",
+      "conformance": "deterministic-grammar",
+      "baseline": "deterministic-structural",
+      "capabilities": {
+        "parsing": "structural",
+        "symbols": "structural",
+        "imports": "structural",
+        "calls": "structural",
+        "controlFlow": "structural",
+        "dataFlow": "universal",
+        "cpg": "structural",
+        "tests": "structural"
+      },
+      "fixture": "sample.dart",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "objective-c",
+      "label": "Objective-C",
+      "frontend": "brace-grammar",
+      "parser": "deterministic-adapter",
+      "conformance": "deterministic-grammar",
+      "baseline": "deterministic-structural",
+      "capabilities": {
+        "parsing": "structural",
+        "symbols": "structural",
+        "imports": "structural",
+        "calls": "structural",
+        "controlFlow": "structural",
+        "dataFlow": "universal",
+        "cpg": "structural",
+        "tests": "structural"
+      },
+      "fixture": "Sample.m",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "lua",
+      "label": "Lua",
+      "frontend": "indent-grammar",
+      "parser": "deterministic-adapter",
+      "conformance": "deterministic-grammar",
+      "baseline": "deterministic-structural",
+      "capabilities": {
+        "parsing": "structural",
+        "symbols": "structural",
+        "imports": "structural",
+        "calls": "structural",
+        "controlFlow": "structural",
+        "dataFlow": "universal",
+        "cpg": "structural",
+        "tests": "structural"
+      },
+      "fixture": "sample.lua",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "groovy",
+      "label": "Groovy",
+      "frontend": "brace-grammar",
+      "parser": "deterministic-adapter",
+      "conformance": "deterministic-grammar",
+      "baseline": "deterministic-structural",
+      "capabilities": {
+        "parsing": "structural",
+        "symbols": "structural",
+        "imports": "structural",
+        "calls": "structural",
+        "controlFlow": "structural",
+        "dataFlow": "universal",
+        "cpg": "structural",
+        "tests": "structural"
+      },
+      "fixture": "Sample.groovy",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "elixir",
+      "label": "Elixir",
+      "frontend": "functional-grammar",
+      "parser": "deterministic-adapter",
+      "conformance": "deterministic-grammar",
+      "baseline": "deterministic-structural",
+      "capabilities": {
+        "parsing": "structural",
+        "symbols": "structural",
+        "imports": "structural",
+        "calls": "structural",
+        "controlFlow": "structural",
+        "dataFlow": "universal",
+        "cpg": "structural",
+        "tests": "structural"
+      },
+      "fixture": "sample.ex",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "erlang",
+      "label": "Erlang",
+      "frontend": "functional-grammar",
+      "parser": "deterministic-adapter",
+      "conformance": "deterministic-grammar",
+      "baseline": "deterministic-structural",
+      "capabilities": {
+        "parsing": "structural",
+        "symbols": "structural",
+        "imports": "structural",
+        "calls": "structural",
+        "controlFlow": "structural",
+        "dataFlow": "universal",
+        "cpg": "structural",
+        "tests": "structural"
+      },
+      "fixture": "sample.erl",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "haskell",
+      "label": "Haskell",
+      "frontend": "functional-grammar",
+      "parser": "deterministic-adapter",
+      "conformance": "deterministic-grammar",
+      "baseline": "deterministic-structural",
+      "capabilities": {
+        "parsing": "structural",
+        "symbols": "structural",
+        "imports": "structural",
+        "calls": "structural",
+        "controlFlow": "structural",
+        "dataFlow": "universal",
+        "cpg": "structural",
+        "tests": "structural"
+      },
+      "fixture": "Sample.hs",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "r",
+      "label": "R",
+      "frontend": "indent-grammar",
+      "parser": "deterministic-adapter",
+      "conformance": "deterministic-grammar",
+      "baseline": "deterministic-structural",
+      "capabilities": {
+        "parsing": "structural",
+        "symbols": "structural",
+        "imports": "structural",
+        "calls": "structural",
+        "controlFlow": "structural",
+        "dataFlow": "universal",
+        "cpg": "structural",
+        "tests": "structural"
+      },
+      "fixture": "sample.R",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "julia",
+      "label": "Julia",
+      "frontend": "indent-grammar",
+      "parser": "deterministic-adapter",
+      "conformance": "deterministic-grammar",
+      "baseline": "deterministic-structural",
+      "capabilities": {
+        "parsing": "structural",
+        "symbols": "structural",
+        "imports": "structural",
+        "calls": "structural",
+        "controlFlow": "structural",
+        "dataFlow": "universal",
+        "cpg": "structural",
+        "tests": "structural"
+      },
+      "fixture": "sample.jl",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "perl",
+      "label": "Perl",
+      "frontend": "shell-grammar",
+      "parser": "deterministic-adapter",
+      "conformance": "deterministic-grammar",
+      "baseline": "deterministic-structural",
+      "capabilities": {
+        "parsing": "structural",
+        "symbols": "structural",
+        "imports": "structural",
+        "calls": "structural",
+        "controlFlow": "structural",
+        "dataFlow": "universal",
+        "cpg": "structural",
+        "tests": "structural"
+      },
+      "fixture": "sample.pl",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "shell",
+      "label": "Shell",
+      "frontend": "shell-grammar",
+      "parser": "deterministic-adapter",
+      "conformance": "deterministic-grammar",
+      "baseline": "deterministic-structural",
+      "capabilities": {
+        "parsing": "structural",
+        "symbols": "structural",
+        "imports": "structural",
+        "calls": "structural",
+        "controlFlow": "structural",
+        "dataFlow": "universal",
+        "cpg": "structural",
+        "tests": "structural"
+      },
+      "fixture": "sample.sh",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "powershell",
+      "label": "PowerShell",
+      "frontend": "shell-grammar",
+      "parser": "deterministic-adapter",
+      "conformance": "deterministic-grammar",
+      "baseline": "deterministic-structural",
+      "capabilities": {
+        "parsing": "structural",
+        "symbols": "structural",
+        "imports": "structural",
+        "calls": "structural",
+        "controlFlow": "structural",
+        "dataFlow": "universal",
+        "cpg": "structural",
+        "tests": "structural"
+      },
+      "fixture": "sample.ps1",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "sql",
+      "label": "SQL",
+      "frontend": "schema-grammar",
+      "parser": "deterministic-adapter",
+      "conformance": "deterministic-grammar",
+      "baseline": "deterministic-structural",
+      "capabilities": {
+        "parsing": "structural",
+        "symbols": "structural",
+        "imports": "structural",
+        "calls": "structural",
+        "controlFlow": "structural",
+        "dataFlow": "universal",
+        "cpg": "structural",
+        "tests": "structural"
+      },
+      "fixture": "schema.sql",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "graphql",
+      "label": "GraphQL",
+      "frontend": "schema-grammar",
+      "parser": "deterministic-adapter",
+      "conformance": "deterministic-grammar",
+      "baseline": "deterministic-structural",
+      "capabilities": {
+        "parsing": "structural",
+        "symbols": "structural",
+        "imports": "structural",
+        "calls": "structural",
+        "controlFlow": "structural",
+        "dataFlow": "universal",
+        "cpg": "structural",
+        "tests": "structural"
+      },
+      "fixture": "schema.graphql",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "protobuf",
+      "label": "Protocol Buffers",
+      "frontend": "schema-grammar",
+      "parser": "deterministic-adapter",
+      "conformance": "deterministic-grammar",
+      "baseline": "deterministic-structural",
+      "capabilities": {
+        "parsing": "structural",
+        "symbols": "structural",
+        "imports": "structural",
+        "calls": "structural",
+        "controlFlow": "structural",
+        "dataFlow": "universal",
+        "cpg": "structural",
+        "tests": "structural"
+      },
+      "fixture": "schema.proto",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "html",
+      "label": "HTML",
+      "frontend": "markup-grammar",
+      "parser": "artifact",
+      "conformance": "structural-artifact",
+      "baseline": "structural-artifact",
+      "capabilities": {
+        "parsing": "structural",
+        "symbols": "structural",
+        "imports": "structural",
+        "calls": "structural",
+        "controlFlow": "structural",
+        "dataFlow": "universal",
+        "cpg": "structural",
+        "tests": "structural"
+      },
+      "fixture": "index.html",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "css",
+      "label": "CSS",
+      "frontend": "markup-grammar",
+      "parser": "artifact",
+      "conformance": "structural-artifact",
+      "baseline": "structural-artifact",
+      "capabilities": {
+        "parsing": "structural",
+        "symbols": "structural",
+        "imports": "structural",
+        "calls": "structural",
+        "controlFlow": "structural",
+        "dataFlow": "universal",
+        "cpg": "structural",
+        "tests": "structural"
+      },
+      "fixture": "sample.css",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "json",
+      "label": "JSON",
+      "frontend": "data-grammar",
+      "parser": "artifact",
+      "conformance": "structural-artifact",
+      "baseline": "structural-artifact",
+      "capabilities": {
+        "parsing": "structural",
+        "symbols": "structural",
+        "imports": "structural",
+        "calls": "structural",
+        "controlFlow": "structural",
+        "dataFlow": "universal",
+        "cpg": "structural",
+        "tests": "structural"
+      },
+      "fixture": "sample.json",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "yaml",
+      "label": "YAML",
+      "frontend": "data-grammar",
+      "parser": "artifact",
+      "conformance": "structural-artifact",
+      "baseline": "structural-artifact",
+      "capabilities": {
+        "parsing": "structural",
+        "symbols": "structural",
+        "imports": "structural",
+        "calls": "structural",
+        "controlFlow": "structural",
+        "dataFlow": "universal",
+        "cpg": "structural",
+        "tests": "structural"
+      },
+      "fixture": "sample.yaml",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "toml",
+      "label": "TOML",
+      "frontend": "data-grammar",
+      "parser": "artifact",
+      "conformance": "structural-artifact",
+      "baseline": "structural-artifact",
+      "capabilities": {
+        "parsing": "structural",
+        "symbols": "structural",
+        "imports": "structural",
+        "calls": "structural",
+        "controlFlow": "structural",
+        "dataFlow": "universal",
+        "cpg": "structural",
+        "tests": "structural"
+      },
+      "fixture": "sample.toml",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "xml",
+      "label": "XML",
+      "frontend": "markup-grammar",
+      "parser": "artifact",
+      "conformance": "structural-artifact",
+      "baseline": "structural-artifact",
+      "capabilities": {
+        "parsing": "structural",
+        "symbols": "structural",
+        "imports": "structural",
+        "calls": "structural",
+        "controlFlow": "structural",
+        "dataFlow": "universal",
+        "cpg": "structural",
+        "tests": "structural"
+      },
+      "fixture": "sample.xml",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "markdown",
+      "label": "Markdown",
+      "frontend": "markup-grammar",
+      "parser": "artifact",
+      "conformance": "structural-artifact",
+      "baseline": "structural-artifact",
+      "capabilities": {
+        "parsing": "structural",
+        "symbols": "structural",
+        "imports": "structural",
+        "calls": "structural",
+        "controlFlow": "structural",
+        "dataFlow": "universal",
+        "cpg": "structural",
+        "tests": "structural"
+      },
+      "fixture": "sample.md",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "terraform",
+      "label": "Terraform/HCL",
+      "frontend": "infrastructure-grammar",
+      "parser": "deterministic-adapter",
+      "conformance": "deterministic-grammar",
+      "baseline": "deterministic-structural",
+      "capabilities": {
+        "parsing": "structural",
+        "symbols": "structural",
+        "imports": "structural",
+        "calls": "structural",
+        "controlFlow": "structural",
+        "dataFlow": "universal",
+        "cpg": "structural",
+        "tests": "structural"
+      },
+      "fixture": "main.tf",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "dockerfile",
+      "label": "Dockerfile",
+      "frontend": "infrastructure-grammar",
+      "parser": "deterministic-adapter",
+      "conformance": "deterministic-grammar",
+      "baseline": "deterministic-structural",
+      "capabilities": {
+        "parsing": "structural",
+        "symbols": "structural",
+        "imports": "structural",
+        "calls": "structural",
+        "controlFlow": "structural",
+        "dataFlow": "universal",
+        "cpg": "structural",
+        "tests": "structural"
+      },
+      "fixture": "Dockerfile",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "make",
+      "label": "Make/Just",
+      "frontend": "infrastructure-grammar",
+      "parser": "deterministic-adapter",
+      "conformance": "deterministic-grammar",
+      "baseline": "deterministic-structural",
+      "capabilities": {
+        "parsing": "structural",
+        "symbols": "structural",
+        "imports": "structural",
+        "calls": "structural",
+        "controlFlow": "structural",
+        "dataFlow": "universal",
+        "cpg": "structural",
+        "tests": "structural"
+      },
+      "fixture": "Makefile",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "cmake",
+      "label": "CMake",
+      "frontend": "infrastructure-grammar",
+      "parser": "deterministic-adapter",
+      "conformance": "deterministic-grammar",
+      "baseline": "deterministic-structural",
+      "capabilities": {
+        "parsing": "structural",
+        "symbols": "structural",
+        "imports": "structural",
+        "calls": "structural",
+        "controlFlow": "structural",
+        "dataFlow": "universal",
+        "cpg": "structural",
+        "tests": "structural"
+      },
+      "fixture": "CMakeLists.txt",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "maven",
+      "label": "Maven",
+      "frontend": "infrastructure-grammar",
+      "parser": "artifact",
+      "conformance": "structural-artifact",
+      "baseline": "structural-artifact",
+      "capabilities": {
+        "parsing": "structural",
+        "symbols": "structural",
+        "imports": "structural",
+        "calls": "structural",
+        "controlFlow": "structural",
+        "dataFlow": "universal",
+        "cpg": "structural",
+        "tests": "structural"
+      },
+      "fixture": "pom.xml",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "gradle",
+      "label": "Gradle",
+      "frontend": "infrastructure-grammar",
+      "parser": "deterministic-adapter",
+      "conformance": "deterministic-grammar",
+      "baseline": "deterministic-structural",
+      "capabilities": {
+        "parsing": "structural",
+        "symbols": "structural",
+        "imports": "structural",
+        "calls": "structural",
+        "controlFlow": "structural",
+        "dataFlow": "universal",
+        "cpg": "structural",
+        "tests": "structural"
+      },
+      "fixture": "build.gradle",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "kubernetes",
+      "label": "Kubernetes/Helm",
+      "frontend": "infrastructure-grammar",
+      "parser": "artifact",
+      "conformance": "structural-artifact",
+      "baseline": "structural-artifact",
+      "capabilities": {
+        "parsing": "structural",
+        "symbols": "structural",
+        "imports": "structural",
+        "calls": "structural",
+        "controlFlow": "structural",
+        "dataFlow": "universal",
+        "cpg": "structural",
+        "tests": "structural"
+      },
+      "fixture": "k8s/deployment.yaml",
+      "okf": true,
+      "cpg": true
+    }
+  ],
+  "unknownLanguageConformance": {
+    "id": "unknown",
+    "frontend": "universal-text-grammar",
+    "fixture": "unknown/workflow.future-language",
+    "okf": true,
+    "cpg": true
+  },
+  "universalUnknownTextFrontend": true,
+  "allLanguageFilesIndexed": 44,
+  "allLanguageCpgShards": 44,
+  "allLanguageOkfValid": true,
+  "portableOkfBundle": {
+    "valid": true,
+    "concepts": 223,
+    "format": "OKF",
+    "version": "0.2"
+  },
+  "okfKnowledgeKindsProduced": 17,
+  "okfRelationshipKindsProduced": 16,
+  "okfObservations": 232,
+  "okfEvidence": 620,
+  "incrementalUnchangedFilesReused": 44,
+  "okfDeletionLifecycle": true,
+  "unboundedFilesDiscovered": 5205,
+  "unboundedFilesIndexed": 5205,
+  "actualProject": {
+    "files": 360,
+    "symbols": 6322,
+    "languages": 7
+  },
+  "sdlcStoriesCompleted": 16,
+  "sdlcStoryTypes": [
+    "research",
+    "specification",
+    "design",
+    "development",
+    "existing-test-analysis",
+    "test-impact-analysis",
+    "new-test-creation",
+    "failed-test-investigation",
+    "flaky-test-analysis",
+    "security-review",
+    "performance-review",
+    "modernization-review",
+    "code-review",
+    "pr-review",
+    "documentation",
+    "completion"
+  ],
+  "intentResearchDocumentGenerated": true,
+  "generatedUserStories": 9,
+  "generatedQualityStories": 5,
+  "generatedBacklog": [
+    {
+      "kind": "user-story",
+      "title": "Implement API behavior: Browser View /state and /command",
+      "evidence": 1,
+      "acceptanceCriteria": 8
+    },
+    {
+      "kind": "user-story",
+      "title": "Implement API behavior: Intent API",
+      "evidence": 1,
+      "acceptanceCriteria": 3
+    },
+    {
+      "kind": "user-story",
+      "title": "Implement service behavior: Keystone application store",
+      "evidence": 1,
+      "acceptanceCriteria": 3
+    },
+    {
+      "kind": "user-story",
+      "title": "Implement service behavior: Task Handoff service",
+      "evidence": 1,
+      "acceptanceCriteria": 3
+    },
+    {
+      "kind": "user-story",
+      "title": "Implement data behavior: SDLCPlan",
+      "evidence": 1,
+      "acceptanceCriteria": 3
+    },
+    {
+      "kind": "user-story",
+      "title": "Implement data behavior: KeystoneOkfSnapshot",
+      "evidence": 1,
+      "acceptanceCriteria": 3
+    },
+    {
+      "kind": "user-story",
+      "title": "Implement repository slice: src/extension",
+      "evidence": 1,
+      "acceptanceCriteria": 3
+    },
+    {
+      "kind": "user-story",
+      "title": "Implement repository slice: src/webview",
+      "evidence": 1,
+      "acceptanceCriteria": 3
+    },
+    {
+      "kind": "user-story",
+      "title": "Integrate repository boundaries and preserve contracts",
+      "evidence": 8,
+      "acceptanceCriteria": 3
+    },
+    {
+      "kind": "quality-story",
+      "title": "Prove existing coverage and change impact",
+      "evidence": 2,
+      "acceptanceCriteria": 2
+    },
+    {
+      "kind": "quality-story",
+      "title": "Add acceptance-linked regression coverage",
+      "evidence": 1,
+      "acceptanceCriteria": 2
+    },
+    {
+      "kind": "quality-story",
+      "title": "Validate security-sensitive trust boundaries",
+      "evidence": 3,
+      "acceptanceCriteria": 2
+    },
+    {
+      "kind": "quality-story",
+      "title": "Validate performance-sensitive execution paths",
+      "evidence": 3,
+      "acceptanceCriteria": 2
+    },
+    {
+      "kind": "quality-story",
+      "title": "Complete engineering and read-only PR review",
+      "evidence": 3,
+      "acceptanceCriteria": 2
+    }
+  ],
+  "valueEdgeFeatureImported": "42",
+  "valueEdgeStoriesPublished": 2,
+  "taskHandoffExactSdlcRoundTrip": true,
+  "taskHandoff": {
+    "encrypted": true,
+    "integrityVerified": true,
+    "exactSdlcPlanRestored": true
+  },
+  "browserSharedRuntime": true,
+  "browserChecks": {
+    "unauthenticatedState": 401,
+    "bootstrap": 303,
+    "bootstrapReplay": 401,
+    "crossOriginCommand": 403,
+    "acceptedCommand": 202,
+    "staleCommand": 409,
+    "reconnectLatestState": true,
+    "sharedAssets": true
+  },
+  "browserAuthenticationAndOriginChecks": true,
+  "browserStaleVersionAndReconnectChecks": true,
+  "gitPolicy": "read-only"
+}
+
+> keystone@1.0.0 build
+> npm run clean && node scripts/build.mjs
+
+
+> keystone@1.0.0 clean
+> node scripts/clean.mjs
+
+Built 116 extension/core module(s).
+Built 4 webview module(s).
+
+> keystone@1.0.0 package
+> node scripts/package-vsix.mjs
+
+Created /mnt/data/keystone_cleanroom_pass1/Keystone/dist/keystone-1.0.0.vsix and /mnt/data/keystone_cleanroom_pass1/Keystone/dist/keystone.vsix
+
+> keystone@1.0.0 verify:package
+> node scripts/verify-vsix.mjs
+
+Verified dist/keystone-1.0.0.vsix with 439 entries.
+Verified dist/keystone.vsix with 439 entries.

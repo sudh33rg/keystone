@@ -1,0 +1,2785 @@
+{
+  "status": "ready",
+  "workspace": {
+    "name": "Keystone",
+    "root": "/mnt/data/keystone_finish",
+    "branch": "feature/browser-view"
+  },
+  "intelligence": {
+    "fileCount": 360,
+    "projectTypes": [
+      "TypeScript",
+      "React",
+      "VS Code Extension",
+      "Node.js"
+    ],
+    "architecture": "Monolithic VS Code extension · shared application state · authoritative OKF",
+    "git": {
+      "branch": "feature/browser-view",
+      "changedFiles": [
+        "src/webview/App.tsx",
+        "src/core/intelligence/okf/bundle.ts"
+      ]
+    },
+    "languageCapabilities": [
+      {
+        "id": "typescript",
+        "label": "TypeScript",
+        "level": "deep",
+        "extensions": [
+          ".ts",
+          ".tsx"
+        ],
+        "parser": "typescript",
+        "conformance": "compiler-backed",
+        "baseline": "compiler",
+        "semanticEnrichment": "built-in",
+        "frontend": "typescript-compiler",
+        "capabilities": {
+          "parsing": "deep",
+          "symbols": "deep",
+          "imports": "deep",
+          "calls": "deep",
+          "controlFlow": "semantic",
+          "dataFlow": "semantic",
+          "cpg": "deep",
+          "tests": "semantic"
+        },
+        "files": 180,
+        "semanticProvider": "Built-in compiler semantics",
+        "deterministicFiles": 180,
+        "semanticFiles": 180
+      },
+      {
+        "id": "javascript",
+        "label": "JavaScript",
+        "level": "deep",
+        "extensions": [
+          ".js",
+          ".jsx",
+          ".mjs",
+          ".cjs"
+        ],
+        "parser": "typescript",
+        "conformance": "compiler-backed",
+        "baseline": "compiler",
+        "semanticEnrichment": "built-in",
+        "frontend": "typescript-compiler",
+        "capabilities": {
+          "parsing": "deep",
+          "symbols": "deep",
+          "imports": "deep",
+          "calls": "deep",
+          "controlFlow": "semantic",
+          "dataFlow": "semantic",
+          "cpg": "deep",
+          "tests": "semantic"
+        },
+        "files": 74,
+        "semanticProvider": "Built-in compiler semantics",
+        "deterministicFiles": 74,
+        "semanticFiles": 74
+      },
+      {
+        "id": "python",
+        "label": "Python",
+        "level": "structural",
+        "extensions": [
+          ".py",
+          ".pyi"
+        ],
+        "parser": "deterministic-adapter",
+        "conformance": "deterministic-grammar",
+        "baseline": "deterministic-structural",
+        "semanticEnrichment": "vscode-language-service",
+        "frontend": "indent-grammar",
+        "capabilities": {
+          "parsing": "structural",
+          "symbols": "structural",
+          "imports": "structural",
+          "calls": "structural",
+          "controlFlow": "structural",
+          "dataFlow": "universal",
+          "cpg": "structural",
+          "tests": "structural"
+        },
+        "files": 28,
+        "semanticProvider": "Deterministic grammar; VS Code language-service enrichment when installed",
+        "deterministicFiles": 28,
+        "semanticFiles": 0
+      },
+      {
+        "id": "java",
+        "label": "Java",
+        "level": "structural",
+        "extensions": [
+          ".java"
+        ],
+        "parser": "deterministic-adapter",
+        "conformance": "deterministic-grammar",
+        "baseline": "deterministic-structural",
+        "semanticEnrichment": "vscode-language-service",
+        "frontend": "brace-grammar",
+        "capabilities": {
+          "parsing": "structural",
+          "symbols": "structural",
+          "imports": "structural",
+          "calls": "structural",
+          "controlFlow": "structural",
+          "dataFlow": "universal",
+          "cpg": "structural",
+          "tests": "structural"
+        },
+        "files": 18,
+        "semanticProvider": "Deterministic grammar; VS Code language-service enrichment when installed",
+        "deterministicFiles": 18,
+        "semanticFiles": 0
+      },
+      {
+        "id": "csharp",
+        "label": "C#",
+        "level": "structural",
+        "extensions": [
+          ".cs"
+        ],
+        "parser": "deterministic-adapter",
+        "conformance": "deterministic-grammar",
+        "baseline": "deterministic-structural",
+        "semanticEnrichment": "vscode-language-service",
+        "frontend": "brace-grammar",
+        "capabilities": {
+          "parsing": "structural",
+          "symbols": "structural",
+          "imports": "structural",
+          "calls": "structural",
+          "controlFlow": "structural",
+          "dataFlow": "universal",
+          "cpg": "structural",
+          "tests": "structural"
+        },
+        "files": 16,
+        "semanticProvider": "Deterministic grammar; VS Code language-service enrichment when installed",
+        "deterministicFiles": 16,
+        "semanticFiles": 0
+      },
+      {
+        "id": "go",
+        "label": "Go",
+        "level": "structural",
+        "extensions": [
+          ".go"
+        ],
+        "parser": "deterministic-adapter",
+        "conformance": "deterministic-grammar",
+        "baseline": "deterministic-structural",
+        "semanticEnrichment": "vscode-language-service",
+        "frontend": "brace-grammar",
+        "capabilities": {
+          "parsing": "structural",
+          "symbols": "structural",
+          "imports": "structural",
+          "calls": "structural",
+          "controlFlow": "structural",
+          "dataFlow": "universal",
+          "cpg": "structural",
+          "tests": "structural"
+        },
+        "files": 14,
+        "semanticProvider": "Deterministic grammar; VS Code language-service enrichment when installed",
+        "deterministicFiles": 14,
+        "semanticFiles": 0
+      },
+      {
+        "id": "rust",
+        "label": "Rust",
+        "level": "structural",
+        "extensions": [
+          ".rs"
+        ],
+        "parser": "deterministic-adapter",
+        "conformance": "deterministic-grammar",
+        "baseline": "deterministic-structural",
+        "semanticEnrichment": "vscode-language-service",
+        "frontend": "brace-grammar",
+        "capabilities": {
+          "parsing": "structural",
+          "symbols": "structural",
+          "imports": "structural",
+          "calls": "structural",
+          "controlFlow": "structural",
+          "dataFlow": "universal",
+          "cpg": "structural",
+          "tests": "structural"
+        },
+        "files": 12,
+        "semanticProvider": "Deterministic grammar; VS Code language-service enrichment when installed",
+        "deterministicFiles": 12,
+        "semanticFiles": 0
+      },
+      {
+        "id": "kotlin",
+        "label": "Kotlin",
+        "level": "structural",
+        "extensions": [
+          ".kt",
+          ".kts"
+        ],
+        "parser": "deterministic-adapter",
+        "conformance": "deterministic-grammar",
+        "baseline": "deterministic-structural",
+        "semanticEnrichment": "vscode-language-service",
+        "frontend": "brace-grammar",
+        "capabilities": {
+          "parsing": "structural",
+          "symbols": "structural",
+          "imports": "structural",
+          "calls": "structural",
+          "controlFlow": "structural",
+          "dataFlow": "universal",
+          "cpg": "structural",
+          "tests": "structural"
+        },
+        "files": 0,
+        "semanticProvider": "Deterministic grammar; VS Code language-service enrichment when installed",
+        "deterministicFiles": 0,
+        "semanticFiles": 0
+      },
+      {
+        "id": "c",
+        "label": "C",
+        "level": "structural",
+        "extensions": [
+          ".c",
+          ".h"
+        ],
+        "parser": "deterministic-adapter",
+        "conformance": "deterministic-grammar",
+        "baseline": "deterministic-structural",
+        "semanticEnrichment": "vscode-language-service",
+        "frontend": "brace-grammar",
+        "capabilities": {
+          "parsing": "structural",
+          "symbols": "structural",
+          "imports": "structural",
+          "calls": "structural",
+          "controlFlow": "structural",
+          "dataFlow": "universal",
+          "cpg": "structural",
+          "tests": "structural"
+        },
+        "files": 0,
+        "semanticProvider": "Deterministic grammar; VS Code language-service enrichment when installed",
+        "deterministicFiles": 0,
+        "semanticFiles": 0
+      },
+      {
+        "id": "cpp",
+        "label": "C++",
+        "level": "structural",
+        "extensions": [
+          ".cc",
+          ".cpp",
+          ".cxx",
+          ".hpp",
+          ".hh"
+        ],
+        "parser": "deterministic-adapter",
+        "conformance": "deterministic-grammar",
+        "baseline": "deterministic-structural",
+        "semanticEnrichment": "vscode-language-service",
+        "frontend": "brace-grammar",
+        "capabilities": {
+          "parsing": "structural",
+          "symbols": "structural",
+          "imports": "structural",
+          "calls": "structural",
+          "controlFlow": "structural",
+          "dataFlow": "universal",
+          "cpg": "structural",
+          "tests": "structural"
+        },
+        "files": 0,
+        "semanticProvider": "Deterministic grammar; VS Code language-service enrichment when installed",
+        "deterministicFiles": 0,
+        "semanticFiles": 0
+      },
+      {
+        "id": "php",
+        "label": "PHP",
+        "level": "structural",
+        "extensions": [
+          ".php"
+        ],
+        "parser": "deterministic-adapter",
+        "conformance": "deterministic-grammar",
+        "baseline": "deterministic-structural",
+        "semanticEnrichment": "vscode-language-service",
+        "frontend": "brace-grammar",
+        "capabilities": {
+          "parsing": "structural",
+          "symbols": "structural",
+          "imports": "structural",
+          "calls": "structural",
+          "controlFlow": "structural",
+          "dataFlow": "universal",
+          "cpg": "structural",
+          "tests": "structural"
+        },
+        "files": 0,
+        "semanticProvider": "Deterministic grammar; VS Code language-service enrichment when installed",
+        "deterministicFiles": 0,
+        "semanticFiles": 0
+      },
+      {
+        "id": "ruby",
+        "label": "Ruby",
+        "level": "structural",
+        "extensions": [
+          ".rb"
+        ],
+        "parser": "deterministic-adapter",
+        "conformance": "deterministic-grammar",
+        "baseline": "deterministic-structural",
+        "semanticEnrichment": "vscode-language-service",
+        "frontend": "indent-grammar",
+        "capabilities": {
+          "parsing": "structural",
+          "symbols": "structural",
+          "imports": "structural",
+          "calls": "structural",
+          "controlFlow": "structural",
+          "dataFlow": "universal",
+          "cpg": "structural",
+          "tests": "structural"
+        },
+        "files": 0,
+        "semanticProvider": "Deterministic grammar; VS Code language-service enrichment when installed",
+        "deterministicFiles": 0,
+        "semanticFiles": 0
+      },
+      {
+        "id": "swift",
+        "label": "Swift",
+        "level": "structural",
+        "extensions": [
+          ".swift"
+        ],
+        "parser": "deterministic-adapter",
+        "conformance": "deterministic-grammar",
+        "baseline": "deterministic-structural",
+        "semanticEnrichment": "vscode-language-service",
+        "frontend": "brace-grammar",
+        "capabilities": {
+          "parsing": "structural",
+          "symbols": "structural",
+          "imports": "structural",
+          "calls": "structural",
+          "controlFlow": "structural",
+          "dataFlow": "universal",
+          "cpg": "structural",
+          "tests": "structural"
+        },
+        "files": 0,
+        "semanticProvider": "Deterministic grammar; VS Code language-service enrichment when installed",
+        "deterministicFiles": 0,
+        "semanticFiles": 0
+      },
+      {
+        "id": "scala",
+        "label": "Scala",
+        "level": "structural",
+        "extensions": [
+          ".scala"
+        ],
+        "parser": "deterministic-adapter",
+        "conformance": "deterministic-grammar",
+        "baseline": "deterministic-structural",
+        "semanticEnrichment": "vscode-language-service",
+        "frontend": "brace-grammar",
+        "capabilities": {
+          "parsing": "structural",
+          "symbols": "structural",
+          "imports": "structural",
+          "calls": "structural",
+          "controlFlow": "structural",
+          "dataFlow": "universal",
+          "cpg": "structural",
+          "tests": "structural"
+        },
+        "files": 0,
+        "semanticProvider": "Deterministic grammar; VS Code language-service enrichment when installed",
+        "deterministicFiles": 0,
+        "semanticFiles": 0
+      },
+      {
+        "id": "dart",
+        "label": "Dart",
+        "level": "structural",
+        "extensions": [
+          ".dart"
+        ],
+        "parser": "deterministic-adapter",
+        "conformance": "deterministic-grammar",
+        "baseline": "deterministic-structural",
+        "semanticEnrichment": "vscode-language-service",
+        "frontend": "brace-grammar",
+        "capabilities": {
+          "parsing": "structural",
+          "symbols": "structural",
+          "imports": "structural",
+          "calls": "structural",
+          "controlFlow": "structural",
+          "dataFlow": "universal",
+          "cpg": "structural",
+          "tests": "structural"
+        },
+        "files": 0,
+        "semanticProvider": "Deterministic grammar; VS Code language-service enrichment when installed",
+        "deterministicFiles": 0,
+        "semanticFiles": 0
+      },
+      {
+        "id": "objective-c",
+        "label": "Objective-C",
+        "level": "structural",
+        "extensions": [
+          ".m",
+          ".mm"
+        ],
+        "parser": "deterministic-adapter",
+        "conformance": "deterministic-grammar",
+        "baseline": "deterministic-structural",
+        "semanticEnrichment": "vscode-language-service",
+        "frontend": "brace-grammar",
+        "capabilities": {
+          "parsing": "structural",
+          "symbols": "structural",
+          "imports": "structural",
+          "calls": "structural",
+          "controlFlow": "structural",
+          "dataFlow": "universal",
+          "cpg": "structural",
+          "tests": "structural"
+        },
+        "files": 0,
+        "semanticProvider": "Deterministic grammar; VS Code language-service enrichment when installed",
+        "deterministicFiles": 0,
+        "semanticFiles": 0
+      },
+      {
+        "id": "lua",
+        "label": "Lua",
+        "level": "structural",
+        "extensions": [
+          ".lua"
+        ],
+        "parser": "deterministic-adapter",
+        "conformance": "deterministic-grammar",
+        "baseline": "deterministic-structural",
+        "semanticEnrichment": "vscode-language-service",
+        "frontend": "indent-grammar",
+        "capabilities": {
+          "parsing": "structural",
+          "symbols": "structural",
+          "imports": "structural",
+          "calls": "structural",
+          "controlFlow": "structural",
+          "dataFlow": "universal",
+          "cpg": "structural",
+          "tests": "structural"
+        },
+        "files": 0,
+        "semanticProvider": "Deterministic grammar; VS Code language-service enrichment when installed",
+        "deterministicFiles": 0,
+        "semanticFiles": 0
+      },
+      {
+        "id": "groovy",
+        "label": "Groovy",
+        "level": "structural",
+        "extensions": [
+          ".groovy"
+        ],
+        "parser": "deterministic-adapter",
+        "conformance": "deterministic-grammar",
+        "baseline": "deterministic-structural",
+        "semanticEnrichment": "vscode-language-service",
+        "frontend": "brace-grammar",
+        "capabilities": {
+          "parsing": "structural",
+          "symbols": "structural",
+          "imports": "structural",
+          "calls": "structural",
+          "controlFlow": "structural",
+          "dataFlow": "universal",
+          "cpg": "structural",
+          "tests": "structural"
+        },
+        "files": 0,
+        "semanticProvider": "Deterministic grammar; VS Code language-service enrichment when installed",
+        "deterministicFiles": 0,
+        "semanticFiles": 0
+      },
+      {
+        "id": "elixir",
+        "label": "Elixir",
+        "level": "structural",
+        "extensions": [
+          ".ex",
+          ".exs"
+        ],
+        "parser": "deterministic-adapter",
+        "conformance": "deterministic-grammar",
+        "baseline": "deterministic-structural",
+        "semanticEnrichment": "vscode-language-service",
+        "frontend": "functional-grammar",
+        "capabilities": {
+          "parsing": "structural",
+          "symbols": "structural",
+          "imports": "structural",
+          "calls": "structural",
+          "controlFlow": "structural",
+          "dataFlow": "universal",
+          "cpg": "structural",
+          "tests": "structural"
+        },
+        "files": 0,
+        "semanticProvider": "Deterministic grammar; VS Code language-service enrichment when installed",
+        "deterministicFiles": 0,
+        "semanticFiles": 0
+      },
+      {
+        "id": "erlang",
+        "label": "Erlang",
+        "level": "structural",
+        "extensions": [
+          ".erl",
+          ".hrl"
+        ],
+        "parser": "deterministic-adapter",
+        "conformance": "deterministic-grammar",
+        "baseline": "deterministic-structural",
+        "semanticEnrichment": "vscode-language-service",
+        "frontend": "functional-grammar",
+        "capabilities": {
+          "parsing": "structural",
+          "symbols": "structural",
+          "imports": "structural",
+          "calls": "structural",
+          "controlFlow": "structural",
+          "dataFlow": "universal",
+          "cpg": "structural",
+          "tests": "structural"
+        },
+        "files": 0,
+        "semanticProvider": "Deterministic grammar; VS Code language-service enrichment when installed",
+        "deterministicFiles": 0,
+        "semanticFiles": 0
+      },
+      {
+        "id": "haskell",
+        "label": "Haskell",
+        "level": "structural",
+        "extensions": [
+          ".hs"
+        ],
+        "parser": "deterministic-adapter",
+        "conformance": "deterministic-grammar",
+        "baseline": "deterministic-structural",
+        "semanticEnrichment": "vscode-language-service",
+        "frontend": "functional-grammar",
+        "capabilities": {
+          "parsing": "structural",
+          "symbols": "structural",
+          "imports": "structural",
+          "calls": "structural",
+          "controlFlow": "structural",
+          "dataFlow": "universal",
+          "cpg": "structural",
+          "tests": "structural"
+        },
+        "files": 0,
+        "semanticProvider": "Deterministic grammar; VS Code language-service enrichment when installed",
+        "deterministicFiles": 0,
+        "semanticFiles": 0
+      },
+      {
+        "id": "r",
+        "label": "R",
+        "level": "structural",
+        "extensions": [
+          ".r",
+          ".R"
+        ],
+        "parser": "deterministic-adapter",
+        "conformance": "deterministic-grammar",
+        "baseline": "deterministic-structural",
+        "semanticEnrichment": "vscode-language-service",
+        "frontend": "indent-grammar",
+        "capabilities": {
+          "parsing": "structural",
+          "symbols": "structural",
+          "imports": "structural",
+          "calls": "structural",
+          "controlFlow": "structural",
+          "dataFlow": "universal",
+          "cpg": "structural",
+          "tests": "structural"
+        },
+        "files": 0,
+        "semanticProvider": "Deterministic grammar; VS Code language-service enrichment when installed",
+        "deterministicFiles": 0,
+        "semanticFiles": 0
+      },
+      {
+        "id": "julia",
+        "label": "Julia",
+        "level": "structural",
+        "extensions": [
+          ".jl"
+        ],
+        "parser": "deterministic-adapter",
+        "conformance": "deterministic-grammar",
+        "baseline": "deterministic-structural",
+        "semanticEnrichment": "vscode-language-service",
+        "frontend": "indent-grammar",
+        "capabilities": {
+          "parsing": "structural",
+          "symbols": "structural",
+          "imports": "structural",
+          "calls": "structural",
+          "controlFlow": "structural",
+          "dataFlow": "universal",
+          "cpg": "structural",
+          "tests": "structural"
+        },
+        "files": 0,
+        "semanticProvider": "Deterministic grammar; VS Code language-service enrichment when installed",
+        "deterministicFiles": 0,
+        "semanticFiles": 0
+      },
+      {
+        "id": "perl",
+        "label": "Perl",
+        "level": "structural",
+        "extensions": [
+          ".pl",
+          ".pm"
+        ],
+        "parser": "deterministic-adapter",
+        "conformance": "deterministic-grammar",
+        "baseline": "deterministic-structural",
+        "semanticEnrichment": "vscode-language-service",
+        "frontend": "shell-grammar",
+        "capabilities": {
+          "parsing": "structural",
+          "symbols": "structural",
+          "imports": "structural",
+          "calls": "structural",
+          "controlFlow": "structural",
+          "dataFlow": "universal",
+          "cpg": "structural",
+          "tests": "structural"
+        },
+        "files": 0,
+        "semanticProvider": "Deterministic grammar; VS Code language-service enrichment when installed",
+        "deterministicFiles": 0,
+        "semanticFiles": 0
+      },
+      {
+        "id": "shell",
+        "label": "Shell",
+        "level": "structural",
+        "extensions": [
+          ".sh",
+          ".bash",
+          ".zsh"
+        ],
+        "parser": "deterministic-adapter",
+        "conformance": "deterministic-grammar",
+        "baseline": "deterministic-structural",
+        "semanticEnrichment": "vscode-language-service",
+        "frontend": "shell-grammar",
+        "capabilities": {
+          "parsing": "structural",
+          "symbols": "structural",
+          "imports": "structural",
+          "calls": "structural",
+          "controlFlow": "structural",
+          "dataFlow": "universal",
+          "cpg": "structural",
+          "tests": "structural"
+        },
+        "files": 0,
+        "semanticProvider": "Deterministic grammar; VS Code language-service enrichment when installed",
+        "deterministicFiles": 0,
+        "semanticFiles": 0
+      },
+      {
+        "id": "powershell",
+        "label": "PowerShell",
+        "level": "structural",
+        "extensions": [
+          ".ps1",
+          ".psm1"
+        ],
+        "parser": "deterministic-adapter",
+        "conformance": "deterministic-grammar",
+        "baseline": "deterministic-structural",
+        "semanticEnrichment": "vscode-language-service",
+        "frontend": "shell-grammar",
+        "capabilities": {
+          "parsing": "structural",
+          "symbols": "structural",
+          "imports": "structural",
+          "calls": "structural",
+          "controlFlow": "structural",
+          "dataFlow": "universal",
+          "cpg": "structural",
+          "tests": "structural"
+        },
+        "files": 0,
+        "semanticProvider": "Deterministic grammar; VS Code language-service enrichment when installed",
+        "deterministicFiles": 0,
+        "semanticFiles": 0
+      },
+      {
+        "id": "sql",
+        "label": "SQL",
+        "level": "structural",
+        "extensions": [
+          ".sql"
+        ],
+        "parser": "deterministic-adapter",
+        "conformance": "deterministic-grammar",
+        "baseline": "deterministic-structural",
+        "semanticEnrichment": "vscode-language-service",
+        "frontend": "schema-grammar",
+        "capabilities": {
+          "parsing": "structural",
+          "symbols": "structural",
+          "imports": "structural",
+          "calls": "structural",
+          "controlFlow": "structural",
+          "dataFlow": "universal",
+          "cpg": "structural",
+          "tests": "structural"
+        },
+        "files": 0,
+        "semanticProvider": "Deterministic grammar; VS Code language-service enrichment when installed",
+        "deterministicFiles": 0,
+        "semanticFiles": 0
+      },
+      {
+        "id": "graphql",
+        "label": "GraphQL",
+        "level": "structural",
+        "extensions": [
+          ".graphql",
+          ".gql"
+        ],
+        "parser": "deterministic-adapter",
+        "conformance": "deterministic-grammar",
+        "baseline": "deterministic-structural",
+        "semanticEnrichment": "vscode-language-service",
+        "frontend": "schema-grammar",
+        "capabilities": {
+          "parsing": "structural",
+          "symbols": "structural",
+          "imports": "structural",
+          "calls": "structural",
+          "controlFlow": "structural",
+          "dataFlow": "universal",
+          "cpg": "structural",
+          "tests": "structural"
+        },
+        "files": 0,
+        "semanticProvider": "Deterministic grammar; VS Code language-service enrichment when installed",
+        "deterministicFiles": 0,
+        "semanticFiles": 0
+      },
+      {
+        "id": "protobuf",
+        "label": "Protocol Buffers",
+        "level": "structural",
+        "extensions": [
+          ".proto"
+        ],
+        "parser": "deterministic-adapter",
+        "conformance": "deterministic-grammar",
+        "baseline": "deterministic-structural",
+        "semanticEnrichment": "vscode-language-service",
+        "frontend": "schema-grammar",
+        "capabilities": {
+          "parsing": "structural",
+          "symbols": "structural",
+          "imports": "structural",
+          "calls": "structural",
+          "controlFlow": "structural",
+          "dataFlow": "universal",
+          "cpg": "structural",
+          "tests": "structural"
+        },
+        "files": 0,
+        "semanticProvider": "Deterministic grammar; VS Code language-service enrichment when installed",
+        "deterministicFiles": 0,
+        "semanticFiles": 0
+      },
+      {
+        "id": "html",
+        "label": "HTML",
+        "level": "structural",
+        "extensions": [
+          ".html",
+          ".htm"
+        ],
+        "parser": "artifact",
+        "conformance": "structural-artifact",
+        "baseline": "structural-artifact",
+        "semanticEnrichment": "vscode-language-service",
+        "frontend": "markup-grammar",
+        "capabilities": {
+          "parsing": "structural",
+          "symbols": "structural",
+          "imports": "structural",
+          "calls": "structural",
+          "controlFlow": "structural",
+          "dataFlow": "universal",
+          "cpg": "structural",
+          "tests": "structural"
+        },
+        "files": 0,
+        "semanticProvider": "Deterministic grammar; VS Code language-service enrichment when installed",
+        "deterministicFiles": 0,
+        "semanticFiles": 0
+      },
+      {
+        "id": "css",
+        "label": "CSS",
+        "level": "structural",
+        "extensions": [
+          ".css",
+          ".scss",
+          ".sass",
+          ".less"
+        ],
+        "parser": "artifact",
+        "conformance": "structural-artifact",
+        "baseline": "structural-artifact",
+        "semanticEnrichment": "vscode-language-service",
+        "frontend": "markup-grammar",
+        "capabilities": {
+          "parsing": "structural",
+          "symbols": "structural",
+          "imports": "structural",
+          "calls": "structural",
+          "controlFlow": "structural",
+          "dataFlow": "universal",
+          "cpg": "structural",
+          "tests": "structural"
+        },
+        "files": 0,
+        "semanticProvider": "Deterministic grammar; VS Code language-service enrichment when installed",
+        "deterministicFiles": 0,
+        "semanticFiles": 0
+      },
+      {
+        "id": "json",
+        "label": "JSON",
+        "level": "structural",
+        "extensions": [
+          ".json"
+        ],
+        "parser": "artifact",
+        "conformance": "structural-artifact",
+        "baseline": "structural-artifact",
+        "semanticEnrichment": "vscode-language-service",
+        "frontend": "data-grammar",
+        "capabilities": {
+          "parsing": "structural",
+          "symbols": "structural",
+          "imports": "structural",
+          "calls": "structural",
+          "controlFlow": "structural",
+          "dataFlow": "universal",
+          "cpg": "structural",
+          "tests": "structural"
+        },
+        "files": 0,
+        "semanticProvider": "Deterministic grammar; VS Code language-service enrichment when installed",
+        "deterministicFiles": 0,
+        "semanticFiles": 0
+      },
+      {
+        "id": "yaml",
+        "label": "YAML",
+        "level": "structural",
+        "extensions": [
+          ".yaml",
+          ".yml"
+        ],
+        "parser": "artifact",
+        "conformance": "structural-artifact",
+        "baseline": "structural-artifact",
+        "semanticEnrichment": "vscode-language-service",
+        "frontend": "data-grammar",
+        "capabilities": {
+          "parsing": "structural",
+          "symbols": "structural",
+          "imports": "structural",
+          "calls": "structural",
+          "controlFlow": "structural",
+          "dataFlow": "universal",
+          "cpg": "structural",
+          "tests": "structural"
+        },
+        "files": 0,
+        "semanticProvider": "Deterministic grammar; VS Code language-service enrichment when installed",
+        "deterministicFiles": 0,
+        "semanticFiles": 0
+      },
+      {
+        "id": "toml",
+        "label": "TOML",
+        "level": "structural",
+        "extensions": [
+          ".toml"
+        ],
+        "parser": "artifact",
+        "conformance": "structural-artifact",
+        "baseline": "structural-artifact",
+        "semanticEnrichment": "vscode-language-service",
+        "frontend": "data-grammar",
+        "capabilities": {
+          "parsing": "structural",
+          "symbols": "structural",
+          "imports": "structural",
+          "calls": "structural",
+          "controlFlow": "structural",
+          "dataFlow": "universal",
+          "cpg": "structural",
+          "tests": "structural"
+        },
+        "files": 0,
+        "semanticProvider": "Deterministic grammar; VS Code language-service enrichment when installed",
+        "deterministicFiles": 0,
+        "semanticFiles": 0
+      },
+      {
+        "id": "xml",
+        "label": "XML",
+        "level": "structural",
+        "extensions": [
+          ".xml"
+        ],
+        "parser": "artifact",
+        "conformance": "structural-artifact",
+        "baseline": "structural-artifact",
+        "semanticEnrichment": "vscode-language-service",
+        "frontend": "markup-grammar",
+        "capabilities": {
+          "parsing": "structural",
+          "symbols": "structural",
+          "imports": "structural",
+          "calls": "structural",
+          "controlFlow": "structural",
+          "dataFlow": "universal",
+          "cpg": "structural",
+          "tests": "structural"
+        },
+        "files": 0,
+        "semanticProvider": "Deterministic grammar; VS Code language-service enrichment when installed",
+        "deterministicFiles": 0,
+        "semanticFiles": 0
+      },
+      {
+        "id": "markdown",
+        "label": "Markdown",
+        "level": "structural",
+        "extensions": [
+          ".md",
+          ".mdx"
+        ],
+        "parser": "artifact",
+        "conformance": "structural-artifact",
+        "baseline": "structural-artifact",
+        "semanticEnrichment": "vscode-language-service",
+        "frontend": "markup-grammar",
+        "capabilities": {
+          "parsing": "structural",
+          "symbols": "structural",
+          "imports": "structural",
+          "calls": "structural",
+          "controlFlow": "structural",
+          "dataFlow": "universal",
+          "cpg": "structural",
+          "tests": "structural"
+        },
+        "files": 0,
+        "semanticProvider": "Deterministic grammar; VS Code language-service enrichment when installed",
+        "deterministicFiles": 0,
+        "semanticFiles": 0
+      },
+      {
+        "id": "terraform",
+        "label": "Terraform/HCL",
+        "level": "structural",
+        "extensions": [
+          ".tf",
+          ".tfvars",
+          ".hcl"
+        ],
+        "parser": "deterministic-adapter",
+        "conformance": "deterministic-grammar",
+        "baseline": "deterministic-structural",
+        "semanticEnrichment": "vscode-language-service",
+        "frontend": "infrastructure-grammar",
+        "capabilities": {
+          "parsing": "structural",
+          "symbols": "structural",
+          "imports": "structural",
+          "calls": "structural",
+          "controlFlow": "structural",
+          "dataFlow": "universal",
+          "cpg": "structural",
+          "tests": "structural"
+        },
+        "files": 0,
+        "semanticProvider": "Deterministic grammar; VS Code language-service enrichment when installed",
+        "deterministicFiles": 0,
+        "semanticFiles": 0
+      },
+      {
+        "id": "dockerfile",
+        "label": "Dockerfile",
+        "level": "structural",
+        "extensions": [],
+        "parser": "deterministic-adapter",
+        "conformance": "deterministic-grammar",
+        "baseline": "deterministic-structural",
+        "semanticEnrichment": "vscode-language-service",
+        "frontend": "infrastructure-grammar",
+        "capabilities": {
+          "parsing": "structural",
+          "symbols": "structural",
+          "imports": "structural",
+          "calls": "structural",
+          "controlFlow": "structural",
+          "dataFlow": "universal",
+          "cpg": "structural",
+          "tests": "structural"
+        },
+        "files": 0,
+        "semanticProvider": "Deterministic grammar; VS Code language-service enrichment when installed",
+        "deterministicFiles": 0,
+        "semanticFiles": 0
+      },
+      {
+        "id": "make",
+        "label": "Make/Just",
+        "level": "structural",
+        "extensions": [],
+        "parser": "deterministic-adapter",
+        "conformance": "deterministic-grammar",
+        "baseline": "deterministic-structural",
+        "semanticEnrichment": "vscode-language-service",
+        "frontend": "infrastructure-grammar",
+        "capabilities": {
+          "parsing": "structural",
+          "symbols": "structural",
+          "imports": "structural",
+          "calls": "structural",
+          "controlFlow": "structural",
+          "dataFlow": "universal",
+          "cpg": "structural",
+          "tests": "structural"
+        },
+        "files": 0,
+        "semanticProvider": "Deterministic grammar; VS Code language-service enrichment when installed",
+        "deterministicFiles": 0,
+        "semanticFiles": 0
+      },
+      {
+        "id": "cmake",
+        "label": "CMake",
+        "level": "structural",
+        "extensions": [],
+        "parser": "deterministic-adapter",
+        "conformance": "deterministic-grammar",
+        "baseline": "deterministic-structural",
+        "semanticEnrichment": "vscode-language-service",
+        "frontend": "infrastructure-grammar",
+        "capabilities": {
+          "parsing": "structural",
+          "symbols": "structural",
+          "imports": "structural",
+          "calls": "structural",
+          "controlFlow": "structural",
+          "dataFlow": "universal",
+          "cpg": "structural",
+          "tests": "structural"
+        },
+        "files": 0,
+        "semanticProvider": "Deterministic grammar; VS Code language-service enrichment when installed",
+        "deterministicFiles": 0,
+        "semanticFiles": 0
+      },
+      {
+        "id": "maven",
+        "label": "Maven",
+        "level": "structural",
+        "extensions": [],
+        "parser": "artifact",
+        "conformance": "structural-artifact",
+        "baseline": "structural-artifact",
+        "semanticEnrichment": "vscode-language-service",
+        "frontend": "infrastructure-grammar",
+        "capabilities": {
+          "parsing": "structural",
+          "symbols": "structural",
+          "imports": "structural",
+          "calls": "structural",
+          "controlFlow": "structural",
+          "dataFlow": "universal",
+          "cpg": "structural",
+          "tests": "structural"
+        },
+        "files": 0,
+        "semanticProvider": "Deterministic grammar; VS Code language-service enrichment when installed",
+        "deterministicFiles": 0,
+        "semanticFiles": 0
+      },
+      {
+        "id": "gradle",
+        "label": "Gradle",
+        "level": "structural",
+        "extensions": [],
+        "parser": "deterministic-adapter",
+        "conformance": "deterministic-grammar",
+        "baseline": "deterministic-structural",
+        "semanticEnrichment": "vscode-language-service",
+        "frontend": "infrastructure-grammar",
+        "capabilities": {
+          "parsing": "structural",
+          "symbols": "structural",
+          "imports": "structural",
+          "calls": "structural",
+          "controlFlow": "structural",
+          "dataFlow": "universal",
+          "cpg": "structural",
+          "tests": "structural"
+        },
+        "files": 0,
+        "semanticProvider": "Deterministic grammar; VS Code language-service enrichment when installed",
+        "deterministicFiles": 0,
+        "semanticFiles": 0
+      },
+      {
+        "id": "kubernetes",
+        "label": "Kubernetes/Helm",
+        "level": "structural",
+        "extensions": [],
+        "parser": "artifact",
+        "conformance": "structural-artifact",
+        "baseline": "structural-artifact",
+        "semanticEnrichment": "vscode-language-service",
+        "frontend": "infrastructure-grammar",
+        "capabilities": {
+          "parsing": "structural",
+          "symbols": "structural",
+          "imports": "structural",
+          "calls": "structural",
+          "controlFlow": "structural",
+          "dataFlow": "universal",
+          "cpg": "structural",
+          "tests": "structural"
+        },
+        "files": 0,
+        "semanticProvider": "Deterministic grammar; VS Code language-service enrichment when installed",
+        "deterministicFiles": 0,
+        "semanticFiles": 0
+      }
+    ],
+    "universalTextFiles": 3,
+    "okf": {
+      "profile": "https://keystone.local/okf/profiles/repository-intelligence/v2",
+      "version": "2.0.0",
+      "extractionRunId": "run-evidence-20260731",
+      "units": 223,
+      "relationships": 408,
+      "observations": 232,
+      "evidence": 620,
+      "active": 223,
+      "deleted": 4,
+      "graphNodes": 223,
+      "graphEdges": 408,
+      "cpgBindings": 44,
+      "validated": true,
+      "portableBundle": {
+        "path": ".keystone/intelligence/okf-bundle",
+        "conceptFiles": 223,
+        "validated": true,
+        "profile": "OKF 0.2 Markdown/YAML bundle",
+        "generatedAt": "2026-07-31T18:08:47.319Z"
+      },
+      "evidenceSamples": [
+        {
+          "id": "okf-browser",
+          "path": "src/extension/browser-view/browserViewServer.ts",
+          "method": "deterministic parser + source evidence",
+          "observedAt": "2026-07-31T18:08:47.319Z"
+        },
+        {
+          "id": "okf-store",
+          "path": "src/core/application/applicationStore.ts",
+          "method": "deterministic parser + source evidence",
+          "observedAt": "2026-07-31T18:08:47.319Z"
+        },
+        {
+          "id": "okf-handoff",
+          "path": "src/core/workflow/handoff/taskStatePackage.ts",
+          "method": "deterministic parser + source evidence",
+          "observedAt": "2026-07-31T18:08:47.319Z"
+        },
+        {
+          "id": "okf-profile",
+          "path": "src/core/intelligence/okf/store.ts",
+          "method": "deterministic parser + source evidence",
+          "observedAt": "2026-07-31T18:08:47.319Z"
+        }
+      ]
+    },
+    "stages": [
+      {
+        "id": "discovery",
+        "label": "Discovery",
+        "status": "complete",
+        "progress": 100,
+        "itemCount": 360
+      },
+      {
+        "id": "semantic",
+        "label": "Semantic extraction",
+        "status": "complete",
+        "progress": 100,
+        "itemCount": 6322
+      },
+      {
+        "id": "okf",
+        "label": "OKF promotion",
+        "status": "complete",
+        "progress": 100,
+        "itemCount": 223
+      },
+      {
+        "id": "projections",
+        "label": "Graph · Search · CPG",
+        "status": "complete",
+        "progress": 100,
+        "itemCount": 408
+      }
+    ],
+    "families": [
+      {
+        "id": "architecture",
+        "label": "Architecture",
+        "status": "ready",
+        "itemCount": 18
+      },
+      {
+        "id": "api",
+        "label": "APIs",
+        "status": "ready",
+        "itemCount": 14
+      },
+      {
+        "id": "tests",
+        "label": "Tests",
+        "status": "ready",
+        "itemCount": 34
+      },
+      {
+        "id": "risk",
+        "label": "Risks",
+        "status": "ready",
+        "itemCount": 7
+      }
+    ]
+  },
+  "taskAnalysis": {
+    "intentType": "feature",
+    "route": "Copilot Chat after approval",
+    "reason": "Repository evidence links the Browser View, shared state and Task Handoff boundaries.",
+    "tokenReduction": 71,
+    "relevantFiles": [
+      "src/extension/browser-view/browserViewServer.ts",
+      "src/core/application/applicationStore.ts",
+      "src/webview/App.tsx",
+      "src/core/workflow/handoff/taskStatePackage.ts"
+    ],
+    "relevantSymbols": [
+      "startBrowserViewServer",
+      "ApplicationStore",
+      "App",
+      "TaskStatePackageBuilder"
+    ],
+    "relatedTests": [
+      "browserViewServer.test.ts",
+      "engine.test.ts",
+      "okfIntegration.test.ts"
+    ],
+    "missingTests": [
+      "Remote workspace URI forwarding integration"
+    ],
+    "qaChecklist": [
+      "Strict typecheck",
+      "90 Node tests",
+      "Browser auth/origin/stale-state scenarios",
+      "VSIX integrity"
+    ],
+    "securityRisk": "low",
+    "performanceRisk": "low",
+    "modernizationNotes": [],
+    "copilotPrompt": "Implement only the approved design story using the attached evidence-backed context. Keep Git read-only and return validation evidence.",
+    "contextTokens": {
+      "raw": 18420,
+      "selected": 5830,
+      "prompt": 5280,
+      "packets": 4,
+      "tier": "evidence-ranked"
+    },
+    "contextManifest": {
+      "delegationTokenBudget": 6000,
+      "usedTokens": 5280,
+      "selectedFiles": 4,
+      "omittedFiles": 348,
+      "protectedFiles": 4,
+      "traceableEvidence": 18,
+      "generatedAt": "2026-07-31T18:08:47.319Z"
+    },
+    "contextSections": [
+      {
+        "path": "src/extension/browser-view/browserViewServer.ts",
+        "reason": "Authenticated loopback endpoints expose the same extension-host application state.",
+        "preview": "Evidence-backed excerpt for Browser View /state and /command",
+        "estimatedTokens": 700,
+        "score": 0.98,
+        "evidence": [
+          {
+            "id": "okf-browser",
+            "kind": "api",
+            "label": "Browser View /state and /command",
+            "summary": "Authenticated loopback endpoints expose the same extension-host application state.",
+            "path": "src/extension/browser-view/browserViewServer.ts",
+            "okfId": "keystone:api:browser-view",
+            "confidence": 0.98
+          }
+        ]
+      },
+      {
+        "path": "src/core/application/applicationStore.ts",
+        "reason": "One versioned state store broadcasts changes to VS Code and browser surfaces.",
+        "preview": "Evidence-backed excerpt for ApplicationStore",
+        "estimatedTokens": 780,
+        "score": 0.95,
+        "evidence": [
+          {
+            "id": "okf-store",
+            "kind": "service",
+            "label": "ApplicationStore",
+            "summary": "One versioned state store broadcasts changes to VS Code and browser surfaces.",
+            "path": "src/core/application/applicationStore.ts",
+            "okfId": "keystone:service:application-store",
+            "confidence": 0.99
+          }
+        ]
+      },
+      {
+        "path": "src/core/workflow/handoff/taskStatePackage.ts",
+        "reason": "Encrypted Task Handoff retains the exact SDLC plan and continuation state.",
+        "preview": "Evidence-backed excerpt for TaskStatePackageBuilder",
+        "estimatedTokens": 860,
+        "score": 0.9199999999999999,
+        "evidence": [
+          {
+            "id": "okf-handoff",
+            "kind": "service",
+            "label": "TaskStatePackageBuilder",
+            "summary": "Encrypted Task Handoff retains the exact SDLC plan and continuation state.",
+            "path": "src/core/workflow/handoff/taskStatePackage.ts",
+            "okfId": "keystone:service:task-handoff",
+            "confidence": 0.97
+          }
+        ]
+      },
+      {
+        "path": "src/core/intelligence/okf/store.ts",
+        "reason": "Graph, search, CPG, provenance and portable Markdown concepts share stable OKF identities.",
+        "preview": "Evidence-backed excerpt for Authoritative OKF snapshot",
+        "estimatedTokens": 940,
+        "score": 0.89,
+        "evidence": [
+          {
+            "id": "okf-profile",
+            "kind": "architecture",
+            "label": "Authoritative OKF snapshot",
+            "summary": "Graph, search, CPG, provenance and portable Markdown concepts share stable OKF identities.",
+            "path": "src/core/intelligence/okf/store.ts",
+            "okfId": "keystone:architecture:okf",
+            "confidence": 0.99
+          }
+        ]
+      }
+    ],
+    "relatedApis": [
+      "Browser View /state and /command"
+    ],
+    "impactedServices": [
+      "ApplicationStore",
+      "Task Handoff"
+    ],
+    "architectureConstraints": [
+      "One extension-host runtime",
+      "One React application"
+    ],
+    "securityConstraints": [
+      "Loopback only",
+      "One-time bootstrap",
+      "Same-origin commands"
+    ],
+    "performanceConstraints": [
+      "No ingestion file cap",
+      "Incremental reuse"
+    ],
+    "acceptanceCriteria": [
+      "Both surfaces render and mutate one state.",
+      "Task Handoff restores the exact SDLC state.",
+      "90 Node tests pass",
+      "Strict TypeScript checks pass",
+      "Production build and VSIX verification pass",
+      "The behavior around Browser View /state and /command satisfies the approved specification.",
+      "Changed contracts, files, symbols, and side effects are recorded with evidence.",
+      "Relevant validation passes without Keystone performing Git write operations."
+    ],
+    "repoSkills": [
+      {
+        "id": "skill-okf",
+        "name": "OKF evidence workflow",
+        "description": "Trace every decision to promoted OKF evidence.",
+        "guidance": [
+          "Use stable OKF IDs",
+          "Preserve provenance"
+        ]
+      }
+    ],
+    "evidence": [
+      {
+        "id": "okf-browser",
+        "kind": "api",
+        "label": "Browser View /state and /command",
+        "summary": "Authenticated loopback endpoints expose the same extension-host application state.",
+        "path": "src/extension/browser-view/browserViewServer.ts",
+        "okfId": "keystone:api:browser-view",
+        "confidence": 0.98
+      },
+      {
+        "id": "okf-store",
+        "kind": "service",
+        "label": "ApplicationStore",
+        "summary": "One versioned state store broadcasts changes to VS Code and browser surfaces.",
+        "path": "src/core/application/applicationStore.ts",
+        "okfId": "keystone:service:application-store",
+        "confidence": 0.99
+      },
+      {
+        "id": "okf-handoff",
+        "kind": "service",
+        "label": "TaskStatePackageBuilder",
+        "summary": "Encrypted Task Handoff retains the exact SDLC plan and continuation state.",
+        "path": "src/core/workflow/handoff/taskStatePackage.ts",
+        "okfId": "keystone:service:task-handoff",
+        "confidence": 0.97
+      },
+      {
+        "id": "okf-profile",
+        "kind": "architecture",
+        "label": "Authoritative OKF snapshot",
+        "summary": "Graph, search, CPG, provenance and portable Markdown concepts share stable OKF identities.",
+        "path": "src/core/intelligence/okf/store.ts",
+        "okfId": "keystone:architecture:okf",
+        "confidence": 0.99
+      }
+    ],
+    "taskWorkspace": {
+      "id": "task-browser-view",
+      "name": "Shared Browser View"
+    }
+  },
+  "sdlc": {
+    "id": "45b8ae3a-8f12-41cc-a92d-6c3410577083",
+    "intentId": "299050fd-e723-4dfc-a52c-8564bb4b1ad9",
+    "intent": "Add an evidence-backed Browser View for an intent-led Keystone task and preserve it through Task Handoff.",
+    "specificationStatus": "approved",
+    "source": {
+      "kind": "valueedge",
+      "featureId": "42",
+      "featureName": "Shared Keystone Browser View"
+    },
+    "researchDocument": {
+      "id": "4a1080c8-b5c6-46d6-b604-e7b5ba9ca189",
+      "title": "Intent R&D: Add an evidence-backed Browser View for an intent-led Keystone task and preserve it through Task Handoff.",
+      "problemStatement": "Add an evidence-backed Browser View for an intent-led Keystone task and preserve it through Task Handoff.",
+      "repositoryEvidence": [
+        "Api: Browser View /state and /command (src/extension/browser-view/browserViewServer.ts) — Authenticated loopback endpoints expose the same extension-host application state.",
+        "Service: ApplicationStore (src/core/application/applicationStore.ts) — One versioned state store broadcasts changes to VS Code and browser surfaces.",
+        "Service: TaskStatePackageBuilder (src/core/workflow/handoff/taskStatePackage.ts) — Encrypted Task Handoff retains the exact SDLC plan and continuation state.",
+        "Architecture: Authoritative OKF snapshot (src/core/intelligence/okf/store.ts) — Graph, search, CPG, provenance and portable Markdown concepts share stable OKF identities.",
+        "File: src/extension/browser-view/browserViewServer.ts — Repository file selected by intent and graph retrieval.",
+        "File: src/webview/App.tsx — Repository file selected by intent and graph retrieval.",
+        "File: src/core/application/applicationStore.ts — Repository file selected by intent and graph retrieval.",
+        "File: src/core/workflow/handoff/taskStatePackage.ts — Repository file selected by intent and graph retrieval.",
+        "Symbol: startBrowserViewServer — Symbol selected by semantic or structural intelligence.",
+        "Symbol: ApplicationStore — Symbol selected by semantic or structural intelligence.",
+        "Symbol: App — Symbol selected by semantic or structural intelligence.",
+        "Symbol: TaskStatePackageBuilder — Symbol selected by semantic or structural intelligence.",
+        "Api: Browser View /state and /command — API contract affected by the intent.",
+        "Api: Intent API — API contract affected by the intent.",
+        "Service: ApplicationStore — Service boundary affected by the intent.",
+        "Service: Task Handoff — Service boundary affected by the intent.",
+        "Data: SDLCPlan — Data entity or persistence contract affected by the intent.",
+        "Data: KeystoneOkfSnapshot — Data entity or persistence contract affected by the intent.",
+        "Flow: VS Code command → application store → webview and Browser View — Call or data flow selected from graph/CPG evidence.",
+        "Flow: Intent → R&D → approved stories → SDLC → Task Handoff — Call or data flow selected from graph/CPG evidence.",
+        "Test: tests/unit/extension/browser-view/browserViewServer.test.ts — Existing test related to the affected implementation.",
+        "Test: tests/unit/core/sdlc/engine.test.ts — Existing test related to the affected implementation.",
+        "Test: tests/unit/core/okf/okfIntegration.test.ts — Existing test related to the affected implementation."
+      ],
+      "evidenceMatrix": [
+        {
+          "id": "okf-browser",
+          "kind": "api",
+          "label": "Browser View /state and /command",
+          "summary": "Authenticated loopback endpoints expose the same extension-host application state.",
+          "path": "src/extension/browser-view/browserViewServer.ts",
+          "okfId": "keystone:api:browser-view",
+          "confidence": 0.98
+        },
+        {
+          "id": "okf-store",
+          "kind": "service",
+          "label": "ApplicationStore",
+          "summary": "One versioned state store broadcasts changes to VS Code and browser surfaces.",
+          "path": "src/core/application/applicationStore.ts",
+          "okfId": "keystone:service:application-store",
+          "confidence": 0.99
+        },
+        {
+          "id": "okf-handoff",
+          "kind": "service",
+          "label": "TaskStatePackageBuilder",
+          "summary": "Encrypted Task Handoff retains the exact SDLC plan and continuation state.",
+          "path": "src/core/workflow/handoff/taskStatePackage.ts",
+          "okfId": "keystone:service:task-handoff",
+          "confidence": 0.97
+        },
+        {
+          "id": "okf-profile",
+          "kind": "architecture",
+          "label": "Authoritative OKF snapshot",
+          "summary": "Graph, search, CPG, provenance and portable Markdown concepts share stable OKF identities.",
+          "path": "src/core/intelligence/okf/store.ts",
+          "okfId": "keystone:architecture:okf",
+          "confidence": 0.99
+        },
+        {
+          "id": "file-0-356a5ff6b5",
+          "kind": "file",
+          "label": "src/extension/browser-view/browserViewServer.ts",
+          "summary": "Repository file selected by intent and graph retrieval.",
+          "path": "src/extension/browser-view/browserViewServer.ts"
+        },
+        {
+          "id": "file-1-ce078b25e9",
+          "kind": "file",
+          "label": "src/webview/App.tsx",
+          "summary": "Repository file selected by intent and graph retrieval.",
+          "path": "src/webview/App.tsx"
+        },
+        {
+          "id": "file-2-9cca08a61b",
+          "kind": "file",
+          "label": "src/core/application/applicationStore.ts",
+          "summary": "Repository file selected by intent and graph retrieval.",
+          "path": "src/core/application/applicationStore.ts"
+        },
+        {
+          "id": "file-3-631de30269",
+          "kind": "file",
+          "label": "src/core/workflow/handoff/taskStatePackage.ts",
+          "summary": "Repository file selected by intent and graph retrieval.",
+          "path": "src/core/workflow/handoff/taskStatePackage.ts"
+        },
+        {
+          "id": "symbol-0-59c4d1deef",
+          "kind": "symbol",
+          "label": "startBrowserViewServer",
+          "summary": "Symbol selected by semantic or structural intelligence."
+        },
+        {
+          "id": "symbol-1-ce1a7778de",
+          "kind": "symbol",
+          "label": "ApplicationStore",
+          "summary": "Symbol selected by semantic or structural intelligence."
+        },
+        {
+          "id": "symbol-2-0d04bfeb7d",
+          "kind": "symbol",
+          "label": "App",
+          "summary": "Symbol selected by semantic or structural intelligence."
+        },
+        {
+          "id": "symbol-3-ca1de119e4",
+          "kind": "symbol",
+          "label": "TaskStatePackageBuilder",
+          "summary": "Symbol selected by semantic or structural intelligence."
+        },
+        {
+          "id": "api-0-446392be9b",
+          "kind": "api",
+          "label": "Browser View /state and /command",
+          "summary": "API contract affected by the intent."
+        },
+        {
+          "id": "api-1-1232c0389c",
+          "kind": "api",
+          "label": "Intent API",
+          "summary": "API contract affected by the intent."
+        },
+        {
+          "id": "service-0-ce1a7778de",
+          "kind": "service",
+          "label": "ApplicationStore",
+          "summary": "Service boundary affected by the intent."
+        },
+        {
+          "id": "service-1-94ddc977cf",
+          "kind": "service",
+          "label": "Task Handoff",
+          "summary": "Service boundary affected by the intent."
+        },
+        {
+          "id": "data-0-81e1ece3a7",
+          "kind": "data",
+          "label": "SDLCPlan",
+          "summary": "Data entity or persistence contract affected by the intent."
+        },
+        {
+          "id": "data-1-dcb7399d27",
+          "kind": "data",
+          "label": "KeystoneOkfSnapshot",
+          "summary": "Data entity or persistence contract affected by the intent."
+        },
+        {
+          "id": "flow-0-ceafb22f8b",
+          "kind": "flow",
+          "label": "VS Code command → application store → webview and Browser View",
+          "summary": "Call or data flow selected from graph/CPG evidence."
+        },
+        {
+          "id": "flow-1-0a60cd7f40",
+          "kind": "flow",
+          "label": "Intent → R&D → approved stories → SDLC → Task Handoff",
+          "summary": "Call or data flow selected from graph/CPG evidence."
+        },
+        {
+          "id": "test-0-bd590f65d9",
+          "kind": "test",
+          "label": "tests/unit/extension/browser-view/browserViewServer.test.ts",
+          "summary": "Existing test related to the affected implementation."
+        },
+        {
+          "id": "test-1-03c3f9dc03",
+          "kind": "test",
+          "label": "tests/unit/core/sdlc/engine.test.ts",
+          "summary": "Existing test related to the affected implementation."
+        },
+        {
+          "id": "test-2-265acb4193",
+          "kind": "test",
+          "label": "tests/unit/core/okf/okfIntegration.test.ts",
+          "summary": "Existing test related to the affected implementation."
+        }
+      ],
+      "affectedArchitecture": [
+        "Detected architecture: Monolithic VS Code extension with one extension-host application store",
+        "Service boundary: ApplicationStore",
+        "Service boundary: Task Handoff",
+        "Interface contract: Browser View /state and /command",
+        "Interface contract: Intent API",
+        "Data boundary: SDLCPlan",
+        "Data boundary: KeystoneOkfSnapshot"
+      ],
+      "affectedFlows": [
+        "VS Code command → application store → webview and Browser View",
+        "Intent → R&D → approved stories → SDLC → Task Handoff",
+        "Trace callers, references, state changes, and side effects around startBrowserViewServer.",
+        "Trace callers, references, state changes, and side effects around ApplicationStore.",
+        "Trace callers, references, state changes, and side effects around App.",
+        "Trace callers, references, state changes, and side effects around TaskStatePackageBuilder."
+      ],
+      "affectedTests": [
+        "tests/unit/extension/browser-view/browserViewServer.test.ts",
+        "tests/unit/core/sdlc/engine.test.ts",
+        "tests/unit/core/okf/okfIntegration.test.ts",
+        "Missing coverage: Remote workspace URI forwarding integration"
+      ],
+      "risks": [
+        "Security risk: Loopback authentication, origin validation and stale-state rejection are mandatory.",
+        "Performance risk: Repository ingestion is unbounded and incremental; UI state remains summarized."
+      ],
+      "constraints": [
+        "Keystone Git and merge-request access is read-only.",
+        "Copilot delegation requires explicit user approval.",
+        "Every implementation story must close its evidence and validation gates.",
+        "No second Keystone runtime in the browser."
+      ],
+      "unknowns": [],
+      "recommendedApproach": [
+        "Implement and validate the smallest behavior slice around Browser View /state and /command.",
+        "Implement and validate the smallest behavior slice around Intent API.",
+        "Implement and validate the smallest behavior slice around ApplicationStore.",
+        "Implement and validate the smallest behavior slice around Task Handoff.",
+        "Implement and validate the smallest behavior slice around startBrowserViewServer.",
+        "Implement and validate the smallest behavior slice around App.",
+        "Implement and validate the smallest behavior slice around TaskStatePackageBuilder.",
+        "Implement and validate the smallest behavior slice around SDLCPlan.",
+        "Preserve discovered contracts and architecture boundaries unless the approved specification explicitly changes them.",
+        "Use graph/CPG relationships to inspect callers, data movement, affected tests, security-sensitive paths, and performance-sensitive paths before editing.",
+        "Prepare read-only review content; the user creates and manages the branch and remote merge request."
+      ],
+      "testingStrategy": [
+        "90 Node tests pass",
+        "Strict TypeScript checks pass",
+        "Production build and VSIX verification pass",
+        "Run mapped test: tests/unit/extension/browser-view/browserViewServer.test.ts",
+        "Run mapped test: tests/unit/core/sdlc/engine.test.ts",
+        "Run mapped test: tests/unit/core/okf/okfIntegration.test.ts",
+        "Add or explicitly defer missing coverage: Remote workspace URI forwarding integration",
+        "Map every approved acceptance criterion to executed validation evidence or an explicit approved deferral.",
+        "Record failed and flaky-test analysis without silently mutating or quarantining tests."
+      ],
+      "markdown": "# Intent R&D: Add an evidence-backed Browser View for an intent-led Keystone task and preserve it through Task Handoff.\n\n**Intent ID:** 299050fd-e723-4dfc-a52c-8564bb4b1ad9\n**Generated:** 2026-07-31T18:08:47.316Z\n\n## Problem Statement\n\nAdd an evidence-backed Browser View for an intent-led Keystone task and preserve it through Task Handoff.\n\n## Functional Requirements\n\n- Both surfaces render and mutate one state.\n- Task Handoff restores the exact SDLC state.\n\n## Non-Functional Requirements\n\n- Git remains read-only.\n- Every completion requires explicit criteria and evidence.\n\n## Evidence Matrix\n\n| Kind | Evidence | Meaning | OKF ID |\n|---|---|---|---|\n| api | Browser View /state and /command | Authenticated loopback endpoints expose the same extension-host application state. | `keystone:api:browser-view` |\n| service | ApplicationStore | One versioned state store broadcasts changes to VS Code and browser surfaces. | `keystone:service:application-store` |\n| service | TaskStatePackageBuilder | Encrypted Task Handoff retains the exact SDLC plan and continuation state. | `keystone:service:task-handoff` |\n| architecture | Authoritative OKF snapshot | Graph, search, CPG, provenance and portable Markdown concepts share stable OKF identities. | `keystone:architecture:okf` |\n| file | src/extension/browser-view/browserViewServer.ts | Repository file selected by intent and graph retrieval. | — |\n| file | src/webview/App.tsx | Repository file selected by intent and graph retrieval. | — |\n| file | src/core/application/applicationStore.ts | Repository file selected by intent and graph retrieval. | — |\n| file | src/core/workflow/handoff/taskStatePackage.ts | Repository file selected by intent and graph retrieval. | — |\n| symbol | startBrowserViewServer | Symbol selected by semantic or structural intelligence. | — |\n| symbol | ApplicationStore | Symbol selected by semantic or structural intelligence. | — |\n| symbol | App | Symbol selected by semantic or structural intelligence. | — |\n| symbol | TaskStatePackageBuilder | Symbol selected by semantic or structural intelligence. | — |\n| api | Browser View /state and /command | API contract affected by the intent. | — |\n| api | Intent API | API contract affected by the intent. | — |\n| service | ApplicationStore | Service boundary affected by the intent. | — |\n| service | Task Handoff | Service boundary affected by the intent. | — |\n| data | SDLCPlan | Data entity or persistence contract affected by the intent. | — |\n| data | KeystoneOkfSnapshot | Data entity or persistence contract affected by the intent. | — |\n| flow | VS Code command → application store → webview and Browser View | Call or data flow selected from graph/CPG evidence. | — |\n| flow | Intent → R&D → approved stories → SDLC → Task Handoff | Call or data flow selected from graph/CPG evidence. | — |\n| test | tests/unit/extension/browser-view/browserViewServer.test.ts | Existing test related to the affected implementation. | — |\n| test | tests/unit/core/sdlc/engine.test.ts | Existing test related to the affected implementation. | — |\n| test | tests/unit/core/okf/okfIntegration.test.ts | Existing test related to the affected implementation. | — |\n\n## Repository Evidence\n\n- Api: Browser View /state and /command (src/extension/browser-view/browserViewServer.ts) — Authenticated loopback endpoints expose the same extension-host application state.\n- Service: ApplicationStore (src/core/application/applicationStore.ts) — One versioned state store broadcasts changes to VS Code and browser surfaces.\n- Service: TaskStatePackageBuilder (src/core/workflow/handoff/taskStatePackage.ts) — Encrypted Task Handoff retains the exact SDLC plan and continuation state.\n- Architecture: Authoritative OKF snapshot (src/core/intelligence/okf/store.ts) — Graph, search, CPG, provenance and portable Markdown concepts share stable OKF identities.\n- File: src/extension/browser-view/browserViewServer.ts — Repository file selected by intent and graph retrieval.\n- File: src/webview/App.tsx — Repository file selected by intent and graph retrieval.\n- File: src/core/application/applicationStore.ts — Repository file selected by intent and graph retrieval.\n- File: src/core/workflow/handoff/taskStatePackage.ts — Repository file selected by intent and graph retrieval.\n- Symbol: startBrowserViewServer — Symbol selected by semantic or structural intelligence.\n- Symbol: ApplicationStore — Symbol selected by semantic or structural intelligence.\n- Symbol: App — Symbol selected by semantic or structural intelligence.\n- Symbol: TaskStatePackageBuilder — Symbol selected by semantic or structural intelligence.\n- Api: Browser View /state and /command — API contract affected by the intent.\n- Api: Intent API — API contract affected by the intent.\n- Service: ApplicationStore — Service boundary affected by the intent.\n- Service: Task Handoff — Service boundary affected by the intent.\n- Data: SDLCPlan — Data entity or persistence contract affected by the intent.\n- Data: KeystoneOkfSnapshot — Data entity or persistence contract affected by the intent.\n- Flow: VS Code command → application store → webview and Browser View — Call or data flow selected from graph/CPG evidence.\n- Flow: Intent → R&D → approved stories → SDLC → Task Handoff — Call or data flow selected from graph/CPG evidence.\n- Test: tests/unit/extension/browser-view/browserViewServer.test.ts — Existing test related to the affected implementation.\n- Test: tests/unit/core/sdlc/engine.test.ts — Existing test related to the affected implementation.\n- Test: tests/unit/core/okf/okfIntegration.test.ts — Existing test related to the affected implementation.\n\n## Architecture and Boundaries\n\n- Detected architecture: Monolithic VS Code extension with one extension-host application store\n- Service boundary: ApplicationStore\n- Service boundary: Task Handoff\n- Interface contract: Browser View /state and /command\n- Interface contract: Intent API\n- Data boundary: SDLCPlan\n- Data boundary: KeystoneOkfSnapshot\n\n## Flows and Symbols\n\n- VS Code command → application store → webview and Browser View\n- Intent → R&D → approved stories → SDLC → Task Handoff\n- Trace callers, references, state changes, and side effects around startBrowserViewServer.\n- Trace callers, references, state changes, and side effects around ApplicationStore.\n- Trace callers, references, state changes, and side effects around App.\n- Trace callers, references, state changes, and side effects around TaskStatePackageBuilder.\n\n## Test Landscape\n\n- tests/unit/extension/browser-view/browserViewServer.test.ts\n- tests/unit/core/sdlc/engine.test.ts\n- tests/unit/core/okf/okfIntegration.test.ts\n- Missing coverage: Remote workspace URI forwarding integration\n\n## Risks\n\n- Security risk: Loopback authentication, origin validation and stale-state rejection are mandatory.\n- Performance risk: Repository ingestion is unbounded and incremental; UI state remains summarized.\n\n## Constraints\n\n- Keystone Git and merge-request access is read-only.\n- Copilot delegation requires explicit user approval.\n- Every implementation story must close its evidence and validation gates.\n- No second Keystone runtime in the browser.\n\n## Unknowns Requiring Approval\n\n- No unresolved research unknown was identified.\n\n## Recommended Approach\n\n- Implement and validate the smallest behavior slice around Browser View /state and /command.\n- Implement and validate the smallest behavior slice around Intent API.\n- Implement and validate the smallest behavior slice around ApplicationStore.\n- Implement and validate the smallest behavior slice around Task Handoff.\n- Implement and validate the smallest behavior slice around startBrowserViewServer.\n- Implement and validate the smallest behavior slice around App.\n- Implement and validate the smallest behavior slice around TaskStatePackageBuilder.\n- Implement and validate the smallest behavior slice around SDLCPlan.\n- Preserve discovered contracts and architecture boundaries unless the approved specification explicitly changes them.\n- Use graph/CPG relationships to inspect callers, data movement, affected tests, security-sensitive paths, and performance-sensitive paths before editing.\n- Prepare read-only review content; the user creates and manages the branch and remote merge request.\n\n## Testing Strategy\n\n- 90 Node tests pass\n- Strict TypeScript checks pass\n- Production build and VSIX verification pass\n- Run mapped test: tests/unit/extension/browser-view/browserViewServer.test.ts\n- Run mapped test: tests/unit/core/sdlc/engine.test.ts\n- Run mapped test: tests/unit/core/okf/okfIntegration.test.ts\n- Add or explicitly defer missing coverage: Remote workspace URI forwarding integration\n- Map every approved acceptance criterion to executed validation evidence or an explicit approved deferral.\n- Record failed and flaky-test analysis without silently mutating or quarantining tests.",
+      "generatedAt": "2026-07-31T18:08:47.316Z"
+    },
+    "backlogStories": [
+      {
+        "kind": "user-story",
+        "title": "Implement API behavior: Browser View /state and /command",
+        "description": "Deliver the smallest independently verifiable behavior slice for Browser View /state and /command, based on repository intelligence rather than a fixed template.",
+        "acceptanceCriteria": [
+          "Both surfaces render and mutate one state.",
+          "Task Handoff restores the exact SDLC state.",
+          "90 Node tests pass",
+          "Strict TypeScript checks pass",
+          "Production build and VSIX verification pass",
+          "The behavior around Browser View /state and /command satisfies the approved specification.",
+          "Changed contracts, files, symbols, and side effects are recorded with evidence.",
+          "Relevant validation passes without Keystone performing Git write operations."
+        ],
+        "linkedSdlcStoryTypes": [
+          "design",
+          "development"
+        ],
+        "evidence": [
+          "Browser View /state and /command"
+        ],
+        "dependencies": [],
+        "scope": {
+          "files": [
+            "src/extension/browser-view/browserViewServer.ts"
+          ],
+          "symbols": [],
+          "interfaces": [
+            "Browser View /state and /command"
+          ]
+        },
+        "id": "user-story-6dc96488c62aff56",
+        "status": "approved"
+      },
+      {
+        "kind": "user-story",
+        "title": "Implement API behavior: Intent API",
+        "description": "Deliver the smallest independently verifiable behavior slice for Intent API, based on repository intelligence rather than a fixed template.",
+        "acceptanceCriteria": [
+          "The behavior around Intent API satisfies the approved specification.",
+          "Changed contracts, files, symbols, and side effects are recorded with evidence.",
+          "Relevant validation passes without Keystone performing Git write operations."
+        ],
+        "linkedSdlcStoryTypes": [
+          "design",
+          "development"
+        ],
+        "evidence": [
+          "Intent API"
+        ],
+        "dependencies": [],
+        "scope": {
+          "files": [
+            "src/webview/App.tsx"
+          ],
+          "symbols": [],
+          "interfaces": [
+            "Intent API"
+          ]
+        },
+        "id": "user-story-93ab0eab6f500f1e",
+        "status": "approved"
+      },
+      {
+        "kind": "user-story",
+        "title": "Implement service behavior: ApplicationStore",
+        "description": "Deliver the smallest independently verifiable behavior slice for ApplicationStore, based on repository intelligence rather than a fixed template.",
+        "acceptanceCriteria": [
+          "The behavior around ApplicationStore satisfies the approved specification.",
+          "Changed contracts, files, symbols, and side effects are recorded with evidence.",
+          "Relevant validation passes without Keystone performing Git write operations."
+        ],
+        "linkedSdlcStoryTypes": [
+          "design",
+          "development"
+        ],
+        "evidence": [
+          "ApplicationStore"
+        ],
+        "dependencies": [],
+        "scope": {
+          "files": [
+            "src/core/application/applicationStore.ts"
+          ],
+          "symbols": [
+            "ApplicationStore",
+            "App"
+          ],
+          "interfaces": [
+            "ApplicationStore"
+          ]
+        },
+        "id": "user-story-2c0a2603989f592f",
+        "status": "approved"
+      },
+      {
+        "kind": "user-story",
+        "title": "Implement service behavior: Task Handoff",
+        "description": "Deliver the smallest independently verifiable behavior slice for Task Handoff, based on repository intelligence rather than a fixed template.",
+        "acceptanceCriteria": [
+          "The behavior around Task Handoff satisfies the approved specification.",
+          "Changed contracts, files, symbols, and side effects are recorded with evidence.",
+          "Relevant validation passes without Keystone performing Git write operations."
+        ],
+        "linkedSdlcStoryTypes": [
+          "design",
+          "development"
+        ],
+        "evidence": [
+          "Task Handoff"
+        ],
+        "dependencies": [],
+        "scope": {
+          "files": [
+            "src/core/workflow/handoff/taskStatePackage.ts"
+          ],
+          "symbols": [],
+          "interfaces": [
+            "Task Handoff"
+          ]
+        },
+        "id": "user-story-bda9996fad8f9660",
+        "status": "approved"
+      },
+      {
+        "kind": "user-story",
+        "title": "Implement data behavior: SDLCPlan",
+        "description": "Deliver the smallest independently verifiable behavior slice for SDLCPlan, based on repository intelligence rather than a fixed template.",
+        "acceptanceCriteria": [
+          "The behavior around SDLCPlan satisfies the approved specification.",
+          "Changed contracts, files, symbols, and side effects are recorded with evidence.",
+          "Relevant validation passes without Keystone performing Git write operations."
+        ],
+        "linkedSdlcStoryTypes": [
+          "design",
+          "development"
+        ],
+        "evidence": [
+          "SDLCPlan"
+        ],
+        "dependencies": [],
+        "scope": {
+          "files": [],
+          "symbols": [],
+          "interfaces": [
+            "SDLCPlan"
+          ]
+        },
+        "id": "user-story-85c852f58456d4a4",
+        "status": "approved"
+      },
+      {
+        "kind": "user-story",
+        "title": "Implement data behavior: KeystoneOkfSnapshot",
+        "description": "Deliver the smallest independently verifiable behavior slice for KeystoneOkfSnapshot, based on repository intelligence rather than a fixed template.",
+        "acceptanceCriteria": [
+          "The behavior around KeystoneOkfSnapshot satisfies the approved specification.",
+          "Changed contracts, files, symbols, and side effects are recorded with evidence.",
+          "Relevant validation passes without Keystone performing Git write operations."
+        ],
+        "linkedSdlcStoryTypes": [
+          "design",
+          "development"
+        ],
+        "evidence": [
+          "KeystoneOkfSnapshot"
+        ],
+        "dependencies": [],
+        "scope": {
+          "files": [],
+          "symbols": [],
+          "interfaces": [
+            "KeystoneOkfSnapshot"
+          ]
+        },
+        "id": "user-story-2a1594f4a41515c8",
+        "status": "approved"
+      },
+      {
+        "kind": "user-story",
+        "title": "Implement repository slice: src/extension",
+        "description": "Deliver the smallest independently verifiable behavior slice for src/extension, based on repository intelligence rather than a fixed template.",
+        "acceptanceCriteria": [
+          "The behavior around src/extension satisfies the approved specification.",
+          "Changed contracts, files, symbols, and side effects are recorded with evidence.",
+          "Relevant validation passes without Keystone performing Git write operations."
+        ],
+        "linkedSdlcStoryTypes": [
+          "design",
+          "development"
+        ],
+        "evidence": [
+          "src/extension/browser-view/browserViewServer.ts"
+        ],
+        "dependencies": [],
+        "scope": {
+          "files": [
+            "src/extension/browser-view/browserViewServer.ts"
+          ],
+          "symbols": [],
+          "interfaces": []
+        },
+        "id": "user-story-bfe739a723212d95",
+        "status": "approved"
+      },
+      {
+        "kind": "user-story",
+        "title": "Implement repository slice: src/webview",
+        "description": "Deliver the smallest independently verifiable behavior slice for src/webview, based on repository intelligence rather than a fixed template.",
+        "acceptanceCriteria": [
+          "The behavior around src/webview satisfies the approved specification.",
+          "Changed contracts, files, symbols, and side effects are recorded with evidence.",
+          "Relevant validation passes without Keystone performing Git write operations."
+        ],
+        "linkedSdlcStoryTypes": [
+          "design",
+          "development"
+        ],
+        "evidence": [
+          "src/webview/App.tsx"
+        ],
+        "dependencies": [],
+        "scope": {
+          "files": [
+            "src/webview/App.tsx"
+          ],
+          "symbols": [
+            "App"
+          ],
+          "interfaces": []
+        },
+        "id": "user-story-d663898984545baf",
+        "status": "approved"
+      },
+      {
+        "kind": "user-story",
+        "title": "Integrate repository boundaries and preserve contracts",
+        "description": "Connect the 8 independently verifiable behavior slices through the discovered interfaces, data paths, and architecture boundaries.",
+        "acceptanceCriteria": [
+          "Affected API, service, data, configuration, and UI contracts remain compatible or have an approved migration.",
+          "Cross-boundary call and data flows are validated with repository evidence.",
+          "Failure and rollback behavior is documented."
+        ],
+        "linkedSdlcStoryTypes": [
+          "design",
+          "development",
+          "security-review",
+          "performance-review"
+        ],
+        "evidence": [
+          "VS Code command → application store → webview and Browser View",
+          "Intent → R&D → approved stories → SDLC → Task Handoff",
+          "Browser View /state and /command",
+          "Intent API",
+          "ApplicationStore",
+          "Task Handoff",
+          "SDLCPlan",
+          "KeystoneOkfSnapshot"
+        ],
+        "dependencies": [
+          "user-story-6dc96488c62aff56",
+          "user-story-93ab0eab6f500f1e",
+          "user-story-2c0a2603989f592f",
+          "user-story-bda9996fad8f9660",
+          "user-story-85c852f58456d4a4",
+          "user-story-2a1594f4a41515c8",
+          "user-story-bfe739a723212d95",
+          "user-story-d663898984545baf"
+        ],
+        "scope": {
+          "files": [
+            "src/extension/browser-view/browserViewServer.ts",
+            "src/webview/App.tsx",
+            "src/core/application/applicationStore.ts",
+            "src/core/workflow/handoff/taskStatePackage.ts"
+          ],
+          "symbols": [
+            "startBrowserViewServer",
+            "ApplicationStore",
+            "App",
+            "TaskStatePackageBuilder"
+          ],
+          "interfaces": [
+            "Browser View /state and /command",
+            "Intent API",
+            "ApplicationStore",
+            "Task Handoff",
+            "SDLCPlan",
+            "KeystoneOkfSnapshot"
+          ]
+        },
+        "id": "user-story-10eac2e001ab22cd",
+        "status": "approved"
+      },
+      {
+        "kind": "quality-story",
+        "title": "Prove existing coverage and change impact",
+        "description": "Use dependency, graph, CPG, and test mappings to select the exact regression scope.",
+        "acceptanceCriteria": [
+          "Impacted tests are selected from evidence rather than naming alone.",
+          "Existing coverage, unmapped behavior, and regression risk are recorded."
+        ],
+        "linkedSdlcStoryTypes": [
+          "existing-test-analysis",
+          "test-impact-analysis"
+        ],
+        "evidence": [
+          "tests/unit/extension/browser-view/browserViewServer.test.ts",
+          "tests/unit/core/sdlc/engine.test.ts",
+          "tests/unit/core/okf/okfIntegration.test.ts"
+        ],
+        "dependencies": [],
+        "scope": {
+          "files": [
+            "src/extension/browser-view/browserViewServer.ts",
+            "src/webview/App.tsx",
+            "src/core/application/applicationStore.ts",
+            "src/core/workflow/handoff/taskStatePackage.ts"
+          ],
+          "symbols": [
+            "startBrowserViewServer",
+            "ApplicationStore",
+            "App",
+            "TaskStatePackageBuilder"
+          ],
+          "interfaces": [
+            "Browser View /state and /command",
+            "Intent API",
+            "ApplicationStore",
+            "Task Handoff",
+            "SDLCPlan",
+            "KeystoneOkfSnapshot"
+          ]
+        },
+        "id": "quality-story-f482e80cb74ee63b",
+        "status": "approved"
+      },
+      {
+        "kind": "quality-story",
+        "title": "Add acceptance-linked regression coverage",
+        "description": "Create or explicitly defer the missing tests required by the approved behavior slices.",
+        "acceptanceCriteria": [
+          "Every relevant acceptance criterion maps to a test or an approved evidence-backed deferral.",
+          "New tests follow repository conventions and run in the smallest relevant suite."
+        ],
+        "linkedSdlcStoryTypes": [
+          "new-test-creation",
+          "failed-test-investigation",
+          "flaky-test-analysis"
+        ],
+        "evidence": [
+          "Remote workspace URI forwarding integration"
+        ],
+        "dependencies": [
+          "user-story-6dc96488c62aff56",
+          "user-story-93ab0eab6f500f1e",
+          "user-story-2c0a2603989f592f",
+          "user-story-bda9996fad8f9660",
+          "user-story-85c852f58456d4a4",
+          "user-story-2a1594f4a41515c8",
+          "user-story-bfe739a723212d95",
+          "user-story-d663898984545baf",
+          "user-story-10eac2e001ab22cd"
+        ],
+        "scope": {
+          "files": [
+            "tests/unit/extension/browser-view/browserViewServer.test.ts",
+            "tests/unit/core/sdlc/engine.test.ts",
+            "tests/unit/core/okf/okfIntegration.test.ts",
+            "src/extension/browser-view/browserViewServer.ts",
+            "src/webview/App.tsx",
+            "src/core/application/applicationStore.ts",
+            "src/core/workflow/handoff/taskStatePackage.ts"
+          ],
+          "symbols": [
+            "startBrowserViewServer",
+            "ApplicationStore",
+            "App",
+            "TaskStatePackageBuilder"
+          ],
+          "interfaces": [
+            "Browser View /state and /command",
+            "Intent API",
+            "ApplicationStore",
+            "Task Handoff",
+            "SDLCPlan",
+            "KeystoneOkfSnapshot"
+          ]
+        },
+        "id": "quality-story-4f70d406688a441d",
+        "status": "approved"
+      },
+      {
+        "kind": "quality-story",
+        "title": "Validate security-sensitive trust boundaries",
+        "description": "Review input, authorization, secrets, data exposure, and sensitive sinks on the affected paths.",
+        "acceptanceCriteria": [
+          "Security-sensitive paths and trust boundaries are evidence-backed.",
+          "Every high or critical finding is resolved, explicitly accepted, or blocks completion."
+        ],
+        "linkedSdlcStoryTypes": [
+          "security-review"
+        ],
+        "evidence": [
+          "Loopback authentication, origin validation and stale-state rejection are mandatory.",
+          "VS Code command → application store → webview and Browser View",
+          "Intent → R&D → approved stories → SDLC → Task Handoff"
+        ],
+        "dependencies": [
+          "user-story-6dc96488c62aff56",
+          "user-story-93ab0eab6f500f1e",
+          "user-story-2c0a2603989f592f",
+          "user-story-bda9996fad8f9660",
+          "user-story-85c852f58456d4a4",
+          "user-story-2a1594f4a41515c8",
+          "user-story-bfe739a723212d95",
+          "user-story-d663898984545baf",
+          "user-story-10eac2e001ab22cd"
+        ],
+        "scope": {
+          "files": [
+            "src/extension/browser-view/browserViewServer.ts",
+            "src/webview/App.tsx",
+            "src/core/application/applicationStore.ts",
+            "src/core/workflow/handoff/taskStatePackage.ts"
+          ],
+          "symbols": [
+            "startBrowserViewServer",
+            "ApplicationStore",
+            "App",
+            "TaskStatePackageBuilder"
+          ],
+          "interfaces": [
+            "Browser View /state and /command",
+            "Intent API",
+            "ApplicationStore",
+            "Task Handoff",
+            "SDLCPlan",
+            "KeystoneOkfSnapshot"
+          ]
+        },
+        "id": "quality-story-92668a9cd6cb44c5",
+        "status": "approved"
+      },
+      {
+        "kind": "quality-story",
+        "title": "Validate performance-sensitive execution paths",
+        "description": "Review blocking work, repeated I/O, expensive queries, allocation, and hot-path impact.",
+        "acceptanceCriteria": [
+          "Performance-sensitive paths are measured or reasoned from concrete evidence.",
+          "Every material regression is resolved, explicitly accepted, or blocks completion."
+        ],
+        "linkedSdlcStoryTypes": [
+          "performance-review"
+        ],
+        "evidence": [
+          "Repository ingestion is unbounded and incremental; UI state remains summarized.",
+          "VS Code command → application store → webview and Browser View",
+          "Intent → R&D → approved stories → SDLC → Task Handoff"
+        ],
+        "dependencies": [
+          "user-story-6dc96488c62aff56",
+          "user-story-93ab0eab6f500f1e",
+          "user-story-2c0a2603989f592f",
+          "user-story-bda9996fad8f9660",
+          "user-story-85c852f58456d4a4",
+          "user-story-2a1594f4a41515c8",
+          "user-story-bfe739a723212d95",
+          "user-story-d663898984545baf",
+          "user-story-10eac2e001ab22cd"
+        ],
+        "scope": {
+          "files": [
+            "src/extension/browser-view/browserViewServer.ts",
+            "src/webview/App.tsx",
+            "src/core/application/applicationStore.ts",
+            "src/core/workflow/handoff/taskStatePackage.ts"
+          ],
+          "symbols": [
+            "startBrowserViewServer",
+            "ApplicationStore",
+            "App",
+            "TaskStatePackageBuilder"
+          ],
+          "interfaces": [
+            "Browser View /state and /command",
+            "Intent API",
+            "ApplicationStore",
+            "Task Handoff",
+            "SDLCPlan",
+            "KeystoneOkfSnapshot"
+          ]
+        },
+        "id": "quality-story-1f1045d9b4a81cac",
+        "status": "approved"
+      },
+      {
+        "kind": "quality-story",
+        "title": "Complete engineering and read-only PR review",
+        "description": "Review specification coverage, architecture, QA, security, performance, documentation, and remaining risk.",
+        "acceptanceCriteria": [
+          "Review evidence covers every approved user and quality story.",
+          "Reviewer-ready PR title, description, risks, validation, and unresolved questions are prepared without remote mutation."
+        ],
+        "linkedSdlcStoryTypes": [
+          "code-review",
+          "pr-review",
+          "documentation",
+          "completion"
+        ],
+        "evidence": [
+          "keystone:api:browser-view",
+          "keystone:service:application-store",
+          "keystone:service:task-handoff",
+          "keystone:architecture:okf"
+        ],
+        "dependencies": [
+          "user-story-6dc96488c62aff56",
+          "user-story-93ab0eab6f500f1e",
+          "user-story-2c0a2603989f592f",
+          "user-story-bda9996fad8f9660",
+          "user-story-85c852f58456d4a4",
+          "user-story-2a1594f4a41515c8",
+          "user-story-bfe739a723212d95",
+          "user-story-d663898984545baf",
+          "user-story-10eac2e001ab22cd",
+          "quality-story-f482e80cb74ee63b",
+          "quality-story-4f70d406688a441d",
+          "quality-story-92668a9cd6cb44c5",
+          "quality-story-1f1045d9b4a81cac"
+        ],
+        "scope": {
+          "files": [
+            "src/extension/browser-view/browserViewServer.ts",
+            "src/webview/App.tsx",
+            "src/core/application/applicationStore.ts",
+            "src/core/workflow/handoff/taskStatePackage.ts"
+          ],
+          "symbols": [
+            "startBrowserViewServer",
+            "ApplicationStore",
+            "App",
+            "TaskStatePackageBuilder"
+          ],
+          "interfaces": [
+            "Browser View /state and /command",
+            "Intent API",
+            "ApplicationStore",
+            "Task Handoff",
+            "SDLCPlan",
+            "KeystoneOkfSnapshot"
+          ]
+        },
+        "id": "quality-story-e3c108ccb05f467a",
+        "status": "approved"
+      }
+    ],
+    "stories": [
+      {
+        "id": "2e6d93b2-b648-4a6f-b045-74546d0ed873",
+        "intentId": "299050fd-e723-4dfc-a52c-8564bb4b1ad9",
+        "type": "research",
+        "title": "Research repository intelligence",
+        "objective": "Research repository intelligence",
+        "status": "completed",
+        "dependencies": [],
+        "acceptanceCriteria": [
+          "Relevant OKF evidence is linked",
+          "Affected architecture, flows, tests, risks, and constraints are identified"
+        ],
+        "satisfiedCriteria": [
+          "Relevant OKF evidence is linked",
+          "Affected architecture, flows, tests, risks, and constraints are identified"
+        ],
+        "evidence": [
+          "OKF evidence matrix contains source paths and stable identities.",
+          "Repository architecture, flows, tests, risks and constraints are documented."
+        ],
+        "blockers": [],
+        "decisions": [],
+        "validationRuns": [],
+        "findings": [],
+        "createdAt": "2026-07-31T18:08:47.316Z",
+        "updatedAt": "2026-07-31T18:08:47.319Z"
+      },
+      {
+        "id": "247cd9a7-4064-4181-9c23-7891c7ba9c65",
+        "intentId": "299050fd-e723-4dfc-a52c-8564bb4b1ad9",
+        "type": "specification",
+        "title": "Review and approve specification",
+        "objective": "Review and approve specification",
+        "status": "completed",
+        "dependencies": [
+          "2e6d93b2-b648-4a6f-b045-74546d0ed873"
+        ],
+        "acceptanceCriteria": [
+          "Functional and non-functional behavior is documented",
+          "Acceptance criteria are explicit and user-approved"
+        ],
+        "satisfiedCriteria": [
+          "Functional and non-functional behavior is documented",
+          "Acceptance criteria are explicit and user-approved"
+        ],
+        "evidence": [
+          "User approved the specification in Keystone."
+        ],
+        "blockers": [],
+        "decisions": [
+          "Specification approved by user"
+        ],
+        "validationRuns": [],
+        "findings": [],
+        "createdAt": "2026-07-31T18:08:47.316Z",
+        "updatedAt": "2026-07-31T18:08:47.319Z"
+      },
+      {
+        "id": "27f1d695-4fbe-4f6d-aeac-a55e0068a8d1",
+        "intentId": "299050fd-e723-4dfc-a52c-8564bb4b1ad9",
+        "type": "design",
+        "title": "Design implementation",
+        "objective": "Design implementation",
+        "status": "in-progress",
+        "dependencies": [
+          "247cd9a7-4064-4181-9c23-7891c7ba9c65"
+        ],
+        "acceptanceCriteria": [
+          "Implementation boundaries and dependencies are documented",
+          "The design respects repository conventions and read-only Git policy"
+        ],
+        "satisfiedCriteria": [],
+        "evidence": [],
+        "blockers": [],
+        "decisions": [],
+        "validationRuns": [],
+        "findings": [],
+        "createdAt": "2026-07-31T18:08:47.316Z",
+        "updatedAt": "2026-07-31T18:08:47.319Z"
+      },
+      {
+        "id": "b97e7f6b-fa0e-46d5-9284-00dc440eae14",
+        "intentId": "299050fd-e723-4dfc-a52c-8564bb4b1ad9",
+        "type": "development",
+        "title": "Implement change",
+        "objective": "Implement change",
+        "status": "draft",
+        "dependencies": [
+          "27f1d695-4fbe-4f6d-aeac-a55e0068a8d1"
+        ],
+        "acceptanceCriteria": [
+          "Implementation addresses the approved specification",
+          "Changed files and symbols are recorded"
+        ],
+        "satisfiedCriteria": [],
+        "evidence": [],
+        "blockers": [],
+        "decisions": [],
+        "validationRuns": [],
+        "findings": [],
+        "createdAt": "2026-07-31T18:08:47.316Z",
+        "updatedAt": "2026-07-31T18:08:47.316Z"
+      },
+      {
+        "id": "f72eb506-9c6f-4f46-ba3d-60fc84387d6b",
+        "intentId": "299050fd-e723-4dfc-a52c-8564bb4b1ad9",
+        "type": "existing-test-analysis",
+        "title": "Analyze existing tests",
+        "objective": "Analyze existing tests",
+        "status": "draft",
+        "dependencies": [
+          "27f1d695-4fbe-4f6d-aeac-a55e0068a8d1"
+        ],
+        "acceptanceCriteria": [
+          "Relevant existing tests are identified",
+          "Coverage relationships and gaps are recorded"
+        ],
+        "satisfiedCriteria": [],
+        "evidence": [],
+        "blockers": [],
+        "decisions": [],
+        "validationRuns": [],
+        "findings": [],
+        "createdAt": "2026-07-31T18:08:47.316Z",
+        "updatedAt": "2026-07-31T18:08:47.316Z"
+      },
+      {
+        "id": "31f25fab-0e9d-4852-a03e-4db1fab10b3e",
+        "intentId": "299050fd-e723-4dfc-a52c-8564bb4b1ad9",
+        "type": "test-impact-analysis",
+        "title": "Analyze impacted tests",
+        "objective": "Analyze impacted tests",
+        "status": "draft",
+        "dependencies": [
+          "b97e7f6b-fa0e-46d5-9284-00dc440eae14",
+          "f72eb506-9c6f-4f46-ba3d-60fc84387d6b"
+        ],
+        "acceptanceCriteria": [
+          "Impacted tests are selected from change and graph evidence",
+          "Regression risk is documented"
+        ],
+        "satisfiedCriteria": [],
+        "evidence": [],
+        "blockers": [],
+        "decisions": [],
+        "validationRuns": [],
+        "findings": [],
+        "createdAt": "2026-07-31T18:08:47.316Z",
+        "updatedAt": "2026-07-31T18:08:47.316Z"
+      },
+      {
+        "id": "9f754a10-9b74-474c-9e05-16af5869eb5d",
+        "intentId": "299050fd-e723-4dfc-a52c-8564bb4b1ad9",
+        "type": "new-test-creation",
+        "title": "Create missing tests",
+        "objective": "Create missing tests",
+        "status": "draft",
+        "dependencies": [
+          "31f25fab-0e9d-4852-a03e-4db1fab10b3e"
+        ],
+        "acceptanceCriteria": [
+          "Missing tests are implemented or explicitly deferred with reason",
+          "New tests map to acceptance criteria"
+        ],
+        "satisfiedCriteria": [],
+        "evidence": [],
+        "blockers": [],
+        "decisions": [],
+        "validationRuns": [],
+        "findings": [],
+        "createdAt": "2026-07-31T18:08:47.316Z",
+        "updatedAt": "2026-07-31T18:08:47.316Z"
+      },
+      {
+        "id": "1613bd00-690d-48a6-999a-9879cca283de",
+        "intentId": "299050fd-e723-4dfc-a52c-8564bb4b1ad9",
+        "type": "failed-test-investigation",
+        "title": "Investigate failed tests",
+        "objective": "Investigate failed tests",
+        "status": "draft",
+        "dependencies": [
+          "9f754a10-9b74-474c-9e05-16af5869eb5d"
+        ],
+        "acceptanceCriteria": [
+          "Every observed failure is classified",
+          "Real defects, environment failures, and test defects are distinguished"
+        ],
+        "satisfiedCriteria": [],
+        "evidence": [],
+        "blockers": [],
+        "decisions": [],
+        "validationRuns": [],
+        "findings": [],
+        "createdAt": "2026-07-31T18:08:47.316Z",
+        "updatedAt": "2026-07-31T18:08:47.316Z"
+      },
+      {
+        "id": "360ed750-60eb-4738-a8fc-0a926450b247",
+        "intentId": "299050fd-e723-4dfc-a52c-8564bb4b1ad9",
+        "type": "flaky-test-analysis",
+        "title": "Analyze flaky tests",
+        "objective": "Analyze flaky tests",
+        "status": "draft",
+        "dependencies": [
+          "f72eb506-9c6f-4f46-ba3d-60fc84387d6b",
+          "31f25fab-0e9d-4852-a03e-4db1fab10b3e"
+        ],
+        "acceptanceCriteria": [
+          "Flakiness evidence is recorded",
+          "Quarantine or stabilization guidance is documented without silent mutation"
+        ],
+        "satisfiedCriteria": [],
+        "evidence": [],
+        "blockers": [],
+        "decisions": [],
+        "validationRuns": [],
+        "findings": [],
+        "createdAt": "2026-07-31T18:08:47.316Z",
+        "updatedAt": "2026-07-31T18:08:47.316Z"
+      },
+      {
+        "id": "364f2e3e-23c9-4b41-a493-efda2bd172e5",
+        "intentId": "299050fd-e723-4dfc-a52c-8564bb4b1ad9",
+        "type": "security-review",
+        "title": "Review security",
+        "objective": "Review security",
+        "status": "draft",
+        "dependencies": [
+          "b97e7f6b-fa0e-46d5-9284-00dc440eae14"
+        ],
+        "acceptanceCriteria": [
+          "Security-sensitive paths and trust boundaries are reviewed",
+          "Findings are resolved, accepted, or blocked with evidence"
+        ],
+        "satisfiedCriteria": [],
+        "evidence": [],
+        "blockers": [],
+        "decisions": [],
+        "validationRuns": [],
+        "findings": [],
+        "createdAt": "2026-07-31T18:08:47.316Z",
+        "updatedAt": "2026-07-31T18:08:47.316Z"
+      },
+      {
+        "id": "ea6a84f3-7a99-4a12-802a-0e05311a3301",
+        "intentId": "299050fd-e723-4dfc-a52c-8564bb4b1ad9",
+        "type": "performance-review",
+        "title": "Review performance",
+        "objective": "Review performance",
+        "status": "draft",
+        "dependencies": [
+          "b97e7f6b-fa0e-46d5-9284-00dc440eae14"
+        ],
+        "acceptanceCriteria": [
+          "Performance-sensitive paths are reviewed",
+          "Findings are resolved, accepted, or blocked with evidence"
+        ],
+        "satisfiedCriteria": [],
+        "evidence": [],
+        "blockers": [],
+        "decisions": [],
+        "validationRuns": [],
+        "findings": [],
+        "createdAt": "2026-07-31T18:08:47.316Z",
+        "updatedAt": "2026-07-31T18:08:47.316Z"
+      },
+      {
+        "id": "94f31876-35ed-490e-9325-1aa477a58081",
+        "intentId": "299050fd-e723-4dfc-a52c-8564bb4b1ad9",
+        "type": "modernization-review",
+        "title": "Review modernization impact",
+        "objective": "Review modernization impact",
+        "status": "draft",
+        "dependencies": [
+          "b97e7f6b-fa0e-46d5-9284-00dc440eae14"
+        ],
+        "acceptanceCriteria": [
+          "Modernization impact is assessed",
+          "Any recommendation preserves behavior and remains user-approved"
+        ],
+        "satisfiedCriteria": [],
+        "evidence": [],
+        "blockers": [],
+        "decisions": [],
+        "validationRuns": [],
+        "findings": [],
+        "createdAt": "2026-07-31T18:08:47.316Z",
+        "updatedAt": "2026-07-31T18:08:47.316Z"
+      },
+      {
+        "id": "f71bc611-8afa-413e-a7cd-6782d655e25e",
+        "intentId": "299050fd-e723-4dfc-a52c-8564bb4b1ad9",
+        "type": "code-review",
+        "title": "Review implementation",
+        "objective": "Review implementation",
+        "status": "draft",
+        "dependencies": [
+          "9f754a10-9b74-474c-9e05-16af5869eb5d",
+          "1613bd00-690d-48a6-999a-9879cca283de",
+          "360ed750-60eb-4738-a8fc-0a926450b247",
+          "364f2e3e-23c9-4b41-a493-efda2bd172e5",
+          "ea6a84f3-7a99-4a12-802a-0e05311a3301",
+          "94f31876-35ed-490e-9325-1aa477a58081"
+        ],
+        "acceptanceCriteria": [
+          "Implementation is checked against specification and architecture",
+          "QA, security, and performance evidence is reviewed"
+        ],
+        "satisfiedCriteria": [],
+        "evidence": [],
+        "blockers": [],
+        "decisions": [],
+        "validationRuns": [],
+        "findings": [],
+        "createdAt": "2026-07-31T18:08:47.316Z",
+        "updatedAt": "2026-07-31T18:08:47.316Z"
+      },
+      {
+        "id": "28fe2b2c-b9f4-4085-bb4b-84e2e9f6c64a",
+        "intentId": "299050fd-e723-4dfc-a52c-8564bb4b1ad9",
+        "type": "pr-review",
+        "title": "Prepare read-only PR review",
+        "objective": "Prepare read-only PR review",
+        "status": "draft",
+        "dependencies": [
+          "f71bc611-8afa-413e-a7cd-6782d655e25e"
+        ],
+        "acceptanceCriteria": [
+          "Read-only diff review content is prepared",
+          "No remote pull/merge-request mutation was performed"
+        ],
+        "satisfiedCriteria": [],
+        "evidence": [],
+        "blockers": [],
+        "decisions": [],
+        "validationRuns": [],
+        "findings": [],
+        "createdAt": "2026-07-31T18:08:47.316Z",
+        "updatedAt": "2026-07-31T18:08:47.316Z"
+      },
+      {
+        "id": "90747a3a-4eb0-43fa-a239-2a5f4e94f2df",
+        "intentId": "299050fd-e723-4dfc-a52c-8564bb4b1ad9",
+        "type": "documentation",
+        "title": "Update documentation",
+        "objective": "Update documentation",
+        "status": "draft",
+        "dependencies": [
+          "f71bc611-8afa-413e-a7cd-6782d655e25e"
+        ],
+        "acceptanceCriteria": [
+          "User-facing and engineering documentation impact is resolved",
+          "Documentation matches implemented behavior"
+        ],
+        "satisfiedCriteria": [],
+        "evidence": [],
+        "blockers": [],
+        "decisions": [],
+        "validationRuns": [],
+        "findings": [],
+        "createdAt": "2026-07-31T18:08:47.316Z",
+        "updatedAt": "2026-07-31T18:08:47.316Z"
+      },
+      {
+        "id": "a7e77d70-5102-4c0e-b615-c824fca734b8",
+        "intentId": "299050fd-e723-4dfc-a52c-8564bb4b1ad9",
+        "type": "completion",
+        "title": "Complete intent",
+        "objective": "Complete intent",
+        "status": "draft",
+        "dependencies": [
+          "28fe2b2c-b9f4-4085-bb4b-84e2e9f6c64a",
+          "90747a3a-4eb0-43fa-a239-2a5f4e94f2df"
+        ],
+        "acceptanceCriteria": [
+          "All dependent stories are completed",
+          "No unresolved blocker remains and the exact outcome is recorded"
+        ],
+        "satisfiedCriteria": [],
+        "evidence": [],
+        "blockers": [],
+        "decisions": [],
+        "validationRuns": [],
+        "findings": [],
+        "createdAt": "2026-07-31T18:08:47.316Z",
+        "updatedAt": "2026-07-31T18:08:47.316Z"
+      }
+    ],
+    "createdAt": "2026-07-31T18:08:47.316Z",
+    "updatedAt": "2026-07-31T18:08:47.319Z"
+  },
+  "intelligenceActivity": [
+    {
+      "id": "a1",
+      "timestamp": "2026-07-31T18:08:47.319Z",
+      "type": "discovery",
+      "message": "Discovered 360 project files without a repository cap.",
+      "progress": 100
+    },
+    {
+      "id": "a2",
+      "timestamp": "2026-07-31T18:08:47.319Z",
+      "type": "okf",
+      "message": "Promoted 223 portable OKF concepts with provenance.",
+      "progress": 100
+    },
+    {
+      "id": "a3",
+      "timestamp": "2026-07-31T18:08:47.319Z",
+      "type": "sdlc",
+      "message": "Generated 14 repository-derived user and quality stories.",
+      "progress": 100
+    },
+    {
+      "id": "a4",
+      "timestamp": "2026-07-31T18:08:47.319Z",
+      "type": "browser",
+      "message": "Browser View authenticated and synchronized to application state version 8.",
+      "progress": 100
+    }
+  ],
+  "operations": [
+    {
+      "id": "op-index",
+      "kind": "intelligence",
+      "status": "completed",
+      "progress": 100,
+      "message": "Incremental intelligence snapshot promoted atomically.",
+      "updatedAt": "2026-07-31T18:08:47.319Z"
+    },
+    {
+      "id": "op-context",
+      "kind": "analysis",
+      "status": "completed",
+      "progress": 100,
+      "message": "Evidence-ranked context pack created: 5,280 delegation tokens.",
+      "updatedAt": "2026-07-31T18:08:47.319Z"
+    },
+    {
+      "id": "op-design",
+      "kind": "delegation",
+      "status": "running",
+      "progress": 42,
+      "message": "Design story is active and awaiting approved Copilot delegation.",
+      "updatedAt": "2026-07-31T18:08:47.319Z"
+    }
+  ],
+  "handoffs": [],
+  "notification": {
+    "level": "info",
+    "message": "All evidence views use one shared extension-host state."
+  }
+}

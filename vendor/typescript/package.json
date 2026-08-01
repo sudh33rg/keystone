@@ -1,0 +1,57 @@
+{
+  "name": "typescript",
+  "author": "Microsoft Corp.",
+  "homepage": "https://www.typescriptlang.org/",
+  "version": "5.8.3",
+  "license": "Apache-2.0",
+  "description": "TypeScript is a language for application scale JavaScript development",
+  "keywords": [
+    "TypeScript",
+    "Microsoft",
+    "compiler",
+    "language",
+    "javascript"
+  ],
+  "bugs": {
+    "url": "https://github.com/microsoft/TypeScript/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/microsoft/TypeScript.git"
+  },
+  "main": "./lib/typescript.js",
+  "typings": "./lib/typescript.d.ts",
+  "bin": {
+    "tsc": "./bin/tsc",
+    "tsserver": "./bin/tsserver"
+  },
+  "engines": {
+    "node": ">=14.17"
+  },
+  "files": [
+    "bin",
+    "lib",
+    "!lib/enu",
+    "LICENSE.txt",
+    "README.md",
+    "SECURITY.md",
+    "ThirdPartyNoticeText.txt",
+    "!**/.gitattributes"
+  ],
+  "browser": {
+    "fs": false,
+    "os": false,
+    "path": false,
+    "crypto": false,
+    "buffer": false,
+    "source-map-support": false,
+    "inspector": false,
+    "perf_hooks": false
+  },
+  "packageManager": "npm@8.19.4",
+  "volta": {
+    "node": "20.1.0",
+    "npm": "8.19.4"
+  },
+  "gitHead": "68cead182cc24afdc3f1ce7c8ff5853aba14b65a"
+}

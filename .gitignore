@@ -1,0 +1,15 @@
+node_modules/
+out/
+dist/
+coverage/
+apps/vscode-extension/dist/
+media/index.html
+media/webview.css
+media/webview.js
+.vscode-test/
+.keystone/
+*.vsix
+.DS_Store
+.env
+.env.*
+!.env.example

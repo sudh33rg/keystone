@@ -1,0 +1,22 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist/test-runner",
+    "types": [
+      "node",
+      "vscode"
+    ],
+    "noEmit": false,
+    "typeRoots": [
+      "./node_modules/@types",
+      "./src/types"
+    ]
+  },
+  "include": [
+    "tests/integration/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}

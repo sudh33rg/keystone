@@ -1,0 +1,137 @@
+{
+  "name": "keystone",
+  "displayName": "Keystone",
+  "description": "Local-first VS Code extension for deterministic workspace intelligence, context compression, intent-led SDLC, Copilot delegation, synchronized Browser View, and secure Task Handoff.",
+  "version": "1.0.0",
+  "publisher": "local",
+  "private": true,
+  "license": "UNLICENSED",
+  "packageManager": "npm@10.9.2",
+  "engines": {
+    "vscode": "^1.92.0",
+    "node": ">=20"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./dist/app/extension/core/extension.js",
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:keystone.focusVscode",
+    "onCommand:keystone.indexRepo",
+    "onCommand:keystone.analyzeTask",
+    "onCommand:keystone.openBrowserView",
+    "onCommand:keystone.configureValueEdge",
+    "onCommand:keystone.importValueEdgeFeature",
+    "onCommand:keystone.publishValueEdgeStories"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "keystone.focusVscode",
+        "title": "Keystone: Open Application",
+        "category": "Keystone"
+      },
+      {
+        "command": "keystone.indexRepo",
+        "title": "Keystone: Index Repository",
+        "category": "Keystone"
+      },
+      {
+        "command": "keystone.analyzeTask",
+        "title": "Keystone: Analyze Intent",
+        "category": "Keystone"
+      },
+      {
+        "command": "keystone.openBrowserView",
+        "title": "Keystone: Open Browser View",
+        "category": "Keystone"
+      },
+      {
+        "command": "keystone.configureValueEdge",
+        "title": "Keystone: Configure ValueEdge",
+        "category": "Keystone"
+      },
+      {
+        "command": "keystone.importValueEdgeFeature",
+        "title": "Keystone: Import ValueEdge Feature",
+        "category": "Keystone"
+      },
+      {
+        "command": "keystone.publishValueEdgeStories",
+        "title": "Keystone: Publish Approved Stories to ValueEdge",
+        "category": "Keystone"
+      }
+    ],
+    "configuration": {
+      "title": "Keystone",
+      "properties": {
+        "keystone.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable Keystone commands."
+        },
+        "keystone.valueEdge.baseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "ValueEdge tenant base URL. The client secret is stored separately in VS Code SecretStorage."
+        },
+        "keystone.valueEdge.sharedSpaceId": {
+          "type": "string",
+          "default": "",
+          "description": "ValueEdge shared space ID."
+        },
+        "keystone.valueEdge.workspaceId": {
+          "type": "string",
+          "default": "",
+          "description": "ValueEdge workspace ID."
+        },
+        "keystone.valueEdge.clientId": {
+          "type": "string",
+          "default": "",
+          "description": "ValueEdge API client ID."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "clean": "node scripts/clean.mjs",
+    "build": "npm run clean && node scripts/build.mjs",
+    "build:extension": "node scripts/build.mjs --extension-only",
+    "build:webview": "node scripts/build.mjs --webview-only",
+    "compile": "npm run build",
+    "watch": "node scripts/build.mjs --watch",
+    "typecheck": "node scripts/typecheck.mjs",
+    "typecheck:extension": "node scripts/typecheck.mjs --extension-only",
+    "typecheck:webview": "node scripts/typecheck.mjs --webview-only",
+    "check:active-boundary": "node scripts/check-active-boundary.mjs",
+    "lint": "node scripts/lint.mjs",
+    "format": "node scripts/format.mjs",
+    "test": "node scripts/test.mjs",
+    "test:unit": "node scripts/test.mjs",
+    "verify:structure": "node scripts/check-active-boundary.mjs",
+    "verify": "npm run verify:structure && npm run typecheck && npm run lint && npm run test && npm run verify:runtime && npm run build && npm run package && npm run verify:package",
+    "vscode:prepublish": "npm run build",
+    "package": "node scripts/package-vsix.mjs",
+    "verify:package": "node scripts/verify-vsix.mjs",
+    "verify:runtime": "node scripts/verify-final.mjs",
+    "package:project": "node scripts/package-project.mjs",
+    "release": "npm run verify && npm run package:project"
+  },
+  "dependencies": {
+    "typescript": "file:vendor/typescript"
+  },
+  "devDependencies": {
+    "@types/node": "file:vendor/types-node",
+    "undici-types": "file:vendor/undici-types"
+  },
+  "keywords": [
+    "vscode",
+    "repository-intelligence",
+    "okf",
+    "context-compression",
+    "sdlc",
+    "github-copilot",
+    "task-handoff"
+  ]
+}

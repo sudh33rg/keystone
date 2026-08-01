@@ -1,0 +1,25 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "types": ["node", "vscode", "vitest/globals"]
+  },
+  "include": [
+    "src/**/*.ts",
+    "tests/**/*.ts",
+    "apps/**/*.ts",
+    "packages/**/*.ts",
+    "packages/**/*.tsx",
+    "vitest.config.ts",
+    "vite.config.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "out",
+    ".vscode-test",
+    "coverage",
+    "apps/**/dist",
+    "packages/**/dist"
+  ]
+}

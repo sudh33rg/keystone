@@ -1,0 +1,7 @@
+{
+  "name": "keystone-react-umd-runtime",
+  "version": "16.0.1",
+  "private": true,
+  "license": "MIT",
+  "description": "Vendored React and ReactDOM production UMD assets used by the offline Keystone webview build."
+}
