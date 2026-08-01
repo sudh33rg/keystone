@@ -1,6 +1,6 @@
 # Keystone Documentation
 
-These documents are authoritative for the current monolithic VS Code extension:
+These documents describe the current monolithic VS Code extension source:
 
 - [Architecture](ARCHITECTURE.md)
 - [Product plan conformance](PRODUCT_PLAN_CONFORMANCE.md)
@@ -14,7 +14,8 @@ These documents are authoritative for the current monolithic VS Code extension:
 - [Task Handoff](TASK_HANDOFF.md)
 - [Browser View](BROWSER_VIEW.md)
 - [Current-release non-goals](NON_GOALS.md)
-- [Execution evidence and screenshots](EXECUTION_EVIDENCE.md)
+- [Execution evidence](EXECUTION_EVIDENCE.md)
+- [Final source verification](FINAL_VERIFICATION.md)
 - [Machine-readable runtime acceptance results](FINAL_RUNTIME_RESULTS.json)
 
-The source code, tests, and runtime acceptance script are the executable specification. `npm run verify` must pass before the project is packaged.
+The source code, tests, and production runtime acceptance scripts are the executable specification. For this source-only delivery, use the three independent verification gates in `FINAL_VERIFICATION.md`; package/VSIX generation is optional and is not part of the acceptance gate.

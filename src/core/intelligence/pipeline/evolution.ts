@@ -1,8 +1,6 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { GitReadOnly } from '../../platform/git/gitReadOnly';
 import type { IncrementalUpdatePlan } from './incremental';
 
-const execFileAsync = promisify(execFile);
 
 export interface RepositoryEvolution {
   readonly changes: Readonly<Record<'unchanged' | 'implementation' | 'structural' | 'added' | 'deleted', number>>;
@@ -16,7 +14,10 @@ export async function buildRepositoryEvolution(root: string, incremental: Increm
   const changes = { unchanged: 0, implementation: 0, structural: 0, added: 0, deleted: 0 };
   incremental.changes.forEach(change => { changes[change.kind] += 1; });
   try {
-    const { stdout } = await execFileAsync('git', ['log', `-n${maxCommits}`, '--format=__KEYSTONE_COMMIT__', '--name-only', '--no-renames'], { cwd: root, maxBuffer: 10_000_000 });
+    const git = new GitReadOnly(root);
+    const inside = await git.run('rev-parse', ['--is-inside-work-tree']);
+    if (inside !== 'true') throw new Error('Workspace is not a Git repository.');
+    const stdout = await git.run('log', [`-n${maxCommits}`, '--format=__KEYSTONE_COMMIT__', '--name-only', '--no-renames']);
     const commits = parseCommits(stdout);
     const fileCommits = new Map<string, number>();
     const pairCounts = new Map<string, number>();

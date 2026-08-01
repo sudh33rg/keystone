@@ -48,8 +48,8 @@ describe('repository intelligence pipeline', () => {
     }));
     expect(snapshot.ingestion.inputFingerprint).toMatch(/^[a-f0-9]{64}$/);
     expect(snapshot.health.status).toBe('healthy');
-    expect(snapshot.health.score).toBe(90);
-    expect(snapshot.health.checks.find((check) => check.id === 'fallback-semantic-diagnostics')).toEqual(expect.objectContaining({ passed: false }));
+    expect(snapshot.health.score).toBe(94);
+    expect(snapshot.health.checks.find((check) => check.id === 'fallback-semantic-diagnostics')).toEqual(expect.objectContaining({ passed: true }));
     expect(snapshot.health.checks.find((check) => check.id === 'runtime-evidence')).toEqual(expect.objectContaining({ passed: false }));
     expect(snapshot.incremental.action).toBe('full');
     const apiDependency = snapshot.intelligence.dependencies.find((edge) =>

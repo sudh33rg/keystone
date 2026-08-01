@@ -122,6 +122,15 @@ export interface GapAnalysisConfig {
   minSeverity?: number;
 }
 
+export interface GapAnalysisContext {
+  /** Cooperative cancellation for synchronous analysis phases. */
+  cancellation?: CancellationToken;
+  /** Abort child test processes and repeated flaky-test runs. */
+  signal?: AbortSignal;
+  /** Workspace-relative files changed for task-scoped impact analysis. */
+  changedPaths?: string[];
+}
+
 // ---------------------------------------------------------------------------
 // Defaults
 // ---------------------------------------------------------------------------
@@ -224,6 +233,69 @@ function estimateCoverageRatio(testFiles: string[], sourceFiles: string[]): numb
   // Simple heuristic: each test covers ~1 source file on average
   const ratio = Math.min(testFiles.length / sourceFiles.length, 1.0);
   return ratio;
+}
+
+function discoverExecutionCommand(discovery: TestDiscoveryResult, configured?: string): string | undefined {
+  if (configured?.trim()) return configured.trim();
+  const hint = discovery.testCommands[0];
+  return hint ? [hint.command, ...hint.args].join(' ').trim() : undefined;
+}
+
+function loadCoverageData(workspaceRoot: string, index?: RepoIndex): TestCoverage[] {
+  const persisted = path.join(workspaceRoot, '.keystone', 'coverage_index.json');
+  try {
+    const parsed = JSON.parse(fs.readFileSync(persisted, 'utf8')) as { tests?: TestCoverage[] };
+    if (Array.isArray(parsed.tests)) return parsed.tests;
+  } catch { /* optional runtime artifact */ }
+
+  const mappings = ((index?.summary as unknown as { coverageMappings?: Array<{ testPath: string; coveredPath: string }> } | undefined)?.coverageMappings ?? []);
+  if (mappings.length) {
+    const byTest = new Map<string, string[]>();
+    for (const mapping of mappings) {
+      if (!mapping.testPath || !mapping.coveredPath) continue;
+      const values = byTest.get(mapping.testPath) ?? [];
+      values.push(mapping.coveredPath);
+      byTest.set(mapping.testPath, values);
+    }
+    return [...byTest.entries()].map(([testPath, coveredPaths]) => ({
+      testPath,
+      testName: path.basename(testPath),
+      coveredFiles: [...new Set(coveredPaths)].map(filePath => ({ filePath, lines: [] })),
+      framework: 'unknown',
+      builtAtCommit: 'repository-index',
+      builtAt: Date.now(),
+    }));
+  }
+
+  // Istanbul-compatible aggregate coverage emitted by Jest/Vitest/nyc. It is
+  // not per-test coverage, but it is real executed coverage and is useful for
+  // gap/module coverage without pretending to identify an individual test.
+  for (const relative of ['coverage/coverage-final.json', 'coverage/coverage.json']) {
+    try {
+      const value = JSON.parse(fs.readFileSync(path.join(workspaceRoot, relative), 'utf8')) as Record<string, any>;
+      const result: TestCoverage[] = [];
+      for (const [fileName, file] of Object.entries(value)) {
+        if (!file || typeof file !== 'object') continue;
+        const statementMap = file.statementMap ?? {};
+        const counts = file.s ?? {};
+        const lines = Object.entries(statementMap)
+          .filter(([id]) => Number(counts[id] ?? 0) > 0)
+          .map(([, statement]: any) => Number(statement?.start?.line ?? 0))
+          .filter((line: number) => line > 0);
+        if (!lines.length) continue;
+        result.push({
+          testPath: `aggregate:${relative}`,
+          testName: `Executed aggregate coverage for ${path.basename(fileName)}`,
+          coveredFiles: [{ filePath: path.relative(workspaceRoot, fileName), lines: [...new Set(lines)].sort((a,b)=>a-b) }],
+          framework: 'unknown',
+          builtAtCommit: 'executed-workspace',
+          builtAt: Date.now(),
+        });
+      }
+      if (result.length) return result;
+    } catch { /* try next coverage artifact */ }
+  }
+  return [];
 }
 
 // ---------------------------------------------------------------------------
@@ -495,7 +567,7 @@ export class GapAnalyzer {
   /**
    * Run a quick gap analysis (no test execution).
    */
-  async analyzeQuick(ctx?: { cancellation?: CancellationToken }): Promise<GapAnalysisResult> {
+  async analyzeQuick(ctx?: GapAnalysisContext): Promise<GapAnalysisResult> {
     const startTime = Date.now();
     this.log('Discovering tests', 10);
     this.checkCancellation(ctx);
@@ -581,74 +653,94 @@ export class GapAnalyzer {
    * Run a deep gap analysis (with test execution and real coverage).
    */
   async analyzeDeep(
-    ctx?: { cancellation?: CancellationToken },
+    ctx?: GapAnalysisContext,
     index?: RepoIndex,
   ): Promise<GapAnalysisResult> {
     const startTime = Date.now();
     this.log('Running quick analysis first', 5);
 
     const quickResult = await this.analyzeQuick(ctx);
-    this.log('Running tests for coverage', 40);
+    const discovery = discoverTests(this.workspaceRoot);
+    const sourceFiles = enumerateSourceFiles(this.workspaceRoot);
+    const riskData: FileRiskData[] = sourceFiles.map((file) => ({
+      filePath: file,
+      churn: 0.3,
+      coupling: 0.2,
+      coverage: 0,
+      authorConcentration: 0.5,
+      testInstability: 0,
+      ageDays: 30,
+    }));
+    const riskScores = computeRiskScores(riskData);
+
+    this.log('Running tests for coverage', 35);
     this.checkCancellation(ctx);
 
-    // Run tests with coverage
     const execConfig = this.qaConfig.execution;
-    const command = execConfig.testCommand ?? 'npx vitest run --coverage';
+    const command = discoverExecutionCommand(discovery, execConfig.testCommand);
     const quarantineStore = createQuarantineStore(this.workspaceRoot, this.qaConfig.quarantine);
 
     let executionResult: TestExecutionResult | undefined;
-    try {
-      executionResult = await executeTests(
-        {
+    if (command && discovery.testFiles.length > 0) {
+      try {
+        executionResult = await executeTests(
+          {
+            command,
+            cwd: this.workspaceRoot,
+            maxWorkers: execConfig.maxWorkers,
+            timeoutMs: execConfig.timeoutMs,
+            excludeQuarantined: execConfig.excludeQuarantined,
+            signal: ctx?.signal,
+          },
+          quarantineStore,
+        );
+      } catch (error) {
+        if (ctx?.signal?.aborted) throw Object.assign(new Error('Gap analysis cancelled'), { name: 'CancellationError' });
+        executionResult = {
           command,
-          cwd: this.workspaceRoot,
-          maxWorkers: execConfig.maxWorkers,
-          timeoutMs: execConfig.timeoutMs,
-          excludeQuarantined: execConfig.excludeQuarantined,
-        },
-        quarantineStore,
-      );
-    } catch {
-      // Test execution may fail — continue with available data
-      executionResult = {
-        command,
-        exitCode: -1,
-        durationMs: 0,
-        passed: 0,
-        failed: 0,
-        skipped: 0,
-        output: '',
-      };
+          exitCode: -1,
+          durationMs: 0,
+          passed: 0,
+          failed: 0,
+          skipped: 0,
+          output: error instanceof Error ? error.message : String(error),
+        };
+      }
     }
 
-    this.log('Detecting flaky tests', 60);
+    this.log('Loading coverage evidence', 50);
     this.checkCancellation(ctx);
+    const coverageData = loadCoverageData(this.workspaceRoot, index);
+    const coverageMap = computeCoverageMap(discovery.testFiles, coverageData, sourceFiles, this.workspaceRoot);
+    const deepGaps = detectGaps(sourceFiles, discovery.testFiles, coverageMap, riskScores, this.config, this.workspaceRoot);
+    const coverageByModule = computeModuleCoverage(sourceFiles, coverageMap, discovery.testFiles, this.workspaceRoot);
+    const coverageRate = sourceFiles.length > 0 ? coverageMap.size / sourceFiles.length : 0;
 
-    // Detect flaky tests
+    this.log('Detecting flaky tests', 65);
+    this.checkCancellation(ctx);
     const flakyConfig = this.qaConfig.flakyDetection;
     let flakyResult: FlakyDetectionResult | undefined;
-    try {
-      flakyResult = await detectFlakyTests(
-        quickResult.summary.totalTests > 0
-          ? quickResult.metrics.testsDiscovered > 0
-            ? [] // Will use discovery.testFiles
-            : []
-          : [],
-        flakyConfig,
-        this.workspaceRoot,
-      );
-    } catch {
-      flakyResult = { flakyTests: [], flakyRate: 0, totalTests: 0, recommendations: [] };
+    if (command && discovery.testFiles.length > 0) {
+      try {
+        flakyResult = await detectFlakyTests(
+          discovery.testFiles,
+          { ...flakyConfig, workspaceRoot: this.workspaceRoot, testCommand: command, signal: ctx?.signal },
+          this.workspaceRoot,
+        );
+      } catch (error) {
+        if (ctx?.signal?.aborted) throw Object.assign(new Error('Gap analysis cancelled'), { name: 'CancellationError' });
+        flakyResult = { flakyTests: [], flakyRate: 0, totalTests: discovery.testFiles.length, recommendations: [error instanceof Error ? error.message : String(error)] };
+      }
+    } else {
+      flakyResult = { flakyTests: [], flakyRate: 0, totalTests: discovery.testFiles.length, recommendations: [] };
     }
 
-    // Impacted tests
-    this.log('Analyzing impacted tests', 75);
+    this.log('Analyzing impacted tests', 82);
     this.checkCancellation(ctx);
-
     let impactedTests: ImpactedTestSuggestion[] | undefined;
-    if (index && ctx?.cancellation && !ctx.cancellation.isCancellationRequested) {
+    if (index && (ctx?.changedPaths?.length ?? 0) > 0) {
       try {
-        impactedTests = suggestImpactedTests(index, []);
+        impactedTests = suggestImpactedTests(index, ctx!.changedPaths!);
       } catch {
         impactedTests = [];
       }
@@ -663,11 +755,11 @@ export class GapAnalyzer {
         ...quickResult.summary,
         flakyTests: totalFlaky,
         brokenTests: totalFailed,
-        coverageRate: quickResult.summary.coverageRate,
+        coverageRate,
       },
-      gaps: quickResult.gaps,
+      gaps: deepGaps,
       recommendations: [
-        ...quickResult.recommendations,
+        ...generateRecommendations(deepGaps, { ...quickResult.summary, coverageRate, flakyTests: totalFlaky, brokenTests: totalFailed }, discovery),
         ...(totalFlaky > 0 ? [{
           priority: 'medium' as const,
           category: 'maintenance',
@@ -683,6 +775,7 @@ export class GapAnalyzer {
           suggestedAction: 'Run `keystone qa repair` to auto-fix common test failures',
         }] : []),
       ] as Recommendation[],
+      coverageByModule,
       impactedTests,
       flakyDetection: flakyResult,
       executionResult,
@@ -701,7 +794,7 @@ export class GapAnalyzer {
     this.onProgress?.(message, progress);
   }
 
-  private checkCancellation(ctx?: { cancellation?: CancellationToken }): void {
+  private checkCancellation(ctx?: GapAnalysisContext): void {
     if (ctx?.cancellation?.isCancellationRequested) {
       throw Object.assign(new Error('Gap analysis cancelled'), { name: 'CancellationError' });
     }

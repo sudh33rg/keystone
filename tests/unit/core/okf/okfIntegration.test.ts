@@ -8,6 +8,8 @@ import { validateOkfSnapshot } from '@core/intelligence/okf/validation';
 import { KEYSTONE_OKF_PROFILE } from '@core/intelligence/okf/profile';
 import { CpgShardStore } from '@core/intelligence/cpg/shardStore';
 import { validatePortableOkfBundle } from '@core/intelligence/okf/bundle';
+import { queryOkfSnapshot } from '@core/intelligence/okf/queryEngine';
+import { repoIntelligenceToOkf } from '@core/intelligence/okf/fromRepoIntelligence';
 
 const roots: string[] = [];
 afterEach(() => { while (roots.length) fs.rmSync(roots.pop()!, { recursive: true, force: true }); });
@@ -95,6 +97,28 @@ describe('authoritative OKF intelligence', () => {
     expect(second!.units.find(unit => unit.id === readmeId)?.lifecycle).toBe('deleted');
     expect(second!.evidence.some(item => item.freshness === 'stale')).toBe(true);
     expect(fs.existsSync(path.join(root, '.keystone', 'intelligence', 'snapshots', first!.manifest.extractionRunId, 'manifest.json'))).toBe(true);
+  });
+
+  it('enforces relationship constraints at generation time and answers multi-hop evidence queries', async () => {
+    const root = fixture();
+    const snapshot = await buildRepositoryIntelligence(root, { cognitive: true });
+    const intelligence = structuredClone(snapshot.intelligence);
+    // Force the exact shape that previously broke persisted promotion: a test mapped to
+    // a configuration artifact. The converter must produce a profile-valid representation.
+    intelligence.tests.push({ testFile: 'tests/userService.test.ts', targetFile: 'config/app.yaml', reason: 'explicit regression mapping', confidence: 0.9 } as any);
+    const converted = repoIntelligenceToOkf(intelligence);
+    expect(validateOkfSnapshot(converted).valid).toBe(true);
+    expect(converted.relationships.filter(edge => edge.kind === 'tests' || edge.kind === 'covers').every(edge => {
+      const source = converted.units.find(unit => unit.id === edge.sourceId);
+      const target = converted.units.find(unit => unit.id === edge.targetId);
+      return source?.kind === 'test' && Boolean(target);
+    })).toBe(true);
+
+    const result = queryOkfSnapshot(converted, 'What tests cover src/userService.ts?');
+    expect(result.intent).toBe('tests');
+    expect(result.traversedRelationships).toBeGreaterThan(0);
+    expect(result.items.some(item => item.path === 'tests/userService.test.ts')).toBe(true);
+    expect(result.items.every(item => item.evidenceIds.length > 0)).toBe(true);
   });
 });
 

@@ -17,7 +17,15 @@ declare module "vscode" {
   export enum StatusBarAlignment { Left=1, Right=2 }
   export interface FileSystemWatcher extends Disposable { onDidCreate(listener:(uri:Uri)=>any):Disposable; onDidChange(listener:(uri:Uri)=>any):Disposable; onDidDelete(listener:(uri:Uri)=>any):Disposable; }
   export interface CancellationToken { readonly isCancellationRequested:boolean; onCancellationRequested(listener:(e:any)=>any):Disposable; }
-  export namespace commands { function registerCommand(command:string,callback:(...args:any[])=>any):Disposable; function executeCommand<T=unknown>(command:string,...args:any[]):Thenable<T|undefined>; }
+  export class CancellationTokenSource implements Disposable { readonly token: CancellationToken; cancel(): void; dispose(): void; }
+  export interface LanguageModelChatMessage { readonly role: number; readonly content: readonly unknown[]; }
+  export namespace LanguageModelChatMessage { function User(content: string, name?: string): LanguageModelChatMessage; function Assistant(content: string, name?: string): LanguageModelChatMessage; }
+  export interface LanguageModelChatResponse { readonly text: AsyncIterable<string>; }
+  export interface LanguageModelChat { readonly id: string; readonly vendor: string; readonly family: string; readonly version: string; readonly name: string; readonly maxInputTokens: number; sendRequest(messages: readonly LanguageModelChatMessage[], options: Record<string, unknown>, token: CancellationToken): Thenable<LanguageModelChatResponse>; }
+  export namespace lm { function selectChatModels(selector?: { vendor?: string; family?: string; version?: string; id?: string }): Thenable<LanguageModelChat[]>; }
+  export namespace commands { function registerCommand(command:string,callback:(...args:any[])=>any):Disposable; function executeCommand<T=unknown>(command:string,...args:any[]):Thenable<T|undefined>; function getCommands(filterInternal?:boolean):Thenable<string[]>; }
+  export interface Extension<T=unknown> { readonly packageJSON:any; readonly isActive:boolean; activate():Thenable<T>; }
+  export namespace extensions { const all:readonly Extension[]; function getExtension<T=unknown>(extensionId:string):Extension<T>|undefined; }
   export namespace window {
     const activeTextEditor:TextEditor|undefined;
     function createStatusBarItem(alignment?:StatusBarAlignment,priority?:number):StatusBarItem;

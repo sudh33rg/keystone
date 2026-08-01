@@ -1,13 +1,11 @@
-import { execFile } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
 
 import { indexRepository } from '../ingestion/repoIndexer';
 import type { RepoIntelligence } from '../../domain/types';
 import { INTELLIGENCE_FAMILIES, INTELLIGENCE_STAGES, type IntelligenceFamily, type IntelligenceFamilySummary, type IntelligencePipelineOptions, type IntelligenceStageId, type IntelligenceStageResult, type RepositoryIntelligenceSnapshot } from './types';
-import { analyzeTypeScriptProject, buildTypeScriptCpg, buildUniversalCpg, CpgShardStore, type TypeScriptSemanticResult } from '../cpg';
+import { analyzeTypeScriptProjectIsolated, buildTypeScriptCpg, buildUniversalCpg, CpgShardStore, type TypeScriptSemanticResult } from '../cpg';
 import { OkfSnapshotStore } from '../okf/store';
 import { analyzeRepositoryGraph, type RepositoryGraphAnalysis } from './derivedGraph';
 import { evaluateIntelligenceHealth } from './health';
@@ -16,8 +14,8 @@ import { buildIntelligenceFindings } from './findings';
 import { buildRuntimeVerification, type RuntimeVerification } from './runtime';
 import { buildRepositoryEvolution, type RepositoryEvolution } from './evolution';
 import { analyzeDeadCode, type DeadCodeCandidate } from './deadCode';
+import { GitReadOnly } from '../../platform/git/gitReadOnly';
 
-const execFileAsync = promisify(execFile);
 const STORE = '.keystone/intelligence';
 
 type StageDefinition = { id: IntelligenceStageId; label: string; family: IntelligenceFamily; cognitive?: boolean; analyze(context: StageContext): Promise<StageProjection> | StageProjection };
@@ -44,9 +42,12 @@ export async function buildRepositoryIntelligence(root: string, options: Intelli
     if (options.signal?.aborted) throw new IntelligencePipelineCancelledError('structural');
     throw error;
   }
+  options.onProgress?.({ stage: 'structural', order: 1, total: STAGES.length, progress: 4, message: 'Building repository dependency graph...' });
   const graph = analyzeRepositoryGraph(intelligence);
   const semanticPaths = intelligence.files.filter(file => /\.(?:[cm]?js|jsx|ts|tsx)$/i.test(file.path) && !file.isGenerated).map(file => file.path);
-  const semantic = analyzeTypeScriptProject(root, semanticPaths);
+  options.onProgress?.({ stage: 'structural', order: 1, total: STAGES.length, progress: 4, message: `Resolving compiler semantics for ${semanticPaths.length} TypeScript/JavaScript files...` });
+  const semantic = await analyzeTypeScriptProjectIsolated(root, semanticPaths, options.signal);
+  options.onProgress?.({ stage: 'structural', order: 1, total: STAGES.length, progress: 4, message: 'Planning incremental, evolution, dead-code, finding, and runtime projections...' });
   const incremental = planIncrementalUpdate(previousSnapshot?.intelligence, intelligence);
   const evolution = await buildRepositoryEvolution(root, incremental);
   const deadCode = analyzeDeadCode(intelligence, graph, semantic);
@@ -172,12 +173,22 @@ const STAGES: StageDefinition[] = [
     let cdgEdges = 0;
     const items: string[] = [];
     const shardStore = persist ? new CpgShardStore(root) : undefined;
-    const okfSnapshot = persist ? await new OkfSnapshotStore(root).read() : undefined;
-    const bindings = (okfSnapshot?.units ?? []).filter(unit => unit.lifecycle === 'active' && (unit.kind === 'file' || unit.kind === 'test' || unit.kind === 'documentation' || unit.kind === 'configuration' || unit.kind === 'symbol'));
+    const bindings = persist ? await new OkfSnapshotStore(root).readCpgBindings() : [];
+    const fileBindingByPath = new Map<string, string>();
+    const symbolBindingByPathLine = new Map<string, string>();
+    const symbolBindingByPathLineName = new Map<string, string>();
+    for (const binding of bindings) {
+      if (binding.symbol && binding.line !== undefined) {
+        const pathLine = `${binding.path}\0${binding.line}`;
+        if (!symbolBindingByPathLine.has(pathLine)) symbolBindingByPathLine.set(pathLine, binding.okfId);
+        symbolBindingByPathLineName.set(`${pathLine}\0${binding.symbol}`, binding.okfId);
+        continue;
+      }
+      if (!fileBindingByPath.has(binding.path)) fileBindingByPath.set(binding.path, binding.okfId);
+    }
     const resolveOkfId = (sourcePath: string, line: number, name?: string): string | undefined => {
-      const symbol = bindings.find(unit => unit.kind === 'symbol' && unit.properties.filePath === sourcePath && unit.properties.line === line && (!name || unit.name === name));
-      if (symbol) return symbol.id;
-      return bindings.find(unit => (unit.kind === 'file' || unit.kind === 'test' || unit.kind === 'documentation' || unit.kind === 'configuration') && unit.properties.path === sourcePath)?.id;
+      const pathLine = `${sourcePath}\0${line}`;
+      return (name ? symbolBindingByPathLineName.get(`${pathLine}\0${name}`) : symbolBindingByPathLine.get(pathLine)) ?? fileBindingByPath.get(sourcePath);
     };
     for (const file of eligible) {
       const content = await fs.readFile(path.join(root, file.path), 'utf8');
@@ -201,11 +212,24 @@ const STAGES: StageDefinition[] = [
     return {
       summary: `${eligible.length} text artifacts indexed into CPG projections; TypeScript/JavaScript use the compiler frontend and other languages use deterministic structural frontends, with ${semantic.calls.length} type-bound TS/JS calls.`,
       items,
-      metrics: { eligibleFiles: eligible.length, indexedFiles: eligible.length, nodes, astEdges, eogEdges, cfgEdges, dfgEdges, cdgEdges, shardsWritten: shardResult?.written ?? 0, shardsReused: shardResult?.reused ?? 0, shardsDeleted: shardResult?.deleted ?? 0, semanticFiles: semantic.files, configuredSemanticFiles: semantic.configuredFiles, fallbackSemanticFiles: semantic.fallbackFiles, boundCalls: semantic.calls.length, typeRelationships: semantic.relationships.length, callbackEdges: semantic.callbacks.length, unresolvedCalls: semantic.unresolvedCalls, compilerDiagnostics: semantic.diagnostics, configuredCompilerDiagnostics: semantic.configuredDiagnostics, fallbackCompilerDiagnostics: semantic.fallbackDiagnostics, diagnosticCodes: JSON.stringify(semantic.diagnosticCodes), typeResolution: true, cfg: true, dfg: true, cdg: true }
+      metrics: { eligibleFiles: eligible.length, indexedFiles: eligible.length, nodes, astEdges, eogEdges, cfgEdges, dfgEdges, cdgEdges, shardsWritten: shardResult?.written ?? 0, shardsReused: shardResult?.reused ?? 0, shardsDeleted: shardResult?.deleted ?? 0, semanticFiles: semantic.files, configuredSemanticFiles: semantic.configuredFiles, fallbackSemanticFiles: semantic.fallbackFiles, boundCalls: semantic.calls.length, typeRelationships: semantic.relationships.length, callbackEdges: semantic.callbacks.length, unresolvedCalls: semantic.unresolvedCalls, compilerDiagnostics: semantic.diagnostics, configuredCompilerDiagnostics: semantic.configuredDiagnostics, fallbackCompilerDiagnostics: semantic.fallbackDiagnostics, diagnosticCodes: JSON.stringify(semantic.diagnosticCodes), diagnosticMode: 'syntax-options', typeResolution: true, cfg: true, dfg: true, cdg: true }
     };
   }),
   stage('architecture', 'Architecture Intelligence', 'architecture-sdlc', ({ intelligence, graph }) => ({ summary: `${intelligence.services.length} service boundaries, ${graph.communities.length} file communities, and ${graph.flows.length} entry-point flows describe the current architecture.`, items: [...intelligence.services.map((service) => `${service.name} — ${service.filePath}`), ...graph.entryPoints.map(file => `entry:${file}`), ...graph.communities.slice(0, 10).map(community => `${community.id} — ${community.files.length} files`), ...intelligence.frameworkHints], metrics: { services: intelligence.services.length, frameworks: intelligence.frameworkHints.length, entryPoints: graph.entryPoints.length, communities: graph.communities.length, executionFlows: graph.flows.length, cycles: graph.cycles.length } }), true),
-  stage('git-change', 'Git & Change Intelligence', 'repository-structure', async ({ root, evolution }) => { try { const [{ stdout: branch }, { stdout: changed }] = await Promise.all([execFileAsync('git', ['branch', '--show-current'], { cwd: root }), execFileAsync('git', ['status', '--porcelain'], { cwd: root })]); const files = changed.trim().split('\n').filter(Boolean).map((line) => line.slice(3)); return { summary: `${files.length} changed files on ${branch.trim() || 'detached HEAD'} with ${evolution.coupling.length} historical co-change pairs.`, items: [...files, ...evolution.coupling.slice(0, 20).map(pair => `coupled:${pair.fileA} ↔ ${pair.fileB} (${pair.commits})`)], metrics: { branch: branch.trim() || 'detached', changedFiles: files.length, commitsAnalyzed: evolution.commitsAnalyzed, couplingPairs: evolution.coupling.length, structuralChanges: evolution.changes.structural, deletedFiles: evolution.changes.deleted } }; } catch { return { summary: 'Git metadata is unavailable.', items: [], metrics: { branch: 'unavailable', changedFiles: 0, commitsAnalyzed: 0, couplingPairs: 0, structuralChanges: evolution.changes.structural, deletedFiles: evolution.changes.deleted } }; } }),
+  stage('git-change', 'Git & Change Intelligence', 'repository-structure', async ({ root, evolution }) => {
+    try {
+      const git = new GitReadOnly(root);
+      const [branch, changed] = await Promise.all([git.branch(), git.status()]);
+      const files = changed.trim().split('\n').filter(Boolean).map((line) => line.slice(3));
+      return {
+        summary: `${files.length} changed files on ${branch.trim() || 'detached HEAD'} with ${evolution.coupling.length} historical co-change pairs.`,
+        items: [...files, ...evolution.coupling.slice(0, 20).map(pair => `coupled:${pair.fileA} ↔ ${pair.fileB} (${pair.commits})`)],
+        metrics: { branch: branch.trim() || 'detached', changedFiles: files.length, commitsAnalyzed: evolution.commitsAnalyzed, couplingPairs: evolution.coupling.length, structuralChanges: evolution.changes.structural, deletedFiles: evolution.changes.deleted }
+      };
+    } catch {
+      return { summary: 'Git metadata is unavailable.', items: [], metrics: { branch: 'unavailable', changedFiles: 0, commitsAnalyzed: evolution.commitsAnalyzed, couplingPairs: evolution.coupling.length, structuralChanges: evolution.changes.structural, deletedFiles: evolution.changes.deleted } };
+    }
+  }),
   stage('impact', 'Impact Intelligence', 'architecture-sdlc', ({ graph, previous }) => { const changed = (previous.get('git-change')?.items ?? []).filter(item => !item.startsWith('coupled:')); const impact = graph.impactedBy(changed); return { summary: `${changed.length} changed files transitively impact ${impact.files.length} files and ${impact.tests.length} mapped tests.`, items: [...impact.files.slice(0, 80), ...impact.tests.slice(0, 20).map(test => `test:${test}`)], metrics: { changedFiles: changed.length, impactedFiles: impact.files.length, impactedTests: impact.tests.length, traversalDepth: impact.depth } }; }, true),
   stage('context', 'Context Intelligence', 'context-token', ({ intelligence, graph, previous }) => { const changed = (previous.get('git-change')?.items ?? []).filter(item => !item.startsWith('coupled:')); const impact = graph.impactedBy(changed); const selected = changed.length ? impact.files.slice(0, 100) : unique([...graph.entryPoints, ...graph.hubs.map(hub => hub.path)]).slice(0, 20); const raw = intelligence.files.reduce((sum, file) => sum + file.lineCount * 3, 0); const packed = selected.reduce((sum, item) => sum + (intelligence.files.find((file) => file.path === item)?.lineCount ?? 0) * 3, 0); return { summary: `${selected.length} graph-ranked files selected with an estimated ${Math.max(0, Math.round((1 - packed / Math.max(raw, 1)) * 100))}% context reduction.`, items: selected, metrics: { selectedFiles: selected.length, rawTokens: raw, estimatedTokens: packed, graphRanked: true } }; }, true),
   stage('sdlc-workflow', 'SDLC Workflow Intelligence', 'architecture-sdlc', ({ intelligence }) => { const items = pathsMatching(intelligence, /(^|\/)(\.github\/workflows|Jenkinsfile|azure-pipelines|gitlab-ci|Dockerfile|deploy|release|pipeline)/i); return { summary: `${items.length} build, CI, release, and deployment workflow artifacts detected.`, items, metrics: { workflows: items.length } }; }, true),

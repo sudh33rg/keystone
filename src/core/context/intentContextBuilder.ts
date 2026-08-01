@@ -3,6 +3,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { CpgShardStore } from "../intelligence/cpg";
+import { queryOkfSnapshot } from "../intelligence/okf/queryEngine";
+import type { KeystoneOkfSnapshot } from "../intelligence/okf/types";
 import { analyzeRepositoryGraph } from "../intelligence/pipeline/derivedGraph";
 import { buildIntelligenceFindings } from "../intelligence/pipeline/findings";
 import { retrieveRepositoryIntelligence } from "../intelligence/pipeline/retrieval";
@@ -19,6 +21,7 @@ export type ContextBuildOptions = {
   gitDiff?: string;
   preferredPaths?: readonly string[];
   excludedPaths?: readonly string[];
+  okfSnapshot?: KeystoneOkfSnapshot;
   /** Applies only to the Copilot delegation packet; ingestion is never capped. */
   delegationTokenBudget?: number;
 };
@@ -34,6 +37,7 @@ export async function buildIntentContextPack(
   const tier = options.compressionTier ?? "standard";
   const graph = analyzeRepositoryGraph(intelligence);
   const findings = buildIntelligenceFindings(intelligence, graph);
+  const okfQuery = options.okfSnapshot ? queryOkfSnapshot(options.okfSnapshot, options.retrievalText ? `${intent.text} ${options.retrievalText}` : intent.text, 40) : undefined;
   const retrieval = await retrieveRepositoryIntelligence(intelligence, graph, findings, {
     text: options.retrievalText ? `${intent.text}\n${options.retrievalText}` : intent.text,
     limit: 30,
@@ -44,10 +48,13 @@ export async function buildIntentContextPack(
     const file = fileByPath.get(result.path);
     return file ? [{ file, result }] : [];
   });
-  const priorityPaths = [options.currentFile, ...diffPaths(options.gitDiff ?? ""), ...(options.preferredPaths ?? [])].filter((value): value is string => Boolean(value));
+  const okfByPath = new Map((okfQuery?.items ?? []).filter(item => item.path).map(item => [item.path!, item]));
+  const priorityPaths = [options.currentFile, ...diffPaths(options.gitDiff ?? ""), ...(options.preferredPaths ?? []), ...(okfQuery?.items.flatMap(item => item.path ? [item.path] : []) ?? [])].filter((value): value is string => Boolean(value));
   const priority = priorityPaths.flatMap(priorityPath => {
     const file = fileByPath.get(priorityPath);
-    return file ? [{ file, result: { path: file.path, score: 1, reasons: [priorityPath === options.currentFile ? "active editor" : "current git diff"] as readonly string[] } }] : [];
+    const okf = okfByPath.get(priorityPath);
+    const reason = priorityPath === options.currentFile ? "active editor" : diffPaths(options.gitDiff ?? "").includes(priorityPath) ? "current git diff" : okf ? `OKF ${okf.reason}` : "preferred evidence";
+    return file ? [{ file, result: { path: file.path, score: okf?.score ?? 1, reasons: [reason] as readonly string[] } }] : [];
   });
   const protectedPaths = new Set([options.currentFile, ...diffPaths(options.gitDiff ?? "")].filter(Boolean));
   const excludedPaths = new Set(options.excludedPaths ?? []);
@@ -94,7 +101,9 @@ export async function buildIntentContextPack(
     }
     const accepted = protectedFile && usedTokens + tokens > contentBudget ? truncateToTokens(compressed, Math.max(180, contentBudget - usedTokens)) : compressed;
     const acceptedTokens = estimateTokens(accepted);
-    const refs = [...evidence.refs, ...excerpt.refs];
+    const okfItem = okfByPath.get(item.file.path);
+    const okfRefs = okfItem ? [{ okfId: okfItem.id, kind: okfItem.kind, label: okfItem.label }] : [];
+    const refs = dedupeRefs([...okfRefs, ...evidence.refs, ...excerpt.refs]);
     traceableEvidence += refs.length;
     contextSections.push({ path: item.file.path, reason: item.result.reasons.join(", "), content: accepted, estimatedTokens: acceptedTokens, sourceHash: item.file.contentHash, score: item.result.score, evidence: refs });
     usedTokens += acceptedTokens;
@@ -115,15 +124,15 @@ export async function buildIntentContextPack(
     contextManifest: { delegationTokenBudget, usedTokens, selectedFiles: contextSections.length, omittedFiles: omittedContext.length, protectedFiles: [...protectedPaths].filter(Boolean).length, traceableEvidence, generatedAt: new Date().toISOString() },
     selectedContextTokens: contextSections.reduce((sum, section) => sum + section.estimatedTokens, 0), compressionTier: tier,
     retrievalMetrics: {
-      mode: retrieval.mode,
+      mode: okfQuery ? `okf-${okfQuery.intent}+${retrieval.mode}` : retrieval.mode,
       candidates: retrieval.results.length,
       selectedFiles: relevantFiles.length,
       lexicalEvidenceRate: rate(retrieval.results, result => result.reasons.includes("lexical match")),
-      graphEvidenceRate: rate(retrieval.results, result => result.reasons.includes("graph neighbor")),
+      graphEvidenceRate: Math.max(rate(retrieval.results, result => result.reasons.includes("graph neighbor")), okfQuery?.traversedRelationships ? 1 : 0),
       intentTermCoverage: intentTermCoverage(intent.text, relevantFiles.map(file => `${file.path} ${file.summary}`)),
       meanRetrievalScore: retrieval.results.length ? retrieval.results.reduce((sum, result) => sum + result.score, 0) / retrieval.results.length : 0,
       mappedTestRate: relevantFiles.length ? relatedTests.filter(test => Boolean(test.targetFile)).length / relevantFiles.length : 0,
-      warnings: [...retrieval.warnings],
+      warnings: [...(okfQuery?.warnings ?? []), ...retrieval.warnings],
       cpgFiles, cpgSymbols, cpgRelations
     }
   };

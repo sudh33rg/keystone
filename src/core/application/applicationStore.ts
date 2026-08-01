@@ -17,6 +17,7 @@ export interface KeystoneApplicationState {
   ingestion?: unknown;
   activeTask?: unknown;
   taskAnalysis?: unknown;
+  delegationResult?: unknown;
   sdlc?: unknown;
   valueEdgeFeature?: unknown;
   handoffs: unknown[];

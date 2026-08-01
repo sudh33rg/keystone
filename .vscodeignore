@@ -1,0 +1,15 @@
+.git/**
+.github/**
+.vscode/**
+node_modules/@types/**
+node_modules/vitest/**
+vendor/**
+src/**
+tests/**
+scripts/**
+docs/**
+*.ts
+*.tsx
+tsconfig*.json
+REPOSITORY_SHA256SUMS.txt
+COMPLETE_PROJECT_FILE_MANIFEST.txt

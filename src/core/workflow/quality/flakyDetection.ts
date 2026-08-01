@@ -22,6 +22,8 @@ export type FlakyConfig = {
   workspaceRoot?: string;
   /** Test command to run (e.g. "npx vitest run") */
   testCommand?: string;
+  /** Optional cancellation signal for long repeated runs. */
+  signal?: AbortSignal;
 };
 
 export type TestRunResult = {
@@ -180,6 +182,7 @@ export async function runTest(
   const results: TestRunResult[] = [];
 
   for (let attempt = 0; attempt < config.runs; attempt++) {
+    if (config.signal?.aborted) throw Object.assign(new Error("Flaky detection cancelled"), { name: "CancellationError" });
     const start = Date.now();
     let passed = false;
     let error: string | undefined;
@@ -221,6 +224,7 @@ export async function runSingleTest(
       cwd: config.workspaceRoot ?? process.cwd(),
       testPathPattern: testPath,
       timeoutMs: config.timeoutMs,
+      signal: config.signal,
     },
     undefined
   );
@@ -259,6 +263,7 @@ export async function detectFlakyTests(
 
   // Run each test in isolation
   for (const testPath of candidates) {
+    if (merged.signal?.aborted) throw Object.assign(new Error("Flaky detection cancelled"), { name: "CancellationError" });
     const runResults = await runTest(testPath, merged);
     allResults.push(...runResults);
 

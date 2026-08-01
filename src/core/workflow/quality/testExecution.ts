@@ -23,6 +23,8 @@ export interface ExecutionOptions {
   testPathPattern?: string;
   /** Exclude quarantined (known flaky) tests from the run */
   excludeQuarantined?: boolean;
+  /** Optional abort signal used by background/deep QA cancellation. */
+  signal?: AbortSignal;
 }
 
 export interface TestExecutionResult {
@@ -77,15 +79,10 @@ const REGEX_PATTERNS = [
 ];
 
 function countMatches(output: string, regex: RegExp): number {
+  const flags = regex.flags.includes("g") ? regex.flags : `${regex.flags}g`;
+  const matcher = new RegExp(regex.source, flags);
   let count = 0;
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(output)) !== null) {
-    if (match[1]) {
-      count += Number(match[1]);
-    } else {
-      count += 1;
-    }
-  }
+  for (const match of output.matchAll(matcher)) count += match[1] ? Number(match[1]) : 1;
   return count;
 }
 
@@ -145,22 +142,28 @@ function buildExclusionArgs(paths: string[], runner: string): string[] {
 // ---------------------------------------------------------------------------
 
 function buildExecutionCommand(options: ExecutionOptions, quarantineStore?: QuarantineStore): string {
+  const runner = detectRunner(options.command);
   const parts = [options.command];
 
-  if (options.maxWorkers) {
+  if (options.maxWorkers && (runner === "vitest" || runner === "jest")) {
     parts.push("--maxWorkers", String(options.maxWorkers));
   }
 
   if (options.testPathPattern) {
-    parts.push("--testPathPattern", options.testPathPattern);
+    if (runner === "jest") parts.push("--runTestsByPath", shellQuote(options.testPathPattern));
+    else parts.push(shellQuote(options.testPathPattern));
   }
 
   if (quarantineStore && options.excludeQuarantined) {
-    const runner = detectRunner(options.command);
-    parts.push(...buildQuarantineExclusionArgs(quarantineStore, options.cwd, runner));
+    parts.push(...buildQuarantineExclusionArgs(quarantineStore, options.cwd, runner).map(shellQuote));
   }
 
   return parts.join(" ");
+}
+
+function shellQuote(value: string): string {
+  if (/^[A-Za-z0-9_./:@%+=,-]+$/.test(value)) return value;
+  return `'${value.replace(/'/g, `'\"'\"'`)}'`;
 }
 
 function detectRunner(command: string): string {
@@ -205,7 +208,7 @@ export async function executeTests(
   emitProgress(onProgress, "preparing", startTime, { passed: 0, failed: 0, skipped: 0 });
 
   return new Promise<TestExecutionResult>((resolve, reject) => {
-    const child = spawn(options.command, {
+    const child = spawn(command, {
       cwd: options.cwd,
       shell: true,
       env: { ...process.env },
@@ -213,61 +216,81 @@ export async function executeTests(
 
     const stdoutChunks: string[] = [];
     const stderrChunks: string[] = [];
-    let killed = false;
+    let settled = false;
+    let timedOut = false;
+    let timeoutTimer: NodeJS.Timeout | undefined;
+    let forceKillTimer: NodeJS.Timeout | undefined;
 
-    child.stdout.on("data", (chunk: Buffer) => {
-      const text = chunk.toString("utf8");
-      stdoutChunks.push(text);
-      const lines = text.split("\n").filter((l) => l.trim().length > 0);
-      emitProgress(onProgress, "running", startTime, { passed: 0, failed: 0, skipped: 0 }, lines);
-    });
-
-    child.stderr.on("data", (chunk: Buffer) => {
-      const text = chunk.toString("utf8");
-      stderrChunks.push(text);
-      const lines = text.split("\n").filter((l) => l.trim().length > 0);
-      emitProgress(onProgress, "running", startTime, { passed: 0, failed: 0, skipped: 0 }, lines);
-    });
-
-    child.on("error", (err: NodeJS.ErrnoException) => {
-      killed = true;
-      reject(err);
-    });
-
-    child.on("exit", (code, signal) => {
-      if (killed) return;
-      const output = stdoutChunks.join("") + stderrChunks.join("");
+    const clearTimers = (): void => {
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+      if (forceKillTimer) clearTimeout(forceKillTimer);
+    };
+    const complete = (exitCode: number): void => {
+      if (settled) return;
+      settled = true;
+      clearTimers();
+      options.signal?.removeEventListener("abort", abort);
+      const timeoutMessage = timedOut ? `\nKeystone terminated the test command after ${options.timeoutMs}ms.` : "";
+      const output = stdoutChunks.join("") + stderrChunks.join("") + timeoutMessage;
       const counts = parseTestCounts(output);
       const durationMs = Date.now() - startTime;
+      emitProgress(onProgress, "completed", startTime, counts);
+      resolve({ command, exitCode, durationMs, passed: counts.passed, failed: counts.failed, skipped: counts.skipped, output });
+    };
 
-      emitProgress(onProgress, "completed", startTime, {
-        passed: counts.passed,
-        failed: counts.failed,
-        skipped: counts.skipped,
-      });
-
-      resolve({
-        command,
-        exitCode: code ?? -1,
-        durationMs,
-        passed: counts.passed,
-        failed: counts.failed,
-        skipped: counts.skipped,
-        output,
-      });
+    child.stdout?.on("data", (chunk: Buffer) => {
+      const text = chunk.toString("utf8");
+      stdoutChunks.push(text);
+      const lines = text.split("\n").filter((line) => line.trim().length > 0);
+      emitProgress(onProgress, "running", startTime, { passed: 0, failed: 0, skipped: 0 }, lines);
     });
 
-    // Timeout guard
-    if (options.timeoutMs) {
-      const timer = setTimeout(() => {
-        killed = true;
-        try {
-          child.kill("SIGTERM");
-        } catch {
-          // Process may already be dead
-        }
+    child.stderr?.on("data", (chunk: Buffer) => {
+      const text = chunk.toString("utf8");
+      stderrChunks.push(text);
+      const lines = text.split("\n").filter((line) => line.trim().length > 0);
+      emitProgress(onProgress, "running", startTime, { passed: 0, failed: 0, skipped: 0 }, lines);
+    });
+
+    child.once("error", (error: NodeJS.ErrnoException) => {
+      if (settled) return;
+      settled = true;
+      clearTimers();
+      options.signal?.removeEventListener("abort", abort);
+      reject(error);
+    });
+
+    child.once("exit", (code) => complete(code ?? (options.signal?.aborted ? -2 : -1)));
+
+    const abort = (): void => {
+      if (settled) return;
+      try { child.kill("SIGTERM"); } catch { complete(-2); return; }
+      forceKillTimer = setTimeout(() => {
+        if (settled) return;
+        try { child.kill("SIGKILL"); } catch { /* fall through */ }
+        complete(-2);
+      }, 1_000);
+      forceKillTimer.unref();
+    };
+
+    if (options.signal) {
+      if (options.signal.aborted) abort();
+      else options.signal.addEventListener("abort", abort, { once: true });
+    }
+
+    if (options.timeoutMs && options.timeoutMs > 0) {
+      timeoutTimer = setTimeout(() => {
+        if (settled) return;
+        timedOut = true;
+        try { child.kill("SIGTERM"); } catch { complete(-1); return; }
+        forceKillTimer = setTimeout(() => {
+          if (settled) return;
+          try { child.kill("SIGKILL"); } catch { /* fall through */ }
+          complete(-1);
+        }, 1_000);
+        forceKillTimer.unref();
       }, options.timeoutMs);
-      timer.unref();
+      timeoutTimer.unref();
     }
   });
 }

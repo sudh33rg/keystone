@@ -10,7 +10,7 @@
 import type * as vscode from 'vscode';
 import { createGapAnalyzer, type GapAnalysisResult } from '@core/workflow/quality/qaGapAnalysis';
 import { DEFAULT_QA_CONFIG } from '@core/platform/config/qualityConfig';
-import type { CancellationToken } from '@core/workflow/quality/cancellation';
+import { cancellationFromAbortSignal } from '@core/workflow/quality/cancellation';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -116,7 +116,7 @@ export class QaService implements vscode.Disposable {
           });
         },
       });
-      const context = abort as unknown as { cancellation: CancellationToken };
+      const context = { cancellation: cancellationFromAbortSignal(abort.signal), signal: abort.signal };
       const result = depth === 'deep' ? await analyzer.analyzeDeep(context) : await analyzer.analyzeQuick(context);
 
       this.publish({

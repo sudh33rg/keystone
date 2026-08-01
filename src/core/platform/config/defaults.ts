@@ -14,6 +14,7 @@ export const IGNORED_DIRECTORIES = new Set([
   "out",
   "bin",
   "obj",
+  "vendor",
   ".git",
   ".keystone",
   ".sdlc-agent",

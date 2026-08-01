@@ -2,7 +2,7 @@ import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import type { EvidenceMetadata, RepoIntelligence } from '../../domain/types';
 import { createOkfId, canonicalRelationshipKey } from './identity';
-import { KEYSTONE_OKF_PROFILE_DIGEST } from './profile';
+import { KEYSTONE_OKF_PROFILE, KEYSTONE_OKF_PROFILE_DIGEST } from './profile';
 import { KEYSTONE_OKF_PROFILE_ID, KEYSTONE_OKF_PROFILE_VERSION, type KeystoneKnowledgeKind, type KeystoneKnowledgeObservation, type KeystoneKnowledgeRelationship, type KeystoneKnowledgeUnit, type KeystoneOkfSnapshot, type OkfConfidence, type OkfEvidence, type OkfProvenance } from './types';
 
 export interface RepoIntelligenceOkfOptions {
@@ -42,6 +42,13 @@ export function repoIntelligenceToOkf(intelligence: RepoIntelligence, options: R
     unitByKey.set(composite, id); return id;
   };
   const addRelationship = (kind: KeystoneKnowledgeRelationship['kind'], sourceId: string, targetId: string, source?: EvidenceMetadata, properties: Record<string, unknown> = {}): string => {
+    const sourceKind = units.find(item => item.id === sourceId)?.kind;
+    const targetKind = units.find(item => item.id === targetId)?.kind;
+    const constraint = KEYSTONE_OKF_PROFILE.relationshipConstraints[kind];
+    if (!sourceKind || !targetKind) throw new Error(`Cannot create ${kind}: unknown OKF unit ${!sourceKind ? sourceId : targetId}.`);
+    if (constraint && (!constraint.sources.includes(sourceKind) || !constraint.targets.includes(targetKind))) {
+      throw new Error(`Cannot create invalid OKF relationship ${kind}: ${sourceKind} -> ${targetKind}.`);
+    }
     const key = canonicalRelationshipKey(kind, sourceId, targetId); const id = createOkfId(workspaceId, 'relationship', key); if (relationshipIds.has(id)) return id;
     const prior = previousRelationships.get(id); const evidenceId = addEvidence(source, evidencePathForUnit(sourceId) ?? evidencePathForUnit(targetId) ?? '.', 'deterministic-relationship', `relationship:${kind}`);
     relationships.push({ id, profile: KEYSTONE_OKF_PROFILE_ID, profileVersion: KEYSTONE_OKF_PROFILE_VERSION, kind, sourceId, targetId, properties, confidence: confidence(source), provenance: provenance([evidenceId]), lifecycle: 'active', firstSeenAt: prior?.firstSeenAt ?? prior?.createdAt ?? observedAt, lastSeenAt: observedAt, createdAt: prior?.createdAt ?? observedAt, updatedAt: observedAt });
@@ -105,7 +112,7 @@ export function repoIntelligenceToOkf(intelligence: RepoIntelligence, options: R
   }
   for (const api of intelligence.apis) {
     const id=addUnit('api',`${api.method}:${api.path}:${api.filePath}:${api.line}`,`${api.method.toUpperCase()} ${api.path}`,{method:api.method,route:api.path,filePath:api.filePath,line:api.line},api.evidence,api.filePath);
-    const parent=fileId(api.filePath);if(parent)addRelationship('exposes',parent,id,api.evidence); addObservation(id,'keystone:httpMethod',api.method.toUpperCase(),api.evidence);
+    const parent=fileId(api.filePath);if(parent){const parentKind=units.find(item=>item.id===parent)?.kind;addRelationship(parentKind==='file'||parentKind==='module'||parentKind==='service'?'exposes':'defines',parent,id,api.evidence);} addObservation(id,'keystone:httpMethod',api.method.toUpperCase(),api.evidence);
   }
   for (const service of intelligence.services) {
     const id=addUnit('service',`${service.filePath}:${service.name}`,service.name,{filePath:service.filePath,hints:service.hints},service.evidence,service.filePath);
@@ -118,7 +125,7 @@ export function repoIntelligenceToOkf(intelligence: RepoIntelligence, options: R
     const id=addUnit('data-entity',`data:${file.path}`,path.basename(file.path),{filePath:file.path,entityKind:'schema-or-query'},file.evidence,file.path); const parent=fileId(file.path);if(parent)addRelationship('defines',parent,id,file.evidence);
   }
   for (const file of intelligence.files.filter(item=>item.language==='markdown')) { const doc=fileId(file.path); if(doc)addRelationship('documented-by',repositoryUnit,doc,file.evidence); }
-  for (const file of intelligence.files.filter(item=>isConfiguration(item.path,item.language))) { const cfg=fileId(file.path); if(cfg)addRelationship('configured-by',repositoryUnit,cfg,file.evidence); }
+  for (const file of intelligence.files.filter(item=>isConfiguration(item.path,item.language))) { const cfg=fileId(file.path); if(cfg&&units.find(item=>item.id===cfg)?.kind==='configuration')addRelationship('configured-by',repositoryUnit,cfg,file.evidence); }
   const addRisk = (kind:'security'|'performance'|'modernization', value:string):void => { const parsed=parseSignal(value); const source=intelligence.files.find(file=>file.path===parsed.path)?.evidence; const unitKind=kind==='modernization'?'change-impact':'risk-area'; const id=addUnit(unitKind,`${kind}:${value}`,parsed.message,{category:kind,value,filePath:parsed.path},source,parsed.path??'.'); addRelationship('contains',repositoryUnit,id,source); const target=parsed.path?fileId(parsed.path):undefined;if(target)addRelationship('may-impact',id,target,source);addObservation(id,'keystone:riskCategory',kind,source); };
   intelligence.securitySensitiveAreas.forEach(v=>addRisk('security',v)); intelligence.performanceSensitivePaths.forEach(v=>addRisk('performance',v)); intelligence.modernizationCandidates.forEach(v=>addRisk('modernization',v));
   for (const framework of intelligence.frameworkHints) { addObservation(repositoryUnit,'keystone:framework',framework); const boundary=addUnit('architecture-boundary',`framework:${framework}`,`${framework} boundary`,{boundaryType:'framework',framework},undefined,'.'); addRelationship('contains',repositoryUnit,boundary); }

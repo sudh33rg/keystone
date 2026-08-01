@@ -159,7 +159,16 @@ export async function startBrowserViewServer(options: {
       sessions.clear();
       for (const client of clients.keys()) client.end();
       clients.clear();
-      await new Promise<void>(resolve => server.close(() => resolve()));
+      await new Promise<void>(resolve => {
+        server.close(() => resolve());
+        // Node/undici clients keep HTTP/1.1 sockets alive after a response. A
+        // Browser View dispose must be terminal: otherwise those idle sockets
+        // can keep verification, extension deactivation, or workspace shutdown
+        // pending indefinitely. These calls are intentionally made only during
+        // disposal, after the listener has begun closing.
+        server.closeIdleConnections();
+        server.closeAllConnections();
+      });
     },
   };
 }

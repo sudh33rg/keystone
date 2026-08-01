@@ -1,1 +1,1 @@
-export type { ExtensionToWebviewMessage, KeystoneWebviewState, WebviewToExtensionMessage } from "@core/integration/webview/messageRouter";
+export type { CopilotDelegationResult, ExtensionToWebviewMessage, KeystoneWebviewState, WebviewToExtensionMessage } from "@core/integration/webview/messageRouter";

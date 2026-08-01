@@ -1,39 +1,48 @@
-# Final Verification
+# Final Source Verification
 
-This standalone Keystone project was verified twice: once in the repaired working tree and once in a clean room created without `node_modules` or previous build output.
+Keystone is accepted as source only when the clean source tree passes structural, type, lint, automated-test, and production-runtime gates without relying on previously generated `.keystone`, `dist`, coverage, screenshot, or VSIX artifacts.
 
-## Clean-room commands
+## Commands
 
 ```bash
 npm ci --offline --ignore-scripts
-npm run verify
+npm run verify:source
+npm run verify:cross-feature
+npm run verify:production
 ```
 
-## Results
+## Current verified coverage
 
-- modern npm `package-lock.json`: present and clean-room installable offline
-- active monolithic source boundary: passed
+- active monolithic source boundary and worker entrypoints: passed
+- central read-only Git boundary: passed; no active Git write primitive
 - strict core/extension type checking: 0 diagnostics
 - strict React webview type checking: 0 diagnostics
 - active-source lint: passed
-- automated tests: 90 passed, 0 failed
+- automated unit/integration/production-contract tests: 100 passed, 0 failed
 - explicit language/artifact conformance categories: 43
-- unknown/custom text-language frontend: passed
-- language fixture files indexed through OKF and CPG: 44
-- unbounded incremental ingestion fixture: 5,205/5,205 files
-- authoritative OKF: 17 knowledge kinds and 16 relationship kinds produced
-- OKF observations/evidence: non-empty, validated, projected, and lifecycle-tested
-- portable public OKF bundle: v0.2 Markdown/YAML, source footnotes, trust/lifecycle metadata, and deterministic digest validated
-- unchanged-file reuse and deletion tombstones: passed
-- presentable intent R&D: passed
-- generated backlog scenario: 9 repository-derived behavior stories and 5 quality stories, each with scope, evidence, dependencies, and acceptance criteria
-- executable SDLC: all 16 stories completed with gates and evidence
-- Copilot delegation lifecycle: passed
-- ValueEdge feature import and approved draft user/quality story publication: passed with a deterministic local HTTP integration fixture
-- encrypted Task Handoff exact-SDLC round trip: passed
-- synchronized Browser View authentication, same-origin commands, stale-state rejection, reconnect, and shared state: passed
-- read-only Git boundary: passed
-- production extension/browser build: passed
-- VSIX packaging and archive integrity: passed
+- unknown/custom probable-text frontend: passed through OKF and CPG
+- language fixture files through authoritative OKF + CPG: 44
+- uncapped discovery fixture: 5,205/5,205 files discovered with the built production scanner
+- authoritative OKF: all profile knowledge/relationship families generated, validated, projected, lifecycle-tested and queryable
+- portable OKF bundle: deterministic, validated and provenance-preserving
+- incremental unchanged-file reuse and deletion lifecycle: passed
+- real persisted production indexing path: passed on a clean copy of Keystone source/tests/scripts/configuration
+- authoritative intelligence query: passed against the persisted production snapshot
+- OKF/graph/CPG-driven intent retrieval: passed against the persisted production snapshot
+- presentable repository R&D and evidence-backed small user/quality stories: passed
+- deterministic draft QA test-plan generation: passed and wired to the New Tests story/UI
+- complete 16-stage SDLC state machine with dependencies, approvals, validation, evidence and completion gates: passed
+- real validation executor filtering, timeout and cooperative cancellation: passed
+- deep QA discovery/impact/coverage/flaky-analysis wiring: passed
+- security, performance and modernization repository evidence attachment: passed
+- polyglot validation-command detection: passed
+- ValueEdge Feature import and approved draft user/quality story publication boundary: passed with deterministic integration fixture
+- encrypted Task Handoff integrity and restore into a separate workspace: passed
+- synchronized Browser View authentication, same-origin command transport, stale-state rejection, reconnect and real intelligence query synchronization: passed
+- user-approved Copilot Language Model API contract and streamed-result capture/no-fabrication behavior: passed
 
-The execution environment did not contain the VS Code `code` CLI, so installation into an Electron Extension Host could not be automated here. The VSIX archive, manifest, runtime entrypoint, web assets, React assets, and bundled TypeScript runtime were inspected by `verify:package`.
+## External acceptance boundary
+
+An actual GitHub Copilot model response requires a real VS Code session with a user-authorized Copilot model. Source verification therefore proves Keystone's production `vscode.lm` integration contract and result capture, but does not invent or label a synthetic model response as a live Copilot acceptance result.
+
+Similarly, package/VSIX generation is not a requirement for this source-only delivery and is excluded from the delivered archive.

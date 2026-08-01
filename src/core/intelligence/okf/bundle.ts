@@ -34,28 +34,42 @@ export async function writePortableOkfBundle(workspaceRoot: string, snapshot: Ke
   const outgoing = groupRelationships(snapshot.relationships.filter(item => item.lifecycle !== 'deleted'), 'sourceId');
   const incoming = groupRelationships(snapshot.relationships.filter(item => item.lifecycle !== 'deleted'), 'targetId');
   const evidenceById = new Map(snapshot.evidence.map(item => [item.id, item]));
-
-  for (const unit of activeUnits) {
-    const relative = conceptPath.get(unit.id)!;
-    const target = path.join(candidate, relative);
-    await fs.mkdir(path.dirname(target), { recursive: true });
-    const markdown = renderConcept(unit, outgoing.get(unit.id) ?? [], incoming.get(unit.id) ?? [], conceptPath, evidenceById, snapshot);
-    await fs.writeFile(target, markdown, 'utf8');
-  }
-
+  const unitById = new Map(snapshot.units.map(item => [item.id, item]));
   const groups = new Map<string, KeystoneKnowledgeUnit[]>();
   for (const unit of activeUnits) groups.set(unit.kind, [...(groups.get(unit.kind) ?? []), unit]);
-  await fs.writeFile(path.join(candidate, 'index.md'), renderRootIndex(snapshot, groups, conceptPath), 'utf8');
-  await fs.writeFile(path.join(candidate, 'log.md'), renderLog(snapshot), 'utf8');
-  for (const [kind, units] of groups) {
-    const directory = path.join(candidate, pluralize(kind));
-    await fs.mkdir(directory, { recursive: true });
-    await fs.writeFile(path.join(directory, 'index.md'), renderKindIndex(kind, units, conceptPath), 'utf8');
-  }
 
-  const validation = await validatePortableOkfBundle(candidate);
+  type DocumentRenderer = { relative: string; render: () => string };
+  const renderers: DocumentRenderer[] = activeUnits.map(unit => ({
+    relative: conceptPath.get(unit.id)!,
+    render: () => renderConcept(unit, outgoing.get(unit.id) ?? [], incoming.get(unit.id) ?? [], conceptPath, evidenceById, unitById, snapshot),
+  }));
+  renderers.push(
+    { relative: 'index.md', render: () => renderRootIndex(snapshot, groups, conceptPath) },
+    { relative: 'log.md', render: () => renderLog(snapshot) },
+    ...[...groups.entries()].map(([kind, units]) => ({ relative: `${pluralize(kind)}/index.md`, render: () => renderKindIndex(kind, units, conceptPath) })),
+  );
+  renderers.sort((left, right) => left.relative.localeCompare(right.relative));
+
+  // Stream portable concepts in deterministic path order. This retains every OKF concept without
+  // a knowledge/file cap while bounding live rendered Markdown memory for large repositories.
+  const directories = new Set(renderers.map(item => path.dirname(path.join(candidate, item.relative))));
+  await Promise.all([...directories].map(directory => fs.mkdir(directory, { recursive: true })));
+  const digestHash = createHash('sha256');
+  const issues: OkfBundleValidationIssue[] = [];
+  let concepts = 0;
+  const batchSize = 32;
+  for (let offset = 0; offset < renderers.length; offset += batchSize) {
+    const rendered = renderers.slice(offset, offset + batchSize).map(item => ({ relative: item.relative, content: item.render() }));
+    for (const item of rendered) {
+      digestHash.update(slash(item.relative)).update('\0').update(item.content).update('\0');
+      concepts += validatePortableOkfDocument(item.relative, item.content, issues);
+    }
+    await Promise.all(rendered.map(item => fs.writeFile(path.join(candidate, item.relative), item.content, 'utf8')));
+  }
+  if (!renderers.some(item => item.relative === 'index.md')) issues.push({ file: 'index.md', message: 'Root index.md is required by the Keystone bundle profile.' });
+  const validation: OkfBundleValidationResult = { valid: issues.length === 0, concepts, issues };
   if (!validation.valid) throw new Error(`Portable OKF bundle validation failed: ${validation.issues.map(issue => `${issue.file}: ${issue.message}`).join('; ')}`);
-  const digest = await digestDirectory(candidate);
+  const digest = digestHash.digest('hex');
   await fs.writeFile(path.join(candidate, '.keystone-bundle.json'), `${JSON.stringify({
     format: 'OKF',
     version: PORTABLE_OKF_VERSION,
@@ -76,51 +90,54 @@ export async function writePortableOkfBundle(workspaceRoot: string, snapshot: Ke
 }
 
 export async function validatePortableOkfBundle(root: string): Promise<OkfBundleValidationResult> {
+  const markdownFiles = await walk(root, file => file.endsWith('.md'));
   const issues: OkfBundleValidationIssue[] = [];
   let concepts = 0;
-  const markdownFiles = await walk(root, file => file.endsWith('.md'));
-  for (const file of markdownFiles) {
-    const relative = slash(path.relative(root, file));
-    const text = await fs.readFile(file, 'utf8');
-    const base = path.basename(file).toLowerCase();
-    if (base === 'index.md') {
-      if (!/^#\s+.+/m.test(text)) issues.push({ file: relative, message: 'index.md must contain a Markdown title.' });
-      if (relative === 'index.md') {
-        const version = text.match(/^okf_version:\s*["']?([^"'\n]+)["']?$/m)?.[1]?.trim();
-        if (version !== PORTABLE_OKF_VERSION) issues.push({ file: relative, message: `Root index.md must declare okf_version: "${PORTABLE_OKF_VERSION}".` });
-      } else if (text.startsWith('---\n')) {
-        issues.push({ file: relative, message: 'Only the bundle-root index.md may contain frontmatter.' });
-      }
-      continue;
-    }
-    if (base === 'log.md') {
-      if (!/^#\s+.+/m.test(text) || !/^##\s+\d{4}-\d{2}-\d{2}/m.test(text)) issues.push({ file: relative, message: 'log.md must contain a title and dated entry.' });
-      continue;
-    }
-    concepts += 1;
-    if (!text.startsWith('---\n')) { issues.push({ file: relative, message: 'Concept must start with YAML frontmatter.' }); continue; }
-    const close = text.indexOf('\n---\n', 4);
-    if (close < 0) { issues.push({ file: relative, message: 'Concept frontmatter is not closed.' }); continue; }
-    const frontmatter = text.slice(4, close);
-    const type = frontmatter.match(/^type:\s*(.+)$/m)?.[1]?.trim();
-    if (!type) issues.push({ file: relative, message: 'Concept frontmatter requires a non-empty type field.' });
-    if (/^type:\s*[\[\{]/m.test(frontmatter)) issues.push({ file: relative, message: 'Concept type must be a scalar string.' });
-    if (!/^generated:\s*$/m.test(frontmatter) || !/^\s{2}by:\s*.+$/m.test(frontmatter) || !/^\s{2}at:\s*.+$/m.test(frontmatter)) {
-      issues.push({ file: relative, message: 'Keystone OKF concepts require generated.by and generated.at.' });
-    }
-    const status = frontmatter.match(/^status:\s*([^\n#]+)$/m)?.[1]?.trim().replace(/^['"]|['"]$/g, '');
-    if (status && !['draft', 'stable', 'deprecated'].includes(status)) issues.push({ file: relative, message: `Unsupported OKF lifecycle status: ${status}.` });
-    if (/^sources:\s*$/m.test(frontmatter)) {
-      const entries = frontmatter.split(/^\s{2}-\s+id:\s*/m).slice(1);
-      if (!entries.length) issues.push({ file: relative, message: 'sources must contain at least one source entry.' });
-      for (const entry of entries) if (!/^\s{4}resource:\s*.+$/m.test(entry)) issues.push({ file: relative, message: 'Every sources entry requires resource.' });
-    }
-    const sourceIds = [...frontmatter.matchAll(/^\s{2}-\s+id:\s*["']?([^"'\n]+)["']?$/gm)].map(match => match[1].trim());
-    const footnotes = [...text.slice(close + 5).matchAll(/^\[\^([^\]]+)\]:/gm)].map(match => match[1]);
-    for (const sourceId of sourceIds) if (!footnotes.includes(sourceId)) issues.push({ file: relative, message: `Source ${sourceId} is not cited by a matching Markdown footnote.` });
+  const batchSize = 32;
+  for (let offset = 0; offset < markdownFiles.length; offset += batchSize) {
+    const batch = markdownFiles.slice(offset, offset + batchSize);
+    const contents = await Promise.all(batch.map(async file => ({ relative: slash(path.relative(root, file)), text: await fs.readFile(file, 'utf8') })));
+    for (const item of contents) concepts += validatePortableOkfDocument(item.relative, item.text, issues);
   }
   if (!markdownFiles.some(file => slash(path.relative(root, file)) === 'index.md')) issues.push({ file: 'index.md', message: 'Root index.md is required by the Keystone bundle profile.' });
   return { valid: issues.length === 0, concepts, issues };
+}
+
+function validatePortableOkfDocument(relative: string, text: string, issues: OkfBundleValidationIssue[]): number {
+  const base = path.basename(relative).toLowerCase();
+  if (base === 'index.md') {
+    if (!/^#\s+.+/m.test(text)) issues.push({ file: relative, message: 'index.md must contain a Markdown title.' });
+    if (relative === 'index.md') {
+      const version = text.match(/^okf_version:\s*["']?([^"'\n]+)["']?$/m)?.[1]?.trim();
+      if (version !== PORTABLE_OKF_VERSION) issues.push({ file: relative, message: `Root index.md must declare okf_version: "${PORTABLE_OKF_VERSION}".` });
+    } else if (text.startsWith('---\n')) {
+      issues.push({ file: relative, message: 'Only the bundle-root index.md may contain frontmatter.' });
+    }
+    return 0;
+  }
+  if (base === 'log.md') {
+    if (!/^#\s+.+/m.test(text) || !/^##\s+\d{4}-\d{2}-\d{2}/m.test(text)) issues.push({ file: relative, message: 'log.md must contain a title and dated entry.' });
+    return 0;
+  }
+  if (!text.startsWith('---\n')) { issues.push({ file: relative, message: 'Concept must start with YAML frontmatter.' }); return 1; }
+  const close = text.indexOf('\n---\n', 4);
+  if (close < 0) { issues.push({ file: relative, message: 'Concept frontmatter is not closed.' }); return 1; }
+  const frontmatter = text.slice(4, close);
+  const type = frontmatter.match(/^type:\s*(.+)$/m)?.[1]?.trim();
+  if (!type) issues.push({ file: relative, message: 'Concept frontmatter requires a non-empty type field.' });
+  if (/^type:\s*[\[\{]/m.test(frontmatter)) issues.push({ file: relative, message: 'Concept type must be a scalar string.' });
+  if (!/^generated:\s*$/m.test(frontmatter) || !/^\s{2}by:\s*.+$/m.test(frontmatter) || !/^\s{2}at:\s*.+$/m.test(frontmatter)) issues.push({ file: relative, message: 'Keystone OKF concepts require generated.by and generated.at.' });
+  const status = frontmatter.match(/^status:\s*([^\n#]+)$/m)?.[1]?.trim().replace(/^["']|["']$/g, '');
+  if (status && !['draft', 'stable', 'deprecated'].includes(status)) issues.push({ file: relative, message: `Unsupported OKF lifecycle status: ${status}.` });
+  if (/^sources:\s*$/m.test(frontmatter)) {
+    const sourceEntries = frontmatter.split(/^\s{2}-\s+id:\s*/m).slice(1);
+    if (!sourceEntries.length) issues.push({ file: relative, message: 'sources must contain at least one source entry.' });
+    for (const entry of sourceEntries) if (!/^\s{4}resource:\s*.+$/m.test(entry)) issues.push({ file: relative, message: 'Every sources entry requires resource.' });
+  }
+  const sourceIds = [...frontmatter.matchAll(/^\s{2}-\s+id:\s*["']?([^"'\n]+)["']?$/gm)].map(match => match[1].trim());
+  const footnotes = [...text.slice(close + 5).matchAll(/^\[\^([^\]]+)\]:/gm)].map(match => match[1]);
+  for (const sourceId of sourceIds) if (!footnotes.includes(sourceId)) issues.push({ file: relative, message: `Source ${sourceId} is not cited by a matching Markdown footnote.` });
+  return 1;
 }
 
 function renderConcept(
@@ -129,6 +146,7 @@ function renderConcept(
   incoming: readonly KeystoneKnowledgeRelationship[],
   conceptPaths: ReadonlyMap<string, string>,
   evidenceById: ReadonlyMap<string, KeystoneOkfSnapshot['evidence'][number]>,
+  unitById: ReadonlyMap<string, KeystoneKnowledgeUnit>,
   snapshot: KeystoneOkfSnapshot,
 ): string {
   const tags = unique(['keystone', unit.kind, unit.confidence.level, unit.lifecycle]);
@@ -183,7 +201,7 @@ function renderConcept(
       if (!peerPath) continue;
       const currentPath = conceptPaths.get(unit.id)!;
       const link = slash(path.relative(path.dirname(currentPath), peerPath));
-      const peer = snapshot.units.find(item => item.id === peerId);
+      const peer = unitById.get(peerId);
       const arrow = relation.direction === 'outgoing' ? '→' : '←';
       lines.push(`- **${relation.item.kind}** ${arrow} [${peer?.name ?? peerId}](${link.startsWith('.') ? link : `./${link}`})`);
     }

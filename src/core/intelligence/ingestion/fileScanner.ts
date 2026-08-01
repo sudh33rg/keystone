@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import type { Dirent } from "node:fs";
 import path from "node:path";
 
 import { IGNORED_DIRECTORIES } from "../../platform/config/defaults";
@@ -20,6 +21,7 @@ const SOURCE_EXTENSIONS = new Set(LANGUAGE_DEFINITIONS.flatMap(definition => [..
 const SPECIAL_SOURCE_FILES = new Set(["dockerfile", "makefile", "cmakelists.txt", "build.gradle", "build.gradle.kts", "pom.xml", "workspace", "build", "justfile"]);
 const registry = new LanguageCapabilityRegistry();
 const YIELD_INTERVAL = 250;
+const INSPECTION_CONCURRENCY = 64;
 const BINARY_EXTENSIONS = new Set([".png",".jpg",".jpeg",".gif",".webp",".ico",".pdf",".zip",".gz",".tar",".7z",".rar",".jar",".class",".dll",".exe",".so",".dylib",".woff",".woff2",".ttf",".otf",".mp3",".mp4",".mov",".avi",".wav",".bin",".db",".sqlite",".lockb"]);
 
 /**
@@ -47,37 +49,51 @@ export async function scanFiles(
       throw error;
     });
 
+    const fileEntries: Dirent[] = [];
     for (const entry of entries) {
       signal?.throwIfAborted();
       visitedEntries += 1;
-      if (visitedEntries % YIELD_INTERVAL === 0) await new Promise<void>(resolve => setImmediate(resolve));
-
       if (entry.isDirectory()) {
         if (!IGNORED_DIRECTORIES.has(entry.name)) pending.push(path.join(directory, entry.name));
-        continue;
+      } else if (entry.isFile()) {
+        fileEntries.push(entry);
       }
-      if (!entry.isFile()) continue;
+    }
 
-      const absolutePath = path.join(directory, entry.name);
-      const extension = path.extname(entry.name).toLowerCase();
-      if (BINARY_EXTENSIONS.has(extension)) continue;
-
-      const stat = await fs.stat(absolutePath).catch(error => {
-        if (["ENOENT", "EACCES", "EPERM"].includes((error as NodeJS.ErrnoException).code ?? "")) return undefined;
-        throw error;
-      });
-      if (!stat) continue;
-      const registered = SOURCE_EXTENSIONS.has(extension) || SPECIAL_SOURCE_FILES.has(entry.name.toLowerCase());
-      if (!registered && !(await isProbablyText(absolutePath))) continue;
-
-      const relativePath = path.relative(workspaceRoot, absolutePath).split(path.sep).join("/");
-      files.push({ path: relativePath, absolutePath, sizeBytes: stat.size, modifiedTimeMs: stat.mtimeMs });
-      onProgress?.({ discoveredFiles: files.length, currentPath: relativePath });
+    for (let offset = 0; offset < fileEntries.length; offset += INSPECTION_CONCURRENCY) {
+      signal?.throwIfAborted();
+      const batch = fileEntries.slice(offset, offset + INSPECTION_CONCURRENCY);
+      const inspected = await Promise.all(batch.map(entry => inspectFile(workspaceRoot, directory, entry.name, signal)));
+      for (const file of inspected) {
+        if (!file) continue;
+        files.push(file);
+        onProgress?.({ discoveredFiles: files.length, currentPath: file.path });
+      }
+      if (visitedEntries % YIELD_INTERVAL < batch.length) await new Promise<void>(resolve => setImmediate(resolve));
     }
   }
 
   files.sort((a, b) => a.path.localeCompare(b.path));
   return files;
+}
+
+async function inspectFile(workspaceRoot: string, directory: string, name: string, signal?: AbortSignal): Promise<ScannedFile | undefined> {
+  signal?.throwIfAborted();
+  const absolutePath = path.join(directory, name);
+  const extension = path.extname(name).toLowerCase();
+  if (BINARY_EXTENSIONS.has(extension)) return undefined;
+  const registered = SOURCE_EXTENSIONS.has(extension) || SPECIAL_SOURCE_FILES.has(name.toLowerCase());
+  const [stat, text] = await Promise.all([
+    fs.stat(absolutePath).catch(error => {
+      if (["ENOENT", "EACCES", "EPERM"].includes((error as NodeJS.ErrnoException).code ?? "")) return undefined;
+      throw error;
+    }),
+    registered ? Promise.resolve(true) : isProbablyText(absolutePath),
+  ]);
+  signal?.throwIfAborted();
+  if (!stat || !text) return undefined;
+  const relativePath = path.relative(workspaceRoot, absolutePath).split(path.sep).join("/");
+  return { path: relativePath, absolutePath, sizeBytes: stat.size, modifiedTimeMs: stat.mtimeMs };
 }
 
 export function languageForPath(filePath: string): string {

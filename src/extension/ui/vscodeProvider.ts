@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { CockpitService } from "@core/integration/webview/cockpitService";
 import { getWebviewHtml } from "./vscodeHtml";
-import type { ExtensionToWebviewMessage, WebviewToExtensionMessage } from "../types/messageRouter";
+import type { CopilotDelegationResult, ExtensionToWebviewMessage, WebviewToExtensionMessage } from "../types/messageRouter";
 import { TaskStatePackageBuilder, verifyTaskStatePackage, type TaskStatePackageInput } from "@core/workflow/handoff/taskStatePackage";
 import type { TaskStatePackage } from "@core/workflow/handoff/contracts";
 import { MANUAL_SYNC_CONFIRMATION } from "@core/workflow/handoff/contracts";
@@ -362,8 +362,8 @@ export class VscodeProvider {
     if (message.type === "APPROVE_DELEGATION") {
       const root = this.workspaceRoot();
       if (root) void this.approveAndDelegate(root, message)
-        .then(() => this.post({ type: "DELEGATION_RESULT", success: true, mode: message.mode }))
-        .catch(error => this.post({ type: "DELEGATION_RESULT", success: false, mode: message.mode, error: error instanceof Error ? error.message : String(error) }));
+        .then(result => this.post({ type: "DELEGATION_RESULT", ...result }))
+        .catch(error => { const now = new Date().toISOString(); this.post({ type: "DELEGATION_RESULT", success: false, captured: false, mode: message.mode, storyId: message.storyId, startedAt: now, completedAt: now, error: error instanceof Error ? error.message : String(error) }); });
       return;
     }
     if (message.type === "COPY_COPILOT_PROMPT") {
@@ -417,7 +417,7 @@ export class VscodeProvider {
     try {
       const task = this.applicationStore.snapshot().taskAnalysis as KeystoneTaskResult | undefined;
       const state = this.applicationStore.snapshot().intelligence as { architecture?: string } | undefined;
-      const plan = this.sdlcEngine.createPlan(intent, {
+      let plan = this.sdlcEngine.createPlan(intent, {
         relevantFiles: task?.relevantFiles,
         relevantSymbols: task?.relevantSymbols,
         relatedTests: task?.relatedTests,
@@ -436,8 +436,43 @@ export class VscodeProvider {
         architecture: state?.architecture,
         source: this.valueEdgeFeature ? { kind: 'valueedge', featureId: this.valueEdgeFeature.id, featureName: this.valueEdgeFeature.name, featureUrl: this.valueEdgeFeature.webUrl } : { kind: 'local' },
       });
+      if (task) plan = this.attachTaskEvidenceToPlan(plan, task);
       this.sdlcPlan=plan; await this.persistSdlcPlan(plan); this.applicationStore.update({sdlc:plan}); this.post({type:'SDLC_PLAN_RESULT',plan});
     } catch(error){this.post({type:'NOTIFICATION',level:'error',message:error instanceof Error?error.message:String(error)});}
+  }
+
+  private attachTaskEvidenceToPlan(plan: SDLCPlan, task: KeystoneTaskResult): SDLCPlan {
+    const analysis = task.analysisEvidence;
+    if (!analysis) return plan;
+    const story = (type: SDLCPlan['stories'][number]['type']) => plan.stories.find(item => item.type === type);
+    const addEvidence = (type: SDLCPlan['stories'][number]['type'], evidence: string[]): void => {
+      const current = story(type); if (!current || !evidence.length) return;
+      plan = this.sdlcEngine.recordEvidence(plan, current.id, evidence);
+    };
+    const severity = (value:string): 'info'|'low'|'medium'|'high'|'critical' => value === 'critical' ? 'critical' : value === 'high' ? 'high' : value === 'medium' ? 'medium' : value === 'low' ? 'low' : 'info';
+
+    const qaEvidence = analysis.qa.gaps.map(item => `${item.type}: ${item.path} — ${item.reason} (severity ${Math.round(item.severity * 100)}%)`);
+    for (const type of ['existing-test-analysis','test-impact-analysis','new-test-creation'] as const) addEvidence(type, qaEvidence);
+    addEvidence('new-test-creation', (task.testGeneration?.scenarios ?? []).map(item => `${item.priority}: ${item.name} — ${item.description}`));
+    const qaStory = story('existing-test-analysis');
+    if (qaStory) for (const item of analysis.qa.gaps) plan = this.sdlcEngine.recordFinding(plan, qaStory.id, { kind:'qa', severity:item.severity >= .8 ? 'high' : item.severity >= .5 ? 'medium' : 'low', summary:`${item.type}: ${item.path} — ${item.reason}`, status:'open', evidence:[item.path, item.reason] });
+
+    const securityStory = story('security-review');
+    if (securityStory) for (const item of analysis.security.findings) plan = this.sdlcEngine.recordFinding(plan, securityStory.id, { kind:'security', severity:severity(item.severity), summary:`${item.title} at ${item.path}:${item.line}`, status:'open', evidence:[item.explanation, item.remediation, `confidence=${Math.round(item.confidence*100)}%`] });
+    addEvidence('security-review', analysis.security.findings.map(item => `${item.path}:${item.line} ${item.title} — ${item.explanation}`));
+
+    const performanceStory = story('performance-review');
+    if (performanceStory) for (const item of analysis.performance.findings) plan = this.sdlcEngine.recordFinding(plan, performanceStory.id, { kind:'performance', severity:severity(item.severity), summary:`${item.title} at ${item.path}:${item.line}`, status:'open', evidence:[item.explanation, item.remediation, `confidence=${Math.round(item.confidence*100)}%`] });
+    addEvidence('performance-review', analysis.performance.findings.map(item => `${item.path}:${item.line} ${item.title} — ${item.explanation}`));
+
+    const modernizationStory = story('modernization-review');
+    if (modernizationStory) for (const item of analysis.modernization.gaps) plan = this.sdlcEngine.recordFinding(plan, modernizationStory.id, { kind:'architecture', severity:severity(item.priority), summary:`${item.area}: ${item.title}`, status:'open', evidence:item.evidence });
+    addEvidence('modernization-review', analysis.modernization.gaps.map(item => `${item.priority}: ${item.area} — ${item.title}`));
+
+    const diffEvidence = [`Read-only Git review: branch=${analysis.gitReview.branch ?? 'unknown'}; changedFiles=${analysis.gitReview.changedFiles.join(', ') || 'none'}; diffSha256=${analysis.gitReview.diffHash}; diffBytes=${analysis.gitReview.diffBytes}; artifact=${analysis.gitReview.diffArtifactPath ?? 'none'}`];
+    addEvidence('code-review', diffEvidence);
+    addEvidence('pr-review', diffEvidence);
+    return plan;
   }
 
   async configureValueEdge(): Promise<void> {
@@ -526,6 +561,9 @@ export class VscodeProvider {
       if (root) {
         await this.getService(root).importTaskHandoff(restored as unknown as Record<string, unknown>);
         if (restored.sdlcPlan) { this.sdlcPlan = restored.sdlcPlan; await this.persistSdlcPlan(restored.sdlcPlan); this.applicationStore.update({ sdlc: restored.sdlcPlan }); }
+        // A handoff transfers task continuity, never repository truth. Refresh local deterministic
+        // intelligence against the recipient's manually synchronized workspace before continuing.
+        void this.indexWorkspace(root);
       }
       await this.saveHandoffRecord({ packageValue: restored, status: 'Restored', warnings: preview.warnings, activity: [{ at: new Date().toISOString(), actor: 'you', action: 'Restored task state and SDLC continuation after manual repository confirmation' }] });
       this.post({ type: "TASK_HANDOFF_RESTORED", packageValue: restored, warnings: preview.warnings, continuationBriefing: preview.continuationBriefing, restoredNow: true });
@@ -535,10 +573,12 @@ export class VscodeProvider {
     }
   }
 
-  private async approveAndDelegate(root: string, message: Extract<WebviewToExtensionMessage, { type: 'APPROVE_DELEGATION' }>): Promise<void> {
+  private async approveAndDelegate(root: string, message: Extract<WebviewToExtensionMessage, { type: 'APPROVE_DELEGATION' }>): Promise<CopilotDelegationResult> {
+    let storyId = message.storyId;
     if (this.sdlcPlan) {
-      const story = message.storyId ? this.sdlcPlan.stories.find(item => item.id === message.storyId) : this.sdlcPlan.stories.find(item => item.status === 'in-progress');
+      const story = storyId ? this.sdlcPlan.stories.find(item => item.id === storyId) : this.sdlcPlan.stories.find(item => item.status === 'in-progress');
       if (story) {
+        storyId = story.id;
         this.sdlcPlan = this.sdlcEngine.prepareDelegation(this.sdlcPlan, story.id, { agent: message.agent ?? 'GitHub Copilot', skills: message.skills, instructions: message.instructions, prompt: message.prompt, contextPackId: message.contextPackId });
         this.sdlcPlan = this.sdlcEngine.approveDelegation(this.sdlcPlan, story.id);
         await this.persistSdlcPlan(this.sdlcPlan);
@@ -546,24 +586,86 @@ export class VscodeProvider {
         this.post({ type: 'SDLC_PLAN_RESULT', plan: this.sdlcPlan });
       }
     }
-    await this.delegateApprovedPrompt(root, message.mode, message.prompt);
+    const result = await this.delegateApprovedPrompt(root, message.mode, message.prompt, { storyId, agent: message.agent, skills: message.skills, instructions: message.instructions });
+    if (result.captured && result.success && this.sdlcPlan && storyId) {
+      const story = this.sdlcPlan.stories.find(item => item.id === storyId);
+      if (story?.status === 'delegated') {
+        this.sdlcPlan = this.sdlcEngine.completeDelegation(this.sdlcPlan, storyId, [
+          `Copilot response captured by Keystone (${result.model?.name ?? result.model?.id ?? 'GitHub Copilot'}).`,
+          result.artifactPath ? `Captured result artifact: ${result.artifactPath}` : 'Captured result stored locally.',
+        ]);
+        await this.persistSdlcPlan(this.sdlcPlan);
+        this.applicationStore.update({ sdlc: this.sdlcPlan });
+        this.post({ type: 'SDLC_PLAN_RESULT', plan: this.sdlcPlan });
+      }
+    }
+    this.applicationStore.update({ delegationResult: result });
+    return result;
   }
 
-  private async delegateApprovedPrompt(root: string, mode: string, prompt: string): Promise<void> {
+  private async delegateApprovedPrompt(root: string, mode: string, prompt: string, options: { storyId?: string; agent?: string; skills?: readonly string[]; instructions?: readonly string[] } = {}): Promise<CopilotDelegationResult> {
+    const startedAt = new Date().toISOString();
     await this.getService(root).approveDelegation(mode, prompt);
     if (mode === "Manual Copy Prompt") {
       await vscode.env.clipboard.writeText(prompt);
-      this.post({ type: "NOTIFICATION", level: "info", message: "Delegation approved, recorded, and copied." });
-      return;
+      const result: CopilotDelegationResult = { success: true, captured: false, mode, storyId: options.storyId, startedAt, completedAt: new Date().toISOString() };
+      result.artifactPath = await this.getService(root).recordDelegationResult(result);
+      this.post({ type: "NOTIFICATION", level: "info", message: "Delegation approved, recorded, and copied. The response remains external until evidence is attached." });
+      return result;
     }
     if (mode === "Copilot Inline Edit") {
       await vscode.env.clipboard.writeText(prompt);
       await vscode.commands.executeCommand("inlineChat.start");
-      this.post({ type: "NOTIFICATION", level: "info", message: "Inline Chat opened; the approved prompt is on the clipboard." });
-      return;
+      const result: CopilotDelegationResult = { success: true, captured: false, mode, storyId: options.storyId, startedAt, completedAt: new Date().toISOString() };
+      result.artifactPath = await this.getService(root).recordDelegationResult(result);
+      this.post({ type: "NOTIFICATION", level: "info", message: "Inline Chat opened; the approved prompt is on the clipboard. Keystone will not claim a returned result until evidence is captured." });
+      return result;
     }
+
+    // Prefer VS Code's Language Model API so a user-approved Copilot request is sent and
+    // the streamed response is captured back into the active Keystone task. If the API is
+    // unavailable or the user has not granted model access, fall back to Copilot Chat UI
+    // without pretending that Keystone captured a result.
+    try {
+      const models = await vscode.lm.selectChatModels({ vendor: 'copilot' });
+      const model = models[0];
+      if (model) {
+        const selectedAgent = options.agent?.trim() || 'GitHub Copilot';
+        const skills = (options.skills ?? []).filter(Boolean);
+        const instructions = (options.instructions ?? []).filter(Boolean);
+        const delegation = [
+          'You are executing a user-approved Keystone SDLC delegation inside VS Code.',
+          `Selected agent/role: ${selectedAgent}`,
+          skills.length ? `Selected skills: ${skills.join(', ')}` : '',
+          instructions.length ? `Instructions:\n${instructions.map(item => `- ${item}`).join('\n')}` : '',
+          'Use the supplied context as evidence. Do not perform Git write or remote merge-request operations.',
+          '',
+          'Approved Keystone context packet:',
+          prompt,
+        ].filter(Boolean).join('\n');
+        const cancellation = new vscode.CancellationTokenSource();
+        try {
+          const response = await model.sendRequest([vscode.LanguageModelChatMessage.User(delegation)], {}, cancellation.token);
+          let text = '';
+          for await (const fragment of response.text) text += fragment;
+          const result: CopilotDelegationResult = {
+            success: true, captured: true, mode, storyId: options.storyId, startedAt, completedAt: new Date().toISOString(), text,
+            model: { id: model.id, vendor: model.vendor, family: model.family, version: model.version, name: model.name },
+          };
+          result.artifactPath = await this.getService(root).recordDelegationResult(result);
+          this.post({ type: "NOTIFICATION", level: "info", message: `Copilot response captured in Keystone${result.artifactPath ? ` (${result.artifactPath})` : ''}. Review the changes before validation.` });
+          return result;
+        } finally { cancellation.dispose(); }
+      }
+    } catch (error) {
+      this.logWarn(`Copilot Language Model API was unavailable; falling back to Copilot Chat UI: ${error instanceof Error ? error.message : String(error)}`);
+    }
+
     await vscode.commands.executeCommand("workbench.action.chat.open", { query: prompt });
-    this.post({ type: "NOTIFICATION", level: "info", message: `${mode} opened with the approved Keystone context.` });
+    const result: CopilotDelegationResult = { success: true, captured: false, mode, storyId: options.storyId, startedAt, completedAt: new Date().toISOString() };
+    result.artifactPath = await this.getService(root).recordDelegationResult(result);
+    this.post({ type: "NOTIFICATION", level: "info", message: `${mode} opened with the approved Keystone context. The result remains external; Keystone will not mark delegation complete until evidence is captured.` });
+    return result;
   }
 
   private async runValidation(scope: "impacted" | "all"): Promise<void> {
@@ -573,8 +675,7 @@ export class VscodeProvider {
       this.post({ type: "NOTIFICATION", level: "info", message: `Running ${scope} validation...` });
       let activeStory = this.sdlcPlan?.stories.find(story => ['delegated', 'in-progress', 'awaiting-validation', 'review-required'].includes(story.status));
       if (this.sdlcPlan && activeStory?.status === 'delegated') {
-        this.sdlcPlan = this.sdlcEngine.completeDelegation(this.sdlcPlan, activeStory.id, ['Delegated result returned to Keystone for validation.']);
-        activeStory = this.sdlcPlan.stories.find(story => story.id === activeStory!.id);
+        this.post({ type: "NOTIFICATION", level: "info", message: "Validating the workspace after an external Copilot delegation. Delegation itself remains uncompleted until a captured result/evidence is recorded." });
       } else if (this.sdlcPlan && activeStory?.status === 'in-progress') {
         this.sdlcPlan = this.sdlcEngine.transition(this.sdlcPlan, activeStory.id, 'awaiting-validation');
         activeStory = this.sdlcPlan.stories.find(story => story.id === activeStory!.id);
@@ -658,6 +759,7 @@ export class VscodeProvider {
     if (message.type === "STATE_UPDATE") this.applicationStore.update(message.state);
     if (message.type === "INDEX_PROGRESS") this.applicationStore.mergeOperation({ id: 'repository-index', kind: 'intelligence', status: message.progress === 100 ? 'completed' : 'running', progress: message.progress ?? 0, message: message.message, updatedAt: new Date().toISOString() });
     if (message.type === "TASK_RESULT") this.applicationStore.update({ taskAnalysis: message.result, activeTask: message.result.taskWorkspace });
+    if (message.type === "DELEGATION_RESULT") this.applicationStore.update({ delegationResult: message });
     if (message.type === "VALIDATION_RESULT") this.applicationStore.mergeOperation({ id: 'validation', kind: 'validation', status: 'completed', progress: 100, message: `${message.results.length} validation command(s) completed.`, updatedAt: new Date().toISOString() });
     if (message.type === "NOTIFICATION") this.applicationStore.update({ notification: { level: message.level, message: message.message } });
     if (message.type === "TASK_HANDOFFS_RESULT") this.applicationStore.update({ handoffs: message.sessions });

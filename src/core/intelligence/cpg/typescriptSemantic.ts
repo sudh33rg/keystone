@@ -1,6 +1,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import ts from 'typescript';
+import { Worker } from 'node:worker_threads';
 
 export interface SemanticCallEdge {
   readonly sourcePath: string;
@@ -49,6 +50,57 @@ export interface SemanticTypeRelationship {
   readonly confidence: 1;
 }
 
+/**
+ * Run project-aware TypeScript/JavaScript semantic binding outside the extension-host heap.
+ * The synchronous implementation remains exported for focused unit tests and fallback use.
+ */
+export async function analyzeTypeScriptProjectIsolated(
+  workspaceRoot: string,
+  sourcePaths: readonly string[],
+  signal?: AbortSignal,
+): Promise<TypeScriptSemanticResult> {
+  if (!sourcePaths.length) return analyzeTypeScriptProject(workspaceRoot, sourcePaths);
+  const workerPath = path.join(__dirname, 'typescriptSemanticWorker.js');
+  if (!fs.existsSync(workerPath)) return analyzeTypeScriptProject(workspaceRoot, sourcePaths);
+  return new Promise<TypeScriptSemanticResult>((resolve, reject) => {
+    const worker = new Worker(workerPath);
+    let settled = false;
+    let receivedResult = false;
+    const cleanup = (): void => signal?.removeEventListener('abort', onAbort);
+    const finishWithTermination = (result: TypeScriptSemanticResult): void => {
+      if (settled) return;
+      settled = true;
+      receivedResult = true;
+      cleanup();
+      // The result has already crossed the worker boundary. Terminate the
+      // compiler isolate explicitly rather than depending on TypeScript/Node to
+      // leave no referenced worker handles. Resolve only after termination so
+      // its heap is released before OKF/CPG promotion continues.
+      void worker.terminate().then(() => resolve(result), error => reject(error instanceof Error ? error : new Error(String(error))));
+    };
+    const rejectAndTerminate = (error: Error): void => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      void worker.terminate().finally(() => reject(error));
+    };
+    const onAbort = (): void => rejectAndTerminate(new Error('TypeScript semantic analysis cancelled.'));
+    signal?.addEventListener('abort', onAbort, { once: true });
+    worker.once('message', (message: { ok: true; result: TypeScriptSemanticResult } | { ok: false; error: string }) => {
+      if (message.ok) finishWithTermination(message.result);
+      else rejectAndTerminate(new Error(message.error));
+    });
+    worker.once('error', error => rejectAndTerminate(error instanceof Error ? error : new Error(String(error))));
+    worker.once('exit', code => {
+      if (settled || receivedResult) return;
+      settled = true;
+      cleanup();
+      reject(new Error(code === 0 ? 'TypeScript semantic worker exited without a result.' : `TypeScript semantic worker exited with code ${code}.`));
+    });
+    worker.postMessage({ workspaceRoot, sourcePaths: [...sourcePaths] });
+  });
+}
+
 /** Build project-aware, type-checker-bound call edges for TS/JS sources. */
 export function analyzeTypeScriptProject(workspaceRoot: string, sourcePaths: readonly string[]): TypeScriptSemanticResult {
   const eligible = new Map(sourcePaths.map(file => [normalize(path.resolve(workspaceRoot, file)), path.resolve(workspaceRoot, file)]));
@@ -93,7 +145,11 @@ export function analyzeTypeScriptProject(workspaceRoot: string, sourcePaths: rea
   const diagnosticExamples: string[] = [];
   for (const { program, config } of programs) {
     const checker = program.getTypeChecker();
-    const emittedDiagnostics = ts.getPreEmitDiagnostics(program);
+    // Repository intelligence needs compiler-backed binding, not a second full project
+    // typecheck. getPreEmitDiagnostics() can trigger expensive whole-program inference
+    // that duplicates the explicit SDLC validation/typecheck stage. Capture deterministic
+    // syntax/config diagnostics here while the checker is used below for semantic edges.
+    const emittedDiagnostics = [...program.getOptionsDiagnostics(), ...program.getSyntacticDiagnostics()];
     const programDiagnostics = emittedDiagnostics.length;
     for (const diagnostic of emittedDiagnostics) {
       const code = `TS${diagnostic.code}`;

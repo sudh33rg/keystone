@@ -3,7 +3,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from '../../support/testkit';
 import { TaskWorkspaceManager } from '@core/workflow/tasks/taskWorkspaceManager';
-import { TaskStatePackageBuilder } from '@core/workflow/handoff/taskStatePackage';
+import { TaskStatePackageBuilder, verifyTaskStatePackage } from '@core/workflow/handoff/taskStatePackage';
+import { decryptHandoffPackage, encryptHandoffPackage } from '@core/workflow/handoff/handoffSecurity';
 
 const seed = { intent: 'Add audit telemetry', intentType: 'feature', route: 'hybrid', relevantFiles: ['src/a.ts'], relevantSymbols: ['run'], tests: ['src/a.test.ts'], qaChecks: ['Run unit tests'], securityRisk: 'high', performanceRisk: 'medium', modernizationNotes: ['Preserve behavior'], copilotPrompt: 'Implement with context' };
 
@@ -70,6 +71,23 @@ describe('TaskWorkspaceManager', () => {
     expect(JSON.parse(await fs.readFile(path.join(ref.absolutePath, 'progress.json'), 'utf8'))).toMatchObject({ status: 'approved', activePhase: 'phase-1' });
     expect(await fs.readFile(path.join(ref.absolutePath, 'specification.md'), 'utf8')).toContain('Node.js 24');
     expect(JSON.parse(await fs.readFile(path.join(ref.absolutePath, 'agents.json'), 'utf8')).map((agent: { id: string }) => agent.id)).toEqual(expect.arrayContaining(['security', 'performance', 'qa']));
+  });
+
+  it('round-trips an encrypted handoff into an independent workspace without sharing repository state', async () => {
+    const sourceRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'keystone-handoff-source-instance-'));
+    const targetRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'keystone-handoff-target-instance-'));
+    const packageValue = new TaskStatePackageBuilder().build(handoffInput as any);
+    const encrypted = await encryptHandoffPackage(JSON.stringify(packageValue), 'independent workspace passphrase');
+    expect(encrypted).not.toContain(packageValue.task.originalUserRequest);
+    const decrypted = JSON.parse(await decryptHandoffPackage(encrypted, 'independent workspace passphrase'));
+    expect(() => verifyTaskStatePackage(decrypted)).not.toThrow();
+    const targetManager = new TaskWorkspaceManager(targetRoot);
+    const restored = await targetManager.createFromHandoff(decrypted);
+    expect(restored.absolutePath.startsWith(targetRoot)).toBe(true);
+    expect(restored.absolutePath.startsWith(sourceRoot)).toBe(false);
+    expect(await targetManager.delegationPrompt(restored)).toBe(packageValue.continuation.suggestedFirstPrompt);
+    expect(JSON.parse(await fs.readFile(path.join(restored.absolutePath, 'context.json'), 'utf8'))).toMatchObject({ repositoryReference: packageValue.repositoryReference });
+    expect(await fs.readFile(path.join(restored.absolutePath, 'instructions.md'), 'utf8')).toContain(packageValue.continuation.manualRepositorySyncReminder);
   });
 
   it('materializes a verified handoff as an idempotent active task workspace', async () => {

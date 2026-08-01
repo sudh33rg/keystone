@@ -10,16 +10,22 @@ import { enhanceIntent, type EnhancementMode, type EnhancementSession } from '..
 import { runValidationCommand, type ValidationRunResult } from '../../workflow/validation/validationRunner';
 import { detectValidationCommands } from '../../workflow/validation/validationCommands';
 import { planFailureRemediation } from '../../workflow/quality/failureRemediation';
-import type { CockpitSettings, IntelligenceActivityEvent, IntelligenceManifest, KeystoneTaskResult, KeystoneWebviewState, WorkspaceSummary } from './messageRouter';
+import { generateTests } from '../../workflow/quality/generation';
+import type { CockpitSettings, CopilotDelegationResult, IntelligenceActivityEvent, IntelligenceManifest, KeystoneTaskResult, KeystoneWebviewState, WorkspaceSummary } from './messageRouter';
 import { RepositoryModelBuilder } from '../../intelligence/repository/model-builder';
 import { ModernizationPlatformApi } from '../../workflow/modernization/modernization-api';
 import type { ModernizationDecisionInput, ModernizationPlan, ModernizationProposal } from '../../workflow/modernization/model';
 import { TaskWorkspaceManager, type TaskWorkspaceRef } from '../../workflow/tasks/taskWorkspaceManager';
 import type { TaskStatePackage } from '../../workflow/handoff/contracts';
-import { OkfSnapshotStore } from '../../intelligence/okf/store';
+import { OkfSnapshotStore, type OkfSnapshotSummaryProjection } from '../../intelligence/okf/store';
+import { queryOkfSnapshot } from '../../intelligence/okf/queryEngine';
 import { PORTABLE_OKF_VERSION } from '../../intelligence/okf/bundle';
 import { GitReadOnly } from '../../platform/git/gitReadOnly';
+import { analyzeRepositoryPerformance, analyzeRepositorySecurity } from '../../intelligence/analysis';
+import type { RepositoryInsightReport } from '../../intelligence/analysis/model';
+import { createGapAnalyzer, type GapAnalysisResult } from '../../workflow/quality/qaGapAnalysis';
 import type { SemanticEnrichmentProvider } from '../../intelligence/languages/semanticEnrichment';
+import { discoverCopilotCustomizations, type CopilotCustomizationInventory } from '../../context/copilotCustomizations';
 
 const INTELLIGENCE_DIR = '.keystone/intelligence';
 const SUMMARY_PATH = `${INTELLIGENCE_DIR}/summary.json`;
@@ -52,7 +58,7 @@ export class CockpitService {
     this.activeTaskWorkspace = await this.taskWorkspaces.latestActive();
     const snapshot = await this.readJson<RepositoryIntelligenceSnapshot>(`${INTELLIGENCE_DIR}/snapshot.json`);
     const intelligence = snapshot?.intelligence ?? await this.readJson<RepoIntelligence>(SUMMARY_PATH);
-    const okf = await new OkfSnapshotStore(this.workspaceRoot).read();
+    const okf = await new OkfSnapshotStore(this.workspaceRoot).readSummaryProjection();
     const portableOkf = await this.readJson<PortableOkfBundleManifest>(`${INTELLIGENCE_DIR}/okf-bundle/.keystone-bundle.json`);
     const manifest = await this.readJson<IntelligenceManifest>(MANIFEST_PATH);
     const activity = await this.readJson<IntelligenceActivityEvent[]>(ACTIVITY_PATH) ?? [];
@@ -101,7 +107,7 @@ export class CockpitService {
     }
     // After the expensive operation: check both guards.
     if (this.cancelled || generation !== this.runGeneration) return this.cancelledState();
-    const okf = await new OkfSnapshotStore(this.workspaceRoot).read();
+    const okf = await new OkfSnapshotStore(this.workspaceRoot).readSummaryProjection();
     const portableOkf = await this.readJson<PortableOkfBundleManifest>(`${INTELLIGENCE_DIR}/okf-bundle/.keystone-bundle.json`);
     const summary = toWorkspaceSummary(snapshot.intelligence, snapshot, okf, portableOkf);
     const completedStages = snapshot.stages.filter((stage) => stage.status === 'complete').length;
@@ -122,35 +128,98 @@ export class CockpitService {
     const intelligence = snapshot?.intelligence ?? await this.readJson<RepoIntelligence>(SUMMARY_PATH);
     if (!intelligence) throw new Error('Repository intelligence is not ready. Wait for background indexing to finish.');
     const gitDiff = await this.gitDiff();
+    const copilotCustomizations = await discoverCopilotCustomizations(this.workspaceRoot);
+    const customizationFingerprint = createHash('sha256').update(JSON.stringify(copilotCustomizations)).digest('hex');
     const feedback = await this.readJson<ContextFeedback[]>(CONTEXT_FEEDBACK_PATH) ?? [];
     const learnedFeedback = feedbackForIntent(text, feedback);
-    const cacheKey = createHash('sha256').update(JSON.stringify({ text: text.trim(), currentFile: editorContext.currentFile, gitDiff: createHash('sha256').update(gitDiff).digest('hex'), feedback: learnedFeedback, fingerprint: snapshot?.ingestion.inputFingerprint ?? intelligence.indexedAt, settings: { compressionTier: settings?.compressionTier, codingStandards: settings?.codingStandards, thingsToAvoid: settings?.thingsToAvoid } })).digest('hex');
+    const cacheKey = createHash('sha256').update(JSON.stringify({ text: text.trim(), currentFile: editorContext.currentFile, gitDiff: createHash('sha256').update(gitDiff).digest('hex'), feedback: learnedFeedback, fingerprint: snapshot?.ingestion.inputFingerprint ?? intelligence.indexedAt, customizationFingerprint, settings: { compressionTier: settings?.compressionTier, codingStandards: settings?.codingStandards, thingsToAvoid: settings?.thingsToAvoid } })).digest('hex');
     const cached = await this.readJson<{ createdAt: string; result: KeystoneTaskResult }>(`${CONTEXT_CACHE_DIR}/${cacheKey}.json`);
     if (cached && Date.now() - Date.parse(cached.createdAt) < 24 * 60 * 60 * 1000) {
       const detected = await detectValidationCommands(this.workspaceRoot);
-      const result = { ...cached.result, validationCommands: detected.all, retrievalMetrics: cached.result.retrievalMetrics ? { ...cached.result.retrievalMetrics, cacheHit: true } : undefined };
+      const result = { ...cached.result, copilotCustomizations, validationCommands: detected.all, retrievalMetrics: cached.result.retrievalMetrics ? { ...cached.result.retrievalMetrics, cacheHit: true } : undefined };
       await this.record('context-cache-hit', `Reused intent context ${cacheKey.slice(0, 12)} with ${result.contextTokens?.prompt ?? 0} prompt tokens.`);
       await this.recordEvaluation(text, result);
       return this.materializeTaskWorkspace(text, result);
     }
     const retrievalText: string | undefined = undefined;
-    const run = await new CaptainAgent().run(intent, intelligence, {
-      compressionTier: settings?.compressionTier ?? 'standard',
-      codingStandards: settings?.codingStandards,
-      thingsToAvoid: settings?.thingsToAvoid,
-      retrievalText,
-      semanticEvidence: snapshot?.stages.find(stage => stage.id === 'code-property-graph')?.items,
-      currentFile: editorContext.currentFile,
-      gitDiff,
-      preferredPaths: learnedFeedback.filter(entry => entry.score > 0).map(entry => entry.path),
-      excludedPaths: learnedFeedback.filter(entry => entry.score < 0).map(entry => entry.path)
-    });
+    // Keep the authoritative OKF snapshot scoped only to context construction. On a real
+    // repository it can be tens of MB on disk and substantially larger in memory. Releasing
+    // it before QA/security/performance/modernization prevents extension-host memory spikes.
+    const run = await (async () => {
+      const okfSnapshot = await new OkfSnapshotStore(this.workspaceRoot).read();
+      return new CaptainAgent().run(intent, intelligence, {
+        compressionTier: settings?.compressionTier ?? 'standard',
+        codingStandards: settings?.codingStandards,
+        thingsToAvoid: settings?.thingsToAvoid,
+        retrievalText,
+        semanticEvidence: snapshot?.stages.find(stage => stage.id === 'code-property-graph')?.items,
+        currentFile: editorContext.currentFile,
+        gitDiff,
+        preferredPaths: learnedFeedback.filter(entry => entry.score > 0).map(entry => entry.path),
+        excludedPaths: learnedFeedback.filter(entry => entry.score < 0).map(entry => entry.path),
+        okfSnapshot
+      });
+    })();
     await this.record('context-generated', `Intent context generated from ${run.contextPack.relevantFiles.length} ranked files: ${run.contextPack.estimatedRawTokens} raw → ${run.contextPack.estimatedPackedTokens} prompt tokens.`);
+    const analysisEvidence = await this.loadTaskAnalysisEvidence(run.contextPack.relevantFiles.map(file => file.path), gitDiff);
+    const testGeneration = await generateTests({
+      feature: text,
+      sourceCode: run.contextPack.contextSections?.map(section => section.content).filter(Boolean).join('\n\n') ?? run.contextPack.relevantFiles.map(file => file.path).join('\n'),
+      apiContracts: run.contextPack.relatedApis.map(api => `${api.method} ${api.path} — ${api.filePath}:${api.line}`),
+      businessRules: run.contextPack.acceptanceCriteria,
+    });
     const detected = await detectValidationCommands(this.workspaceRoot);
-    const result = { ...normalizeRunResult(run, settings), validationCommands: detected.all };
+    const result = { ...normalizeRunResult(run, settings, analysisEvidence, copilotCustomizations), validationCommands: detected.all, testGeneration };
     await this.writeJson(`${CONTEXT_CACHE_DIR}/${cacheKey}.json`, { createdAt: new Date().toISOString(), result });
     await this.recordEvaluation(text, result);
     return this.materializeTaskWorkspace(text, result);
+  }
+
+  private async loadTaskAnalysisEvidence(relevantFiles: readonly string[], gitDiff: string): Promise<NonNullable<KeystoneTaskResult['analysisEvidence']>> {
+    const relevant = new Set(relevantFiles.map(normalizeWorkspacePath));
+    const [qaCached, securityCached, performanceCached, modernizationCached] = await Promise.all([
+      this.readJson<GapAnalysisResult>('.keystone/background/qa.json'),
+      this.readJson<RepositoryInsightReport>('.keystone/background/security.json'),
+      this.readJson<RepositoryInsightReport>('.keystone/background/performance.json'),
+      this.readJson<ModernizationProposal>('.keystone/background/modernization.json'),
+    ]);
+    // Missing repository evidence is intentionally produced with bounded concurrency. These
+    // analyzers each scan the workspace; running all of them together duplicates file buffers
+    // and can starve the VS Code extension host on medium/large repositories.
+    const qa = qaCached ?? await createGapAnalyzer({ workspaceRoot: this.workspaceRoot }).analyzeQuick();
+    const security = securityCached?.kind === 'security' ? securityCached : await analyzeRepositorySecurity(this.workspaceRoot);
+    const performance = performanceCached?.kind === 'performance' ? performanceCached : await analyzeRepositoryPerformance(this.workspaceRoot);
+    const modernization = modernizationCached?.status === 'awaiting-user-decision'
+      ? modernizationCached
+      : await this.modernization.propose({ repository: new RepositoryModelBuilder().build(this.workspaceRoot) });
+    await Promise.all([
+      qaCached ? Promise.resolve() : this.writeJson('.keystone/background/qa.json', qa),
+      securityCached?.kind === 'security' ? Promise.resolve() : this.writeJson('.keystone/background/security.json', security),
+      performanceCached?.kind === 'performance' ? Promise.resolve() : this.writeJson('.keystone/background/performance.json', performance),
+      modernizationCached?.status === 'awaiting-user-decision' ? Promise.resolve() : this.writeJson('.keystone/background/modernization.json', modernization),
+    ]);
+
+    const relevantInsight = (report: RepositoryInsightReport) => report.findings.filter(finding => relevant.size === 0 || relevant.has(normalizeWorkspacePath(finding.path)));
+    const securityFindings = relevantInsight(security);
+    const performanceFindings = relevantInsight(performance);
+    const qaGaps = qa.gaps.filter(gap => relevant.size === 0 || relevant.has(normalizeWorkspacePath(path.isAbsolute(gap.filePath) ? path.relative(this.workspaceRoot, gap.filePath) : gap.filePath)));
+    const git = new GitReadOnly(this.workspaceRoot);
+    const [branch, status] = await Promise.all([git.branch(), git.status()]);
+    const changedFiles = [...new Set(status.split(/\r?\n/).map(line => line.slice(3).trim()).filter(Boolean).map(value => value.includes(' -> ') ? value.split(' -> ').at(-1)! : value).map(normalizeWorkspacePath))];
+    const diffHash = createHash('sha256').update(gitDiff).digest('hex');
+    const diffArtifactPath = '.keystone/reviews/latest-read-only.diff';
+    await this.writeText(diffArtifactPath, gitDiff);
+    return {
+      qa: {
+        scanMode: qa.scanMode,
+        gaps: qaGaps.map(gap => ({ type: gap.type, path: normalizeWorkspacePath(path.isAbsolute(gap.filePath) ? path.relative(this.workspaceRoot, gap.filePath) : gap.filePath), severity: gap.severity, reason: gap.reason })),
+        recommendations: qa.recommendations.filter(item => !item.affectedFiles?.length || item.affectedFiles.some(file => relevant.has(normalizeWorkspacePath(path.isAbsolute(file) ? path.relative(this.workspaceRoot, file) : file)))).map(item => `${item.priority}: ${item.title} — ${item.description}`),
+      },
+      security: { riskLevel: riskLevelForFindings(securityFindings, security.riskLevel), findings: securityFindings.map(item => ({ id: item.id, severity: item.severity, title: item.title, path: normalizeWorkspacePath(item.path), line: item.line, explanation: item.explanation, remediation: item.remediation, confidence: item.confidence })) },
+      performance: { riskLevel: riskLevelForFindings(performanceFindings, performance.riskLevel), findings: performanceFindings.map(item => ({ id: item.id, severity: item.severity, title: item.title, path: normalizeWorkspacePath(item.path), line: item.line, explanation: item.explanation, remediation: item.remediation, confidence: item.confidence })) },
+      modernization: { proposalId: modernization.id, coveragePercent: modernization.scanCoverage.coveragePercent, gaps: modernization.gaps.map(gap => ({ id: gap.id, area: gap.area, title: gap.title, priority: gap.priority, evidence: [...gap.evidence] })) },
+      gitReview: { readOnly: true, branch: branch || undefined, changedFiles, diffHash, diffArtifactPath, diffBytes: Buffer.byteLength(gitDiff, 'utf8') },
+    };
   }
 
   async saveSettings(settings: CockpitSettings): Promise<void> {
@@ -210,18 +279,12 @@ export class CockpitService {
     return removed;
   }
 
-  async queryIntelligence(query:string): Promise<{query:string;items:Array<{id:string;label:string;kind:string;path?:string;summary:string;evidenceIds:string[]}>}> {
-    const normalized=query.trim().toLowerCase();
-    if(!normalized)return{query,items:[]};
-    const projection=path.join(this.workspaceRoot,'.keystone','intelligence','okf','projections','search.jsonl');
-    const lines=await fs.readFile(projection,'utf8').catch(()=> '');
-    const terms=[...new Set(normalized.match(/[a-z0-9_./:-]+/g)??[])];
-    const items=lines.split(/\r?\n/).filter(Boolean)
-      .map(line=>JSON.parse(line) as {id:string;okfId:string;kind:string;text:string;path?:string;evidenceIds:string[]})
-      .map(item=>{const hay=[item.kind,item.path??'',item.text].join('\n').toLowerCase();const score=terms.reduce((sum,term)=>sum+(hay.includes(term)?1:0),0)+(hay.includes(normalized)?2:0);return{item,score};})
-      .filter(entry=>entry.score>0).sort((left,right)=>right.score-left.score||left.item.id.localeCompare(right.item.id)).slice(0,50)
-      .map(({item})=>{const parts=item.text.split('\n');return{id:item.okfId,label:parts[0]||item.okfId,kind:item.kind,path:item.path,summary:parts.slice(1,3).join(' · ').slice(0,300),evidenceIds:item.evidenceIds};});
-    return{query,items};
+  async queryIntelligence(query:string): Promise<{query:string;intent:string;answer:string;confidence:number;traversedRelationships:number;warnings:string[];items:Array<{id:string;label:string;kind:string;path?:string;summary:string;reason:string;score:number;confidence:number;evidenceIds:string[];relationshipPath:string[]}>}> {
+    const snapshot = await new OkfSnapshotStore(this.workspaceRoot).read();
+    if (!snapshot) throw new Error('Authoritative OKF intelligence is not ready. Index the repository first.');
+    const result = queryOkfSnapshot(snapshot, query, 50);
+    await this.record('intelligence-query', `${result.intent} query returned ${result.items.length} evidence-backed result(s) after ${result.traversedRelationships} relationship traversal(s).`);
+    return { ...result, items: result.items.map(item => ({ ...item, evidenceIds: [...item.evidenceIds], relationshipPath: [...item.relationshipPath] })), warnings: [...result.warnings] };
   }
 
   private async gitDiff():Promise<string>{return new GitReadOnly(this.workspaceRoot).diff();}
@@ -238,6 +301,22 @@ export class CockpitService {
     if (normalizePrompt(prompt) !== normalizePrompt(expected)) throw new Error('The approved prompt does not match the generated task delegation packet. Regenerate the context before delegating.');
     await this.record('delegation-approved', `${mode} approved with ${Math.ceil(prompt.length / 4)} estimated tokens.`);
     this.activeTaskWorkspace = await this.taskWorkspaces.update(active, 'approved', { percent: 30, current: `Delegated through ${mode}`, completed: ['Repository intelligence gathered', 'Specification reviewed', 'Delegation approved'] });
+  }
+
+  async recordDelegationResult(result: CopilotDelegationResult): Promise<string> {
+    const active = await this.ensureActiveTask();
+    const id = createHash('sha256').update(`${result.startedAt}|${result.mode}|${result.model?.id ?? 'external'}|${result.storyId ?? active.id}`).digest('hex').slice(0, 20);
+    const relative = `.keystone/copilot/results/${result.startedAt.replace(/[:.]/g, '-')}-${id}.json`;
+    await this.writeJson(relative, { ...result, taskWorkspaceId: active.id });
+    const completed = ['Repository intelligence gathered', 'Specification reviewed', 'Delegation approved'];
+    if (result.captured && result.success) completed.push('Copilot response captured by Keystone');
+    this.activeTaskWorkspace = await this.taskWorkspaces.update(active, result.success ? 'in-progress' : 'blocked', {
+      percent: result.captured && result.success ? 55 : result.success ? 40 : 30,
+      current: result.captured && result.success ? 'Copilot result captured; review changes and validate' : result.success ? 'Copilot opened externally; capture evidence before validation' : 'Copilot delegation failed',
+      completed, blockers: result.success ? [] : [result.error ?? 'Copilot delegation failed'],
+    });
+    await this.record(result.success ? 'delegation-result' : 'delegation-failed', result.captured && result.success ? `Captured Copilot response using ${result.model?.name ?? result.model?.id ?? 'language model'}; artifact=${relative}.` : result.success ? `${result.mode} opened externally; response was not captured.` : `${result.mode} failed: ${result.error ?? 'unknown error'}.`);
+    return relative;
   }
 
   async recordDecision(category: 'task' | 'risk', action: string, subject: string): Promise<void> {
@@ -373,6 +452,7 @@ export class CockpitService {
   }
   private async readJson<T>(relative: string): Promise<T | undefined> { try { return JSON.parse(await fs.readFile(path.join(this.workspaceRoot, relative), 'utf8')) as T; } catch { return undefined; } }
   private async writeJson(relative: string, value: unknown): Promise<void> { const target = path.join(this.workspaceRoot, relative); await fs.mkdir(path.dirname(target), { recursive: true }); const temporary = `${target}.${process.pid}.${Date.now()}.tmp`; await fs.writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, 'utf8'); await fs.rename(temporary, target); }
+  private async writeText(relative: string, value: string): Promise<void> { const target = path.join(this.workspaceRoot, relative); await fs.mkdir(path.dirname(target), { recursive: true }); const temporary = `${target}.${process.pid}.${Date.now()}.tmp`; await fs.writeFile(temporary, value, 'utf8'); await fs.rename(temporary, target); }
 }
 
 function normalizePrompt(value: string): string { return value.replace(/\r\n/g, '\n').trim(); }
@@ -419,13 +499,47 @@ function uniqueEvidence(context: ContextPack): Array<{ kind: string; label: stri
 
 interface PortableOkfBundleManifest { format: string; version: string; generatedBy: string; extractionRunId: string; sourceProfile: string; sourceProfileVersion: string; concepts: number; digest: string; }
 
-function toWorkspaceSummary(value: RepoIntelligence, snapshot?: RepositoryIntelligenceSnapshot, okf?: import('../../intelligence/okf/types').KeystoneOkfSnapshot, portable?: PortableOkfBundleManifest): WorkspaceSummary {
+function toWorkspaceSummary(value: RepoIntelligence, snapshot?: RepositoryIntelligenceSnapshot, okf?: OkfSnapshotSummaryProjection, portable?: PortableOkfBundleManifest): WorkspaceSummary {
   const gitStage = snapshot?.stages.find((stage) => stage.id === 'git-change');
-  return { fileCount: value.files.length, files: value.files, projectTypes: value.frameworkHints, architecture: value.services.length > 1 ? 'service-oriented' : value.frameworkHints.includes('react') ? 'component-based' : 'modular', git: { branch: String(gitStage?.metrics.branch ?? 'workspace'), changedFiles: gitStage?.items ?? [] }, stages: snapshot?.stages, families: snapshot?.families, languageCapabilities: value.languageSupport?.length ? value.languageSupport.map(item => ({ id:item.id, label:item.label, level:item.semanticProvider === 'none' ? item.baseline : `${item.baseline} + ${item.semanticProvider}`, extensions:new LanguageCapabilityRegistry().all().find(definition => definition.id === item.id)?.extensions ?? [], files:item.files, baseline:item.baseline, semanticProvider:item.semanticProvider, semanticFiles:item.semanticFiles, deterministicFiles:item.deterministicFiles, failedSemanticFiles:item.failedSemanticFiles, capabilities:item.capabilities, warnings:item.warnings })) : new LanguageCapabilityRegistry().summary(), universalTextFiles: value.files.filter(file => file.language === 'unknown').length, okf: okf ? { profile: okf.manifest.profile, version: okf.manifest.profileVersion, extractionRunId: okf.manifest.extractionRunId, units: okf.manifest.counts.units, relationships: okf.manifest.counts.relationships, observations: okf.manifest.counts.observations, evidence: okf.manifest.counts.evidence, active: okf.manifest.counts.active, deleted: okf.manifest.counts.deleted, graphNodes: okf.units.length, graphEdges: okf.relationships.length, cpgBindings: okf.units.filter(unit => unit.kind === 'file' || unit.kind === 'test' || unit.kind === 'symbol').length, validated: okf.manifest.validation.valid, portableBundle: portable ? { path: `${INTELLIGENCE_DIR}/okf-bundle`, conceptFiles: portable.concepts, validated: portable.format === 'OKF' && portable.version === PORTABLE_OKF_VERSION && portable.extractionRunId === okf.manifest.extractionRunId, profile: `${portable.format} ${portable.version}`, generatedAt: okf.manifest.generatedAt } : undefined, evidenceSamples: okf.evidence.slice(0, 20).map(item => ({ id: item.id, path: item.source.workspaceRelativePath, method: item.method, observedAt: item.observedAt })) } : undefined };
+  return { fileCount: value.files.length, files: value.files, projectTypes: value.frameworkHints, architecture: value.services.length > 1 ? 'service-oriented' : value.frameworkHints.includes('react') ? 'component-based' : 'modular', git: { branch: String(gitStage?.metrics.branch ?? 'workspace'), changedFiles: gitStage?.items ?? [] }, stages: snapshot?.stages, families: snapshot?.families, languageCapabilities: value.languageSupport?.length ? value.languageSupport.map(item => ({ id:item.id, label:item.label, level:item.semanticProvider === 'none' ? item.baseline : `${item.baseline} + ${item.semanticProvider}`, extensions:new LanguageCapabilityRegistry().all().find(definition => definition.id === item.id)?.extensions ?? [], files:item.files, baseline:item.baseline, semanticProvider:item.semanticProvider, semanticFiles:item.semanticFiles, deterministicFiles:item.deterministicFiles, failedSemanticFiles:item.failedSemanticFiles, capabilities:item.capabilities, warnings:item.warnings })) : new LanguageCapabilityRegistry().summary(), universalTextFiles: value.files.filter(file => file.language === 'unknown').length, okf: okf ? { profile: okf.manifest.profile, version: okf.manifest.profileVersion, extractionRunId: okf.manifest.extractionRunId, units: okf.manifest.counts.units, relationships: okf.manifest.counts.relationships, observations: okf.manifest.counts.observations, evidence: okf.manifest.counts.evidence, active: okf.manifest.counts.active, deleted: okf.manifest.counts.deleted, graphNodes: okf.manifest.counts.units, graphEdges: okf.manifest.counts.relationships, cpgBindings: okf.cpgBindings, validated: okf.manifest.validation.valid, portableBundle: portable ? { path: `${INTELLIGENCE_DIR}/okf-bundle`, conceptFiles: portable.concepts, validated: portable.format === 'OKF' && portable.version === PORTABLE_OKF_VERSION && portable.extractionRunId === okf.manifest.extractionRunId, profile: `${portable.format} ${portable.version}`, generatedAt: okf.manifest.generatedAt } : undefined, evidenceSamples: okf.evidenceSamples.map(item => ({ id: item.id, path: item.source.workspaceRelativePath, method: item.method, observedAt: item.observedAt })) } : undefined };
 }
 
-function normalizeRunResult(run: KeystoneRunResult, settings?: CockpitSettings): KeystoneTaskResult {
+
+function normalizeWorkspacePath(value: string): string { return value.replace(/\\/g, '/').replace(/^\.\//, ''); }
+function riskLevelForFindings(findings: readonly { severity: string }[], fallback: string): string {
+  if (!findings.length) return 'low';
+  const weight = (value:string):number => value === 'critical' ? 4 : value === 'high' ? 3 : value === 'medium' ? 2 : 1;
+  return findings.reduce((best,item) => weight(item.severity) > weight(best) ? item.severity : best, 'low');
+}
+function maxTaskRisk(left: string, right?: string): 'low'|'medium'|'high' {
+  const normalize = (value?:string):'low'|'medium'|'high' => value === 'critical' || value === 'high' ? 'high' : value === 'medium' ? 'medium' : 'low';
+  const weight = (value:'low'|'medium'|'high'):number => value === 'high' ? 3 : value === 'medium' ? 2 : 1;
+  const a=normalize(left),b=normalize(right);return weight(a)>=weight(b)?a:b;
+}
+function mergeTaskEvidence(base: KeystoneTaskResult['evidence'] = [], analysis?: NonNullable<KeystoneTaskResult['analysisEvidence']>): NonNullable<KeystoneTaskResult['evidence']> {
+  if (!analysis) return base;
+  const extra: NonNullable<KeystoneTaskResult['evidence']> = [];
+  for (const item of analysis.qa.gaps) extra.push({ kind:'test', label:`${item.type}: ${item.reason}`, path:item.path, confidence:Math.max(0,Math.min(1,item.severity)), summary:'Repository QA gap analysis' });
+  for (const item of analysis.security.findings) extra.push({ kind:'risk', label:`Security: ${item.title} @ ${item.path}:${item.line}`, path:item.path, confidence:item.confidence, summary:item.explanation });
+  for (const item of analysis.performance.findings) extra.push({ kind:'risk', label:`Performance: ${item.title} @ ${item.path}:${item.line}`, path:item.path, confidence:item.confidence, summary:item.explanation });
+  for (const item of analysis.modernization.gaps.filter(gap=>gap.priority==='high'||gap.priority==='critical')) extra.push({ kind:'architecture', label:`Modernization: ${item.title}`, confidence:0.8, summary:item.evidence.join(' · ') });
+  if (analysis.gitReview.changedFiles.length || analysis.gitReview.diffBytes) extra.push({ kind:'flow', label:`Read-only Git diff: ${analysis.gitReview.changedFiles.length} changed file(s)`, confidence:1, summary:`SHA-256 ${analysis.gitReview.diffHash}; ${analysis.gitReview.diffBytes} bytes; ${analysis.gitReview.diffArtifactPath ?? 'not persisted'}` });
+  const seen=new Set<string>();return [...base,...extra].filter(item=>{const key=`${item.kind}|${item.path??''}|${item.label}`;if(seen.has(key))return false;seen.add(key);return true;});
+}
+function appendReadOnlyReview(markdown:string, analysis?:NonNullable<KeystoneTaskResult['analysisEvidence']>):string {
+  if (!analysis) return markdown;
+  const git=analysis.gitReview;
+  return `${markdown}\n\n## Read-only Git review evidence\n\n- Branch: ${git.branch ?? 'unknown'}\n- Changed files: ${git.changedFiles.length ? git.changedFiles.join(', ') : 'none in working tree'}\n- Diff bytes: ${git.diffBytes}\n- Diff SHA-256: ${git.diffHash}\n- Local evidence artifact: ${git.diffArtifactPath ?? 'none'}\n- Policy: Keystone only read Git status/diff metadata; it did not stage, commit, push, create, approve, or merge a remote change.\n`;
+}
+
+function normalizeRunResult(run: KeystoneRunResult, settings?: CockpitSettings, analysisEvidence?: NonNullable<KeystoneTaskResult['analysisEvidence']>, copilotCustomizations?: CopilotCustomizationInventory): KeystoneTaskResult {
   const tests = run.contextPack.relatedTests.map((test) => test.testFile);
+  const securityRisk = maxTaskRisk(run.security.riskLevel, analysisEvidence?.security.riskLevel);
+  const performanceRisk = maxTaskRisk(run.performance.riskLevel, analysisEvidence?.performance.riskLevel);
+  const qaGaps = analysisEvidence?.qa.gaps ?? [];
+  const missingTests = [...new Set([...run.qa.missingTestAreas, ...qaGaps.map(gap => `${gap.path}: ${gap.reason}`)])];
+  const qaChecklist = [...new Set([...run.qa.checklist, ...(analysisEvidence?.qa.recommendations ?? [])])];
+  const modernizationNotes = [...new Set([...run.modernization.phasedPlan, ...(analysisEvidence?.modernization.gaps ?? []).filter(gap => gap.priority === 'high' || gap.priority === 'critical').map(gap => `${gap.priority}: ${gap.title}`)])];
   const excluded = run.intelligence.files.filter((file) => !run.contextPack.relevantFiles.some((selected) => selected.path === file.path)).slice(0, 30).map((file) => ({ path: file.path, reason: file.isGenerated ? 'Generated file' : 'Outside the selected task context' }));
   const risk = (level: 'low' | 'medium' | 'high', area: string, detail: string) => ({ area, level, detail });
   const policy = [settings?.codingStandards && `Coding standards:\n${settings.codingStandards}`, settings?.thingsToAvoid && `Additional things to avoid:\n${settings.thingsToAvoid}`].filter(Boolean).join('\n\n');
@@ -436,8 +550,8 @@ function normalizeRunResult(run: KeystoneRunResult, settings?: CockpitSettings):
     confidenceDetails: { overall: run.intentAnalysis.confidence * 100, signals: [{ name: 'Intent classification', score: run.intentAnalysis.confidence * 100, weight: 0.4 }, { name: 'Route decision', score: run.routeDecision.confidence * 100, weight: 0.35 }, { name: 'QA coverage', score: run.qa.coverageConfidence * 100, weight: 0.25 }] },
     route: run.routeDecision.selectedRoute, reason: run.routeDecision.reason,
     routeEvidence: { matchedRule: run.intentAnalysis.keywords[0] ?? 'fallback', confidence: run.routeDecision.confidence, reason: run.routeDecision.reason, whyNot: [`Fallback route: ${run.routeDecision.fallbackPath}`] },
-    tokenReduction: run.contextPack.estimatedReductionPercent, relevantFiles: run.contextPack.relevantFiles.map((file) => file.path), relevantSymbols: run.contextPack.relevantSymbols.map((symbol) => `${symbol.name} — ${symbol.filePath}:${symbol.line}`), relatedTests: tests, missingTests: run.qa.missingTestAreas, coverageConfidence: run.qa.coverageConfidence, validationCommands: ['npm run typecheck', 'npm run lint', 'npm test'], qaChecklist: run.qa.checklist,
-    securityRisk: run.security.riskLevel, performanceRisk: run.performance.riskLevel, modernizationNotes: run.modernization.phasedPlan, copilotPrompt, prMarkdown: run.prEvidence.markdown,
+    tokenReduction: run.contextPack.estimatedReductionPercent, relevantFiles: run.contextPack.relevantFiles.map((file) => file.path), relevantSymbols: run.contextPack.relevantSymbols.map((symbol) => `${symbol.name} — ${symbol.filePath}:${symbol.line}`), relatedTests: tests, missingTests, coverageConfidence: run.qa.coverageConfidence, validationCommands: ['npm run typecheck', 'npm run lint', 'npm test'], qaChecklist,
+    securityRisk, performanceRisk, modernizationNotes, copilotPrompt, prMarkdown: appendReadOnlyReview(run.prEvidence.markdown, analysisEvidence),
     contextTokens: { raw: run.contextPack.estimatedRawTokens, selected: run.contextPack.selectedContextTokens ?? run.contextPack.estimatedPackedTokens, prompt: run.contextPack.estimatedPackedTokens, packets: 1, tier: run.contextPack.compressionTier ?? 'standard' },
     contextSections: run.contextPack.contextSections?.map(section => ({ path: section.path, reason: section.reason, preview: section.content.slice(0, 500), estimatedTokens: section.estimatedTokens, sourceHash: section.sourceHash, score: section.score, evidence: section.evidence })),
     omittedContext: run.contextPack.omittedContext,
@@ -449,13 +563,15 @@ function normalizeRunResult(run: KeystoneRunResult, settings?: CockpitSettings):
     performanceConstraints: run.contextPack.performanceConstraints,
     acceptanceCriteria: run.contextPack.acceptanceCriteria,
     repoSkills: run.contextPack.repoSkills.map(skill => ({ id: skill.id, name: skill.name, description: skill.description, guidance: skill.guidance })),
-    evidence: uniqueEvidence(run.contextPack),
+    copilotCustomizations,
+    evidence: mergeTaskEvidence(uniqueEvidence(run.contextPack), analysisEvidence),
+    analysisEvidence,
     retrievalMetrics: run.contextPack.retrievalMetrics,
     detailedRisks: {
       architectureImpact: risk(run.routeDecision.risks.length > 2 ? 'medium' : 'low', 'Architecture impact', run.routeDecision.reason),
-      securityRisk: risk(run.security.riskLevel, 'Security risk', run.security.checklist.join(' · ') || 'No security issue detected.'),
-      performanceRisk: risk(run.performance.riskLevel, 'Performance risk', run.performance.checklist.join(' · ') || 'No performance issue detected.'),
-      testGaps: risk(run.qa.missingTestAreas.length ? 'medium' : 'low', 'Test gaps', run.qa.missingTestAreas.join(' · ') || 'Mapped tests cover the selected context.'),
+      securityRisk: risk(securityRisk, 'Security risk', [...run.security.checklist, ...(analysisEvidence?.security.findings.map(item => `${item.path}:${item.line} ${item.title}`) ?? [])].join(' · ') || 'No security issue detected.'),
+      performanceRisk: risk(performanceRisk, 'Performance risk', [...run.performance.checklist, ...(analysisEvidence?.performance.findings.map(item => `${item.path}:${item.line} ${item.title}`) ?? [])].join(' · ') || 'No performance issue detected.'),
+      testGaps: risk(missingTests.length ? 'medium' : 'low', 'Test gaps', missingTests.join(' · ') || 'Mapped tests cover the selected context.'),
       dependencyChanges: risk('low', 'Dependency changes', 'No dependency manifest change is proposed by the current task.')
     }, excludedPaths: excluded
   };

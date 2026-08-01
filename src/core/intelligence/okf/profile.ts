@@ -20,13 +20,13 @@ export const KEYSTONE_OKF_PROFILE: KeystoneOkfProfileDefinition = Object.freeze(
   relationshipConstraints: ({
     contains: { sources: ['workspace','repository','module','service','architecture-boundary'], targets: any },
     defines: { sources: ['file','test','documentation','configuration','module','service'], targets: ['symbol','api','data-entity','service','call-flow','data-flow'] },
-    imports: { sources: ['file','test','module'], targets: ['file','test','module','package'] },
+    imports: { sources: ['file','test','module','configuration'], targets: ['file','test','module','package','configuration'] },
     'depends-on': { sources: any, targets: any }, calls: { sources: ['symbol','api','call-flow'], targets: ['symbol','api','service','call-flow'] },
     reads: { sources: ['symbol','api','service','data-flow'], targets: ['data-entity','configuration','file'] },
     writes: { sources: ['symbol','api','service','data-flow'], targets: ['data-entity','configuration','file'] },
     exposes: { sources: ['file','service','module'], targets: ['api'] }, implements: { sources: ['symbol','service'], targets: ['symbol','architecture-boundary'] },
-    extends: { sources: ['symbol'], targets: ['symbol'] }, tests: { sources: ['test'], targets: ['file','symbol','api','service'] },
-    covers: { sources: ['test'], targets: ['file','symbol','api','service'] }, 'configured-by': { sources: any, targets: ['configuration'] },
+    extends: { sources: ['symbol'], targets: ['symbol'] }, tests: { sources: ['test'], targets: ['file','symbol','api','service','configuration','data-entity','module'] },
+    covers: { sources: ['test'], targets: ['file','symbol','api','service','configuration','data-entity','module'] }, 'configured-by': { sources: any, targets: ['configuration'] },
     'documented-by': { sources: any, targets: ['documentation'] }, 'flows-to': { sources: ['call-flow','data-flow','api','service','symbol','file','data-entity'], targets: any },
     'may-impact': { sources: ['change-impact','risk-area','file','symbol','service'], targets: any }
   } as Partial<Record<KeystoneRelationshipKind, RelationshipConstraint>>)

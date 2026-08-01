@@ -9,7 +9,7 @@ export type {
 } from './types';
 export { buildTypeScriptCpg } from './typescriptCpgBuilder';
 export type { TypeScriptCpgInput } from './typescriptCpgBuilder';
-export { analyzeTypeScriptProject } from './typescriptSemantic';
+export { analyzeTypeScriptProject, analyzeTypeScriptProjectIsolated } from './typescriptSemantic';
 export type { SemanticCallEdge, SemanticCallbackEdge, SemanticTypeRelationship, TypeScriptSemanticResult } from './typescriptSemantic';
 export { CpgShardStore } from './shardStore';
 export type { CpgShardManifest, CpgShardManifestEntry } from './shardStore';

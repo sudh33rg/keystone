@@ -5,7 +5,8 @@
     "outDir": "dist/test-runner",
     "types": [
       "node",
-      "vscode"
+      "vscode",
+      "vscode-test-electron"
     ],
     "noEmit": false,
     "typeRoots": [

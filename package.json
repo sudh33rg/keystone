@@ -3,10 +3,8 @@
   "displayName": "Keystone",
   "description": "Local-first VS Code extension for deterministic workspace intelligence, context compression, intent-led SDLC, Copilot delegation, synchronized Browser View, and secure Task Handoff.",
   "version": "1.0.0",
-  "publisher": "local",
+  "author": "Sudheer G",
   "private": true,
-  "license": "UNLICENSED",
-  "packageManager": "npm@10.9.2",
   "engines": {
     "vscode": "^1.92.0",
     "node": ">=20"
@@ -110,16 +108,19 @@
     "test": "node scripts/test.mjs",
     "test:unit": "node scripts/test.mjs",
     "verify:structure": "node scripts/check-active-boundary.mjs",
+    "verify:source": "npm run verify:structure && npm run typecheck && npm run lint && npm test",
     "verify": "npm run verify:structure && npm run typecheck && npm run lint && npm run test && npm run verify:runtime && npm run build && npm run package && npm run verify:package",
     "vscode:prepublish": "npm run build",
     "package": "node scripts/package-vsix.mjs",
     "verify:package": "node scripts/verify-vsix.mjs",
-    "verify:runtime": "node scripts/verify-final.mjs",
+    "verify:runtime": "npm run verify:cross-feature && npm run verify:production",
     "package:project": "node scripts/package-project.mjs",
-    "release": "npm run verify && npm run package:project"
+    "release": "npm run verify && npm run package:project",
+    "verify:cross-feature": "npm run build && node scripts/verify-final.mjs",
+    "verify:production": "npm run build && node scripts/verify-production-acceptance.mjs"
   },
   "dependencies": {
-    "typescript": "5.8.3",
+     "typescript": "5.8.3",
     "react": "16.0.0",
     "react-dom": "16.0.0"
   },

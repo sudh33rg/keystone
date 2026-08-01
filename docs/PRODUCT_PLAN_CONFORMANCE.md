@@ -1,27 +1,29 @@
 # Keystone Product Plan Conformance
 
-The current implementation and the agreed Keystone plan use the same product boundaries.
+The active implementation follows the agreed Keystone product boundaries.
 
 | Planned capability | Active implementation | Acceptance evidence |
 |---|---|---|
-| One monolithic VS Code extension | Single `src/` product tree; no apps/packages workspace | active-boundary check |
-| Deterministic local Intelligence Layer first | background discovery, extraction, pipeline health, atomic persistence | pipeline and runtime tests |
-| No arbitrary repository file cap | universal discovery continues until completion/cancellation | 5,205-file runtime scenario |
-| Incremental ingestion | metadata/content reuse, changed-file analysis, deletion lifecycle | unchanged-file reuse test |
-| All text-based languages | universal probable-text frontend for unknown/custom extensions | unknown-language tests |
-| Explicit broad language coverage | 43 registered and conformance-tested categories | language conformance suite |
-| OKF as authoritative knowledge | profile v2, validation, observations, evidence, lifecycle, digests | OKF integration suite |
-| Graph/search/CPG linked to OKF | projections and CPG identity bindings use OKF IDs | projection and shard tests |
-| Intelligence visible in UI | readiness, languages, query results, OKF counts/evidence/provenance | shared application state and UI wiring |
-| Context compression and Copilot delegation | intent-ranked context, deduplication, compression, approval packet | context pipeline and SDLC delegation tests |
-| Intent-led SDLC | presentable R&D → approved specification → dynamic evidence-backed user/quality stories → 16 executable SDLC stages | full SDLC graph test/runtime |
-| ValueEdge feature integration | feature import, local research/plan, explicit approval, draft user/quality story publication | deterministic local HTTP integration fixture plus unit/runtime acceptance |
-| QA and test impact | mapped tests, reverse graph impact, coverage, failure/flaky analysis | QA and coverage tests |
-| Security/performance/modernization/review | first-class SDLC story types and evidence gates | full SDLC graph test |
-| Read-only PR review | review evidence only; no remote mutation | active-boundary/read-only Git checks |
-| Task Handoff on active work | encrypted versioned package preserving exact SDLC state | handoff round-trip tests |
-| Same UI in browser | one app, one host store, authenticated loopback transport | Browser View tests/runtime |
-| Offline reproducible project | `package-lock.json`, vendored npm toolchain, offline CI commands | clean `npm ci --offline` verification |
-| Installable extension | production build and VSIX package | VSIX integrity verification |
+| One monolithic VS Code extension | single `src/` product tree; no apps/packages workspace | active-boundary check |
+| Deterministic local Intelligence Layer first | background discovery, extraction, health, atomic persistence | pipeline + production runtime |
+| No arbitrary repository file cap | universal discovery continues until completion/cancellation | 5,205-file built-scanner scenario |
+| Incremental ingestion | content/metadata reuse, changed-file analysis, deletion lifecycle | incremental tests/runtime |
+| Broad/future language handling | 43 explicit categories + probable-text universal fallback | language conformance suite |
+| Compiler/LSP semantic enrichment | isolated TypeScript semantic worker + optional VS Code language-service enrichment | semantic tests |
+| OKF as authoritative knowledge | profile, generation constraints, validation, evidence, lifecycle, projections | persisted Cockpit + OKF suites |
+| Graph/search/CPG linked to OKF | OKF IDs, compact CPG bindings, relationship traversal | projection/query tests |
+| Intelligence visible/queryable in UI | readiness, languages, query answer/evidence/provenance | shared app state + Browser/VS Code wiring |
+| Context compression | ranked/deduplicated token-budgeted context packet | intent/delegation runtime |
+| Repository Copilot agents/skills/instructions | discovery, selection/editing and bounded delegation packet | production contract + UI tests |
+| User-approved Copilot delegation | `vscode.lm` selection/stream capture; external fallback never fabricates a return | delegation contract |
+| Intent-led SDLC | R&D → specification → evidence-backed stories → 16 gated stages | SDLC suite/runtime |
+| QA lifecycle | impacted/existing/new/failed/flaky tests, real executor, coverage and draft generation | QA tests + story evidence |
+| Polyglot validation | additive marker-backed commands across major ecosystems | validation command tests |
+| Security/performance/modernization | repository workers + task evidence + approval gates | runtime + SDLC state |
+| Read-only code/PR review | local/read-only evidence; no Git/remote mutation | policy scan + central Git gate |
+| ValueEdge | Feature import, local research, approved draft user/quality story publication | integration fixture/runtime |
+| Task Handoff | contextual active-task button, encrypted integrity-protected portable state | separate-workspace round trip |
+| Same application in Browser View | one React UI + one application store + authenticated loopback transport | Browser runtime tests |
+| Offline reproducible source | lockfile + vendored TypeScript/type packages | clean offline install |
 
-`docs/FINAL_RUNTIME_RESULTS.json` contains the latest machine-readable execution results.
+`docs/FINAL_RUNTIME_RESULTS.json` is regenerated by the runtime verifier and is machine-readable evidence; it is not required to execute Keystone.

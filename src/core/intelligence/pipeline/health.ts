@@ -30,11 +30,11 @@ export function evaluateIntelligenceHealth(
   const cpgStage = stages.find(stage => stage.id === 'code-property-graph');
   if (cpgStage) {
     const configuredDiagnostics = Number(cpgStage.metrics.configuredCompilerDiagnostics ?? 0);
-    checks.push(check('semantic-diagnostics', configuredDiagnostics === 0, configuredDiagnostics === 0 ? 1 : 0, `${configuredDiagnostics} compiler diagnostic(s) were observed in configured TypeScript projects`));
+    checks.push(check('semantic-diagnostics', configuredDiagnostics === 0, configuredDiagnostics === 0 ? 1 : 0, `${configuredDiagnostics} compiler syntax/config diagnostic(s) were observed in configured TypeScript projects; full typechecking belongs to validation`));
     const fallbackDiagnostics = Number(cpgStage.metrics.fallbackCompilerDiagnostics ?? 0);
     const fallbackFiles = Number(cpgStage.metrics.fallbackSemanticFiles ?? 0);
     const fallbackScore = fallbackFiles === 0 ? 1 : Math.max(0, 1 - fallbackDiagnostics / Math.max(fallbackFiles * 2, 1));
-    checks.push(check('fallback-semantic-diagnostics', fallbackDiagnostics === 0, fallbackScore, `${fallbackDiagnostics} compiler diagnostic(s) were observed across ${fallbackFiles} files without a dedicated tsconfig`));
+    checks.push(check('fallback-semantic-diagnostics', fallbackDiagnostics === 0, fallbackScore, `${fallbackDiagnostics} compiler syntax/config diagnostic(s) were observed across ${fallbackFiles} files without a dedicated tsconfig`));
   }
   if (runtime) {
     checks.push(check(

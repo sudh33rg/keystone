@@ -5,8 +5,23 @@ import type { ValidationRunResult } from '../../workflow/validation/validationRu
 import type { TaskStatePackageInput } from '../../workflow/handoff/taskStatePackage';
 import type { TaskStatePackage } from '../../workflow/handoff/contracts';
 import type { GapAnalysisResult } from '../../workflow/quality/qaGapAnalysis';
+import type { TestGenerationResult } from '../../workflow/quality/generation';
 import type { ModernizationDecisionInput, ModernizationPlan, ModernizationProposal } from '../../workflow/modernization/model';
 import type { TaskWorkspaceRef, TaskWorkspaceSnapshot } from '../../workflow/tasks/taskWorkspaceManager';
+
+
+export interface CopilotDelegationResult {
+  success: boolean;
+  captured: boolean;
+  mode: string;
+  model?: { id: string; vendor?: string; family?: string; version?: string; name?: string };
+  text?: string;
+  artifactPath?: string;
+  storyId?: string;
+  startedAt: string;
+  completedAt: string;
+  error?: string;
+}
 
 export interface CockpitSettings {
   compressionTier?: 'off' | 'standard' | 'aggressive';
@@ -64,7 +79,7 @@ export type ExtensionToWebviewMessage =
   | { type: 'BACKGROUND_ANALYSIS_STATUS'; worker: 'security' | 'performance' | 'modernization'; status: 'running' | 'complete' | 'failed'; result?: any; error?: string }
   | { type: 'MODERNIZATION_PROPOSAL'; proposal: ModernizationProposal }
   | { type: 'MODERNIZATION_PLAN'; plan: ModernizationPlan }
-  | { type: 'DELEGATION_RESULT'; success: boolean; mode: string; error?: string }
+  | ({ type: 'DELEGATION_RESULT' } & CopilotDelegationResult)
   | { type: 'TASK_COMPLETION_RESULT'; success: boolean; error?: string }
   | { type: 'TASK_DECISION_RESULT'; success: boolean; action: string; error?: string }
   | { type: 'TASK_HANDOFF_CREATED'; redactionCategories: string[]; checksum: string; packageValue: TaskStatePackage }
@@ -75,7 +90,7 @@ export type ExtensionToWebviewMessage =
   | { type: 'BROWSER_VIEW_OPENED'; url: string }
   | { type: 'VALUEEDGE_FEATURE_RESULT'; feature: import('../valueedge/types').ValueEdgeFeature }
   | { type: 'VALUEEDGE_PUBLISH_RESULT'; published: import('../valueedge/types').ValueEdgePublishResult[] }
-  | { type: 'INTELLIGENCE_QUERY_RESULT'; result: { query: string; items: Array<{ id:string; label:string; kind:string; path?:string; summary:string; evidenceIds:string[] }> } }
+  | { type: 'INTELLIGENCE_QUERY_RESULT'; result: { query:string; intent:string; answer:string; confidence:number; traversedRelationships:number; warnings:string[]; items:Array<{id:string;label:string;kind:string;path?:string;summary:string;reason:string;score:number;confidence:number;evidenceIds:string[];relationshipPath:string[]}> } }
   | { type: 'NOTIFICATION'; level: 'info' | 'error'; message: string };
 
 export interface WorkspaceSummary {
@@ -171,6 +186,15 @@ export interface KeystoneTaskResult {
   performanceConstraints?: string[];
   acceptanceCriteria?: string[];
   repoSkills?: Array<{ id: string; name: string; description: string; guidance: string[] }>;
-  evidence?: Array<{ kind: string; label: string; path?: string; okfId?: string; confidence?: number }>;
+  copilotCustomizations?: { agents: Array<{ id: string; name: string; path: string; description: string }>; skills: Array<{ id: string; name: string; description: string; guidance: string[] }>; instructions: Array<{ id: string; path: string; description: string; guidance: string[] }> };
+  evidence?: Array<{ kind: string; label: string; path?: string; okfId?: string; confidence?: number; summary?: string }>;
+  analysisEvidence?: {
+    qa: { scanMode: string; gaps: Array<{ type: string; path: string; severity: number; reason: string }>; recommendations: string[] };
+    security: { riskLevel: string; findings: Array<{ id: string; severity: string; title: string; path: string; line: number; explanation: string; remediation: string; confidence: number }> };
+    performance: { riskLevel: string; findings: Array<{ id: string; severity: string; title: string; path: string; line: number; explanation: string; remediation: string; confidence: number }> };
+    modernization: { proposalId?: string; coveragePercent?: number; gaps: Array<{ id: string; area: string; title: string; priority: string; evidence: string[] }> };
+    gitReview: { readOnly: true; branch?: string; changedFiles: string[]; diffHash: string; diffArtifactPath?: string; diffBytes: number };
+  };
+  testGeneration?: TestGenerationResult;
   taskWorkspace?: TaskWorkspaceRef;
 }
