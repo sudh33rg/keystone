@@ -119,11 +119,15 @@
     "release": "npm run verify && npm run package:project"
   },
   "dependencies": {
-    "typescript": "file:vendor/typescript"
+    "typescript": "5.8.3",
+    "react": "16.0.0",
+    "react-dom": "16.0.0"
   },
   "devDependencies": {
-    "@types/node": "file:vendor/types-node",
-    "undici-types": "file:vendor/undici-types"
+    "@types/node": "25.1.0",
+    "undici-types": "7.16.0",
+    "@types/react": "16.0.0",
+    "@types/react-dom": "16.0.0"
   },
   "keywords": [
     "vscode",

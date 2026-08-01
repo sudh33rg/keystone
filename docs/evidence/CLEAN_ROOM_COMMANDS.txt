@@ -1,5 +1,0 @@
-unzip Keystone-1.0.0-complete.zip
-cd Keystone
-sha256sum -c REPOSITORY_SHA256SUMS.txt
-npm ci --offline --ignore-scripts
-npm run verify

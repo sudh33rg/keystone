@@ -1,5 +1,0 @@
-50415c65e1d46852765e4736730e72c0fd36cc290005583e7af5feac4fcf9f16  docs/evidence/screenshots/01-home.png
-e4c2a4712e420aa05b31976e2d77ce0583ba0bf5d40358ffbfdaa96642092290  docs/evidence/screenshots/02-intelligence.png
-6999d53fe39833a2377ecfc7ff4ccca27351227f7f679297a98fd0ff7dfacfa2  docs/evidence/screenshots/03-work.png
-b8ac0d57d64847f9faff397d176b8983999b580f829889442def8520cdb4159a  docs/evidence/screenshots/04-activity.png
-da612f2d356a298445ed32f724673e7b7841624cbedb2c49ee62f3c9579b4fa9  docs/evidence/screenshots/05-vscode-webview.png
