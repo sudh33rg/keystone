@@ -7,6 +7,32 @@ export interface KeystoneOperation {
   updatedAt: string;
 }
 
+export interface KeystoneIngestionState {
+  active: boolean;
+  progress: number;
+  stage: string;
+  message: string;
+  persistedPath?: string;
+  queuedRefresh?: boolean;
+  workerPool?: {
+    maxWorkers: number;
+    activeWorkers: number;
+    completedStages: number;
+    totalStages: number;
+    queuedStages: number;
+    currentStages: string[];
+  };
+}
+
+export type KeystoneBackgroundWorker = "qa" | "security" | "performance" | "modernization";
+export interface KeystoneBackgroundWorkerState {
+  status: "idle" | "running" | "complete" | "cancelled" | "failed";
+  progress?: number;
+  message?: string;
+  error?: string;
+  updatedAt: string;
+}
+
 export interface KeystoneApplicationState {
   version: number;
   workspace?: { name: string; root: string; branch?: string };
@@ -14,7 +40,8 @@ export interface KeystoneApplicationState {
   intelligence?: unknown;
   intelligenceManifest?: unknown;
   intelligenceActivity: unknown[];
-  ingestion?: unknown;
+  ingestion?: KeystoneIngestionState;
+  backgroundWorkers?: Partial<Record<KeystoneBackgroundWorker, KeystoneBackgroundWorkerState>>;
   activeTask?: unknown;
   taskAnalysis?: unknown;
   delegationResult?: unknown;

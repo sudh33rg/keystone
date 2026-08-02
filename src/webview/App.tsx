@@ -3,6 +3,8 @@ import { GraphCanvas, type VisualGraphNode } from "./GraphCanvas.js";
 import type {
   ApplicationState,
   BacklogStory,
+  BackgroundWorkerId,
+  BackgroundWorkerState,
   CopilotDelegationResult,
   EvidenceItem,
   IntelligenceCpgResult,
@@ -14,6 +16,8 @@ import type {
   IntelligenceQueryResult,
   IntelligenceSummary,
   IntelligenceView,
+  IngestionState,
+  Operation,
   LanguageCapability,
   Nav,
   SdlcPlan,
@@ -160,9 +164,84 @@ export class App extends React.Component<Record<string, never>, AppState> {
             : undefined
       });
     } else if (message.type === "INDEX_PROGRESS") {
-      this.setState({
-        notice: `${String(message.stage ?? "indexing")} · ${Number(message.progress ?? 0)}% · ${String(message.message ?? "")}`
+      const progress = Number(message.progress ?? 0);
+      const progressMessage = String(message.message ?? "");
+      const workerPool = message.workerPool as IngestionState["workerPool"] | undefined;
+      this.setState((previous) => {
+        const ingestion: IngestionState = {
+          ...(previous.application.ingestion ?? {
+            active: true,
+            progress: 0,
+            stage: "indexing",
+            message: "Repository indexing is in progress."
+          }),
+          active: progress < 100,
+          progress,
+          stage: String(message.stage ?? "indexing"),
+          message: progressMessage,
+          queuedRefresh: progress < 100 ? previous.application.ingestion?.queuedRefresh : false,
+          ...(workerPool ? { workerPool } : {})
+        };
+        const operation: Operation = {
+          id: "repository-index",
+          kind: "intelligence",
+          status: progress >= 100 ? "completed" : "running",
+          progress,
+          message: progressMessage,
+          updatedAt: new Date().toISOString()
+        };
+        return {
+          application: {
+            ...previous.application,
+            status: progress >= 100 ? "ready" : "indexing",
+            ingestion,
+            operations: [
+              operation,
+              ...(previous.application.operations ?? []).filter((item) => item.id !== operation.id)
+            ],
+            version: previous.application.version + 1
+          },
+          notice: `${String(message.stage ?? "indexing")} · ${progress}% · ${progressMessage}`
+        };
       });
+    } else if (message.type === "QA_BACKGROUND_STATUS") {
+      const status = message.status as BackgroundWorkerState["status"];
+      this.setState((previous) => ({
+        application: {
+          ...previous.application,
+          backgroundWorkers: {
+            ...previous.application.backgroundWorkers,
+            qa: {
+              status,
+              progress: Number(message.progress ?? (status === "complete" ? 100 : 0)),
+              message: String(message.message ?? `QA background worker is ${status}.`),
+              updatedAt: new Date().toISOString()
+            }
+          },
+          version: previous.application.version + 1
+        },
+        notice: message.message ? String(message.message) : `QA background worker is ${status}.`
+      }));
+    } else if (message.type === "BACKGROUND_ANALYSIS_STATUS") {
+      const worker = String(message.worker) as BackgroundWorkerId;
+      const status = message.status as BackgroundWorkerState["status"];
+      this.setState((previous) => ({
+        application: {
+          ...previous.application,
+          backgroundWorkers: {
+            ...previous.application.backgroundWorkers,
+            [worker]: {
+              status,
+              progress: status === "complete" ? 100 : 0,
+              message: String(message.error ?? `${worker} background worker is ${status}.`),
+              error: message.error ? String(message.error) : undefined,
+              updatedAt: new Date().toISOString()
+            }
+          },
+          version: previous.application.version + 1
+        },
+        notice: String(message.error ?? `${worker} background worker is ${status}.`)
+      }));
     } else if (message.type === "INTELLIGENCE_QUERY_RESULT") {
       const result = message.result as IntelligenceQueryResult;
       this.setState({
@@ -242,7 +321,27 @@ export class App extends React.Component<Record<string, never>, AppState> {
         notice: `Published ${((message.published as unknown[]) ?? []).length} approved stories to ValueEdge.`
       });
     } else if (message.type === "NOTIFICATION" || message.type === "ERROR") {
-      this.setState({ notice: String(message.message ?? "Operation failed.") });
+      const notification = String(message.message ?? "Operation failed.");
+      this.setState((previous) => ({
+        application: notification.startsWith("Refresh queued")
+          ? {
+              ...previous.application,
+              status: "indexing",
+              ingestion: {
+                ...(previous.application.ingestion ?? {
+                  active: true,
+                  progress: 0,
+                  stage: "indexing",
+                  message: "Repository indexing is in progress."
+                }),
+                active: true,
+                queuedRefresh: true
+              },
+              version: previous.application.version + 1
+            }
+          : previous.application,
+        notice: notification
+      }));
     }
   }
 
@@ -275,6 +374,116 @@ export class App extends React.Component<Record<string, never>, AppState> {
         ].includes(story.status)
       ) ??
       this.state.plan?.stories.find((story) => story.status === "ready")
+    );
+  }
+  private isIndexing(): boolean {
+    return (
+      this.state.application.status === "indexing" ||
+      (this.state.application.operations ?? []).some(
+        (operation) => operation.id === "repository-index" && operation.status === "running"
+      )
+    );
+  }
+  private indexButtonLabel(defaultLabel: string): string {
+    return this.isIndexing() ? "Queue refresh" : defaultLabel;
+  }
+  private ingestionStatus(): JSX.Element | null {
+    const ingestion = this.state.application.ingestion;
+    if (!ingestion) return null;
+    const progress = Math.max(0, Math.min(100, ingestion.progress));
+    const pool = ingestion.workerPool;
+    return (
+      <Panel
+        title="Repository ingestion"
+        subtitle="Structural discovery, OKF promotion, and intelligence stages run in the background."
+      >
+        <div className="ingestion-header">
+          <div>
+            <strong>{ingestion.active ? "In progress" : "Ready"}</strong>
+            <small>
+              {ingestion.stage} · {progress}%
+            </small>
+          </div>
+          <Status value={ingestion.active ? "running" : "complete"} />
+        </div>
+        <div className="progress" aria-label={`Repository ingestion ${progress}%`}>
+          <i style={{ width: `${progress}%` }} />
+        </div>
+        <p className="result-summary">{ingestion.message}</p>
+        {pool && (
+          <div className="worker-pool-summary">
+            <div>
+              <span>Worker pool</span>
+              <strong>
+                {pool.activeWorkers}/{pool.maxWorkers} active
+              </strong>
+            </div>
+            <div>
+              <span>Stages</span>
+              <strong>
+                {pool.completedStages}/{pool.totalStages} complete
+              </strong>
+            </div>
+            <div>
+              <span>Queued</span>
+              <strong>{pool.queuedStages}</strong>
+            </div>
+            {pool.currentStages.length > 0 && (
+              <div className="worker-stage-list">
+                <span>Running now</span>
+                <div>
+                  {pool.currentStages.map((stage) => (
+                    <span className="worker-chip" key={stage}>
+                      {stage}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+        {ingestion.queuedRefresh && (
+          <div className="callout warning">
+            Refresh queued. It will start automatically after this run completes.
+          </div>
+        )}
+      </Panel>
+    );
+  }
+  private backgroundWorkerPanel(): JSX.Element {
+    const workerLabels: Record<BackgroundWorkerId, string> = {
+      qa: "QA gap analysis",
+      security: "Security analysis",
+      performance: "Performance analysis",
+      modernization: "Modernization analysis"
+    };
+    const workers: BackgroundWorkerId[] = ["qa", "security", "performance", "modernization"];
+    return (
+      <Panel
+        title="Background workers"
+        subtitle="Independent workspace scans continue while the main UI remains responsive."
+      >
+        <div className="background-worker-grid">
+          {workers.map((worker) => {
+            const state = this.state.application.backgroundWorkers?.[worker];
+            const progress = state?.progress;
+            return (
+              <article className="background-worker-card" key={worker}>
+                <div className="background-worker-header">
+                  <strong>{workerLabels[worker]}</strong>
+                  <Status value={state?.status ?? "idle"} />
+                </div>
+                <p>{state?.message ?? "Waiting for the workspace scan to start."}</p>
+                {progress !== undefined && (
+                  <div className="progress" aria-label={`${workerLabels[worker]} ${progress}%`}>
+                    <i style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} />
+                  </div>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      </Panel>
     );
   }
   private selectStory(story: Story): void {
@@ -379,7 +588,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
               className="primary"
               onClick={() => vscode.postMessage({ type: "INDEX_REPO", force: true })}
             >
-              Index / refresh
+              {this.indexButtonLabel("Index / refresh")}
             </button>
             <button onClick={() => this.navigate("Intelligence")}>Explore intelligence</button>
             <button onClick={() => this.navigate("Work")}>Open work</button>
@@ -413,6 +622,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
             detail={plan?.specificationStatus ?? "Start from an intent"}
           />
         </div>
+        {this.ingestionStatus()}
         <div className="two-column">
           <Panel
             title="Start from intent"
@@ -528,7 +738,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
             className="primary"
             onClick={() => vscode.postMessage({ type: "INDEX_REPO", force: true })}
           >
-            Refresh intelligence
+            {this.indexButtonLabel("Refresh intelligence")}
           </button>
         </div>
         <div className="metric-grid">
@@ -1837,6 +2047,8 @@ export class App extends React.Component<Record<string, never>, AppState> {
             </p>
           </div>
         </div>
+        {this.ingestionStatus()}
+        {this.backgroundWorkerPanel()}
         <div className="two-column">
           <Panel
             title="Operations"

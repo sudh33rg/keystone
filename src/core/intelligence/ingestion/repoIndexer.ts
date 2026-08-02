@@ -37,7 +37,13 @@ export interface RepoIndexOptions {
   signal?: AbortSignal;
   onDiscovery?: (discovered: number, path: string) => void;
   onFile?: (indexed: number, total: number, path: string) => void;
+  onPersistence?: (event: RepoIndexPersistenceEvent) => void;
   semanticEnricher?: SemanticEnrichmentProvider;
+}
+
+export interface RepoIndexPersistenceEvent {
+  phase: "structural-store" | "okf-read" | "okf-build" | "okf-store" | "okf-complete";
+  message: string;
 }
 
 export async function indexRepository(
@@ -295,10 +301,33 @@ export async function indexRepository(
   };
 
   if (options.persist !== false) {
+    options.onPersistence?.({
+      phase: "structural-store",
+      message: "Persisting the structural repository index..."
+    });
     await store.write(intelligence);
     const okfStore = new OkfSnapshotStore(workspaceRoot);
+    options.onPersistence?.({
+      phase: "okf-read",
+      message: "Loading the previous OKF snapshot for incremental reconciliation..."
+    });
     const previousOkf = await okfStore.read();
-    await okfStore.write(repoIntelligenceToOkf(intelligence, { previousSnapshot: previousOkf }));
+    options.onPersistence?.({
+      phase: "okf-build",
+      message: "Building the canonical OKF knowledge snapshot..."
+    });
+    const okfSnapshot = repoIntelligenceToOkf(intelligence, { previousSnapshot: previousOkf });
+    options.onPersistence?.({
+      phase: "okf-store",
+      message: `Writing OKF units, relationships, evidence, and projections (${okfSnapshot.units.length} units)...`
+    });
+    await okfStore.write(okfSnapshot, {
+      onProgress: (message) => options.onPersistence?.({ phase: "okf-store", message })
+    });
+    options.onPersistence?.({
+      phase: "okf-complete",
+      message: "Canonical OKF snapshot and portable bundle promoted successfully."
+    });
   }
   return intelligence;
 }

@@ -2,7 +2,8 @@ import type { ContextPack, RepoFile } from "../../domain/types";
 import type { EnhancementMode, EnhancementSession } from "../../context/promptEnhancer";
 import type {
   IntelligenceFamilySummary,
-  IntelligenceStageResult
+  IntelligenceStageResult,
+  IntelligenceWorkerPoolProgress
 } from "../../intelligence/pipeline";
 import type { ValidationRunResult } from "../../workflow/validation/validationRunner";
 import type { TaskStatePackageInput } from "../../workflow/handoff/taskStatePackage";
@@ -132,7 +133,13 @@ export type WebviewToExtensionMessage =
 
 export type ExtensionToWebviewMessage =
   | { type: "STATE_UPDATE"; state: KeystoneWebviewState }
-  | { type: "INDEX_PROGRESS"; message: string; progress?: number; stage?: string }
+  | {
+      type: "INDEX_PROGRESS";
+      message: string;
+      progress?: number;
+      stage?: string;
+      workerPool?: IntelligenceWorkerPoolProgress;
+    }
   | { type: "ERROR"; message: string; operation?: "intelligence" | "analysis" | "validation" }
   | { type: "TASK_RESULT"; result: KeystoneTaskResult }
   | { type: "INTENT_ENHANCED"; session: EnhancementSession }

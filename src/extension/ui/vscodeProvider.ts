@@ -169,8 +169,14 @@ export class VscodeProvider {
       return;
     }
     if (this.indexing) {
-      this.pendingIndexRoots.add(requestedRoot);
-      this.logInfo(`Intelligence is already running; queued a refresh for ${requestedRoot}.`);
+      if (this.activeIndexRoot === requestedRoot || !this.activeIndexRoot) {
+        this.refreshQueued = true;
+      } else {
+        this.pendingIndexRoots.add(requestedRoot);
+      }
+      const message = `Refresh queued for ${requestedRoot}; the current intelligence run will finish first.`;
+      this.logInfo(message);
+      this.post({ type: "NOTIFICATION", level: "info", message });
       return;
     }
     const run = this.runIndexWorkspace(requestedRoot);
@@ -202,10 +208,10 @@ export class VscodeProvider {
         }
       });
     try {
-      const state = await this.getService(root).index((message, progress, stage) => {
+      const state = await this.getService(root).index((message, progress, stage, workerPool) => {
         if (generation === this.indexGeneration && isVisibleRoot()) {
           this.logInfo(`[${String(progress).padStart(3, " ")}%] ${stage}: ${message}`);
-          this.post({ type: "INDEX_PROGRESS", message, progress, stage });
+          this.post({ type: "INDEX_PROGRESS", message, progress, stage, workerPool });
         }
       });
       if (generation !== this.indexGeneration) return;
@@ -1486,7 +1492,11 @@ export class VscodeProvider {
     }
     this.sdlcPlan = await new SDLCPlanStore(root).read();
     if (this.sdlcPlan) this.applicationStore.update({ sdlc: this.sdlcPlan });
-    this.post({ type: "STATE_UPDATE", state: await this.getService(root).loadState() });
+    const state = await this.getService(root).loadState();
+    // The initial persisted-state read can overlap automatic recovery indexing.
+    // Never let that stale idle/ready snapshot replace the live progress state.
+    if (this.indexing && this.activeIndexRoot === root) return;
+    this.post({ type: "STATE_UPDATE", state });
     if (this.sdlcPlan) this.post({ type: "SDLC_PLAN_RESULT", plan: this.sdlcPlan });
   }
 
@@ -1635,7 +1645,10 @@ export class VscodeProvider {
     const existing = this.services.get(root);
     if (existing) return existing;
     const service = new CockpitService(root, {
-      semanticEnricher: new VscodeLanguageServiceEnricher()
+      semanticEnricher: new VscodeLanguageServiceEnricher(),
+      maxWorkers: vscode.workspace
+        .getConfiguration("keystone.intelligence")
+        .get<number>("maxWorkers", 5)
     });
     this.services.set(root, service);
     return service;
@@ -1643,15 +1656,30 @@ export class VscodeProvider {
 
   private post(message: ExtensionToWebviewMessage): void {
     if (message.type === "STATE_UPDATE") this.applicationStore.update(message.state);
-    if (message.type === "INDEX_PROGRESS")
+    if (message.type === "INDEX_PROGRESS") {
+      const current = this.applicationStore.snapshot();
+      const progress = message.progress ?? current.ingestion?.progress ?? 0;
+      this.applicationStore.update({
+        status: progress >= 100 ? "ready" : "indexing",
+        ingestion: {
+          active: progress < 100,
+          progress,
+          stage: message.stage ?? current.ingestion?.stage ?? "indexing",
+          message: message.message,
+          persistedPath: current.ingestion?.persistedPath ?? ".keystone/intelligence/summary.json",
+          queuedRefresh: progress < 100 ? current.ingestion?.queuedRefresh : false,
+          workerPool: message.workerPool ?? current.ingestion?.workerPool
+        }
+      });
       this.applicationStore.mergeOperation({
         id: "repository-index",
         kind: "intelligence",
-        status: message.progress === 100 ? "completed" : "running",
-        progress: message.progress ?? 0,
+        status: progress >= 100 ? "completed" : "running",
+        progress,
         message: message.message,
         updatedAt: new Date().toISOString()
       });
+    }
     if (message.type === "TASK_RESULT")
       this.applicationStore.update({
         taskAnalysis: message.result,
@@ -1668,10 +1696,56 @@ export class VscodeProvider {
         message: `${message.results.length} validation command(s) completed.`,
         updatedAt: new Date().toISOString()
       });
-    if (message.type === "NOTIFICATION")
+    if (message.type === "QA_BACKGROUND_STATUS") {
+      const current = this.applicationStore.snapshot();
+      this.applicationStore.update({
+        backgroundWorkers: {
+          ...current.backgroundWorkers,
+          qa: {
+            status: message.status,
+            progress: message.progress ?? (message.status === "complete" ? 100 : undefined),
+            message: message.message,
+            updatedAt: new Date().toISOString()
+          }
+        }
+      });
+    }
+    if (message.type === "BACKGROUND_ANALYSIS_STATUS") {
+      const current = this.applicationStore.snapshot();
+      this.applicationStore.update({
+        backgroundWorkers: {
+          ...current.backgroundWorkers,
+          [message.worker]: {
+            status: message.status,
+            progress: message.status === "complete" ? 100 : undefined,
+            message: message.error ?? `${message.worker} background worker is ${message.status}.`,
+            error: message.error,
+            updatedAt: new Date().toISOString()
+          }
+        }
+      });
+    }
+    if (message.type === "NOTIFICATION") {
+      if (message.message.startsWith("Refresh queued")) {
+        const current = this.applicationStore.snapshot();
+        this.applicationStore.update({
+          status: "indexing",
+          ingestion: {
+            ...(current.ingestion ?? {
+              active: true,
+              progress: 0,
+              stage: "indexing",
+              message: "Repository indexing is in progress."
+            }),
+            active: true,
+            queuedRefresh: true
+          }
+        });
+      }
       this.applicationStore.update({
         notification: { level: message.level, message: message.message }
       });
+    }
     if (message.type === "TASK_HANDOFFS_RESULT")
       this.applicationStore.update({ handoffs: message.sessions });
     void this.panel?.webview.postMessage(message);

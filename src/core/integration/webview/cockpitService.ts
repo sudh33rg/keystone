@@ -6,6 +6,7 @@ import { CaptainAgent } from "../../workflow/agents/captainAgent";
 import {
   buildRepositoryIntelligence,
   IntelligencePipelineCancelledError,
+  type IntelligenceWorkerPoolProgress,
   type RepositoryIntelligenceSnapshot
 } from "../../intelligence/pipeline";
 import { LanguageCapabilityRegistry } from "../../intelligence/languages/languageRegistry";
@@ -104,7 +105,10 @@ export class CockpitService {
 
   constructor(
     private readonly workspaceRoot: string,
-    private readonly runtime: { semanticEnricher?: SemanticEnrichmentProvider } = {}
+    private readonly runtime: {
+      semanticEnricher?: SemanticEnrichmentProvider;
+      maxWorkers?: number;
+    } = {}
   ) {
     this.taskWorkspaces = new TaskWorkspaceManager(workspaceRoot);
   }
@@ -172,7 +176,12 @@ export class CockpitService {
   }
 
   async index(
-    onProgress: (message: string, progress: number, stage: string) => void
+    onProgress: (
+      message: string,
+      progress: number,
+      stage: string,
+      workerPool?: IntelligenceWorkerPoolProgress
+    ) => void
   ): Promise<KeystoneWebviewState> {
     const generation = ++this.runGeneration;
     // Clear cancelled flag BEFORE building controller so concurrent
@@ -198,9 +207,10 @@ export class CockpitService {
         signal: controller.signal,
         cognitive: true,
         semanticEnricher: this.runtime.semanticEnricher,
+        maxWorkers: this.runtime.maxWorkers,
         onProgress: (event) => {
           if (generation === this.runGeneration)
-            onProgress(event.message, event.progress, event.stage);
+            onProgress(event.message, event.progress, event.stage, event.workerPool);
         }
       });
     } catch (error) {

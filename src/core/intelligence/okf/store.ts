@@ -18,6 +18,9 @@ export interface OkfSnapshotSummaryProjection {
   readonly cpgBindings: number;
   readonly evidenceSamples: readonly OkfEvidence[];
 }
+export interface OkfSnapshotWriteOptions {
+  readonly onProgress?: (message: string) => void;
+}
 async function readJsonLines<T>(file: string): Promise<T[]> {
   try {
     return (await fs.readFile(file, "utf8"))
@@ -103,7 +106,8 @@ export class OkfSnapshotStore {
       return undefined;
     }
   }
-  async write(snapshot: KeystoneOkfSnapshot): Promise<void> {
+  async write(snapshot: KeystoneOkfSnapshot, options: OkfSnapshotWriteOptions = {}): Promise<void> {
+    options.onProgress?.("Serializing the validated OKF snapshot...");
     const files = serializeOkfSnapshot(snapshot);
     const candidate = `${this.root}.candidate-${snapshot.manifest.extractionRunId}`;
     await fs.rm(candidate, { recursive: true, force: true });
@@ -112,6 +116,7 @@ export class OkfSnapshotStore {
       await fs.mkdir(path.dirname(target), { recursive: true });
       await fs.writeFile(target, content, "utf8");
     }
+    options.onProgress?.("Writing OKF graph, search, and CPG projections...");
     const graph = projectOkfGraph(snapshot),
       search = projectOkfSearch(snapshot),
       bindings = projectCpgBindings(snapshot);
@@ -151,11 +156,14 @@ export class OkfSnapshotStore {
       recursive: true,
       force: true
     });
+    options.onProgress?.("Generating the portable Markdown OKF bundle...");
     await writePortableOkfBundle(
       this.workspaceRoot,
       snapshot,
-      path.join(this.intelligenceRoot, "okf-bundle")
+      path.join(this.intelligenceRoot, "okf-bundle"),
+      { onProgress: options.onProgress }
     );
+    options.onProgress?.("OKF snapshot promotion complete.");
   }
 }
 async function copyDirectory(source: string, target: string): Promise<void> {

@@ -69,6 +69,13 @@
           "default": true,
           "description": "Enable Keystone commands."
         },
+        "keystone.intelligence.maxWorkers": {
+          "type": "number",
+          "default": 5,
+          "minimum": 1,
+          "maximum": 16,
+          "description": "Maximum number of simultaneous intelligence stage workers."
+        },
         "keystone.valueEdge.baseUrl": {
           "type": "string",
           "default": "",

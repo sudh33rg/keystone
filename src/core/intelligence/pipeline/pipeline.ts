@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 
@@ -22,7 +23,11 @@ import {
   type TypeScriptSemanticResult
 } from "../cpg";
 import { OkfSnapshotStore } from "../okf/store";
-import { analyzeRepositoryGraph, type RepositoryGraphAnalysis } from "./derivedGraph";
+import {
+  analyzeRepositoryGraph,
+  createGraphImpactAnalyzer,
+  type RepositoryGraphAnalysis
+} from "./derivedGraph";
 import { evaluateIntelligenceHealth } from "./health";
 import { planIncrementalUpdate } from "./incremental";
 import { buildIntelligenceFindings } from "./findings";
@@ -30,6 +35,7 @@ import { buildRuntimeVerification, type RuntimeVerification } from "./runtime";
 import { buildRepositoryEvolution, type RepositoryEvolution } from "./evolution";
 import { analyzeDeadCode, type DeadCodeCandidate } from "./deadCode";
 import { GitReadOnly } from "../../platform/git/gitReadOnly";
+import { runStageInWorker } from "./stageWorkerPool";
 
 const STORE = ".keystone/intelligence";
 
@@ -40,7 +46,7 @@ type StageDefinition = {
   cognitive?: boolean;
   analyze(context: StageContext): Promise<StageProjection> | StageProjection;
 };
-type StageProjection = {
+export type StageProjection = {
   summary: string;
   items?: string[];
   metrics?: Record<string, number | string | boolean>;
@@ -56,6 +62,45 @@ type StageContext = {
   deadCode: readonly DeadCodeCandidate[];
   previous: Map<IntelligenceStageId, IntelligenceStageResult>;
 };
+
+export interface SerializedStageContext {
+  root: string;
+  persist: boolean;
+  intelligence: RepoIntelligence;
+  graph: Omit<RepositoryGraphAnalysis, "impactedBy">;
+  runtime: RuntimeVerification;
+  semantic: TypeScriptSemanticResult;
+  evolution: RepositoryEvolution;
+  deadCode: readonly DeadCodeCandidate[];
+  previous: ReadonlyArray<readonly [IntelligenceStageId, IntelligenceStageResult]>;
+}
+
+export async function runIntelligenceStage(
+  stageId: string,
+  serialized: SerializedStageContext
+): Promise<StageProjection> {
+  const definition = STAGES.find((stage) => stage.id === stageId);
+  if (!definition) throw new Error(`Unknown intelligence stage: ${stageId}.`);
+  const graph = {
+    ...serialized.graph,
+    impactedBy: createGraphImpactAnalyzer(
+      serialized.intelligence.files.map((file) => file.path),
+      serialized.graph.localEdges,
+      serialized.intelligence.tests
+    )
+  } as RepositoryGraphAnalysis;
+  return definition.analyze({
+    root: serialized.root,
+    persist: serialized.persist,
+    intelligence: serialized.intelligence,
+    graph,
+    runtime: serialized.runtime,
+    semantic: serialized.semantic,
+    evolution: serialized.evolution,
+    deadCode: serialized.deadCode,
+    previous: new Map(serialized.previous)
+  });
+}
 
 export async function buildRepositoryIntelligence(
   root: string,
@@ -87,6 +132,20 @@ export async function buildRepositoryIntelligence(
           total: STAGES.length,
           progress: Math.min(4, Math.round((indexed / Math.max(total, 1)) * 4)),
           message: `Indexing ${file} (${indexed}/${total})`
+        }),
+      onPersistence: (event) =>
+        options.onProgress?.({
+          stage: "structural",
+          order: 1,
+          total: STAGES.length,
+          progress: {
+            "structural-store": 4.1,
+            "okf-read": 4.2,
+            "okf-build": 4.3,
+            "okf-store": 4.4,
+            "okf-complete": 4.9
+          }[event.phase],
+          message: event.message
         }),
       semanticEnricher: options.semanticEnricher
     });
@@ -173,68 +232,90 @@ export async function buildRepositoryIntelligence(
     deadCode,
     previous: new Map()
   };
-  const stages: IntelligenceStageResult[] = [];
+  const configuredWorkers = Number(options.maxWorkers ?? 5);
+  const maxWorkers = Number.isFinite(configuredWorkers)
+    ? Math.max(1, Math.min(16, Math.floor(configuredWorkers)))
+    : 5;
+  const stageResults = new Map<IntelligenceStageId, IntelligenceStageResult>();
+  const pending = new Set(STAGES.map((stage) => stage.id));
+  const dependencies: Partial<Record<IntelligenceStageId, readonly IntelligenceStageId[]>> = {
+    impact: ["git-change"],
+    context: ["git-change"]
+  };
+  const workerPath = path.join(__dirname, "intelligenceStageWorker.js");
+  let completedStages = 0;
 
-  for (let index = 0; index < STAGES.length; index += 1) {
-    const definition = STAGES[index];
-    if (options.signal?.aborted) throw new IntelligencePipelineCancelledError(definition.id);
-    const progress = 10 + Math.round((index / Math.max(STAGES.length - 1, 1)) * 88);
-    options.onProgress?.({
-      stage: definition.id,
-      order: index + 1,
-      total: STAGES.length,
-      progress,
-      message: `Building ${definition.label}...`
-    });
-    const stageStarted = new Date();
-    try {
-      const projection = await definition.analyze(context);
-      const completedAt = new Date();
-      const items = projection.items ?? [];
-      const result: IntelligenceStageResult = {
-        id: definition.id,
-        order: index + 1,
-        label: definition.label,
-        family: definition.family,
-        status: "complete",
-        startedAt: stageStarted.toISOString(),
-        completedAt: completedAt.toISOString(),
-        durationMs: completedAt.getTime() - stageStarted.getTime(),
-        itemCount: items.length,
-        summary: projection.summary,
-        items,
-        metrics: projection.metrics ?? {},
-        cognitivelyEnriched: Boolean(definition.cognitive)
-      };
-      stages.push(result);
-      context.previous.set(definition.id, result);
-      if (options.persist !== false)
-        await writeJson(
-          root,
-          `${STORE}/stages/${String(index + 1).padStart(2, "0")}-${definition.id}.json`,
-          result
-        );
-    } catch (error) {
-      if (error instanceof IntelligencePipelineCancelledError) throw error;
-      const completedAt = new Date();
-      stages.push({
-        id: definition.id,
-        order: index + 1,
-        label: definition.label,
-        family: definition.family,
-        status: "failed",
-        startedAt: stageStarted.toISOString(),
-        completedAt: completedAt.toISOString(),
-        durationMs: completedAt.getTime() - stageStarted.getTime(),
-        itemCount: 0,
-        summary: "Stage failed.",
-        items: [],
-        metrics: {},
-        cognitivelyEnriched: false,
-        error: error instanceof Error ? error.message : String(error)
+  while (pending.size) {
+    if (options.signal?.aborted) throw new IntelligencePipelineCancelledError("structural");
+    const ready = STAGES.filter(
+      (stage) =>
+        pending.has(stage.id) &&
+        (dependencies[stage.id] ?? []).every((dependency) => stageResults.has(dependency))
+    );
+    if (!ready.length)
+      throw new Error("Intelligence stage dependency graph could not make progress.");
+    const batch = ready.slice(0, maxWorkers);
+    const previous = new Map(stageResults);
+    for (const definition of batch) {
+      const progress = 10 + Math.round((completedStages / STAGES.length) * 88);
+      options.onProgress?.({
+        stage: definition.id,
+        order: STAGES.indexOf(definition) + 1,
+        total: STAGES.length,
+        progress,
+        message: `Starting ${definition.label} on an intelligence worker (pool ${maxWorkers}).`,
+        workerPool: {
+          maxWorkers,
+          activeWorkers: batch.length,
+          completedStages,
+          totalStages: STAGES.length,
+          queuedStages: Math.max(0, pending.size - batch.length),
+          currentStages: batch.map((item) => item.label)
+        }
       });
     }
+    const results = await Promise.all(
+      batch.map((definition) =>
+        executeStage(definition, context, previous, workerPath, options, completedStages)
+      )
+    );
+    for (const result of results) {
+      stageResults.set(result.id, result);
+      pending.delete(result.id);
+      completedStages += 1;
+      const progress = 10 + Math.round((completedStages / STAGES.length) * 88);
+      options.onProgress?.({
+        stage: result.id,
+        order: result.order,
+        total: STAGES.length,
+        progress,
+        message: `${result.label} ${result.status} in ${result.durationMs}ms (${completedStages}/${STAGES.length} stages complete).`,
+        workerPool: {
+          maxWorkers,
+          activeWorkers: batch.filter((item) => !stageResults.has(item.id)).length,
+          completedStages,
+          totalStages: STAGES.length,
+          queuedStages: Math.max(0, pending.size - batch.length),
+          currentStages: batch
+            .filter((item) => !stageResults.has(item.id))
+            .map((item) => item.label)
+        }
+      });
+    }
+    context.previous = new Map(stageResults);
+    if (options.persist !== false)
+      await Promise.all(
+        results.map((result) =>
+          writeJson(
+            root,
+            `${STORE}/stages/${String(result.order).padStart(2, "0")}-${result.id}.json`,
+            result
+          )
+        )
+      );
   }
+
+  const stages = STAGES.map((stage) => stageResults.get(stage.id)!);
 
   const status = stages.some((stage) => stage.status === "failed") ? "degraded" : "ready";
   const cpgMetrics = context.previous.get("code-property-graph")?.metrics ?? {};
@@ -375,6 +456,87 @@ async function writeJson(root: string, relative: string, value: unknown): Promis
   await fs.mkdir(path.dirname(target), { recursive: true });
   await fs.writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, "utf8");
   await fs.rename(temporary, target);
+}
+
+async function executeStage(
+  definition: StageDefinition,
+  context: StageContext,
+  previous: Map<IntelligenceStageId, IntelligenceStageResult>,
+  workerPath: string,
+  options: IntelligencePipelineOptions,
+  completedStages: number
+): Promise<IntelligenceStageResult> {
+  const stageStarted = new Date();
+  const order = STAGES.indexOf(definition) + 1;
+  const stageContext = { ...context, previous };
+  try {
+    const projection = existsSync(workerPath)
+      ? await runStageInWorker(
+          workerPath,
+          definition.id,
+          serializeStageContext(stageContext),
+          options.signal
+        )
+      : await definition.analyze(stageContext);
+    const completedAt = new Date();
+    const items = projection.items ?? [];
+    return {
+      id: definition.id,
+      order,
+      label: definition.label,
+      family: definition.family,
+      status: "complete",
+      startedAt: stageStarted.toISOString(),
+      completedAt: completedAt.toISOString(),
+      durationMs: completedAt.getTime() - stageStarted.getTime(),
+      itemCount: items.length,
+      summary: projection.summary,
+      items,
+      metrics: projection.metrics ?? {},
+      cognitivelyEnriched: Boolean(definition.cognitive)
+    };
+  } catch (error) {
+    if (options.signal?.aborted) throw new IntelligencePipelineCancelledError(definition.id);
+    const completedAt = new Date();
+    return {
+      id: definition.id,
+      order,
+      label: definition.label,
+      family: definition.family,
+      status: "failed",
+      startedAt: stageStarted.toISOString(),
+      completedAt: completedAt.toISOString(),
+      durationMs: completedAt.getTime() - stageStarted.getTime(),
+      itemCount: 0,
+      summary: "Stage failed.",
+      items: [],
+      metrics: { workerPoolCompletedBeforeFailure: completedStages },
+      cognitivelyEnriched: false,
+      error: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
+function serializeStageContext(context: StageContext): SerializedStageContext {
+  return {
+    root: context.root,
+    persist: context.persist,
+    intelligence: context.intelligence,
+    graph: {
+      localEdges: context.graph.localEdges,
+      hubs: context.graph.hubs,
+      entryPoints: context.graph.entryPoints,
+      orphanSourceFiles: context.graph.orphanSourceFiles,
+      cycles: context.graph.cycles,
+      communities: context.graph.communities,
+      flows: context.graph.flows
+    },
+    runtime: context.runtime,
+    semantic: context.semantic,
+    evolution: context.evolution,
+    deadCode: context.deadCode,
+    previous: [...context.previous.entries()]
+  };
 }
 
 const STAGES: StageDefinition[] = [

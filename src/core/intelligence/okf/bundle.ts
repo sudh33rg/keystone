@@ -35,10 +35,15 @@ export interface OkfBundleValidationResult {
   readonly issues: readonly OkfBundleValidationIssue[];
 }
 
+export interface OkfBundleWriteOptions {
+  readonly onProgress?: (message: string) => void;
+}
+
 export async function writePortableOkfBundle(
   workspaceRoot: string,
   snapshot: KeystoneOkfSnapshot,
-  targetRoot: string
+  targetRoot: string,
+  options: OkfBundleWriteOptions = {}
 ): Promise<OkfBundleWriteResult> {
   const candidate = `${targetRoot}.candidate-${snapshot.manifest.extractionRunId}`;
   await fs.rm(candidate, { recursive: true, force: true });
@@ -105,6 +110,9 @@ export async function writePortableOkfBundle(
       rendered.map((item) =>
         fs.writeFile(path.join(candidate, item.relative), item.content, "utf8")
       )
+    );
+    options.onProgress?.(
+      `Writing portable OKF concepts (${Math.min(offset + rendered.length, renderers.length)}/${renderers.length})...`
     );
   }
   if (!renderers.some((item) => item.relative === "index.md"))

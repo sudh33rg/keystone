@@ -617,6 +617,83 @@ label {
   height: 100%;
   background: #5eb8d9;
 }
+.ingestion-header,
+.background-worker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.ingestion-header > div {
+  display: grid;
+  gap: 3px;
+}
+.ingestion-header small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.worker-pool-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+}
+.worker-pool-summary > div {
+  display: grid;
+  gap: 3px;
+  padding: 9px;
+  border: 1px solid #244b5d;
+  border-radius: 7px;
+  background: #071f2a;
+}
+.worker-pool-summary span,
+.worker-stage-list > span {
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+.worker-pool-summary strong {
+  font-size: 13px;
+}
+.worker-stage-list {
+  grid-column: 1 / -1;
+}
+.worker-stage-list > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 5px;
+}
+.worker-chip {
+  padding: 4px 7px;
+  border: 1px solid #3c7892;
+  border-radius: 999px;
+  color: #9bd8ec !important;
+  background: #103447;
+  font-size: 10px !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+}
+.background-worker-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 9px;
+}
+.background-worker-card {
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid #244b5d;
+  border-radius: 7px;
+  background: #071f2a;
+}
+.background-worker-card p {
+  min-height: 34px;
+  margin: 9px 0 0;
+  color: #a5bfca;
+  font-size: 11px;
+  line-height: 1.4;
+}
 .evidence-grid {
   max-height: 320px;
   overflow: auto;
@@ -647,6 +724,9 @@ code {
 @media (max-width: 1050px) {
   .metric-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+  .background-worker-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .two-column,
   .sdlc-layout {
@@ -681,6 +761,10 @@ code {
     display: grid;
   }
   .metric-grid {
+    grid-template-columns: 1fr;
+  }
+  .worker-pool-summary,
+  .background-worker-grid {
     grid-template-columns: 1fr;
   }
   .header-actions {

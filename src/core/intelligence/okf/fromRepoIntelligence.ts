@@ -39,6 +39,7 @@ export function repoIntelligenceToOkf(
   const extractionRunId = options.extractionRunId ?? randomUUID();
   const observedAt = options.observedAt ?? intelligence.indexedAt;
   const previous = options.previousSnapshot;
+  const fileByPath = new Map(intelligence.files.map((file) => [file.path, file]));
   const previousUnits = new Map((previous?.units ?? []).map((record) => [record.id, record]));
   const previousRelationships = new Map(
     (previous?.relationships ?? []).map((record) => [record.id, record])
@@ -49,6 +50,7 @@ export function repoIntelligenceToOkf(
   const observations: KeystoneKnowledgeObservation[] = [];
   const evidenceByKey = new Map<string, string>();
   const unitByKey = new Map<string, string>();
+  const unitById = new Map<string, KeystoneKnowledgeUnit>();
   const relationshipIds = new Set<string>();
   const observationIds = new Set<string>();
 
@@ -75,10 +77,7 @@ export function repoIntelligenceToOkf(
         startLine: source?.evidenceLine,
         endLine: source?.evidenceLine
       },
-      sourceDigest:
-        sourcePath === "."
-          ? undefined
-          : intelligence.files.find((file) => file.path === sourcePath)?.contentHash,
+      sourceDigest: sourcePath === "." ? undefined : fileByPath.get(sourcePath)?.contentHash,
       repositoryRevision: options.repositoryRevision,
       observedAt,
       freshness: source?.stale ? "stale" : "current"
@@ -150,6 +149,7 @@ export function repoIntelligenceToOkf(
       createdAt: prior?.createdAt ?? observedAt,
       updatedAt: observedAt
     });
+    unitById.set(id, units[units.length - 1]);
     unitByKey.set(composite, id);
     return id;
   };
@@ -160,8 +160,8 @@ export function repoIntelligenceToOkf(
     source?: EvidenceMetadata,
     properties: Record<string, unknown> = {}
   ): string => {
-    const sourceKind = units.find((item) => item.id === sourceId)?.kind;
-    const targetKind = units.find((item) => item.id === targetId)?.kind;
+    const sourceKind = unitById.get(sourceId)?.kind;
+    const targetKind = unitById.get(targetId)?.kind;
     let relationshipKind = kind;
     let constraint = KEYSTONE_OKF_PROFILE.relationshipConstraints[relationshipKind];
     if (!sourceKind || !targetKind)
@@ -251,7 +251,7 @@ export function repoIntelligenceToOkf(
     observationIds.add(id);
   };
   function evidencePathForUnit(id: string): string | undefined {
-    const unit = units.find((item) => item.id === id);
+    const unit = unitById.get(id);
     const p = unit?.properties.path ?? unit?.properties.filePath;
     return typeof p === "string" ? p : undefined;
   }
@@ -365,13 +365,7 @@ export function repoIntelligenceToOkf(
         relation.evidence,
         relation.filePath
       );
-    if (
-      parent &&
-      !relationships.some(
-        (item) => item.kind === "defines" && item.sourceId === parent && item.targetId === source
-      )
-    )
-      addRelationship("defines", parent, source, relation.evidence);
+    if (parent) addRelationship("defines", parent, source, relation.evidence);
     addRelationship(relation.kind, source, target, relation.evidence);
   }
   for (const edge of intelligence.dependencies) {
@@ -493,7 +487,7 @@ export function repoIntelligenceToOkf(
     );
     const parent = fileId(api.filePath);
     if (parent) {
-      const parentKind = units.find((item) => item.id === parent)?.kind;
+      const parentKind = unitById.get(parent)?.kind;
       addRelationship(
         parentKind === "file" || parentKind === "module" || parentKind === "service"
           ? "exposes"
@@ -560,12 +554,12 @@ export function repoIntelligenceToOkf(
     isConfiguration(item.path, item.language)
   )) {
     const cfg = fileId(file.path);
-    if (cfg && units.find((item) => item.id === cfg)?.kind === "configuration")
+    if (cfg && unitById.get(cfg)?.kind === "configuration")
       addRelationship("configured-by", repositoryUnit, cfg, file.evidence);
   }
   const addRisk = (kind: "security" | "performance" | "modernization", value: string): void => {
     const parsed = parseSignal(value);
-    const source = intelligence.files.find((file) => file.path === parsed.path)?.evidence;
+    const source = parsed.path ? fileByPath.get(parsed.path)?.evidence : undefined;
     const unitKind = kind === "modernization" ? "change-impact" : "risk-area";
     const id = addUnit(
       unitKind,

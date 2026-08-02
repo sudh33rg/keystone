@@ -112,6 +112,16 @@ export interface IntelligenceProgressEvent {
   total: number;
   progress: number;
   message: string;
+  workerPool?: IntelligenceWorkerPoolProgress;
+}
+
+export interface IntelligenceWorkerPoolProgress {
+  maxWorkers: number;
+  activeWorkers: number;
+  completedStages: number;
+  totalStages: number;
+  queuedStages: number;
+  currentStages: string[];
 }
 
 export interface IntelligencePipelineOptions {
@@ -120,4 +130,5 @@ export interface IntelligencePipelineOptions {
   persist?: boolean;
   cognitive?: boolean;
   semanticEnricher?: SemanticEnrichmentProvider;
+  maxWorkers?: number;
 }

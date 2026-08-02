@@ -85,33 +85,44 @@ export function analyzeRepositoryGraph(intelligence: RepoIntelligence): Reposito
     cycles,
     communities,
     flows,
-    impactedBy(changedFiles, maxDepth = 6) {
-      const seen = new Set(changedFiles.filter((file) => files.has(file)));
-      let frontier = [...seen];
-      let depth = 0;
-      while (frontier.length && depth < maxDepth && seen.size < 2000) {
-        depth += 1;
-        const next: string[] = [];
-        for (const file of frontier) {
-          for (const dependent of incoming.get(file) ?? []) {
-            if (!seen.has(dependent)) {
-              seen.add(dependent);
-              next.push(dependent);
-            }
+    impactedBy: createGraphImpactAnalyzer([...files], localEdges, intelligence.tests)
+  };
+}
+
+export function createGraphImpactAnalyzer(
+  filePaths: readonly string[],
+  localEdges: ReadonlyArray<RepositoryGraphEdge>,
+  tests: RepoIntelligence["tests"]
+): RepositoryGraphAnalysis["impactedBy"] {
+  const files = new Set(filePaths);
+  const incoming = adjacency(localEdges, "to", "from");
+  return (changedFiles, maxDepth = 6) => {
+    const seen = new Set(changedFiles.filter((file) => files.has(file)));
+    let frontier = [...seen];
+    let depth = 0;
+    while (frontier.length && depth < maxDepth && seen.size < 2000) {
+      depth += 1;
+      const next: string[] = [];
+      for (const file of frontier) {
+        for (const dependent of incoming.get(file) ?? []) {
+          if (!seen.has(dependent)) {
+            seen.add(dependent);
+            next.push(dependent);
           }
         }
-        frontier = next;
       }
-      const impacted = [...seen].sort();
-      const tests = intelligence.tests
-        .filter(
-          (test) =>
-            impacted.includes(test.testFile) ||
-            Boolean(test.targetFile && impacted.includes(test.targetFile))
-        )
-        .map((test) => test.testFile);
-      return { files: impacted, tests: [...new Set(tests)].sort(), depth };
+      frontier = next;
     }
+    const impacted = [...seen].sort();
+    const impactedSet = new Set(impacted);
+    const relatedTests = tests
+      .filter(
+        (test) =>
+          impactedSet.has(test.testFile) ||
+          Boolean(test.targetFile && impactedSet.has(test.targetFile))
+      )
+      .map((test) => test.testFile);
+    return { files: impacted, tests: [...new Set(relatedTests)].sort(), depth };
   };
 }
 

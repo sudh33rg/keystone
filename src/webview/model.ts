@@ -434,6 +434,31 @@ export interface Operation {
   message: string;
   updatedAt: string;
 }
+export interface WorkerPoolProgress {
+  maxWorkers: number;
+  activeWorkers: number;
+  completedStages: number;
+  totalStages: number;
+  queuedStages: number;
+  currentStages: string[];
+}
+export interface IngestionState {
+  active: boolean;
+  progress: number;
+  stage: string;
+  message: string;
+  persistedPath?: string;
+  queuedRefresh?: boolean;
+  workerPool?: WorkerPoolProgress;
+}
+export type BackgroundWorkerId = "qa" | "security" | "performance" | "modernization";
+export interface BackgroundWorkerState {
+  status: "idle" | "running" | "complete" | "cancelled" | "failed";
+  progress?: number;
+  message?: string;
+  error?: string;
+  updatedAt: string;
+}
 export interface ApplicationState {
   version: number;
   status: string;
@@ -442,6 +467,8 @@ export interface ApplicationState {
   taskAnalysis?: TaskResult;
   delegationResult?: CopilotDelegationResult;
   sdlc?: SdlcPlan;
+  ingestion?: IngestionState;
+  backgroundWorkers?: Partial<Record<BackgroundWorkerId, BackgroundWorkerState>>;
   intelligenceActivity?: Array<{
     id?: string;
     timestamp: string;
