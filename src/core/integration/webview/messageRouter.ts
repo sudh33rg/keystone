@@ -8,6 +8,9 @@ import type { GapAnalysisResult } from '../../workflow/quality/qaGapAnalysis';
 import type { TestGenerationResult } from '../../workflow/quality/generation';
 import type { ModernizationDecisionInput, ModernizationPlan, ModernizationProposal } from '../../workflow/modernization/model';
 import type { TaskWorkspaceRef, TaskWorkspaceSnapshot } from '../../workflow/tasks/taskWorkspaceManager';
+import type { CpgEdgeKind } from '../../intelligence/cpg/types';
+import type { IntelligenceCpgResult, IntelligenceExplorerResult, IntelligenceGraphMode, IntelligenceGraphResult } from '../../intelligence/explorer';
+import type { SDLCResearchDocument } from '../../workflow/sdlc/engine';
 
 
 export interface CopilotDelegationResult {
@@ -46,7 +49,8 @@ export type WebviewToExtensionMessage =
   | { type: 'CANCEL_INGESTION' }
   | { type: 'CANCEL_ANALYSIS' }
   | { type: 'ANALYZE_INTENT'; text: string }
-  | { type: 'RUN_VALIDATION'; scope: 'impacted' | 'all' }
+  | { type: 'APPROVE_INTENT_RESEARCH'; intentId: string }
+  | { type: 'RUN_VALIDATION'; scope: 'impacted' | 'all'; storyId?: string }
   | { type: 'COMPLETE_TASK' }
   | { type: 'ANALYZE_MODERNIZATION' }
   | { type: 'ACCEPT_MODERNIZATION'; proposalId: string; decision: ModernizationDecisionInput }
@@ -64,6 +68,11 @@ export type WebviewToExtensionMessage =
   | { type: 'SDLC_TRANSITION'; storyId: string; status: import('../../workflow/sdlc/engine').SDLCStoryStatus; evidence?: string[]; satisfiedCriteria?: string[]; blockers?: string[] }
   | { type: 'APPROVE_SPECIFICATION' }
   | { type: 'QUERY_INTELLIGENCE'; query: string }
+  | { type: 'EXPLORE_INTELLIGENCE'; query?: string; kind?: string }
+  | { type: 'LOAD_INTELLIGENCE_GRAPH'; mode: IntelligenceGraphMode; query?: string; seedIds?: string[] }
+  | { type: 'LOAD_CPG_VIEW'; sourcePath?: string; edgeKind?: CpgEdgeKind | 'all'; focusNodeId?: string }
+  | { type: 'OPEN_SOURCE_LOCATION'; path: string; line?: number }
+  | { type: 'RESOLVE_SDLC_FINDING'; storyId: string; findingId: string; status: 'accepted' | 'resolved' }
   | { type: 'RECORD_DECISION'; category: 'task' | 'risk'; action: string; subject: string };
 
 export type ExtensionToWebviewMessage =
@@ -82,7 +91,7 @@ export type ExtensionToWebviewMessage =
   | ({ type: 'DELEGATION_RESULT' } & CopilotDelegationResult)
   | { type: 'TASK_COMPLETION_RESULT'; success: boolean; error?: string }
   | { type: 'TASK_DECISION_RESULT'; success: boolean; action: string; error?: string }
-  | { type: 'TASK_HANDOFF_CREATED'; redactionCategories: string[]; checksum: string; packageValue: TaskStatePackage }
+  | { type: 'TASK_HANDOFF_CREATED'; redactionCategories: string[]; checksum: string; encryptedPackage: string }
   | { type: 'TASK_HANDOFF_RESTORED'; packageValue: TaskStatePackage; warnings: string[]; continuationBriefing: string; restoredNow?: boolean }
   | { type: 'TASK_HANDOFFS_RESULT'; sessions: Array<{ packageValue: TaskStatePackage; status: 'Shared' | 'Restored'; warnings: string[]; activity: Array<{ at: string; actor: string; action: string }> }> }
   | { type: 'APPLICATION_STATE'; state: import('../../application/applicationStore').KeystoneApplicationState }
@@ -90,7 +99,10 @@ export type ExtensionToWebviewMessage =
   | { type: 'BROWSER_VIEW_OPENED'; url: string }
   | { type: 'VALUEEDGE_FEATURE_RESULT'; feature: import('../valueedge/types').ValueEdgeFeature }
   | { type: 'VALUEEDGE_PUBLISH_RESULT'; published: import('../valueedge/types').ValueEdgePublishResult[] }
-  | { type: 'INTELLIGENCE_QUERY_RESULT'; result: { query:string; intent:string; answer:string; confidence:number; traversedRelationships:number; warnings:string[]; items:Array<{id:string;label:string;kind:string;path?:string;summary:string;reason:string;score:number;confidence:number;evidenceIds:string[];relationshipPath:string[]}> } }
+  | { type: 'INTELLIGENCE_QUERY_RESULT'; result: { query:string; intent:string; answer:string; confidence:number; traversedRelationships:number; warnings:string[]; plan:{terms:readonly string[];seedIds:readonly string[];seedLabels:readonly string[];relationshipKinds:readonly string[];maxDepth:number;strategy:string}; traversals:readonly {sourceId:string;targetId:string;relationship:string;sourceLabel:string;targetLabel:string}[]; items:Array<{id:string;label:string;kind:string;path?:string;line?:number;summary:string;reason:string;score:number;confidence:number;evidenceIds:string[];relationshipPath:string[]}> } }
+  | { type: 'INTELLIGENCE_EXPLORER_RESULT'; result: IntelligenceExplorerResult }
+  | { type: 'INTELLIGENCE_GRAPH_RESULT'; result: IntelligenceGraphResult }
+  | { type: 'CPG_VIEW_RESULT'; result: IntelligenceCpgResult }
   | { type: 'NOTIFICATION'; level: 'info' | 'error'; message: string };
 
 export interface WorkspaceSummary {
@@ -150,7 +162,12 @@ export interface RouteEvidence {
   whyNot: string[];
 }
 
+export interface TaskIntelligenceSignal { kind: 'risk-area' | 'flow' | 'call' | 'data-access'; label: string; path?: string; line?: number; okfId?: string; relationship?: string; relatedLabel?: string; summary: string; }
+
 export interface KeystoneTaskResult {
+  intentId: string;
+  researchStatus: 'ready' | 'approved';
+  researchDocument: SDLCResearchDocument;
   intentType: string;
   matchedRule?: string;
   textKeywords?: string[];
@@ -190,8 +207,8 @@ export interface KeystoneTaskResult {
   evidence?: Array<{ kind: string; label: string; path?: string; okfId?: string; confidence?: number; summary?: string }>;
   analysisEvidence?: {
     qa: { scanMode: string; gaps: Array<{ type: string; path: string; severity: number; reason: string }>; recommendations: string[] };
-    security: { riskLevel: string; findings: Array<{ id: string; severity: string; title: string; path: string; line: number; explanation: string; remediation: string; confidence: number }> };
-    performance: { riskLevel: string; findings: Array<{ id: string; severity: string; title: string; path: string; line: number; explanation: string; remediation: string; confidence: number }> };
+    security: { riskLevel: string; findings: Array<{ id: string; severity: string; title: string; path: string; line: number; explanation: string; remediation: string; confidence: number }>; intelligenceSignals: TaskIntelligenceSignal[] };
+    performance: { riskLevel: string; findings: Array<{ id: string; severity: string; title: string; path: string; line: number; explanation: string; remediation: string; confidence: number }>; intelligenceSignals: TaskIntelligenceSignal[] };
     modernization: { proposalId?: string; coveragePercent?: number; gaps: Array<{ id: string; area: string; title: string; priority: string; evidence: string[] }> };
     gitReview: { readOnly: true; branch?: string; changedFiles: string[]; diffHash: string; diffArtifactPath?: string; diffBytes: number };
   };

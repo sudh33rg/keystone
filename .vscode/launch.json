@@ -3,11 +3,10 @@
   "configurations": [
     {
       "name": "Keystone Extension",
-      "type": "extensionHost",
+      "type": "pwa-extensionHost",
       "request": "launch",
       "args": [
         "--new-window",
-        // "--disable-extensions",
         "--extensionDevelopmentPath=${workspaceFolder}",
         "${workspaceFolder}"
       ],

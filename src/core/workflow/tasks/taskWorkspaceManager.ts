@@ -1,9 +1,10 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { ModernizationPlan } from '../modernization/model';
+import type { SDLCPlan } from '../sdlc/engine';
 import type { TaskStatePackage } from '../handoff/contracts';
 
-export type TaskWorkspaceStatus = 'planned' | 'approved' | 'in-progress' | 'validating' | 'blocked' | 'done' | 'cancelled';
+export type TaskWorkspaceStatus = 'research-ready' | 'planned' | 'approved' | 'in-progress' | 'validating' | 'blocked' | 'done' | 'cancelled';
 
 export interface TaskWorkspaceSeed {
   intent: string;
@@ -17,6 +18,7 @@ export interface TaskWorkspaceSeed {
   performanceRisk: string;
   modernizationNotes: readonly string[];
   copilotPrompt: string;
+  research?: { intentId: string; title: string; markdown: string; status: 'ready' | 'approved' };
 }
 
 export interface TaskWorkspaceRef {
@@ -45,18 +47,21 @@ export class TaskWorkspaceManager {
   async create(seed: TaskWorkspaceSeed): Promise<TaskWorkspaceRef> {
     const { name, absolutePath } = await this.allocate(slug(seed.intent).slice(0, 56));
     const now = new Date().toISOString();
-    const ref: TaskWorkspaceRef = { id: name, name, relativePath: `.keystone/tasks/${name}`, absolutePath, status: 'planned' };
+    const research = seed.research ?? defaultResearch(seed);
+    const ref: TaskWorkspaceRef = { id: name, name, relativePath: `.keystone/tasks/${name}`, absolutePath, status: 'research-ready' };
     await Promise.all([
-      this.write(absolutePath, 'task.json', { id: name, intent: seed.intent, intentType: seed.intentType, route: seed.route, createdAt: now, updatedAt: now }),
-      this.write(absolutePath, 'specification.md', specification(seed)),
+      this.write(absolutePath, 'task.json', { id: name, intent: seed.intent, intentId: research.intentId, intentType: seed.intentType, route: seed.route, researchStatus: research.status, createdAt: now, updatedAt: now }),
+      this.write(absolutePath, 'research.md', research.markdown),
+      this.write(absolutePath, 'research-status.json', { intentId: research.intentId, status: research.status, reviewedAt: null, updatedAt: now }),
+      this.write(absolutePath, 'specification.md', initialSpecification(seed, research)),
+      this.write(absolutePath, 'plan.json', initialPlan(seed, research, now)),
       this.write(absolutePath, 'SKILL.md', skill(seed)),
       this.write(absolutePath, 'instructions.md', instructions(seed)),
       this.write(absolutePath, 'agents.json', agents(seed)),
-      this.write(absolutePath, 'plan.json', { status: 'planned', steps: planSteps(seed), updatedAt: now }),
-      this.write(absolutePath, 'progress.json', { status: 'planned', percent: 10, completed: ['Repository intelligence gathered', 'Task context generated'], current: 'Awaiting user approval', blockers: [], updatedAt: now }),
+      this.write(absolutePath, 'progress.json', { status: 'research-ready', percent: 10, completed: ['Repository intelligence gathered', 'Repository R&D generated'], current: 'Awaiting R&D review before planning', blockers: [], updatedAt: now }),
       this.write(absolutePath, 'context.json', { relevantFiles: seed.relevantFiles, relevantSymbols: seed.relevantSymbols, tests: seed.tests, qaChecks: seed.qaChecks, securityRisk: seed.securityRisk, performanceRisk: seed.performanceRisk, modernizationNotes: seed.modernizationNotes }),
       this.write(absolutePath, 'delegation.md', seed.copilotPrompt),
-      this.write(absolutePath, 'status.json', { status: 'planned', createdAt: now, updatedAt: now }),
+      this.write(absolutePath, 'status.json', { status: 'research-ready', createdAt: now, updatedAt: now }),
     ]);
     return ref;
   }
@@ -90,6 +95,29 @@ export class TaskWorkspaceManager {
       this.write(ref.absolutePath, 'status.json', { ...existingStatus, status, updatedAt: now }),
     ]);
     return { ...ref, status };
+  }
+
+  async attachSdlcPlan(ref: TaskWorkspaceRef, plan: SDLCPlan): Promise<TaskWorkspaceRef> {
+    const now = new Date().toISOString();
+    const updated = { ...ref, status: 'planned' as const };
+    await Promise.all([
+      this.write(ref.absolutePath, 'research.md', plan.researchDocument.markdown),
+      this.write(ref.absolutePath, 'specification.md', plan.specificationDocument.markdown),
+      this.write(ref.absolutePath, 'plan.json', plan),
+      this.write(ref.absolutePath, 'progress.json', { status: 'planned', percent: 20, completed: ['Repository intelligence gathered', 'Repository R&D reviewed and approved', 'Implementation specification and backlog generated'], current: 'Awaiting specification approval', blockers: [], updatedAt: now }),
+      this.write(ref.absolutePath, 'status.json', { status: 'planned', updatedAt: now }),
+    ]);
+    return updated;
+  }
+
+  async approveResearch(ref: TaskWorkspaceRef, intentId: string): Promise<void> {
+    const now = new Date().toISOString();
+    const task = await this.read<Record<string, unknown>>(ref.absolutePath, 'task.json') ?? {};
+    if (task.intentId && task.intentId !== intentId) throw new Error('The active task research does not belong to this intent.');
+    await Promise.all([
+      this.write(ref.absolutePath, 'task.json', { ...task, intentId, researchStatus: 'approved', updatedAt: now }),
+      this.write(ref.absolutePath, 'research-status.json', { intentId, status: 'approved', reviewedAt: now, updatedAt: now }),
+    ]);
   }
 
   async complete(ref: TaskWorkspaceRef): Promise<void> {
@@ -235,8 +263,31 @@ export class TaskWorkspaceManager {
 }
 
 function slug(value: string): string { return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'task'; }
-function planSteps(seed: TaskWorkspaceSeed) { return ['Review generated specification', 'Approve grounded delegation', ...seed.qaChecks, 'Run security and performance validation', 'Complete and clean temporary workspace'].map((title, index) => ({ id: index + 1, title, status: index < 1 ? 'complete' : 'pending' })); }
-function specification(seed: TaskWorkspaceSeed): string { return `# Temporary Specification\n\n## Intent\n\n${seed.intent}\n\n## Scope\n\n${seed.relevantFiles.map(file => `- ${file}`).join('\n')}\n\n## Acceptance Criteria\n\n${seed.qaChecks.map(check => `- ${check}`).join('\n')}\n\n## Risk Baseline\n\n- Security: ${seed.securityRisk}\n- Performance: ${seed.performanceRisk}\n`; }
+function defaultResearch(seed: TaskWorkspaceSeed): NonNullable<TaskWorkspaceSeed['research']> {
+  return {
+    intentId: `intent-${slug(seed.intent)}`,
+    title: seed.intent,
+    markdown: `# Repository Research\n\n## Intent\n\n${seed.intent}\n\nResearch evidence will be populated when Keystone analyzes this task.`,
+    status: 'ready',
+  };
+}
+function initialSpecification(seed: TaskWorkspaceSeed, research: NonNullable<TaskWorkspaceSeed['research']>): string {
+  return `# Task Specification\n\n## Intent\n\n${seed.intent}\n\n## Research\n\n${research.title}\n\n## Acceptance Criteria\n\n- Preserve existing repository behavior.\n- Run the listed QA checks before completion.\n`;
+}
+function initialPlan(seed: TaskWorkspaceSeed, research: NonNullable<TaskWorkspaceSeed['research']>, updatedAt: string): Record<string, unknown> {
+  return {
+    status: 'research-ready',
+    intentId: research.intentId,
+    intent: seed.intent,
+    route: seed.route,
+    currentPhase: 'research-review',
+    currentTask: 'Review repository research before planning',
+    completedTasks: ['Repository intelligence gathered', 'Repository R&D generated'],
+    pendingTasks: ['Review research', 'Approve specification', 'Plan implementation'],
+    blockedTasks: [],
+    updatedAt,
+  };
+}
 function skill(seed: TaskWorkspaceSeed): string { return `---\nname: ${slug(seed.intent).slice(0, 48)}\ndescription: Temporary task-local guidance generated from repository intelligence.\n---\n\nUse only for this task. Preserve repository conventions, follow the specification, and validate every changed behavior.\n`; }
 function instructions(seed: TaskWorkspaceSeed): string { return `# Task Instructions\n\n- Work only on the accepted intent.\n- Use these relevant files: ${seed.relevantFiles.join(', ')}.\n- Do not weaken security or performance behavior.\n- Run the listed QA checks before completion.\n- Do not retain this folder after successful completion.\n`; }
 function agents(seed: TaskWorkspaceSeed) { return [{ id: 'planner', role: 'Maintain plan and scope' }, { id: 'executor', role: 'Perform approved implementation only' }, { id: 'qa', role: `Run ${seed.qaChecks.length} QA checks` }, { id: 'reviewer', role: 'Review security, performance, and modernization risks' }]; }

@@ -1,8 +1,10 @@
 import path from "node:path";
 
 import type { ServiceNode } from "../../domain/types";
+import { isTestPath } from "./testMapper";
 
 export function mapService(filePath: string): ServiceNode | undefined {
+  if (isTestPath(filePath)) return undefined;
   const lower = filePath.toLowerCase();
   if (!/(service|controller|handler|repository|client|adapter)/.test(lower)) {
     return undefined;

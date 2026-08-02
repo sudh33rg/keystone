@@ -401,67 +401,50 @@ function detectFramework(workspaceRoot: string): TestFrameworkName {
  * Supports ** (recursive), * (single level), and {a,b} extensions.
  */
 function globFiles(root: string, pattern: string): string[] {
+  const matcher = globPatternToRegExp(pattern.replaceAll('\\', '/'));
   const results: string[] = [];
-  const parts = pattern.split('/');
-  try {
-    walkGlob(root, parts, 0, results);
-  } catch {
-    // Silently fail — we don't want glob errors to crash discovery
-  }
+  const visit = (directory: string): void => {
+    let entries: fs.Dirent[];
+    try { entries = fs.readdirSync(directory, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      if (entry.name.startsWith('.') || IGNORED_DIRECTORIES.has(entry.name)) continue;
+      const absolute = path.join(directory, entry.name);
+      if (entry.isDirectory()) { visit(absolute); continue; }
+      if (!entry.isFile()) continue;
+      const relative = path.relative(root, absolute).split(path.sep).join('/');
+      if (matcher.test(relative)) results.push(absolute);
+    }
+  };
+  visit(root);
   return results;
 }
 
-function walkGlob(dir: string, parts: string[], depth: number, results: string[]) {
-  if (depth === parts.length) {
-    results.push(dir);
-    return;
-  }
-
-  let entries: fs.Dirent[];
-  try {
-    entries = fs.readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return;
-  }
-
-  const [part, ...rest] = parts;
-
-  for (const entry of entries) {
-    if (!entry.name.startsWith('.') && !IGNORED_DIRECTORIES.has(entry.name)) {
-      const child = path.join(dir, entry.name);
-      if (part === '**') {
-        // Match at any depth
-        walkGlob(child, rest, depth + 1, results);
-        if (entry.isDirectory()) {
-          walkGlob(child, parts, depth + 1, results);
-        }
-      } else if (matchesGlobPart(entry.name, part)) {
-        if (entry.isDirectory()) {
-          walkGlob(child, parts, depth + 1, results);
-        } else if (depth === parts.length - 1) {
-          results.push(child);
-        }
+function globPatternToRegExp(pattern: string): RegExp {
+  let out = '^';
+  for (let index = 0; index < pattern.length; index += 1) {
+    const char = pattern[index];
+    if (char === '*') {
+      if (pattern[index + 1] === '*') {
+        index += 1;
+        if (pattern[index + 1] === '/') { index += 1; out += '(?:.*/)?'; }
+        else out += '.*';
+      } else out += '[^/]*';
+      continue;
+    }
+    if (char === '?') { out += '[^/]'; continue; }
+    if (char === '{') {
+      const close = pattern.indexOf('}', index + 1);
+      if (close > index) {
+        const alternatives = pattern.slice(index + 1, close).split(',').map(value => escapeRegex(value));
+        out += `(?:${alternatives.join('|')})`; index = close; continue;
       }
     }
+    out += escapeRegex(char);
   }
+  return new RegExp(`${out}$`, 'i');
 }
 
-function matchesGlobPart(name: string, pattern: string): boolean {
-  // Handle {a,b,c} extension patterns
-  const braceMatch = pattern.match(/\{([^}]+)\}/);
-  if (braceMatch) {
-    const alternatives = braceMatch[1].split(',');
-    const base = pattern.replace(braceMatch[0], '');
-    return alternatives.some((alt) => name.endsWith(alt) && name.replace(alt, '') === base);
-  }
-
-  if (pattern.includes('*')) {
-    const regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$');
-    return regex.test(name);
-  }
-
-  return name === pattern;
-}
+function escapeRegex(value: string): string { return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
 // ---------------------------------------------------------------------------
 // Command conversion

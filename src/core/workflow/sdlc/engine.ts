@@ -100,6 +100,23 @@ export interface SDLCResearchDocument {
   generatedAt: string;
 }
 
+export interface SDLCSpecificationDocument {
+  id: string;
+  title: string;
+  summary: string;
+  functionalRequirements: string[];
+  nonFunctionalRequirements: string[];
+  architectureDecisions: string[];
+  affectedInterfaces: string[];
+  dataChanges: string[];
+  constraints: string[];
+  validationPlan: string[];
+  acceptanceCriteria: string[];
+  unknowns: string[];
+  markdown: string;
+  generatedAt: string;
+}
+
 export interface SDLCBacklogStory {
   id: string;
   kind: 'user-story' | 'quality-story';
@@ -115,6 +132,9 @@ export interface SDLCBacklogStory {
 }
 
 export interface SDLCPlanningContext {
+  intentId?: string;
+  researchDocument?: SDLCResearchDocument;
+  researchApproved?: boolean;
   relevantFiles?: readonly string[];
   relevantSymbols?: readonly string[];
   relevantApis?: readonly string[];
@@ -142,6 +162,7 @@ export interface SDLCPlan {
   specificationStatus: 'draft' | 'approved' | 'rejected';
   source: { kind: 'local' | 'valueedge'; featureId?: string; featureName?: string; featureUrl?: string };
   researchDocument: SDLCResearchDocument;
+  specificationDocument: SDLCSpecificationDocument;
   backlogStories: SDLCBacklogStory[];
   stories: SDLCStory[];
   createdAt: string;
@@ -207,7 +228,7 @@ export class SDLCEngine {
   createPlan(intent: string, context: SDLCPlanningContext = {}): SDLCPlan {
     const normalized = intent.trim();
     if (!normalized) throw new Error('An intent is required.');
-    const intentId = randomUUID();
+    const intentId = context.intentId ?? randomUUID();
     const now = new Date().toISOString();
     const ids = new Map<SDLCStoryType, string>();
     for (const [type] of definitions) ids.set(type, randomUUID());
@@ -218,9 +239,16 @@ export class SDLCEngine {
       acceptanceCriteria: [...criteria[type]], satisfiedCriteria: [], evidence: [], blockers: [], decisions: [],
       validationRuns: [], findings: [], createdAt: now, updatedAt: now,
     }));
-    const researchDocument = buildResearchDocument(intentId, normalized, context, now);
+    const researchDocument = context.researchDocument ?? buildResearchDocument(intentId, normalized, context, now);
+    const specificationDocument = buildSpecificationDocument(intentId, normalized, context, researchDocument, now);
     const backlogStories = buildBacklogStories(intentId, normalized, context);
-    return { id: randomUUID(), intentId, intent: normalized, specificationStatus: 'draft', source: context.source ?? { kind: 'local' }, researchDocument, backlogStories, stories, createdAt: now, updatedAt: now };
+    let plan: SDLCPlan = { id: randomUUID(), intentId, intent: normalized, specificationStatus: 'draft', source: context.source ?? { kind: 'local' }, researchDocument, specificationDocument, backlogStories, stories, createdAt: now, updatedAt: now };
+    if (context.researchApproved) {
+      const research = this.story(plan, 'research');
+      plan = this.updateStory(plan, research.id, { ...research, status: 'completed', satisfiedCriteria: [...research.acceptanceCriteria], evidence: unique([...research.evidence, 'Repository R&D was explicitly reviewed and approved before SDLC plan creation.']), decisions: unique([...research.decisions, 'Pre-plan repository research approved by user']), updatedAt: now });
+      plan = this.unlock(plan);
+    }
+    return plan;
   }
 
   approveSpecification(plan: SDLCPlan): SDLCPlan {
@@ -358,6 +386,8 @@ function requiresValidation(type: SDLCStoryType): boolean {
   ]).has(type);
 }
 
+export function createResearchDocument(intentId: string, intent: string, context: SDLCPlanningContext, generatedAt = new Date().toISOString()): SDLCResearchDocument { return buildResearchDocument(intentId, intent.trim(), context, generatedAt); }
+
 function buildResearchDocument(intentId: string, intent: string, context: SDLCPlanningContext, generatedAt: string): SDLCResearchDocument {
   const explicitEvidence = [...(context.evidence ?? [])];
   const evidenceMatrix: SDLCResearchEvidence[] = dedupeEvidence([
@@ -368,8 +398,8 @@ function buildResearchDocument(intentId: string, intent: string, context: SDLCPl
     ...(context.relevantServices ?? []).map((service, index) => ({ id: `service-${index}-${stableFragment(service)}`, kind: 'service' as const, label: service, summary: 'Service boundary affected by the intent.' })),
     ...(context.dataEntities ?? []).map((entity, index) => ({ id: `data-${index}-${stableFragment(entity)}`, kind: 'data' as const, label: entity, summary: 'Data entity or persistence contract affected by the intent.' })),
     ...(context.affectedFlows ?? []).map((flow, index) => ({ id: `flow-${index}-${stableFragment(flow)}`, kind: 'flow' as const, label: flow, summary: 'Call or data flow selected from graph/CPG evidence.' })),
-    ...(context.relatedTests ?? []).map((test, index) => ({ id: `test-${index}-${stableFragment(test)}`, kind: 'test' as const, label: test, summary: 'Existing test related to the affected implementation.' })),
-  ]);
+    ...(context.relatedTests ?? []).map((test, index) => ({ id: `test-${index}-${stableFragment(test)}`, kind: 'test' as const, label: test, summary: 'Existing test related to the affected implementation.', path: test })),
+  ]).filter(researchEvidencePresentable).sort((a,b)=>researchEvidenceRank(a)-researchEvidenceRank(b)||(b.confidence??0)-(a.confidence??0)||a.label.localeCompare(b.label)).slice(0, 28);
   const repositoryEvidence = evidenceMatrix.map(item => `${humanize(item.kind)}: ${item.label}${item.path && item.path !== item.label ? ` (${item.path})` : ''} — ${item.summary}`);
   const affectedArchitecture = unique([
     context.architecture ? `Detected architecture: ${context.architecture}` : '',
@@ -431,14 +461,86 @@ function buildResearchDocument(intentId: string, intent: string, context: SDLCPl
   return { id: randomUUID(), title, problemStatement: intent, repositoryEvidence, evidenceMatrix, affectedArchitecture, affectedFlows, affectedTests, risks, constraints, unknowns, recommendedApproach, testingStrategy, markdown, generatedAt };
 }
 
+
+function researchEvidencePresentable(item:SDLCResearchEvidence):boolean {
+  const value=(item.path??item.label).toLowerCase();
+  if (/(?:^|\/)(?:node_modules|dist|build|coverage|vendor)(?:\/|$)/.test(value)) return false;
+  if (item.kind==='file' && /(?:^|\/)(?:\.github|docs?|scripts?)(?:\/|$)|(?:package(?:-lock)?\.json|tsconfig)/.test(value)) return false;
+  return true;
+}
+function researchEvidenceRank(item:SDLCResearchEvidence):number {
+  return ({test:0,api:1,service:2,flow:3,symbol:4,data:5,risk:6,architecture:7,file:8} as Record<string,number>)[item.kind] ?? 20;
+}
+
+export function restoreSpecificationDocument(intentId: string, intent: string, research: SDLCResearchDocument, generatedAt = new Date().toISOString()): SDLCSpecificationDocument {
+  const evidence = research.evidenceMatrix ?? [];
+  const context: SDLCPlanningContext = {
+    relevantFiles: unique(evidence.map(item => item.path).filter((value): value is string => Boolean(value))),
+    relevantSymbols: unique(evidence.filter(item => item.kind === 'symbol').map(item => item.label)),
+    relevantApis: unique(evidence.filter(item => item.kind === 'api').map(item => item.label)),
+    relevantServices: unique(evidence.filter(item => item.kind === 'service').map(item => item.label)),
+    dataEntities: unique(evidence.filter(item => item.kind === 'data').map(item => item.label)),
+    affectedFlows: research.affectedFlows,
+    relatedTests: research.affectedTests.filter(item => !item.startsWith('Missing coverage: ')),
+    missingTests: research.affectedTests.filter(item => item.startsWith('Missing coverage: ')).map(item => item.slice('Missing coverage: '.length)),
+    architecture: research.affectedArchitecture.join(' · '),
+    constraints: research.constraints,
+    evidence,
+  };
+  return buildSpecificationDocument(intentId, intent, context, research, generatedAt);
+}
+
+function buildSpecificationDocument(intentId: string, intent: string, context: SDLCPlanningContext, research: SDLCResearchDocument, generatedAt: string): SDLCSpecificationDocument {
+  // Specification is a user-reviewable contract, not a dump of every symbol or
+  // every QA checklist entry discovered during research. Derive a small set of
+  // behavior slices from the same intent-focused ranking used by backlog
+  // generation; keep the detailed QA/security/performance work in the
+  // validation plan and quality stories.
+  const behaviorTargets = deriveBehaviorTargets(intent, context);
+  const functionalRequirements = unique([
+    ...(context.functionalRequirements ?? []),
+    ...behaviorTargets.map(target => `Implement the approved behavior around ${target.label}${target.files.length ? ` in ${target.files.join(', ')}` : ''}.`),
+    ...(context.affectedFlows ?? []).slice(0, 4).map(value => `Preserve the intended behavior across ${value}.`),
+  ]).slice(0, 10);
+  const nonFunctionalRequirements = unique([...(context.nonFunctionalRequirements ?? []), `Security risk: ${context.securityRisk ?? 'unknown'}`, `Performance risk: ${context.performanceRisk ?? 'unknown'}`, 'Preserve deterministic evidence and repository conventions for every changed boundary.']);
+  const architectureDecisions = unique([...(context.relevantServices ?? []).filter(value => !/(?:test|spec)\b/i.test(value)).slice(0, 6).map(value => `Preserve or explicitly approve changes to service boundary: ${value}.`), ...(context.affectedFlows ?? []).slice(0, 6).map(value => `Maintain evidence-backed behavior across flow: ${value}.`), ...(research.affectedArchitecture ?? []).slice(0, 6)]);
+  const affectedInterfaces = unique([...(context.relevantApis ?? []), ...(context.relevantServices ?? []).filter(value => !/(?:test|spec)\b/i.test(value))]);
+  const dataChanges = unique([...(context.dataEntities ?? []).slice(0, 6).map(value => `Validate data contract and migration impact for ${value}.`)]);
+  const constraints = unique(research.constraints);
+  const validationPlan = unique(research.testingStrategy).slice(0, 16);
+  const acceptanceCriteria = unique([
+    ...functionalRequirements.slice(0, 8),
+    'Mapped existing and new tests provide evidence for the approved behavior or an explicit user-approved deferral.',
+    'All material QA, security, performance, and review findings are resolved or explicitly accepted with evidence.',
+    'Keystone performs no Git write or remote merge-request mutation.',
+  ]).slice(0, 12);
+  const unknowns = unique(research.unknowns);
+  const section = (name:string, values:readonly string[], empty:string):string => `## ${name}\n\n${values.length ? values.map(value=>`- ${value}`).join('\n') : `- ${empty}`}`;
+  const title = `Implementation Specification: ${intent}`;
+  const markdown = [
+    `# ${title}`, '', `**Intent ID:** ${intentId}`, `**Generated:** ${generatedAt}`, '',
+    '## Summary', '', intent, '',
+    section('Functional Requirements', functionalRequirements, 'Functional behavior must be confirmed before approval.'), '',
+    section('Non-Functional Requirements', nonFunctionalRequirements, 'No additional non-functional requirement was discovered.'), '',
+    section('Architecture Decisions and Boundaries', architectureDecisions, 'No architecture boundary change is currently proposed.'), '',
+    section('Affected Interfaces', affectedInterfaces, 'No external interface was mapped.'), '',
+    section('Data Contract / Migration Impact', dataChanges, 'No data contract change was mapped.'), '',
+    section('Constraints', constraints, 'No additional constraint was identified.'), '',
+    section('Validation Plan', validationPlan, 'Validation must be determined before implementation completion.'), '',
+    section('Acceptance Criteria', acceptanceCriteria, 'Acceptance criteria must be confirmed before approval.'), '',
+    section('Open Questions', unknowns, 'No unresolved question remains from repository research.'),
+  ].join('\n');
+  return { id:randomUUID(), title, summary:intent, functionalRequirements, nonFunctionalRequirements, architectureDecisions, affectedInterfaces, dataChanges, constraints, validationPlan, acceptanceCriteria, unknowns, markdown, generatedAt };
+}
+
 function buildBacklogStories(intentId: string, intent: string, context: SDLCPlanningContext): SDLCBacklogStory[] {
   type Draft = Omit<SDLCBacklogStory, 'id' | 'status'>;
   const drafts: Draft[] = [];
   const allFiles = unique(context.relevantFiles ?? []);
   const allSymbols = unique(context.relevantSymbols ?? []);
   const interfaces = unique([...(context.relevantApis ?? []), ...(context.relevantServices ?? []), ...(context.dataEntities ?? [])]);
-  const baseAcceptance = unique([...(context.functionalRequirements ?? []), ...(context.qaChecklist ?? [])]);
-  const targets = deriveBehaviorTargets(context);
+  const baseAcceptance = unique(context.functionalRequirements ?? []);
+  const targets = deriveBehaviorTargets(intent, context);
   for (const [index, target] of targets.entries()) {
     const targetFiles = target.files.length ? target.files : allFiles.slice(index, index + 1);
     const targetSymbols = target.symbols.length ? target.symbols : allSymbols.filter(symbol => target.label.toLowerCase().includes(symbol.toLowerCase()) || symbol.toLowerCase().includes(target.label.toLowerCase())).slice(0, 6);
@@ -465,7 +567,7 @@ function buildBacklogStories(intentId: string, intent: string, context: SDLCPlan
       acceptanceCriteria: ['Affected API, service, data, configuration, and UI contracts remain compatible or have an approved migration.', 'Cross-boundary call and data flows are validated with repository evidence.', 'Failure and rollback behavior is documented.'],
       linkedSdlcStoryTypes: ['design', 'development', 'security-review', 'performance-review'],
       evidence: unique([...(context.affectedFlows ?? []), ...interfaces]), dependencies: drafts.filter(item => item.kind === 'user-story').map(item => item.title),
-      scope: { files: allFiles, symbols: allSymbols, interfaces },
+      scope: { files: implementationFiles(allFiles), symbols: allSymbols, interfaces },
     });
   }
   drafts.push({
@@ -473,24 +575,24 @@ function buildBacklogStories(intentId: string, intent: string, context: SDLCPlan
     description: 'Use dependency, graph, CPG, and test mappings to select the exact regression scope.',
     acceptanceCriteria: ['Impacted tests are selected from evidence rather than naming alone.', 'Existing coverage, unmapped behavior, and regression risk are recorded.'],
     linkedSdlcStoryTypes: ['existing-test-analysis', 'test-impact-analysis'], evidence: unique(context.relatedTests ?? []), dependencies: [],
-    scope: { files: allFiles, symbols: allSymbols, interfaces },
+    scope: { files: unique([...(context.relatedTests ?? []), ...implementationFiles(allFiles)]), symbols: allSymbols, interfaces },
   });
   if ((context.missingTests?.length ?? 0) > 0 || baseAcceptance.length > 0) drafts.push({
     kind: 'quality-story', title: 'Add acceptance-linked regression coverage',
     description: 'Create or explicitly defer the missing tests required by the approved behavior slices.',
     acceptanceCriteria: ['Every relevant acceptance criterion maps to a test or an approved evidence-backed deferral.', 'New tests follow repository conventions and run in the smallest relevant suite.'],
     linkedSdlcStoryTypes: ['new-test-creation', 'failed-test-investigation', 'flaky-test-analysis'], evidence: unique(context.missingTests ?? []), dependencies: drafts.filter(item => item.kind === 'user-story').map(item => item.title),
-    scope: { files: unique([...(context.relatedTests ?? []), ...allFiles]), symbols: allSymbols, interfaces },
+    scope: { files: unique([...(context.relatedTests ?? []), ...implementationFiles(allFiles)]), symbols: allSymbols, interfaces },
   });
   if (riskPresent(context.securityRisk)) drafts.push({
     kind: 'quality-story', title: 'Validate security-sensitive trust boundaries', description: 'Review input, authorization, secrets, data exposure, and sensitive sinks on the affected paths.',
     acceptanceCriteria: ['Security-sensitive paths and trust boundaries are evidence-backed.', 'Every high or critical finding is resolved, explicitly accepted, or blocks completion.'],
-    linkedSdlcStoryTypes: ['security-review'], evidence: unique([context.securityRisk ?? '', ...(context.affectedFlows ?? [])]), dependencies: drafts.filter(item => item.kind === 'user-story').map(item => item.title), scope: { files: allFiles, symbols: allSymbols, interfaces },
+    linkedSdlcStoryTypes: ['security-review'], evidence: unique([context.securityRisk ?? '', ...(context.affectedFlows ?? [])]), dependencies: drafts.filter(item => item.kind === 'user-story').map(item => item.title), scope: { files: implementationFiles(allFiles), symbols: allSymbols, interfaces },
   });
   if (riskPresent(context.performanceRisk)) drafts.push({
     kind: 'quality-story', title: 'Validate performance-sensitive execution paths', description: 'Review blocking work, repeated I/O, expensive queries, allocation, and hot-path impact.',
     acceptanceCriteria: ['Performance-sensitive paths are measured or reasoned from concrete evidence.', 'Every material regression is resolved, explicitly accepted, or blocks completion.'],
-    linkedSdlcStoryTypes: ['performance-review'], evidence: unique([context.performanceRisk ?? '', ...(context.affectedFlows ?? [])]), dependencies: drafts.filter(item => item.kind === 'user-story').map(item => item.title), scope: { files: allFiles, symbols: allSymbols, interfaces },
+    linkedSdlcStoryTypes: ['performance-review'], evidence: unique([context.performanceRisk ?? '', ...(context.affectedFlows ?? [])]), dependencies: drafts.filter(item => item.kind === 'user-story').map(item => item.title), scope: { files: implementationFiles(allFiles), symbols: allSymbols, interfaces },
   });
   if ((context.modernizationNotes?.length ?? 0) > 0) drafts.push({
     kind: 'quality-story', title: 'Assess modernization and compatibility impact', description: 'Separate necessary feature work from optional modernization and preserve behavior.',
@@ -508,24 +610,59 @@ function buildBacklogStories(intentId: string, intent: string, context: SDLCPlan
 }
 
 interface BehaviorTarget { label: string; title: string; description: string; files: string[]; symbols: string[]; interfaces: string[]; evidence: string[]; }
-function deriveBehaviorTargets(context: SDLCPlanningContext): BehaviorTarget[] {
+function deriveBehaviorTargets(intent:string, context: SDLCPlanningContext): BehaviorTarget[] {
   const targets: BehaviorTarget[] = [];
+  const relevantFiles=implementationFiles(context.relevantFiles ?? []);
   const add = (label: string, category: string, evidence: readonly string[], files: readonly string[] = [], symbols: readonly string[] = [], interfaces: readonly string[] = []): void => {
-    if (targets.some(item => item.label.toLowerCase() === label.toLowerCase())) return;
-    targets.push({ label, title: `${category}: ${label}`, description: `Deliver the smallest independently verifiable behavior slice for ${label}, based on repository intelligence rather than a fixed template.`, files: unique(files), symbols: unique(symbols), interfaces: unique(interfaces), evidence: unique(evidence) });
+    const clean=label.trim(); if(!clean || targets.some(item => item.label.toLowerCase() === clean.toLowerCase())) return;
+    targets.push({ label:clean, title:`${category}: ${clean}`, description:`Deliver the smallest independently verifiable behavior slice for ${clean}, using the approved repository R&D and specification.`, files:unique(files), symbols:unique(symbols), interfaces:unique(interfaces), evidence:unique(evidence) });
   };
-  for (const api of context.relevantApis ?? []) add(api, 'Implement API behavior', [api], [], [], [api]);
-  for (const service of context.relevantServices ?? []) add(service, 'Implement service behavior', [service], [], [], [service]);
-  for (const entity of context.dataEntities ?? []) add(entity, 'Implement data behavior', [entity], [], [], [entity]);
-  const byArea = new Map<string, string[]>();
-  for (const file of context.relevantFiles ?? []) { const area = file.split('/').filter(Boolean).slice(0, 2).join('/') || file; byArea.set(area, [...(byArea.get(area) ?? []), file]); }
-  for (const [area, files] of byArea) add(area, 'Implement repository slice', files, files, (context.relevantSymbols ?? []).filter(symbol => files.some(file => file.toLowerCase().includes(symbol.toLowerCase()))));
-  if (!targets.length) {
-    const symbol = context.relevantSymbols?.[0];
-    add(symbol ?? 'approved intent', 'Implement behavior', [symbol ?? 'Intent supplied by user'], context.relevantFiles ?? [], context.relevantSymbols ?? [], []);
+  const intentTerms=new Set((intent.toLowerCase().match(/[a-z0-9_]+/g)??[]).filter(term=>term.length>2&&!['add','make','when','whenever','with','from','into','that','this','change','changes'].includes(term)));
+  const fileRank=new Map(relevantFiles.map((file,index)=>[file,index]));
+  const flowText=(context.affectedFlows??[]).join(' ').toLowerCase();
+  const scored=(context.relevantSymbols??[]).map(value=>{
+    const parsed=parseSymbolReference(value); if(!parsed||parsed.testLike)return undefined;
+    const lower=parsed.name.toLowerCase(); let score=0;
+    for(const term of intentTerms){if(lower.includes(term)||term.includes(lower))score+=4;}
+    if(flowText.includes(lower))score+=5;
+    if(/^(?:update|record|save|create|write|publish|emit|handle|process|validate|authorize|calculate|load|fetch)/i.test(parsed.name))score+=2.5;
+    if(/^(?:find|get|list|read)/i.test(parsed.name))score+=0.5;
+    if(/^[A-Z]/.test(parsed.name))score-=2; // types/interfaces are context, not usually implementation stories
+    if(parsed.file){const rank=fileRank.get(parsed.file); if(rank!==undefined)score+=Math.max(0,4-rank*.75);}
+    return {value,parsed,score};
+  }).filter((item):item is NonNullable<typeof item>=>Boolean(item)).sort((a,b)=>b.score-a.score||(fileRank.get(a.parsed.file??'')??99)-(fileRank.get(b.parsed.file??'')??99)||a.parsed.name.localeCompare(b.parsed.name));
+  const perFile=new Map<string,number>();
+  for(const item of scored){
+    if(targets.length>=3)break;
+    const file=item.parsed.file??''; const count=perFile.get(file)??0;
+    if(file&&count>=2)continue;
+    add(item.parsed.name,'Implement behavior',[item.value],file?[file]:[],[item.value],[]);
+    if(file)perFile.set(file,count+1);
   }
-  return targets.slice(0, 8);
+  const coveredFiles=new Set(targets.flatMap(target=>target.files));
+  // APIs/services/entities add contract-level slices only when they introduce a boundary
+  // not already represented by the intent-ranked behavior slices.
+  for (const api of context.relevantApis ?? []) { if(targets.length>=4)break; add(api, 'Implement API behavior', [api], [], [], [api]); }
+  for (const service of context.relevantServices ?? []) {
+    if(targets.length>=2)break; if(/(?:test|spec)\b/i.test(service))continue;
+    const files=serviceFile(service); if(files.some(file=>coveredFiles.has(file)))continue;
+    add(service, 'Implement service behavior', [service], files, [], [service]); files.forEach(file=>coveredFiles.add(file));
+  }
+  for (const entity of context.dataEntities ?? []) { if(targets.length>=2)break; add(entity, 'Implement data behavior', [entity], [], [], [entity]); }
+  if(!targets.length){
+    const byArea = new Map<string, string[]>();
+    for (const file of relevantFiles) { const area=file.split('/').filter(Boolean).slice(0,2).join('/')||file; byArea.set(area,[...(byArea.get(area)??[]),file]); }
+    for(const [area,files] of [...byArea].slice(0,3)) add(area,'Implement repository slice',files,files,[],[]);
+  }
+  if (!targets.length) add('approved intent', 'Implement behavior', ['Intent supplied by user'], relevantFiles, context.relevantSymbols ?? [], []);
+  return targets.slice(0, 4);
 }
+function parseSymbolReference(value:string):{name:string;file?:string;testLike:boolean}|undefined {
+  const match=value.match(/^(.+?)\s+—\s+(.+?)(?::\d+)?$/); const name=(match?.[1]??value).trim(); const file=match?.[2]?.replace(/:\d+$/,'').trim();
+  if(!name||name.length>120)return undefined; return {name,file,testLike:Boolean(file&&/(?:^|\/)(?:tests?|__tests__|spec)(?:\/|$)|\.(?:test|spec)\./i.test(file))};
+}
+function serviceFile(value:string):string[]{const match=value.match(/—\s+(.+)$/);return match?[match[1].trim()]:[];}
+function implementationFiles(values:readonly string[]):string[]{return unique(values.filter(value=>!/(?:^|\/)(?:tests?|__tests__|spec|docs?|scripts?|\.github)(?:\/|$)|\.(?:test|spec)\./i.test(value)&&!/^(?:package(?:-lock)?\.json|tsconfig|eslint|prettier|vite|webpack|rollup)/i.test(value)));}
 function riskPresent(value: string | undefined): boolean { return Boolean(value && !/^(?:none|low|unknown)$/i.test(value.trim())); }
 function dedupeEvidence(values: readonly SDLCResearchEvidence[]): SDLCResearchEvidence[] { const seen = new Set<string>(); return values.filter(item => { const key = item.okfId ?? `${item.kind}:${item.path ?? ''}:${item.label}`; if (seen.has(key)) return false; seen.add(key); return true; }); }
 function stableFragment(value: string): string { return createHash('sha256').update(value).digest('hex').slice(0, 10); }

@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { SDLCEngine, type SDLCPlan } from './engine';
+import { SDLCEngine, restoreSpecificationDocument, type SDLCPlan } from './engine';
 
 export class SDLCPlanStore {
   constructor(private readonly workspaceRoot:string){}
@@ -10,13 +10,15 @@ export class SDLCPlanStore {
     try {
       const parsed=JSON.parse(await fs.readFile(this.target,'utf8')) as Partial<SDLCPlan>;
       if(!parsed.intent || !parsed.id || !parsed.intentId || !Array.isArray(parsed.stories)) return undefined;
-      if(parsed.researchDocument && Array.isArray(parsed.backlogStories) && parsed.source) return parsed as SDLCPlan;
       const generated=new SDLCEngine().createPlan(parsed.intent);
+      const researchDocument=parsed.researchDocument ?? {...generated.researchDocument,id:`research-${parsed.intentId}`};
+      const specificationDocument=parsed.specificationDocument ?? restoreSpecificationDocument(parsed.intentId, parsed.intent, researchDocument, parsed.updatedAt ?? parsed.createdAt ?? new Date().toISOString());
       return {
         ...generated,
         ...parsed,
         source: parsed.source ?? {kind:'local'},
-        researchDocument: parsed.researchDocument ?? {...generated.researchDocument,id:`research-${parsed.intentId}`},
+        researchDocument,
+        specificationDocument,
         backlogStories: parsed.backlogStories ?? generated.backlogStories,
         stories: parsed.stories as SDLCPlan['stories'],
       };
@@ -27,6 +29,7 @@ export class SDLCPlanStore {
     const root=path.join(this.intentRoot,plan.intentId);
     await Promise.all([
       atomicWrite(path.join(root,'research.md'),`${plan.researchDocument.markdown}\n`),
+      atomicWrite(path.join(root,'specification.md'),`${plan.specificationDocument.markdown}\n`),
       atomicWrite(path.join(root,'backlog-stories.json'),`${JSON.stringify(plan.backlogStories,null,2)}\n`),
       atomicWrite(path.join(root,'plan.json'),`${JSON.stringify(plan,null,2)}\n`),
     ]);

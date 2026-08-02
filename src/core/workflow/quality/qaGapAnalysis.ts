@@ -389,6 +389,15 @@ function detectGaps(
   return gaps;
 }
 
+function hasConventionMappedTest(sourceFile:string,testFiles:readonly string[]):boolean {
+  const sourceStem=path.basename(sourceFile).replace(/\.[^.]+$/,'').toLowerCase();
+  if(!sourceStem)return false;
+  return testFiles.some(testFile=>{
+    const testStem=path.basename(testFile).replace(/\.(?:test|spec)?\.[^.]+$/i,'').replace(/\.(?:test|spec)$/i,'').toLowerCase();
+    return testStem===sourceStem||testStem.startsWith(sourceStem)||sourceStem.startsWith(testStem);
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Recommendation generation
 // ---------------------------------------------------------------------------
@@ -576,7 +585,8 @@ export class GapAnalyzer {
     this.log('Enumerating source files', 30);
     this.checkCancellation(ctx);
 
-    const sourceFiles = enumerateSourceFiles(this.workspaceRoot);
+    const discoveredTests = new Set(discovery.testFiles.map(file => path.resolve(file)));
+    const sourceFiles = enumerateSourceFiles(this.workspaceRoot).filter(file => !discoveredTests.has(path.resolve(file)));
     this.log('Computing coverage estimates', 50);
     this.checkCancellation(ctx);
 
@@ -597,7 +607,17 @@ export class GapAnalyzer {
     }));
 
     const riskScores = computeRiskScores(riskData);
+    // Quick analysis has no executed line coverage. Preserve the distinction between
+    // “a mapped test exists” and “measured coverage exists” so Keystone does not tell
+    // users that a source file is untested merely because coverage has not been run.
     const coverageMap = new Map<string, Set<number>>();
+    const mappedWithoutCoverage: string[] = [];
+    for (const sourceFile of sourceFiles) {
+      if (!hasConventionMappedTest(sourceFile, discovery.testFiles)) continue;
+      const relative = path.relative(this.workspaceRoot, sourceFile);
+      coverageMap.set(relative, new Set());
+      mappedWithoutCoverage.push(sourceFile);
+    }
 
     this.log('Detecting gaps', 70);
     this.checkCancellation(ctx);
@@ -610,6 +630,11 @@ export class GapAnalyzer {
       this.config,
       this.workspaceRoot,
     );
+    for (const filePath of mappedWithoutCoverage) gaps.push({
+      type: 'no-coverage-data', filePath, severity: 0.2,
+      reason: 'A mapped test file exists, but executed line-coverage evidence is not available in quick analysis.',
+      action: 'Run the relevant test suite with coverage when measured coverage is required.',
+    });
 
     this.log('Generating recommendations', 90);
     this.checkCancellation(ctx);
@@ -661,7 +686,8 @@ export class GapAnalyzer {
 
     const quickResult = await this.analyzeQuick(ctx);
     const discovery = discoverTests(this.workspaceRoot);
-    const sourceFiles = enumerateSourceFiles(this.workspaceRoot);
+    const discoveredTests = new Set(discovery.testFiles.map(file => path.resolve(file)));
+    const sourceFiles = enumerateSourceFiles(this.workspaceRoot).filter(file => !discoveredTests.has(path.resolve(file)));
     const riskData: FileRiskData[] = sourceFiles.map((file) => ({
       filePath: file,
       churn: 0.3,

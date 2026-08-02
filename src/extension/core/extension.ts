@@ -19,7 +19,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const backgroundWorkers = new Map<string, BackgroundWorkerCoordinator>();
 
   context.subscriptions.push(statusBar, output, qaService, provider.attachQaService(qaService), { dispose: () => { for (const coordinator of backgroundWorkers.values()) coordinator.dispose(); backgroundWorkers.clear(); } });
-  indexCommands(context, provider, qaService);
+  indexCommands(context, provider);
 
   statusBar.text = "Keystone: Ready | Intelligence cached in .keystone";
   statusBar.show();

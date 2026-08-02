@@ -9,6 +9,8 @@ declare module "vscode" {
   export interface TextDocument { uri:Uri; fileName:string; languageId:string; getText(range?:unknown):string; }
   export interface TextEditor { document:TextDocument; }
   export class Position { constructor(line:number,character:number); readonly line:number; readonly character:number; }
+  export class Range { constructor(startLine:number,startCharacter:number,endLine:number,endCharacter:number); readonly start:Position; readonly end:Position; }
+  export interface TextDocumentShowOptions { preview?:boolean; preserveFocus?:boolean; viewColumn?:ViewColumn; selection?:Range; }
   export interface WorkspaceFolder { uri:Uri; name:string; index:number; }
   export interface Webview { html:string; options:WebviewOptions; readonly cspSource:string; asWebviewUri(uri:Uri):Uri; postMessage(message:unknown):Thenable<boolean>; onDidReceiveMessage(listener:(message:any)=>any):Disposable; }
   export interface WebviewOptions { enableScripts?:boolean; localResourceRoots?:readonly Uri[]; }
@@ -33,6 +35,7 @@ declare module "vscode" {
     function showInputBox(options?:Record<string,unknown>):Thenable<string|undefined>;
     function showQuickPick<T>(items:readonly T[],options?:Record<string,unknown>):Thenable<T|undefined>;
     function showWarningMessage<T extends string>(message:string,options:Record<string,unknown>,...items:T[]):Thenable<T|undefined>;
+    function showTextDocument(document:TextDocument,options?:TextDocumentShowOptions):Thenable<TextEditor>;
     function createWebviewPanel(viewType:string,title:string,showOptions:ViewColumn|{viewColumn:ViewColumn;preserveFocus?:boolean},options?:{enableScripts?:boolean;retainContextWhenHidden?:boolean;localResourceRoots?:readonly Uri[]}):WebviewPanel;
     function onDidChangeActiveTextEditor(listener:(editor:TextEditor|undefined)=>any):Disposable;
   }

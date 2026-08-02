@@ -60,8 +60,9 @@ export async function buildIntentContextPack(
   const excludedPaths = new Set(options.excludedPaths ?? []);
   const ranked = [...priority, ...selected]
     .filter(item => protectedPaths.has(item.file.path) || !excludedPaths.has(item.file.path))
+    .filter(item => protectedPaths.has(item.file.path) || implementationContextPath(item.file.path, intent.text))
     .filter((item, index, all) => all.findIndex(candidate => candidate.file.path === item.file.path) === index);
-  const fallback = ranked.length ? ranked : intelligence.files.filter(file => !file.isGenerated).slice(0, 8).map(file => ({ file, result: { path: file.path, score: 0, reasons: ["repository fallback"] as readonly string[] } }));
+  const fallback = ranked.length ? ranked : intelligence.files.filter(file => !file.isGenerated && implementationContextPath(file.path, intent.text)).slice(0, 8).map(file => ({ file, result: { path: file.path, score: 0, reasons: ["repository fallback"] as readonly string[] } }));
   const relevantFiles = fallback.map(item => item.file);
   const selectedPaths = new Set(relevantFiles.map(file => file.path));
   const relevantSymbols = intelligence.symbols.filter(symbol => selectedPaths.has(symbol.filePath)).slice(0, 60);
@@ -145,22 +146,23 @@ export async function buildIntentContextPack(
 function cpgEvidence(graph: Awaited<ReturnType<CpgShardStore["get"]>>, query: string, semanticEvidence: readonly string[], sourcePath: string): { text: string; symbols: number; relations: number; refs: Array<{ okfId?: string; kind: string; label: string; startLine?: number; endLine?: number }> } {
   if (!graph) return { text: "", symbols: 0, relations: 0, refs: [] };
   const terms = new Set(query.toLowerCase().match(/[a-z0-9_]+/g)?.filter(term => term.length > 2) ?? []);
-  const named = graph.nodes.filter(node => node.name).sort((left, right) => {
+  const named = graph.nodes.filter(node => node.name && (node.kind === 'declaration' || terms.has(node.name.toLowerCase()))).sort((left, right) => {
     const leftMatch = terms.has(left.name!.toLowerCase()) ? 1 : 0;
     const rightMatch = terms.has(right.name!.toLowerCase()) ? 1 : 0;
     return rightMatch - leftMatch || left.location.startLine - right.location.startLine;
-  }).slice(0, 12);
+  }).slice(0, 8);
   if (!named.length) return { text: "", symbols: 0, relations: 0, refs: [] };
   const ids = new Set(named.map(node => node.id));
-  const relations = graph.edges.filter(edge => ids.has(edge.sourceId) || ids.has(edge.targetId)).slice(0, 20);
+  const behavioralKinds = new Set(['call','dfg','cfg','cdg','eog']);
+  const relations = graph.edges.filter(edge => behavioralKinds.has(edge.kind) && (ids.has(edge.sourceId) || ids.has(edge.targetId))).slice(0, 12);
   const byId = new Map(graph.nodes.map(node => [node.id, node]));
+  const semanticCalls = semanticEvidence.filter(item => item.includes(sourcePath)).slice(0, 8);
   const astChildren = new Map<string, string[]>();
   for (const edge of graph.edges.filter(edge => edge.kind === "ast")) astChildren.set(edge.sourceId, [...(astChildren.get(edge.sourceId) ?? []), edge.targetId]);
-  const syntaxCalls = graph.nodes.filter(node => node.syntaxKind === "CallExpression").slice(0, 12).map(node => {
+  const syntaxCalls = semanticCalls.length || relations.some(edge => edge.kind === 'call') ? [] : graph.nodes.filter(node => node.syntaxKind === "CallExpression").slice(0, 6).map(node => {
     const callee = (astChildren.get(node.id) ?? []).map(id => byId.get(id)).find(child => child?.name);
     return `${callee?.name ?? "call"} @ line ${node.location.startLine}`;
   });
-  const semanticCalls = semanticEvidence.filter(item => item.includes(sourcePath)).slice(0, 8);
   const lines = [
     "CPG evidence:",
     ...named.map(node => `- ${node.syntaxKind} ${node.name} @ line ${node.location.startLine}`),
@@ -259,6 +261,17 @@ function truncateToTokens(value: string, tokens: number): string {
 function dedupeRefs<T extends { okfId?: string; kind: string; label: string; startLine?: number }>(values: readonly T[]): T[] {
   const seen = new Set<string>();
   return values.filter(item => { const key = item.okfId ?? `${item.kind}:${item.label}:${item.startLine ?? ""}`; if (seen.has(key)) return false; seen.add(key); return true; });
+}
+
+
+function implementationContextPath(value:string,intentText:string):boolean {
+  const normalized=value.replace(/\\/g,'/').toLowerCase();
+  if(/(?:^|\/)(?:node_modules|dist|build|coverage|vendor|generated)(?:\/|$)/.test(normalized))return false;
+  if(/(?:^|\/)\.github\/(?:agents?|instructions?|skills?)(?:\/|$)/.test(normalized)||/(?:^|\/)agents\.md$/.test(normalized))return false;
+  if(/(?:^|\/)(?:docs?|scripts?)(?:\/|$)/.test(normalized))return false;
+  if(/(?:^|\/)(?:package(?:-lock)?\.json|tsconfig(?:\.[^/]+)?\.json|eslint|prettier|vite|webpack|rollup)/.test(normalized))
+    return /\b(?:dependency|dependencies|package|npm|build|compile|config|configuration|tooling|test framework)\b/i.test(intentText);
+  return true;
 }
 
 function compose(pack: Omit<ContextPack, "copilotPrompt">): string {

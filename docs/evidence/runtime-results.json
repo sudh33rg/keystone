@@ -936,22 +936,7 @@
     "purpose": "Proves production discovery has no arbitrary repository file cap; semantic depth is covered separately by all-language persisted intelligence."
   },
   "actualProject": {
-    "source": "clean copy of current Keystone source/tests/scripts/config; generated state and build outputs excluded",
-    "files": 200,
-    "persisted": true,
-    "okfValid": true,
-    "indexElapsedMs": 14171,
-    "queryElapsedMs": 214,
-    "intentElapsedMs": 723,
-    "queryResults": 48,
-    "queryTraversals": 24,
-    "okfIntentRetrieval": "okf-compound+lexical-graph",
-    "readOnlyGitEvidence": true,
-    "copilotCustomizations": {
-      "agents": 0,
-      "skills": 0,
-      "instructions": 0
-    }
+    "pendingSeparateProductionAcceptance": true
   },
   "sdlcStateMachineFixtureStoriesCompleted": 16,
   "sdlcStoryTypes": [
@@ -1064,6 +1049,5 @@
   },
   "browserAuthenticationAndOriginChecks": true,
   "browserStaleVersionAndReconnectChecks": true,
-  "gitPolicy": "read-only",
-  "productionAcceptanceVerifiedAt": "2026-08-02T10:07:04.306Z"
+  "gitPolicy": "read-only"
 }
