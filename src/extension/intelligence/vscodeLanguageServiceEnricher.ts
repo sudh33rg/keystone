@@ -26,21 +26,10 @@ export class VscodeLanguageServiceEnricher implements SemanticEnrichmentProvider
         uri
       )) ?? [];
     const flattened = flattenSymbols(rawSymbols, request.relativePath, document.languageId);
-    if (!flattened.length) {
-      return {
-        provider: "vscode-language-service",
-        providerLanguageId: document.languageId,
-        capabilities: {
-          documentSymbols: false,
-          definitions: false,
-          references: false,
-          implementations: false,
-          callHierarchy: false
-        },
-        symbols: [],
-        warnings: ["No document-symbol provider returned semantic symbols for this file."]
-      };
-    }
+    // A missing provider is an expected fallback for languages whose deterministic
+    // frontend already supplies structural symbols. Do not turn that fallback into
+    // a noisy semantic warning or claim that the file was semantically enriched.
+    if (!flattened.length) return undefined;
 
     let definitions = false;
     let references = false;

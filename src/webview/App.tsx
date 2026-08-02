@@ -88,7 +88,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
   state: AppState = {
     nav: navFromHash(),
     application: emptyApplication,
-    notice: "Keystone is ready.",
+    notice: "",
     intent: "",
     passphrase: "",
     handoffText: "",
@@ -113,7 +113,8 @@ export class App extends React.Component<Record<string, never>, AppState> {
   };
   private readonly onMessage = (event: MessageEvent): void =>
     this.handle(event.data as { type?: string; [key: string]: unknown });
-  private readonly onHash = (): void => this.setState({ nav: navFromHash() });
+  private readonly onHash = (): void => this.setState({ nav: navFromHash(), notice: "" });
+  private intentInput?: HTMLTextAreaElement;
 
   componentDidMount(): void {
     window.addEventListener("message", this.onMessage);
@@ -347,8 +348,15 @@ export class App extends React.Component<Record<string, never>, AppState> {
 
   private navigate(nav: Nav): void {
     location.hash = nav;
-    this.setState({ nav });
+    this.setState({ nav, notice: "" });
     if (nav === "Intelligence") this.loadIntelligenceSurface(this.state.intelligenceView);
+  }
+  private startNewWork(): void {
+    this.navigate("Home");
+    window.setTimeout(() => this.intentInput?.focus(), 0);
+  }
+  private dismissNotice(): void {
+    this.setState({ notice: "" });
   }
   private field(name: keyof AppState, value: string | boolean): void {
     this.setState({ [name]: value } as unknown as Pick<AppState, keyof AppState>);
@@ -535,6 +543,9 @@ export class App extends React.Component<Record<string, never>, AppState> {
             <span className="surface-pill">
               {vscode.surface === "browser" ? "Browser View · shared state" : "VS Code Webview"}
             </span>
+            <button className="primary" onClick={() => this.startNewWork()}>
+              Start new work
+            </button>
             <button onClick={() => vscode.postMessage({ type: "OPEN_BROWSER_VIEW" })}>
               Open in Browser
             </button>
@@ -553,10 +564,21 @@ export class App extends React.Component<Record<string, never>, AppState> {
           ))}
         </aside>
         <main>
-          <div className="notice">
-            <span className="pulse" />
-            {this.state.notice}
-          </div>
+          {this.state.notice && (
+            <div className="notice" role="status" aria-live="polite">
+              <span className="pulse" />
+              <span className="notice-message">{this.state.notice}</span>
+              <button
+                className="notice-close"
+                type="button"
+                aria-label="Dismiss notification"
+                title="Dismiss notification"
+                onClick={() => this.dismissNotice()}
+              >
+                ×
+              </button>
+            </div>
+          )}
           {this.state.nav === "Home"
             ? this.home(intel)
             : this.state.nav === "Intelligence"
@@ -629,6 +651,9 @@ export class App extends React.Component<Record<string, never>, AppState> {
             subtitle="Keystone researches the actual repository before planning."
           >
             <textarea
+              ref={(element: HTMLTextAreaElement | null) => {
+                this.intentInput = element ?? undefined;
+              }}
               value={this.state.intent}
               onChange={(event: React.FormEvent<HTMLTextAreaElement>) =>
                 this.field("intent", event.currentTarget.value)
@@ -1305,6 +1330,11 @@ export class App extends React.Component<Record<string, never>, AppState> {
                 Research an intent from Home. Keystone will not invent a plan before repository
                 evidence exists.
               </p>
+            </div>
+            <div className="actions">
+              <button className="primary" onClick={() => this.startNewWork()}>
+                Start new work
+              </button>
             </div>
           </div>
         </section>
@@ -2305,6 +2335,13 @@ function EvidenceList({
 }
 function LanguageCard({ language }: { language: LanguageCapability }): JSX.Element {
   const active = (language.files ?? 0) > 0;
+  const semanticFiles = language.semanticFiles ?? 0;
+  const deterministicFiles = language.deterministicFiles ?? 0;
+  const capabilities = Object.entries(language.capabilities ?? {})
+    .filter(([, enabled]) => enabled)
+    .map(([name]) => name)
+    .slice(0, 4)
+    .join(" · ");
   return (
     <article className={active ? "language active-language" : "language"}>
       <div>
@@ -2314,11 +2351,16 @@ function LanguageCard({ language }: { language: LanguageCapability }): JSX.Eleme
       <p>
         {language.semanticProvider === "none"
           ? "Deterministic structural frontend"
-          : language.semanticProvider}
+          : `${language.semanticProvider} enrichment`}
       </p>
       <small>
         {language.files ?? 0} file(s) ·{" "}
         {(language.extensions ?? []).slice(0, 5).join(" ") || "universal text"}
+      </small>
+      <small>
+        {semanticFiles > 0 ? `${semanticFiles} semantic` : "structural"}
+        {deterministicFiles > 0 ? ` · ${deterministicFiles} deterministic fallback` : ""}
+        {capabilities ? ` · ${capabilities}` : ""}
       </small>
       {language.warnings?.length ? (
         <span className="language-warning">{language.warnings[0]}</span>

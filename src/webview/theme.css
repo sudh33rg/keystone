@@ -154,6 +154,25 @@ main {
   color: #c6e2ee;
   font-size: 13px;
 }
+.notice-message {
+  flex: 1;
+  min-width: 0;
+}
+.notice-close {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 1px 7px;
+  border: 0;
+  background: transparent;
+  color: #a9d2e1;
+  font-size: 20px;
+  line-height: 1;
+}
+.notice-close:hover:not(:disabled) {
+  transform: none;
+  background: #1b4b60;
+  color: white;
+}
 .pulse {
   width: 8px;
   height: 8px;
@@ -394,6 +413,8 @@ label {
   color: #b7d0db;
 }
 .language small {
+  display: block;
+  margin-top: 5px;
   color: #7898a6;
 }
 .language-warning {

@@ -134,7 +134,8 @@ export async function indexRepository(
       if (
         !reusable &&
         options.semanticEnricher &&
-        languageAnalysis.language.semanticEnrichment === "vscode-language-service"
+        languageAnalysis.language.semanticEnrichment === "vscode-language-service" &&
+        languageAnalysis.language.parser !== "artifact"
       ) {
         try {
           semantic = await options.semanticEnricher.enrich({
@@ -145,9 +146,12 @@ export async function indexRepository(
             text: text!,
             signal: options.signal
           });
-          if (semantic?.capabilities.documentSymbols) support.semanticFiles += 1;
-          else support.deterministicFiles += 1;
-          if (semantic) mergeSupportCapabilities(support, semantic);
+          if (semantic?.capabilities.documentSymbols && semantic.symbols.length > 0) {
+            support.semanticFiles += 1;
+            mergeSupportCapabilities(support, semantic);
+          } else {
+            support.deterministicFiles += 1;
+          }
         } catch (error) {
           if (options.signal?.aborted || (error instanceof Error && error.name === "AbortError"))
             throw error;
