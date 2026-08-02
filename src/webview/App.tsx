@@ -6,6 +6,7 @@ import type {
   BackgroundWorkerId,
   BackgroundWorkerState,
   CopilotDelegationResult,
+  CorrectionPacket,
   EvidenceItem,
   IntelligenceCpgResult,
   IntelligenceExplorerItem,
@@ -20,6 +21,8 @@ import type {
   Operation,
   LanguageCapability,
   Nav,
+  ContextPacketPayload,
+  ContextPacketSegmentKind,
   SdlcPlan,
   Story,
   TaskResult
@@ -47,6 +50,8 @@ interface AppState {
   graphRelationshipKind: string;
   graph?: IntelligenceGraphResult;
   selectedGraphNodeId?: string;
+  collapsedGraphNodeIds: string[];
+  loadedContextPackets: Record<string, ContextPacketPayload>;
   cpg?: IntelligenceCpgResult;
   cpgPath: string;
   cpgEdgeKind: string;
@@ -101,6 +106,8 @@ export class App extends React.Component<Record<string, never>, AppState> {
     graphMode: "repository",
     graphQuery: "",
     graphRelationshipKind: "all",
+    collapsedGraphNodeIds: [],
+    loadedContextPackets: {},
     cpgPath: "",
     cpgEdgeKind: "all",
     agent: "GitHub Copilot",
@@ -149,6 +156,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
     } else if (message.type === "TASK_RESULT") {
       this.setState({
         task: message.result as TaskResult,
+        loadedContextPackets: {},
         notice: "Intent R&D is ready. Review evidence and create the SDLC plan."
       });
     } else if (message.type === "SDLC_PLAN_RESULT") {
@@ -252,9 +260,19 @@ export class App extends React.Component<Record<string, never>, AppState> {
       });
     } else if (message.type === "INTELLIGENCE_EXPLORER_RESULT") {
       const result = message.result as IntelligenceExplorerResult;
+      const previous = this.state.explorer;
+      const isContinuation = Boolean(
+        result.cursor &&
+        previous?.nextCursor === result.cursor &&
+        previous.query === result.query &&
+        (previous.kind ?? "all") === (result.kind ?? "all")
+      );
+      const explorer = isContinuation
+        ? { ...result, items: [...(previous?.items ?? []), ...result.items] }
+        : result;
       this.setState({
-        explorer: result,
-        notice: `Explorer loaded ${result.items.length} of ${result.totalActive} active OKF knowledge unit(s).`
+        explorer,
+        notice: ""
       });
     } else if (message.type === "INTELLIGENCE_GRAPH_RESULT") {
       const result = message.result as IntelligenceGraphResult;
@@ -268,6 +286,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
         graphMode: result.mode,
         graphRelationshipKind: relationshipKind,
         selectedGraphNodeId: result.seedIds[0],
+        collapsedGraphNodeIds: [],
         notice: `${result.mode} graph loaded ${result.nodes.length} node(s) and ${result.edges.length} relationship(s).`
       });
     } else if (message.type === "CPG_VIEW_RESULT") {
@@ -280,6 +299,16 @@ export class App extends React.Component<Record<string, never>, AppState> {
           ? `CPG loaded for ${result.sourcePath}.`
           : "No persisted CPG shard is available yet."
       });
+    } else if (message.type === "CONTEXT_PACKET_RESULT") {
+      const packet = message.packet as ContextPacketPayload | undefined;
+      this.setState((previous) => ({
+        loadedContextPackets: packet
+          ? { ...previous.loadedContextPackets, [packet.id]: packet }
+          : previous.loadedContextPackets,
+        notice: message.stale
+          ? `Context packet ${String(message.packetId)} is stale. Regenerate intent context after the latest indexing run.`
+          : `Loaded context packet ${String(message.packetId)} (${packet?.segmentKinds.join(" · ") ?? "no segments"}).`
+      }));
     } else if (message.type === "VALIDATION_RESULT") {
       const results = (message.results as Array<{ status: string }> | undefined) ?? [];
       this.setState({
@@ -287,6 +316,12 @@ export class App extends React.Component<Record<string, never>, AppState> {
           ? `Validation passed for ${results.length} command(s).`
           : "Validation requires review; inspect the active SDLC story."
       });
+    } else if (message.type === "CORRECTION_PACKET_RESULT") {
+      const packet = message.packet as CorrectionPacket;
+      this.setState((previous) => ({
+        application: { ...previous.application, correctionPacket: packet },
+        notice: `Correction packet ${packet.id} is ready from ${packet.validation.failures.length} validation failure(s) and ${packet.canonical.unitIds.length} OKF unit(s).`
+      }));
     } else if (message.type === "DELEGATION_RESULT") {
       const result = message as unknown as CopilotDelegationResult;
       this.setState((previous) => ({
@@ -469,7 +504,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
     return (
       <Panel
         title="Background workers"
-        subtitle="Independent workspace scans continue while the main UI remains responsive."
+        subtitle="Four independent analysis workers consume the last promoted OKF snapshot; ingestion remains the only repository discovery pass."
       >
         <div className="background-worker-grid">
           {workers.map((worker) => {
@@ -482,6 +517,25 @@ export class App extends React.Component<Record<string, never>, AppState> {
                   <Status value={state?.status ?? "idle"} />
                 </div>
                 <p>{state?.message ?? "Waiting for the workspace scan to start."}</p>
+                {state?.canonicalEvidence ? (
+                  <small className="worker-evidence">
+                    OKF snapshot {state.canonicalEvidence.snapshotDigest.slice(0, 12)}… ·{" "}
+                    {state.canonicalEvidence.unitIds.length} unit(s) ·{" "}
+                    {state.canonicalEvidence.relationshipIds.length} relationship(s) ·{" "}
+                    {state.canonicalEvidence.evidenceIds.length} evidence link(s)
+                  </small>
+                ) : state?.status === "complete" ? (
+                  <small className="worker-evidence">
+                    Completed without a persisted OKF envelope.
+                  </small>
+                ) : null}
+                {state?.error && <small className="worker-error">{state.error}</small>}
+                {state?.workerId && (
+                  <small className="worker-meta">
+                    {state.workerId} · {state.scopePaths?.length ?? 0} canonical path(s)
+                    {state.durationMs !== undefined ? ` · ${state.durationMs}ms` : ""}
+                  </small>
+                )}
                 {progress !== undefined && (
                   <div className="progress" aria-label={`${workerLabels[worker]} ${progress}%`}>
                     <i style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} />
@@ -907,12 +961,12 @@ export class App extends React.Component<Record<string, never>, AppState> {
             onChange={(event: React.FormEvent<HTMLInputElement>) =>
               this.field("explorerQuery", event.currentTarget.value)
             }
-            placeholder="Symbol, API, service, test, file, configuration…"
+            placeholder="Symbol, API, service, database, table, query, flag, test…"
           />
           <select
             value={this.state.explorerKind}
             onChange={(event: React.FormEvent<HTMLSelectElement>) =>
-              this.setState({ explorerKind: event.currentTarget.value })
+              this.setState({ explorerKind: event.currentTarget.value, explorer: undefined })
             }
           >
             <option value="all">All kinds</option>
@@ -922,13 +976,14 @@ export class App extends React.Component<Record<string, never>, AppState> {
               </option>
             ))}
           </select>
-          <button className="primary" onClick={() => this.loadExplorer()}>
+          <button className="primary" onClick={() => this.loadExplorer(true)}>
             Search
           </button>
         </div>
         {result && (
           <p className="result-summary">
-            {result.items.length} visible result(s) · {result.totalActive} active OKF units
+            Showing {result.items.length} of {result.totalMatching} matching OKF unit(s) ·{" "}
+            {result.totalActive} active in snapshot
           </p>
         )}
         <div className="explorer-list">
@@ -941,6 +996,13 @@ export class App extends React.Component<Record<string, never>, AppState> {
             />
           )) ?? <Empty text="Open Explorer to load the promoted OKF snapshot." />}
         </div>
+        {result?.nextCursor && (
+          <div className="inline-form explorer-pagination">
+            <button onClick={() => this.loadExplorer()}>
+              Load next {result.pageSize} · {result.totalMatching - result.items.length} remaining
+            </button>
+          </div>
+        )}
       </Panel>
     );
   }
@@ -949,9 +1011,24 @@ export class App extends React.Component<Record<string, never>, AppState> {
     const result = this.state.graph;
     const selected = result?.nodes.find((node) => node.id === this.state.selectedGraphNodeId);
     const mode: IntelligenceGraphMode = flowOnly ? "flows" : this.state.graphMode;
-    const visibleEdges = (result?.edges ?? []).filter(
+    const relationshipEdges = (result?.edges ?? []).filter(
       (edge) =>
         this.state.graphRelationshipKind === "all" || edge.kind === this.state.graphRelationshipKind
+    );
+    const collapsed = new Set(this.state.collapsedGraphNodeIds);
+    const hidden = new Set<string>();
+    const pending = [...collapsed];
+    while (pending.length) {
+      const sourceId = pending.shift()!;
+      for (const edge of relationshipEdges) {
+        if (edge.sourceId !== sourceId || hidden.has(edge.targetId)) continue;
+        if ((result?.seedIds ?? []).includes(edge.targetId)) continue;
+        hidden.add(edge.targetId);
+        pending.push(edge.targetId);
+      }
+    }
+    const visibleEdges = relationshipEdges.filter(
+      (edge) => !hidden.has(edge.sourceId) && !hidden.has(edge.targetId)
     );
     const connectedIds = new Set<string>([...(result?.seedIds ?? [])]);
     for (const edge of visibleEdges) {
@@ -959,7 +1036,9 @@ export class App extends React.Component<Record<string, never>, AppState> {
       connectedIds.add(edge.targetId);
     }
     const visibleNodes = (result?.nodes ?? []).filter(
-      (node) => this.state.graphRelationshipKind === "all" || connectedIds.has(node.id)
+      (node) =>
+        !hidden.has(node.id) &&
+        (this.state.graphRelationshipKind === "all" || connectedIds.has(node.id))
     );
     return (
       <div className="view-stack">
@@ -1037,6 +1116,14 @@ export class App extends React.Component<Record<string, never>, AppState> {
                 this.loadGraph(mode, this.state.graphQuery || node.label, [
                   ...new Set([...(result?.seedIds ?? []), node.id])
                 ])
+              }
+              collapsed={selected ? collapsed.has(selected.id) : false}
+              onCollapse={(node) =>
+                this.setState((previous) => ({
+                  collapsedGraphNodeIds: previous.collapsedGraphNodeIds.includes(node.id)
+                    ? previous.collapsedGraphNodeIds.filter((id) => id !== node.id)
+                    : [...previous.collapsedGraphNodeIds, node.id]
+                }))
               }
             />
           </div>
@@ -1182,7 +1269,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
             onChange={(event: React.FormEvent<HTMLInputElement>) =>
               this.field("query", event.currentTarget.value)
             }
-            placeholder="Ask about callers, dependencies, tests, impact, APIs, flows, risks or configuration…"
+            placeholder="Ask about callers, dependencies, tests, impact, APIs, databases, tables, flows, risks or flags…"
           />
           <button
             className="primary"
@@ -1254,16 +1341,17 @@ export class App extends React.Component<Record<string, never>, AppState> {
     this.loadIntelligenceSurface(view);
   }
   private loadIntelligenceSurface(view: IntelligenceView): void {
-    if (view === "Explorer") this.loadExplorer();
+    if (view === "Explorer") this.loadExplorer(true);
     else if (view === "Graph") this.loadGraph(this.state.graphMode, this.state.graphQuery);
     else if (view === "CPG") this.loadCpg();
     else if (view === "Flows") this.loadGraph("flows", this.state.graphQuery);
   }
-  private loadExplorer(): void {
+  private loadExplorer(reset = false): void {
     vscode.postMessage({
       type: "EXPLORE_INTELLIGENCE",
       query: this.state.explorerQuery.trim(),
-      kind: this.state.explorerKind
+      kind: this.state.explorerKind,
+      cursor: reset ? undefined : this.state.explorer?.nextCursor
     });
   }
   private loadGraph(mode: IntelligenceGraphMode, query = "", seedIds: string[] = []): void {
@@ -1832,6 +1920,23 @@ export class App extends React.Component<Record<string, never>, AppState> {
             </ul>
           </details>
         )}
+        {analysis?.canonicalEvidence && Object.keys(analysis.canonicalEvidence).length > 0 && (
+          <details>
+            <summary>Background worker OKF provenance</summary>
+            <ul className="fact-list">
+              {Object.entries(analysis.canonicalEvidence).map(([worker, envelope]) => (
+                <li key={worker}>
+                  <b>{worker}</b>
+                  <span>
+                    {envelope.unitIds.length} unit(s) · {envelope.relationshipIds.length}{" "}
+                    relationship(s) · {envelope.evidenceIds.length} evidence link(s)
+                  </span>
+                  <code>snapshot {envelope.snapshotDigest.slice(0, 12)}…</code>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
         {task.testGeneration && (
           <details>
             <summary>Generated QA scenarios ({task.testGeneration.summary.totalScenarios})</summary>
@@ -1881,6 +1986,11 @@ export class App extends React.Component<Record<string, never>, AppState> {
               value={`${task.tokenReduction ?? 0}%`}
               detail={task.contextTokens?.tier ?? "standard"}
             />
+            <Metric
+              label="Packets"
+              value={String(task.contextTokens?.packets ?? task.contextPackets?.length ?? 1)}
+              detail="ordered context segments"
+            />
           </div>
           <div className="context-sections">
             {(task.contextSections ?? []).map((section) => (
@@ -1903,6 +2013,67 @@ export class App extends React.Component<Record<string, never>, AppState> {
               </article>
             ))}
           </div>
+          {task.contextPackets?.length ? (
+            <details open>
+              <summary>Ordered context packets ({task.contextPackets.length})</summary>
+              <div className="context-packets">
+                {task.contextPackets.map((packet) => (
+                  <article key={packet.id}>
+                    <div>
+                      <b>
+                        Packet {packet.sequence}/{packet.total}
+                      </b>
+                      <span>{packet.estimatedTokens} tokens</span>
+                    </div>
+                    <p>{packet.segmentKinds.join(" · ")}</p>
+                    <small>{packet.paths.join(" · ") || "Canonical summary only"}</small>
+                    {packet.continuationToken && (
+                      <code>continuation: {packet.continuationToken.slice(0, 16)}…</code>
+                    )}
+                    <div className="actions packet-actions">
+                      <button onClick={() => this.loadContextPacket(packet.id)}>
+                        {this.state.loadedContextPackets[packet.id]
+                          ? "Reload full packet"
+                          : `Load packet ${packet.sequence}`}
+                      </button>
+                      {packet.segmentKinds.some((kind) =>
+                        ["summary", "selected-intelligence"].includes(kind)
+                      ) && (
+                        <button
+                          onClick={() =>
+                            this.loadContextPacket(packet.id, ["summary", "selected-intelligence"])
+                          }
+                        >
+                          Load summary
+                        </button>
+                      )}
+                      {packet.segmentKinds.includes("source-excerpts") && (
+                        <button
+                          onClick={() => this.loadContextPacket(packet.id, ["source-excerpts"])}
+                        >
+                          Load source excerpts
+                        </button>
+                      )}
+                    </div>
+                    {this.state.loadedContextPackets[packet.id] && (
+                      <details open>
+                        <summary>
+                          Loaded {this.state.loadedContextPackets[packet.id].estimatedTokens} token
+                          segment
+                          {this.state.loadedContextPackets[packet.id].estimatedTokens === 1
+                            ? ""
+                            : "s"}
+                        </summary>
+                        <pre className="context-packet-content">
+                          {this.state.loadedContextPackets[packet.id].content}
+                        </pre>
+                      </details>
+                    )}
+                  </article>
+                ))}
+              </div>
+            </details>
+          ) : null}
           {task.omittedContext?.length ? (
             <details>
               <summary>Omitted context ({task.omittedContext.length})</summary>
@@ -2022,6 +2193,84 @@ export class App extends React.Component<Record<string, never>, AppState> {
               )}
             </details>
           )}
+          {this.state.application.correctionPacket ? (
+            <details className="correction-packet" open>
+              <summary>
+                Correction packet · {this.state.application.correctionPacket.reason} · OKF snapshot{" "}
+                {this.state.application.correctionPacket.snapshotDigest.slice(0, 12)}…
+              </summary>
+              <p>
+                {this.state.application.correctionPacket.validation.failures.length} validation
+                failure(s) · {this.state.application.correctionPacket.canonical.unitIds.length} OKF
+                unit(s) · {this.state.application.correctionPacket.selectedPaths.length} selected
+                path(s)
+              </p>
+              <small>
+                {this.state.application.correctionPacket.changedPaths?.length ?? 0} changed file(s)
+                · {this.state.application.correctionPacket.affectedPaths?.length ?? 0} OKF-affected
+                path(s)
+                {this.state.application.correctionPacket.diffHash
+                  ? ` · diff ${this.state.application.correctionPacket.diffHash.slice(0, 12)}…`
+                  : ""}
+              </small>
+              <div className="actions">
+                {current?.status === "review-required" && (
+                  <button
+                    className="primary"
+                    onClick={() =>
+                      this.delegateCorrection(current, this.state.application.correctionPacket!)
+                    }
+                  >
+                    Approve correction with Copilot
+                  </button>
+                )}
+                <button
+                  className="primary"
+                  onClick={() =>
+                    vscode.postMessage({
+                      type: "COPY_COPILOT_PROMPT",
+                      prompt: this.state.application.correctionPacket!.prompt
+                    })
+                  }
+                >
+                  Copy correction packet
+                </button>
+                <button onClick={() => vscode.postMessage({ type: "REQUEST_CORRECTION_PACKET" })}>
+                  Regenerate from latest validation
+                </button>
+                <button
+                  onClick={() => vscode.postMessage({ type: "REINDEX_AFFECTED_AND_VALIDATE" })}
+                >
+                  Refresh affected paths &amp; validate
+                </button>
+              </div>
+              <details>
+                <summary>Canonical evidence and failure guidance</summary>
+                <ul className="fact-list">
+                  {this.state.application.correctionPacket.validation.failures.map((failure) => (
+                    <li key={failure}>
+                      <b>Failure</b>
+                      <span>{failure}</span>
+                    </li>
+                  ))}
+                  {this.state.application.correctionPacket.canonical.paths.map((pathValue) => (
+                    <li key={pathValue}>
+                      <b>OKF path</b>
+                      <span>{pathValue}</span>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+              <details>
+                <summary>Correction prompt</summary>
+                <pre>{this.state.application.correctionPacket.prompt}</pre>
+              </details>
+            </details>
+          ) : (
+            <button onClick={() => vscode.postMessage({ type: "REQUEST_CORRECTION_PACKET" })}>
+              Generate correction packet from latest validation
+            </button>
+          )}
         </Panel>
       </div>
     );
@@ -2034,6 +2283,13 @@ export class App extends React.Component<Record<string, never>, AppState> {
     this.setState({
       skills: [...new Set(names)].join(", "),
       notice: `Selected ${names.length} repository skill(s) for the next delegation.`
+    });
+  }
+  private loadContextPacket(packetId: string, segmentKinds?: ContextPacketSegmentKind[]): void {
+    vscode.postMessage({
+      type: "LOAD_CONTEXT_PACKET",
+      packetId,
+      segmentKinds
     });
   }
   private addRepositorySkill(name: string): void {
@@ -2071,6 +2327,30 @@ export class App extends React.Component<Record<string, never>, AppState> {
       storyId: story.id,
       agent: this.state.agent.trim() || "GitHub Copilot",
       skills: selectedSkills.length ? selectedSkills : discovered,
+      instructions: this.state.instructions
+        .split(/\r?\n/)
+        .map((value) => value.trim())
+        .filter(Boolean),
+      contextPackId: task.taskWorkspace?.id
+    });
+  }
+  private delegateCorrection(story: Story, packet: CorrectionPacket): void {
+    const task = this.state.task;
+    if (!task) return;
+    const selectedSkills = this.state.skills
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    vscode.postMessage({
+      type: "APPROVE_DELEGATION",
+      mode: "Copilot Chat",
+      prompt: packet.prompt,
+      storyId: story.id,
+      correctionPacketId: packet.id,
+      agent: this.state.agent.trim() || "GitHub Copilot",
+      skills: selectedSkills.length
+        ? selectedSkills
+        : (task.repoSkills?.map((skill) => skill.name) ?? []),
       instructions: this.state.instructions
         .split(/\r?\n/)
         .map((value) => value.trim())
@@ -2454,13 +2734,17 @@ function GraphInspector({
   relationshipKinds,
   onOpen,
   onFocus,
-  onExpand
+  onExpand,
+  collapsed,
+  onCollapse
 }: {
   node: IntelligenceGraphNode | undefined;
   relationshipKinds: readonly string[];
   onOpen: (path: string, line?: number) => void;
   onFocus: (node: IntelligenceGraphNode) => void;
   onExpand: (node: IntelligenceGraphNode) => void;
+  collapsed: boolean;
+  onCollapse: (node: IntelligenceGraphNode) => void;
 }): JSX.Element {
   return (
     <div className="graph-inspector">
@@ -2482,6 +2766,9 @@ function GraphInspector({
           <div className="actions">
             <button onClick={() => onFocus(node)}>Focus neighborhood</button>
             <button onClick={() => onExpand(node)}>Expand neighborhood</button>
+            <button onClick={() => onCollapse(node)}>
+              {collapsed ? "Expand branch" : "Collapse branch"}
+            </button>
           </div>
           <details>
             <summary>Visible relationship kinds</summary>

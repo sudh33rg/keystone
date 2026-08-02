@@ -1,4 +1,5 @@
 export type InsightSeverity = "low" | "medium" | "high" | "critical";
+import type { OkfCanonicalEvidenceEnvelope } from "../okf/types";
 
 export interface RepositoryInsight {
   id: string;
@@ -28,4 +29,5 @@ export interface RepositoryInsightReport {
   skippedFiles: Array<{ path: string; reason: string }>;
   recommendations: string[];
   truncated: boolean;
+  canonicalEvidence?: OkfCanonicalEvidenceEnvelope;
 }

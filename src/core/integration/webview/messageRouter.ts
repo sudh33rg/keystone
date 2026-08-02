@@ -1,4 +1,10 @@
-import type { ContextPack, RepoFile } from "../../domain/types";
+import type {
+  ContextPack,
+  ContextPacketPayload,
+  ContextPacketSegmentKind,
+  CorrectionPacket,
+  RepoFile
+} from "../../domain/types";
 import type { EnhancementMode, EnhancementSession } from "../../context/promptEnhancer";
 import type {
   IntelligenceFamilySummary,
@@ -27,6 +33,7 @@ import type {
   IntelligenceGraphResult
 } from "../../intelligence/explorer";
 import type { SDLCResearchDocument } from "../../workflow/sdlc/engine";
+import type { OkfCanonicalEvidenceEnvelope } from "../../intelligence/okf/types";
 
 export interface CopilotDelegationResult {
   success: boolean;
@@ -60,12 +67,15 @@ export type WebviewToExtensionMessage =
   | { type: "LOAD_ENHANCEMENT_SESSIONS" }
   | { type: "DELETE_ENHANCEMENT_SESSION"; sessionId: string }
   | { type: "RETRIEVE_CONTEXT_ORIGINAL"; path: string; expectedHash?: string }
+  | { type: "LOAD_CONTEXT_PACKET"; packetId: string; segmentKinds?: ContextPacketSegmentKind[] }
   | {
       type: "RECORD_CONTEXT_FEEDBACK";
       intent: string;
       path?: string;
       rating: "useful" | "irrelevant" | "helpful" | "unhelpful";
     }
+  | { type: "REQUEST_CORRECTION_PACKET" }
+  | { type: "REINDEX_AFFECTED_AND_VALIDATE" }
   | { type: "CANCEL_INGESTION" }
   | { type: "CANCEL_ANALYSIS" }
   | { type: "ANALYZE_INTENT"; text: string }
@@ -83,6 +93,7 @@ export type WebviewToExtensionMessage =
       skills?: string[];
       instructions?: string[];
       contextPackId?: string;
+      correctionPacketId?: string;
     }
   | { type: "COPY_COPILOT_PROMPT"; prompt: string }
   | { type: "COPY_PR_MARKDOWN"; markdown: string }
@@ -109,7 +120,7 @@ export type WebviewToExtensionMessage =
     }
   | { type: "APPROVE_SPECIFICATION" }
   | { type: "QUERY_INTELLIGENCE"; query: string }
-  | { type: "EXPLORE_INTELLIGENCE"; query?: string; kind?: string }
+  | { type: "EXPLORE_INTELLIGENCE"; query?: string; kind?: string; cursor?: string }
   | {
       type: "LOAD_INTELLIGENCE_GRAPH";
       mode: IntelligenceGraphMode;
@@ -132,7 +143,7 @@ export type WebviewToExtensionMessage =
   | { type: "RECORD_DECISION"; category: "task" | "risk"; action: string; subject: string };
 
 export type ExtensionToWebviewMessage =
-  | { type: "STATE_UPDATE"; state: KeystoneWebviewState }
+  | { type: "STATE_UPDATE"; state: Partial<KeystoneWebviewState> }
   | {
       type: "INDEX_PROGRESS";
       message: string;
@@ -152,20 +163,47 @@ export type ExtensionToWebviewMessage =
       changed: boolean;
       currentHash: string;
     }
+  | {
+      type: "CONTEXT_PACKET_RESULT";
+      taskId: string;
+      packetId: string;
+      stale: boolean;
+      snapshotDigest?: string;
+      currentSnapshotDigest?: string;
+      segmentKinds?: ContextPacketSegmentKind[];
+      packet?: ContextPacketPayload;
+    }
+  | { type: "CORRECTION_PACKET_RESULT"; packet: CorrectionPacket }
   | { type: "VALIDATION_RESULT"; results: ValidationRunResult[] }
   | {
       type: "QA_BACKGROUND_STATUS";
-      status: "running" | "complete" | "cancelled" | "failed";
+      status: "running" | "complete" | "cancelled" | "stale" | "failed";
       message?: string;
       progress?: number;
       result?: GapAnalysisResult;
+      workerId?: string;
+      reason?: string;
+      snapshotDigest?: string;
+      extractionRunId?: string;
+      scopePaths?: readonly string[];
+      startedAt?: string;
+      completedAt?: string;
+      durationMs?: number;
     }
   | {
       type: "BACKGROUND_ANALYSIS_STATUS";
       worker: "security" | "performance" | "modernization";
-      status: "running" | "complete" | "failed";
+      status: "running" | "complete" | "cancelled" | "stale" | "failed";
       result?: any;
       error?: string;
+      reason?: string;
+      workerId?: string;
+      snapshotDigest?: string;
+      extractionRunId?: string;
+      scopePaths?: readonly string[];
+      startedAt?: string;
+      completedAt?: string;
+      durationMs?: number;
     }
   | { type: "MODERNIZATION_PROPOSAL"; proposal: ModernizationProposal }
   | { type: "MODERNIZATION_PLAN"; plan: ModernizationPlan }
@@ -334,8 +372,30 @@ export interface KeystoneWebviewState {
   modernizationProposal?: ModernizationProposal;
   modernizationPlan?: ModernizationPlan;
   backgroundAnalysis?: Partial<Record<"qa" | "security" | "performance" | "modernization", any>>;
+  backgroundWorkers?: Partial<
+    Record<
+      "qa" | "security" | "performance" | "modernization",
+      {
+        status: "idle" | "running" | "complete" | "cancelled" | "stale" | "failed";
+        progress?: number;
+        message?: string;
+        error?: string;
+        result?: unknown;
+        canonicalEvidence?: OkfCanonicalEvidenceEnvelope;
+        workerId?: string;
+        snapshotDigest?: string;
+        extractionRunId?: string;
+        scopePaths?: string[];
+        startedAt?: string;
+        completedAt?: string;
+        durationMs?: number;
+        updatedAt: string;
+      }
+    >
+  >;
   settings?: CockpitSettings;
   activeTask?: TaskWorkspaceSnapshot;
+  correctionPacket?: CorrectionPacket;
 }
 
 export interface RouteEvidence {
@@ -390,6 +450,7 @@ export interface KeystoneTaskResult {
   >;
   excludedPaths: Array<{ path: string; reason: string }>;
   contextTokens?: { raw: number; selected: number; prompt: number; packets: number; tier: string };
+  contextPackets?: NonNullable<ContextPack["contextPackets"]>;
   retrievalMetrics?: NonNullable<ContextPack["retrievalMetrics"]>;
   contextSections?: Array<{
     path: string;
@@ -431,6 +492,9 @@ export interface KeystoneTaskResult {
     summary?: string;
   }>;
   analysisEvidence?: {
+    canonicalEvidence?: Partial<
+      Record<"qa" | "security" | "performance" | "modernization", OkfCanonicalEvidenceEnvelope>
+    >;
     qa: {
       scanMode: string;
       gaps: Array<{ type: string; path: string; severity: number; reason: string }>;

@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 
 import { languageForPath, scanFiles, type ScannedFile } from "./fileScanner";
 import { IntelligenceStore } from "./intelligenceStore";
+import { detectEngineeringEntities } from "./engineeringEntityDetector";
 import { detectModernizationCandidates } from "./modernizationCandidateDetector";
 import { detectPerformanceSensitivePath } from "./performancePathDetector";
 import { detectSecuritySensitiveArea } from "./securityZoneDetector";
@@ -21,6 +22,7 @@ import type {
   TestMapping,
   ControlFlowFact,
   DataFlowFact,
+  EngineeringEntityFact,
   TypeRelationshipFact
 } from "../../domain/types";
 import { repoIntelligenceToOkf } from "../okf/fromRepoIntelligence";
@@ -31,6 +33,7 @@ import type {
   SemanticEnrichmentResult
 } from "../languages/semanticEnrichment";
 import { OkfSnapshotStore } from "../okf/store";
+import { ExtractionCache } from "./extractionCache";
 
 export interface RepoIndexOptions {
   persist?: boolean;
@@ -40,6 +43,8 @@ export interface RepoIndexOptions {
   onWarning?: (message: string) => void;
   onPersistence?: (event: RepoIndexPersistenceEvent) => void;
   semanticEnricher?: SemanticEnrichmentProvider;
+  /** Prioritize these paths for progress visibility while scanning the full workspace. */
+  affectedPaths?: readonly string[];
 }
 
 export interface RepoIndexPersistenceEvent {
@@ -52,6 +57,7 @@ export async function indexRepository(
   options: RepoIndexOptions = {}
 ): Promise<RepoIntelligence> {
   const store = new IntelligenceStore(workspaceRoot);
+  const extractionCache = new ExtractionCache(workspaceRoot);
   const warn = (message: string): void => {
     try {
       options.onWarning?.(message);
@@ -81,6 +87,14 @@ export async function indexRepository(
       `Repository discovery failed; continuing with the files already available: ${errorMessage(error)}.`
     );
   }
+  if (options.affectedPaths?.length) {
+    const priority = new Set(options.affectedPaths.map(normalizePath));
+    scanned.sort(
+      (left, right) =>
+        Number(priority.has(normalizePath(right.path))) -
+          Number(priority.has(normalizePath(left.path))) || left.path.localeCompare(right.path)
+    );
+  }
   const files: RepoFile[] = [];
   const symbols = [];
   const dependencies = [];
@@ -90,6 +104,7 @@ export async function indexRepository(
   const controlFlows = [];
   const dataFlows = [];
   const typeRelationships = [];
+  const engineeringEntities: EngineeringEntityFact[] = [];
   const securitySensitiveAreas = new Set<string>();
   const performanceSensitivePaths = new Set<string>();
   const modernizationCandidates = new Set<string>();
@@ -106,28 +121,38 @@ export async function indexRepository(
         await new Promise<void>((resolve) => setImmediate(resolve));
 
       const previousFile = previousFiles.get(file.path);
-      const metadataReusable = Boolean(
-        previousFile?.contentHash &&
+      // Content is always read and hashed. Filesystem metadata (size + mtime)
+      // is never trusted to prove a file is unchanged: Git restores mtimes on
+      // checkout, so a branch switch can present modified content under an
+      // identical size and timestamp. Hashing is the only invalidation gate.
+      const text = await fs.readFile(file.absolutePath, "utf8");
+      const lineCount = text.length === 0 ? 0 : text.split(/\r?\n/).length;
+      const contentHash = hash(text);
+      // Derived analysis is still reused when the verified content hash matches
+      // and every cached field needed to rebuild the record is present.
+      const reusable = Boolean(
+        previousFile?.contentHash === contentHash &&
         previousFile.structuralHash &&
-        previousFile.sizeBytes === file.sizeBytes &&
-        previousFile.modifiedTimeMs === file.modifiedTimeMs &&
         previousFile.frameworkHints &&
         previousFile.ownershipHints &&
         previousFile.securitySensitiveAreas &&
         previousFile.performanceSensitivePaths &&
-        previousFile.modernizationCandidates
+        previousFile.modernizationCandidates &&
+        Array.isArray(previous.engineeringEntities)
       );
-      const text = metadataReusable ? undefined : await fs.readFile(file.absolutePath, "utf8");
-      const lineCount = metadataReusable
-        ? previousFile!.lineCount
-        : text!.length === 0
-          ? 0
-          : text!.split(/\r?\n/).length;
-      const contentHash = metadataReusable ? previousFile!.contentHash! : hash(text!);
-      const reusable =
-        metadataReusable ||
-        Boolean(previousFile?.contentHash === contentHash && previousFile.structuralHash);
-      const languageAnalysis = analyzeLanguageFile(file.path, reusable ? "" : text!);
+      const cachedAnalysis = reusable
+        ? undefined
+        : await extractionCache.read(file.path, contentHash);
+      const languageAnalysis = reusable
+        ? analyzeLanguageFile(file.path, "")
+        : (cachedAnalysis ?? analyzeLanguageFile(file.path, text));
+      if (!reusable && !cachedAnalysis) {
+        await extractionCache
+          .write(file.path, contentHash, languageAnalysis)
+          .catch((error) =>
+            warn(`Could not persist extraction cache for ${file.path}: ${errorMessage(error)}.`)
+          );
+      }
       const support = supportFor(languageSupport, languageAnalysis);
       let semantic: SemanticEnrichmentResult | undefined;
 
@@ -143,7 +168,7 @@ export async function indexRepository(
             absolutePath: file.absolutePath,
             relativePath: file.path,
             languageId: languageAnalysis.language.id,
-            text: text!,
+            text: text,
             signal: options.signal
           });
           if (semantic?.capabilities.documentSymbols && semantic.symbols.length > 0) {
@@ -241,23 +266,24 @@ export async function indexRepository(
 
       const fileFrameworks = reusable
         ? (previousFile!.frameworkHints ?? [])
-        : detectFrameworks(file.path, text!);
+        : detectFrameworks(file.path, text);
       const fileOwnership = reusable
         ? (previousFile!.ownershipHints ?? [])
-        : detectOwnership(file.path, text!);
+        : detectOwnership(file.path, text);
       const fileSecurity = reusable
         ? (previousFile!.securitySensitiveAreas ?? [])
-        : detectSecuritySensitiveArea(file.path, text!).map(
-            (keyword) => `${file.path}: ${keyword}`
-          );
+        : detectSecuritySensitiveArea(file.path, text).map((keyword) => `${file.path}: ${keyword}`);
       const filePerformance = reusable
         ? (previousFile!.performanceSensitivePaths ?? [])
-        : detectPerformanceSensitivePath(file.path, text!).map(
+        : detectPerformanceSensitivePath(file.path, text).map(
             (keyword) => `${file.path}: ${keyword}`
           );
       const fileModernization = reusable
         ? (previousFile!.modernizationCandidates ?? [])
-        : detectModernizationCandidates(file.path, text!, lineCount);
+        : detectModernizationCandidates(file.path, text, lineCount);
+      const fileEngineeringEntities = reusable
+        ? (previous.engineeringEntities ?? []).filter((entity) => entity.filePath === file.path)
+        : detectEngineeringEntities(file.path, language, text);
 
       if (reusable) reusedFiles += 1;
       const repoFile: RepoFile = {
@@ -268,7 +294,7 @@ export async function indexRepository(
         lineCount,
         isTest: isTestPath(file.path) && language !== "markdown",
         isGenerated: /generated|\.gen\.|\.generated\./i.test(file.path),
-        summary: reusable ? previousFile!.summary : summarizeFile(file.path, text!),
+        summary: reusable ? previousFile!.summary : summarizeFile(file.path, text),
         contentHash,
         evidence: evidence("filesystem", 1, file.path),
         structuralHash: reusable
@@ -279,7 +305,13 @@ export async function indexRepository(
                   .map((symbol) => [symbol.name, symbol.kind, symbol.exportStatus])
                   .sort(),
                 dependencies: fileDependencies.map((edge) => [edge.to, edge.kind]).sort(),
-                apis: fileApis.map((api) => [api.method, api.path]).sort()
+                apis: fileApis.map((api) => [api.method, api.path]).sort(),
+                engineeringEntities: fileEngineeringEntities.map((entity) => [
+                  entity.kind,
+                  entity.name,
+                  entity.line,
+                  entity.properties
+                ])
               })
             ),
         frameworkHints: fileFrameworks,
@@ -296,6 +328,7 @@ export async function indexRepository(
       controlFlows.push(...fileControlFlows);
       dataFlows.push(...fileDataFlows);
       typeRelationships.push(...fileTypeRelationships);
+      engineeringEntities.push(...fileEngineeringEntities);
 
       const service = mapService(file.path);
       if (service) services.push(withServiceEvidence(service, file.path));
@@ -328,6 +361,9 @@ export async function indexRepository(
         performanceSensitivePaths: previousFile?.performanceSensitivePaths ?? [],
         modernizationCandidates: previousFile?.modernizationCandidates ?? []
       });
+      engineeringEntities.push(
+        ...(previous.engineeringEntities ?? []).filter((entity) => entity.filePath === file.path)
+      );
       options.onFile?.(files.length, scanned.length, file.path);
     }
   }
@@ -346,6 +382,7 @@ export async function indexRepository(
     controlFlows,
     dataFlows,
     typeRelationships,
+    engineeringEntities,
     ownershipHints: [...ownershipHints].sort(),
     frameworkHints: [...frameworkHints].sort(),
     securitySensitiveAreas: [...securitySensitiveAreas].sort(),
@@ -431,6 +468,7 @@ export function emptyRepoIntelligence(workspaceRoot: string): RepoIntelligence {
     controlFlows: [],
     dataFlows: [],
     typeRelationships: [],
+    engineeringEntities: [],
     ownershipHints: [],
     frameworkHints: [],
     securitySensitiveAreas: [],
@@ -443,6 +481,10 @@ export function emptyRepoIntelligence(workspaceRoot: string): RepoIntelligence {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function normalizePath(value: string): string {
+  return value.replace(/\\/g, "/").replace(/^\.\//, "");
 }
 
 function isAbortError(error: unknown, signal?: AbortSignal): boolean {

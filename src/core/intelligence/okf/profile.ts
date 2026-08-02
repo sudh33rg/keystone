@@ -40,7 +40,19 @@ const kinds: readonly KeystoneKnowledgeKind[] = [
   "data-flow",
   "architecture-boundary",
   "risk-area",
-  "change-impact"
+  "change-impact",
+  "database",
+  "table",
+  "orm-entity",
+  "query",
+  "feature-flag",
+  "fixture",
+  "ci-cd",
+  "infrastructure",
+  "component",
+  "event",
+  "build-system",
+  "package-manager"
 ];
 const any = kinds;
 export const KEYSTONE_OKF_PROFILE: KeystoneOkfProfileDefinition = Object.freeze({
@@ -64,7 +76,8 @@ export const KEYSTONE_OKF_PROFILE: KeystoneOkfProfileDefinition = Object.freeze(
     "configured-by",
     "documented-by",
     "flows-to",
-    "may-impact"
+    "may-impact",
+    "maps-to"
   ] as readonly KeystoneRelationshipKind[],
   requiredUnitFields: [
     "id",
@@ -111,16 +124,71 @@ export const KEYSTONE_OKF_PROFILE: KeystoneOkfProfileDefinition = Object.freeze(
   ],
   relationshipConstraints: {
     contains: {
-      sources: ["workspace", "repository", "module", "service", "architecture-boundary"],
+      sources: [
+        "workspace",
+        "repository",
+        "module",
+        "package",
+        "service",
+        "architecture-boundary",
+        "component",
+        "database",
+        "table",
+        "ci-cd",
+        "infrastructure"
+      ],
       targets: any
     },
     defines: {
-      sources: ["file", "test", "documentation", "configuration", "module", "service"],
-      targets: ["symbol", "api", "data-entity", "service", "call-flow", "data-flow"]
+      sources: [
+        "file",
+        "test",
+        "documentation",
+        "configuration",
+        "module",
+        "service",
+        "component",
+        "database",
+        "table",
+        "ci-cd",
+        "infrastructure",
+        "build-system",
+        "package-manager"
+      ],
+      targets: [
+        "symbol",
+        "api",
+        "data-entity",
+        "service",
+        "call-flow",
+        "data-flow",
+        "database",
+        "table",
+        "orm-entity",
+        "query",
+        "feature-flag",
+        "fixture",
+        "ci-cd",
+        "infrastructure",
+        "component",
+        "event",
+        "build-system",
+        "package-manager"
+      ]
     },
     imports: {
       sources: ["file", "test", "module", "configuration"],
-      targets: ["file", "test", "module", "package", "configuration"]
+      targets: [
+        "file",
+        "test",
+        "module",
+        "package",
+        "configuration",
+        "package-manager",
+        "build-system",
+        "ci-cd",
+        "infrastructure"
+      ]
     },
     "depends-on": { sources: any, targets: any },
     calls: {
@@ -128,33 +196,108 @@ export const KEYSTONE_OKF_PROFILE: KeystoneOkfProfileDefinition = Object.freeze(
       targets: ["symbol", "api", "service", "call-flow"]
     },
     reads: {
-      sources: ["symbol", "api", "service", "data-flow"],
-      targets: ["data-entity", "configuration", "file"]
+      sources: ["symbol", "api", "service", "data-flow", "query"],
+      targets: [
+        "data-entity",
+        "database",
+        "table",
+        "orm-entity",
+        "query",
+        "configuration",
+        "feature-flag",
+        "file"
+      ]
     },
     writes: {
-      sources: ["symbol", "api", "service", "data-flow"],
-      targets: ["data-entity", "configuration", "file"]
+      sources: ["symbol", "api", "service", "data-flow", "query"],
+      targets: [
+        "data-entity",
+        "database",
+        "table",
+        "orm-entity",
+        "query",
+        "configuration",
+        "feature-flag",
+        "file"
+      ]
     },
-    exposes: { sources: ["file", "service", "module"], targets: ["api"] },
+    exposes: {
+      sources: ["file", "service", "module", "component"],
+      targets: ["api", "event", "component"]
+    },
     implements: { sources: ["symbol", "service"], targets: ["symbol", "architecture-boundary"] },
     extends: { sources: ["symbol"], targets: ["symbol"] },
     tests: {
       sources: ["test"],
-      targets: ["file", "symbol", "api", "service", "configuration", "data-entity", "module"]
+      targets: [
+        "file",
+        "symbol",
+        "api",
+        "service",
+        "configuration",
+        "data-entity",
+        "database",
+        "table",
+        "orm-entity",
+        "query",
+        "fixture",
+        "module"
+      ]
     },
     covers: {
       sources: ["test"],
-      targets: ["file", "symbol", "api", "service", "configuration", "data-entity", "module"]
+      targets: [
+        "file",
+        "symbol",
+        "api",
+        "service",
+        "configuration",
+        "data-entity",
+        "database",
+        "table",
+        "orm-entity",
+        "query",
+        "fixture",
+        "module"
+      ]
     },
-    "configured-by": { sources: any, targets: ["configuration"] },
+    "configured-by": {
+      sources: any,
+      targets: ["configuration", "feature-flag", "ci-cd", "infrastructure"]
+    },
     "documented-by": { sources: any, targets: ["documentation"] },
     "flows-to": {
-      sources: ["call-flow", "data-flow", "api", "service", "symbol", "file", "data-entity"],
+      sources: [
+        "call-flow",
+        "data-flow",
+        "api",
+        "service",
+        "symbol",
+        "file",
+        "data-entity",
+        "query",
+        "component",
+        "event"
+      ],
       targets: any
     },
     "may-impact": {
-      sources: ["change-impact", "risk-area", "file", "symbol", "service"],
+      sources: [
+        "change-impact",
+        "risk-area",
+        "file",
+        "symbol",
+        "service",
+        "component",
+        "database",
+        "table",
+        "query"
+      ],
       targets: any
+    },
+    "maps-to": {
+      sources: ["orm-entity", "query", "component"],
+      targets: ["table", "database", "data-entity", "service"]
     }
   } as Partial<Record<KeystoneRelationshipKind, RelationshipConstraint>>
 });

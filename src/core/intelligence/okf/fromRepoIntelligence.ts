@@ -99,7 +99,7 @@ export function repoIntelligenceToOkf(
   const provenance = (
     ids: readonly string[],
     extractor = "repo-intelligence-okf",
-    extractorVersion = "2.0.0"
+    extractorVersion = "2.1.0"
   ): OkfProvenance => ({
     extractionRunId,
     extractor,
@@ -325,8 +325,97 @@ export function repoIntelligenceToOkf(
     unitByKey.get(`test:${p}`) ??
     unitByKey.get(`documentation:${p}`) ??
     unitByKey.get(`configuration:${p}`);
+  const engineeringByKey = new Map<string, string>();
+  const engineeringByPathAndKey = new Map<string, string>();
+  const engineeringFacts = intelligence.engineeringEntities ?? [];
+  const engineeringKey = (kind: string, name: string): string =>
+    `${kind}:${name.trim().toLowerCase()}`;
+  const engineeringPathKey = (kind: string, filePath: string, name: string): string =>
+    `${kind}:${normalizePath(filePath)}:${name.trim().toLowerCase()}`;
+  for (const fact of engineeringFacts) {
+    const canonicalKey = `${fact.filePath}#${fact.name}:${fact.line}`;
+    const id = addUnit(
+      fact.kind,
+      canonicalKey,
+      fact.name,
+      {
+        ...fact.properties,
+        filePath: fact.filePath,
+        path: fact.filePath,
+        line: fact.line,
+        entityKind: fact.kind
+      },
+      fact.evidence,
+      fact.filePath
+    );
+    const parent = fileId(fact.filePath);
+    if (parent) addRelationship("defines", parent, id, fact.evidence);
+    addObservation(id, "keystone:entityKind", fact.kind, fact.evidence);
+    engineeringByKey.set(engineeringKey(fact.kind, fact.name), id);
+    engineeringByPathAndKey.set(engineeringPathKey(fact.kind, fact.filePath, fact.name), id);
+  }
+  const resolveEngineering = (
+    kind: string,
+    name: string,
+    targetPath?: string
+  ): string | undefined => {
+    if (targetPath) {
+      const scoped = engineeringByPathAndKey.get(engineeringPathKey(kind, targetPath, name));
+      if (scoped) return scoped;
+    }
+    return engineeringByKey.get(engineeringKey(kind, name));
+  };
+  for (const fact of engineeringFacts) {
+    const source = engineeringByPathAndKey.get(
+      engineeringPathKey(fact.kind, fact.filePath, fact.name)
+    );
+    if (!source) continue;
+    const databaseName =
+      typeof fact.properties.databaseName === "string" ? fact.properties.databaseName : undefined;
+    if (fact.kind === "table" && databaseName) {
+      const database = engineeringByKey.get(engineeringKey("database", databaseName));
+      if (database) addRelationship("contains", database, source, fact.evidence);
+    }
+    if (fact.kind === "orm-entity") {
+      const tableName =
+        typeof fact.properties.tableName === "string" ? fact.properties.tableName : fact.name;
+      const table = resolveEngineering("table", tableName, fact.filePath);
+      if (table) addRelationship("maps-to", source, table, fact.evidence);
+    }
+    if (fact.kind === "query") {
+      const tableNames = Array.isArray(fact.properties.tableNames)
+        ? fact.properties.tableNames.filter((value): value is string => typeof value === "string")
+        : [];
+      const operation = String(fact.properties.operation ?? "").toLowerCase();
+      const relationship = /^(?:insert|update|delete|merge|writ)/.test(operation)
+        ? "writes"
+        : "reads";
+      for (const tableName of tableNames) {
+        const table = resolveEngineering("table", tableName, fact.filePath);
+        if (table) addRelationship(relationship, source, table, fact.evidence);
+      }
+    }
+    const parent = fileId(fact.filePath);
+    if (parent && fact.kind === "feature-flag")
+      addRelationship("configured-by", parent, source, fact.evidence);
+    if (parent && (fact.kind === "ci-cd" || fact.kind === "infrastructure"))
+      addRelationship("contains", repositoryUnit, source, fact.evidence);
+    for (const relation of fact.relations ?? []) {
+      const target = resolveEngineering(
+        relation.targetKind,
+        relation.targetName,
+        relation.targetPath
+      );
+      if (target) addRelationship(relation.kind, source, target, fact.evidence);
+      else
+        warn(
+          `Skipped ${relation.kind}: no ${relation.targetKind} entity named ${relation.targetName} was extracted from ${fact.filePath}.`
+        );
+    }
+  }
   const symbolByName = new Map<string, string[]>();
   const symbolByFileAndName = new Map<string, string>();
+  const symbolByFileLineAndName = new Map<string, string>();
   for (const symbol of intelligence.symbols) {
     const id = addUnit(
       "symbol",
@@ -347,11 +436,54 @@ export function repoIntelligenceToOkf(
     arr.push(id);
     symbolByName.set(symbol.name, arr);
     symbolByFileAndName.set(`${symbol.filePath}#${symbol.name}`, id);
+    symbolByFileLineAndName.set(`${symbol.filePath}#${symbol.line}:${symbol.name}`, id);
     addObservation(id, "keystone:exportStatus", symbol.exportStatus, symbol.evidence);
   }
+  // Import-scoped resolution indexes. `importedNames` maps a (file, imported
+  // binding) to the module specifier it was imported from, and `specifierExports`
+  // maps a (file, specifier, exported name) to the symbol in this repository that
+  // satisfies it. This lets a call resolve through a re-export chain instead of
+  // falling back to a noisy global name match.
+  const importedNames = new Map<string, string>();
+  const specifierExports = new Map<string, string>();
+  const exportedSymbols = new Map<string, string[]>();
+  for (const symbol of intelligence.symbols)
+    if (symbol.exportStatus === "exported")
+      exportedSymbols.set(symbol.name, (exportedSymbols.get(symbol.name) ?? []).concat(symbolByFileAndName.get(`${symbol.filePath}#${symbol.name}`) ?? []));
+  for (const edge of intelligence.dependencies) {
+    if (edge.kind !== "import" && edge.kind !== "require" && edge.kind !== "local") continue;
+    const modulePath = edge.to;
+    const target = fileId(modulePath) ?? modulePath;
+    for (const symbol of intelligence.symbols) {
+      if (symbol.filePath !== modulePath) continue;
+      if (symbol.exportStatus === "exported")
+        specifierExports.set(`${edge.from}#${modulePath}#${symbol.name}`, symbolByFileAndName.get(`${symbol.filePath}#${symbol.name}`) ?? "");
+      if (symbol.exportStatus === "local")
+        specifierExports.set(`${edge.from}#${modulePath}#default`, symbolByFileAndName.get(`${symbol.filePath}#${symbol.name}`) ?? "");
+    }
+    importedNames.set(`${edge.from}#${path.basename(modulePath).replace(/\.[^.]+$/, "")}`, modulePath);
+  }
+  const resolveBaseMethod = (callerPath: string, callee: string): string | undefined => {
+    const dot = callee.lastIndexOf(".");
+    if (dot <= 0) return undefined;
+    const base = callee.slice(0, dot);
+    const method = callee.slice(dot + 1);
+    const modulePath = importedNames.get(`${callerPath}#${base}`);
+    if (modulePath) {
+      const hit = specifierExports.get(`${callerPath}#${modulePath}#${method}`);
+      if (hit) return hit;
+      const localHit = symbolByFileAndName.get(`${modulePath}#${method}`);
+      if (localHit) return localHit;
+    }
+    // Same-file private method/field access (e.g. `this.helper()`).
+    const local = symbolByFileAndName.get(`${callerPath}#${callee}`);
+    if (local) return local;
+    return undefined;
+  };
   for (const relation of intelligence.typeRelationships ?? []) {
     const parent = fileId(relation.filePath);
     const source =
+      symbolByFileLineAndName.get(`${relation.filePath}#${relation.line}:${relation.source}`) ??
       symbolByFileAndName.get(`${relation.filePath}#${relation.source}`) ??
       addUnit(
         "symbol",
@@ -367,6 +499,14 @@ export function repoIntelligenceToOkf(
         relation.filePath
       );
     const target =
+      (relation.targetFilePath && relation.targetLine !== undefined
+        ? symbolByFileLineAndName.get(
+            `${relation.targetFilePath}#${relation.targetLine}:${relation.target}`
+          )
+        : undefined) ??
+      (relation.targetFilePath
+        ? symbolByFileAndName.get(`${relation.targetFilePath}#${relation.target}`)
+        : undefined) ??
       symbolByFileAndName.get(`${relation.filePath}#${relation.target}`) ??
       symbolByName.get(relation.target)?.[0] ??
       addUnit(
@@ -417,13 +557,41 @@ export function repoIntelligenceToOkf(
   for (const call of intelligence.calls ?? []) {
     const parent = fileId(call.filePath);
     if (!parent) continue;
-    const callerCandidates = call.caller ? (symbolByName.get(call.caller) ?? []) : [];
-    const calleeCandidates = symbolByName.get(call.callee.split(".").at(-1) ?? call.callee) ?? [];
+    const callerCandidates = call.caller
+      ? [symbolByFileAndName.get(`${call.filePath}#${call.caller}`)]
+          .filter((value): value is string => Boolean(value))
+          .concat(symbolByName.get(call.caller) ?? [])
+      : [];
+    const calleeName = call.callee.split(".").at(-1) ?? call.callee;
+    const baseMethodTarget = resolveBaseMethod(call.filePath, call.callee);
+    const calleeCandidates = (
+      call.targetFilePath && call.targetLine !== undefined
+        ? [
+            symbolByFileLineAndName.get(`${call.targetFilePath}#${call.targetLine}:${calleeName}`)
+          ].filter((value): value is string => Boolean(value))
+        : []
+    )
+      .concat(
+        call.targetFilePath
+          ? [symbolByFileAndName.get(`${call.targetFilePath}#${calleeName}`)].filter(
+              (value): value is string => Boolean(value)
+            )
+          : []
+      )
+      .concat(baseMethodTarget ? [baseMethodTarget] : [])
+      .concat(symbolByName.get(calleeName) ?? []);
     const flow = addUnit(
       "call-flow",
       `call:${call.filePath}:${call.line}:${call.caller ?? "<file>"}->${call.callee}`,
       `${call.caller ?? path.basename(call.filePath)} → ${call.callee}`,
-      { filePath: call.filePath, line: call.line, caller: call.caller, callee: call.callee },
+      {
+        filePath: call.filePath,
+        line: call.line,
+        caller: call.caller,
+        callee: call.callee,
+        targetFilePath: call.targetFilePath,
+        targetLine: call.targetLine
+      },
       call.evidence,
       call.filePath
     );
@@ -674,7 +842,8 @@ export function repoIntelligenceToOkf(
     units: digest(units),
     relationships: digest(relationships),
     observations: digest(observations),
-    evidence: digest(evidence)
+    evidence: digest(evidence),
+    snapshot: digest({ units, relationships, observations, evidence })
   };
   return {
     manifest: {
@@ -688,7 +857,7 @@ export function repoIntelligenceToOkf(
       extractionRunId,
       parentExtractionRunId: previous?.manifest.extractionRunId,
       repositoryRevision: options.repositoryRevision,
-      validation: { valid: true, validatorVersion: "2.0.0", validatedAt: observedAt },
+      validation: { valid: true, validatorVersion: "2.1.0", validatedAt: observedAt },
       projections: { graphVersion: 1, cpgBindingVersion: 1, searchVersion: 1 },
       counts: {
         units: units.length,

@@ -102,6 +102,7 @@ function findUnreachable(files) {
   const entries = [
     "src/extension/core/extension.ts",
     "src/extension/workers/backgroundAnalysisWorker.ts",
+    "src/core/intelligence/pipeline/intelligenceStageWorker.ts",
     "src/core/intelligence/cpg/typescriptSemanticWorker.ts",
     "src/webview/main.tsx"
   ]

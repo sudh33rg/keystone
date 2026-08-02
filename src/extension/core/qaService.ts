@@ -11,6 +11,29 @@ import type * as vscode from "vscode";
 import { createGapAnalyzer, type GapAnalysisResult } from "@core/workflow/quality/qaGapAnalysis";
 import { DEFAULT_QA_CONFIG } from "@core/platform/config/qualityConfig";
 import { cancellationFromAbortSignal } from "@core/workflow/quality/cancellation";
+import { OkfSnapshotStore } from "@core/intelligence/okf/store";
+import type { OkfGraphProjection } from "@core/intelligence/okf/projections";
+import {
+  canonicalEvidenceEnvelope,
+  selectCanonicalContext
+} from "@core/intelligence/okf/canonicalContext";
+
+/**
+ * Read the promoted OKF graph projection for test-impact analysis.
+ *
+ * Read-only: this never builds or mutates OKF state. A missing or unreadable
+ * projection yields undefined so deep analysis degrades to an honest empty
+ * impacted-test list rather than fabricated suggestions.
+ */
+async function readOkfGraphProjection(
+  workspaceRoot: string
+): Promise<OkfGraphProjection | undefined> {
+  try {
+    return await new OkfSnapshotStore(workspaceRoot).readGraphProjection();
+  } catch {
+    return undefined;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -110,8 +133,46 @@ export class QaService implements vscode.Disposable {
     this.activeAnalysis = abort;
 
     try {
+      const okfSnapshot = await new OkfSnapshotStore(workspaceRoot).read();
+      if (!okfSnapshot)
+        throw new Error(
+          "The canonical OKF snapshot is not ready. Wait for intelligence promotion to finish."
+        );
+      const canonicalSelection = selectCanonicalContext(
+        okfSnapshot,
+        "test coverage quality assurance impacted tests",
+        { graphMode: "tests", graphLimit: 180 }
+      );
+      if (!canonicalSelection.paths.length) {
+        const result: GapAnalysisResult = {
+          scanMode: depth,
+          summary: {
+            testFramework: "unknown",
+            totalTests: 0,
+            totalSourceFiles: 0,
+            coverageRatio: 0,
+            coverageRate: 0,
+            flakyTests: 0,
+            brokenTests: 0,
+            riskScore: 0
+          },
+          gaps: [],
+          recommendations: [],
+          metrics: {
+            elapsedMs: 0,
+            testsDiscovered: 0,
+            sourcesAnalyzed: 0,
+            gapsFound: 0,
+            recommendationsGenerated: 0
+          },
+          canonicalEvidence: canonicalEvidenceEnvelope(okfSnapshot, canonicalSelection)
+        };
+        this.publish({ status: "complete", result });
+        return result;
+      }
       const analyzer = createGapAnalyzer({
         workspaceRoot,
+        config: { scopePaths: canonicalSelection.paths },
         onProgress: (message, progress) => {
           this.publish({
             status: "running",
@@ -126,8 +187,9 @@ export class QaService implements vscode.Disposable {
       };
       const result =
         depth === "deep"
-          ? await analyzer.analyzeDeep(context)
+          ? await analyzer.analyzeDeep(context, await readOkfGraphProjection(workspaceRoot))
           : await analyzer.analyzeQuick(context);
+      result.canonicalEvidence = canonicalEvidenceEnvelope(okfSnapshot, canonicalSelection);
 
       this.publish({
         status: "complete",

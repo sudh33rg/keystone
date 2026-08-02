@@ -1,4 +1,6 @@
 import type { ContextPack, PerformanceAnalysis, RiskLevel } from "../../domain/types";
+import type { CanonicalContextSelection } from "../../intelligence/okf/canonicalContext";
+import { canonicalGraphDigest, canonicalRiskAreas } from "./canonicalTaskEvidence";
 
 // ---------------------------------------------------------------------------
 // Pattern libraries for performance static analysis
@@ -48,7 +50,7 @@ const MEDIUM_RISK_PATTERNS = [
 ];
 
 /** Extract all source content from the context pack. */
-function extractSource(pack: ContextPack): string {
+function extractSource(pack: ContextPack, canonical?: CanonicalContextSelection): string {
   const parts: string[] = [];
 
   if (pack.contextSections) {
@@ -70,7 +72,8 @@ function extractSource(pack: ContextPack): string {
     parts.push(svc.name, ...svc.hints);
   }
 
-  return parts.join("\n").toLowerCase();
+  const canonicalDigest = canonicalGraphDigest(canonical);
+  return [...parts, canonicalDigest].filter(Boolean).join("\n").toLowerCase();
 }
 
 /**
@@ -114,9 +117,13 @@ export class PerformanceAgent {
    * performance-sensitive areas (N+1 queries, chained iterations,
    * external calls, serialization, file I/O, etc.).
    */
-  analyze(pack: ContextPack): PerformanceAnalysis {
-    const source = extractSource(pack);
-    const { riskLevel, sensitivePaths } = classifyPerformanceRisk(source);
+  analyze(pack: ContextPack, canonical?: CanonicalContextSelection): PerformanceAnalysis {
+    const source = extractSource(pack, canonical);
+    const classified = classifyPerformanceRisk(source);
+    const canonicalPaths = canonicalRiskAreas(canonical, "performance");
+    const sensitivePaths = [...new Set([...classified.sensitivePaths, ...canonicalPaths])];
+    const riskLevel =
+      classified.riskLevel === "high" || canonicalPaths.length > 0 ? "high" : classified.riskLevel;
 
     // Build checklist based on what was found
     const checklist: string[] = [];

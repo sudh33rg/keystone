@@ -189,7 +189,13 @@ export function validateOkfSnapshot(snapshot: KeystoneOkfSnapshot): OkfValidatio
     units: digest(snapshot.units),
     relationships: digest(snapshot.relationships),
     observations: digest(snapshot.observations),
-    evidence: digest(snapshot.evidence)
+    evidence: digest(snapshot.evidence),
+    snapshot: digest({
+      units: snapshot.units,
+      relationships: snapshot.relationships,
+      observations: snapshot.observations,
+      evidence: snapshot.evidence
+    })
   };
   for (const [key, value] of Object.entries(actual))
     if (m.digests[key] !== value)

@@ -4,7 +4,15 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 
 import { emptyRepoIntelligence, indexRepository } from "../ingestion/repoIndexer";
-import type { RepoIntelligence } from "../../domain/types";
+import { RevisionGuard } from "../ingestion/revisionGuard";
+import { reclaimSnapshotArchives } from "../ingestion/snapshotPrune";
+import { IntelligenceStore } from "../ingestion/intelligenceStore";
+import type {
+  EvidenceMetadata,
+  RepoIntelligence,
+  SemanticCall,
+  TypeRelationshipFact
+} from "../../domain/types";
 import {
   INTELLIGENCE_FAMILIES,
   INTELLIGENCE_STAGES,
@@ -23,6 +31,7 @@ import {
   type TypeScriptSemanticResult
 } from "../cpg";
 import { OkfSnapshotStore } from "../okf/store";
+import { repoIntelligenceToOkf } from "../okf/fromRepoIntelligence";
 import {
   analyzeRepositoryGraph,
   createGraphImpactAnalyzer,
@@ -137,6 +146,27 @@ export async function buildRepositoryIntelligence(
     reportNotice(message);
   };
   if (options.signal?.aborted) throw new IntelligencePipelineCancelledError("structural");
+
+  // Stale-intelligence guard. The working tree revision (Git HEAD) is recorded
+  // in a sidecar outside the OKF boundary. If HEAD no longer matches the record,
+  // the cached structural index cannot be trusted for incremental reuse — a
+  // branch switch or checkout can legitimately leave file contents/hashes
+  // identical to a stale baseline. Clearing the prior stores forces a full
+  // rebuild from the current tree.
+  const revisionGuard = new RevisionGuard(root);
+  const mismatch = await revisionGuard.detectMismatch().catch(() => undefined);
+  if (mismatch) {
+    reportNotice(
+      mismatch.previous
+        ? `Working tree moved to ${mismatch.current.branch} (${mismatch.current.head.slice(0, 12)}); discarding stale intelligence for a full rebuild.`
+        : `Initial intelligence run for ${mismatch.current.branch} (${mismatch.current.head.slice(0, 12)}).`
+    );
+    try {
+      await fs.rm(path.join(root, STORE), { recursive: true, force: true });
+    } catch (error) {
+      reportWarning(`Could not clear stale intelligence store: ${errorMessage(error)}.`);
+    }
+  }
   const previousSnapshot = await readSnapshot(root, reportWarning);
   if (options.persist !== false) {
     try {
@@ -182,7 +212,8 @@ export async function buildRepositoryIntelligence(
           }[event.phase],
           message: event.message
         }),
-      semanticEnricher: options.semanticEnricher
+      semanticEnricher: options.semanticEnricher,
+      affectedPaths: options.affectedPaths
     });
   } catch (error) {
     if (isAbortError(error, options.signal))
@@ -252,6 +283,18 @@ export async function buildRepositoryIntelligence(
     );
     semantic = emptyTypeScriptSemanticResult();
   }
+  const semanticEvidenceAdded = mergeProjectSemanticEvidence(intelligence, semantic);
+  if (semanticEvidenceAdded && options.persist !== false) {
+    try {
+      await promoteProjectSemanticEvidence(root, intelligence, runId, options, reportWarning);
+    } catch (error) {
+      if (isAbortError(error, options.signal))
+        throw new IntelligencePipelineCancelledError("structural");
+      reportWarning(
+        `Project-aware semantic evidence could not be promoted to OKF; continuing with the in-memory semantic result: ${errorMessage(error)}.`
+      );
+    }
+  }
   options.onProgress?.({
     stage: "structural",
     order: 1,
@@ -288,7 +331,13 @@ export async function buildRepositoryIntelligence(
     );
     evolution = emptyRepositoryEvolution(incremental);
   }
-  for (const warning of evolution.warnings) reportWarning(warning);
+  for (const warning of evolution.warnings) {
+    // Git coupling is an optional evidence source for local/non-Git workspaces.
+    // Keep it visible in activity without making an otherwise complete OKF
+    // snapshot unusable or preventing downstream workers from starting.
+    if (warning.startsWith("Git coupling unavailable:")) reportNotice(warning);
+    else reportWarning(warning);
+  }
   options.onProgress?.({
     stage: "structural",
     order: 1,
@@ -494,6 +543,20 @@ export async function buildRepositoryIntelligence(
       );
       snapshot.status = "degraded";
     }
+    await revisionGuard
+      .current()
+      .then((current) => (current ? revisionGuard.write(current) : undefined))
+      .catch((error) =>
+        reportWarning(`Could not record the working-tree revision: ${errorMessage(error)}.`)
+      );
+    // Prune the write-only snapshot archive so it cannot grow unbounded across
+    // runs. These archives are never read back, so retaining only the newest is
+    // sufficient for forensic recovery without the ~110 MB/run disk cost.
+    await reclaimSnapshotArchives(root).catch((error) =>
+      reportWarning(
+        `Could not prune snapshot archives or persistent caches: ${errorMessage(error)}.`
+      )
+    );
   }
   options.onProgress?.({
     stage: "runtime-observability",
@@ -616,6 +679,154 @@ function emptyTypeScriptSemanticResult(): TypeScriptSemanticResult {
     diagnosticCodes: {},
     diagnosticExamples: []
   };
+}
+
+function mergeProjectSemanticEvidence(
+  intelligence: RepoIntelligence,
+  semantic: TypeScriptSemanticResult
+): boolean {
+  const before = JSON.stringify({
+    calls: intelligence.calls ?? [],
+    typeRelationships: intelligence.typeRelationships ?? []
+  });
+  const semanticCalls = semantic.calls.map((call) => ({
+    filePath: normalizeRelativePath(call.sourcePath),
+    caller: enclosingCallable(intelligence, call.sourcePath, call.sourceLine),
+    callee: call.callee,
+    line: call.sourceLine,
+    targetFilePath: normalizeRelativePath(call.targetPath),
+    targetLine: call.targetLine,
+    evidence: compilerEvidence(call.sourcePath, call.sourceLine)
+  }));
+  const semanticTypes = semantic.relationships
+    .filter(
+      (relationship): relationship is typeof relationship & { kind: "extends" | "implements" } =>
+        relationship.kind === "extends" || relationship.kind === "implements"
+    )
+    .map((relationship) => ({
+      filePath: normalizeRelativePath(relationship.sourcePath),
+      source: relationship.sourceName,
+      target: relationship.targetName,
+      kind: relationship.kind,
+      line: relationship.sourceLine,
+      targetFilePath: normalizeRelativePath(relationship.targetPath),
+      targetLine: relationship.targetLine,
+      evidence: compilerEvidence(relationship.sourcePath, relationship.sourceLine)
+    }));
+  if (!semanticCalls.length && !semanticTypes.length) return false;
+
+  intelligence.calls = mergeSemanticCalls(semanticCalls, intelligence.calls ?? []);
+  intelligence.typeRelationships = mergeSemanticTypes(
+    semanticTypes,
+    intelligence.typeRelationships ?? []
+  );
+  return (
+    before !==
+    JSON.stringify({
+      calls: intelligence.calls,
+      typeRelationships: intelligence.typeRelationships
+    })
+  );
+}
+
+async function promoteProjectSemanticEvidence(
+  root: string,
+  intelligence: RepoIntelligence,
+  extractionRunId: string,
+  options: IntelligencePipelineOptions,
+  reportWarning: (message: string) => void
+): Promise<void> {
+  options.signal?.throwIfAborted();
+  options.onProgress?.({
+    stage: "structural",
+    order: 1,
+    total: INTELLIGENCE_STAGES.length,
+    progress: 8.5,
+    message: "Promoting compiler-bound calls and type relationships into canonical OKF..."
+  });
+  try {
+    await new IntelligenceStore(root).write(intelligence);
+  } catch (error) {
+    reportWarning(
+      `Could not persist project-aware semantic facts in the structural index; canonical promotion will continue: ${errorMessage(error)}.`
+    );
+  }
+  options.signal?.throwIfAborted();
+  const okfStore = new OkfSnapshotStore(root);
+  const previousSnapshot = await okfStore.read();
+  const snapshot = repoIntelligenceToOkf(intelligence, {
+    previousSnapshot,
+    extractionRunId,
+    observedAt: intelligence.indexedAt,
+    onWarning: reportWarning
+  });
+  await okfStore.write(snapshot, {
+    onProgress: (message) =>
+      options.onProgress?.({
+        stage: "structural",
+        order: 1,
+        total: INTELLIGENCE_STAGES.length,
+        progress: 9,
+        message
+      })
+  });
+}
+
+function mergeSemanticCalls(
+  preferred: readonly SemanticCall[],
+  existing: readonly SemanticCall[]
+): SemanticCall[] {
+  const byKey = new Map<string, SemanticCall>();
+  for (const call of existing) byKey.set(semanticCallKey(call), call);
+  for (const call of preferred) byKey.set(semanticCallKey(call), call);
+  return [...byKey.values()];
+}
+
+function mergeSemanticTypes(
+  preferred: readonly TypeRelationshipFact[],
+  existing: readonly TypeRelationshipFact[]
+): TypeRelationshipFact[] {
+  const byKey = new Map<string, TypeRelationshipFact>();
+  for (const relationship of existing) byKey.set(typeRelationshipKey(relationship), relationship);
+  for (const relationship of preferred) byKey.set(typeRelationshipKey(relationship), relationship);
+  return [...byKey.values()];
+}
+
+function semanticCallKey(call: SemanticCall): string {
+  return `${call.filePath}:${call.line}:${call.caller ?? ""}:${call.callee}`;
+}
+
+function typeRelationshipKey(relationship: TypeRelationshipFact): string {
+  return `${relationship.kind}:${relationship.filePath}:${relationship.line}:${relationship.source}:${relationship.target}`;
+}
+
+function enclosingCallable(
+  intelligence: RepoIntelligence,
+  filePath: string,
+  line: number
+): string | undefined {
+  return intelligence.symbols
+    .filter(
+      (symbol) =>
+        normalizeRelativePath(symbol.filePath) === normalizeRelativePath(filePath) &&
+        symbol.line <= line &&
+        (symbol.kind === "function" || symbol.kind === "method")
+    )
+    .sort((left, right) => right.line - left.line)[0]?.name;
+}
+
+function compilerEvidence(filePath: string, line: number): EvidenceMetadata {
+  return {
+    source: "typescript-checker",
+    confidence: 1,
+    evidencePath: normalizeRelativePath(filePath),
+    evidenceLine: line,
+    extractorVersion: "typescript-semantic:v1"
+  };
+}
+
+function normalizeRelativePath(value: string): string {
+  return value.replaceAll("\\", "/").replace(/^\.\//, "");
 }
 
 function fullIncrementalPlan(intelligence: RepoIntelligence): IncrementalUpdatePlan {

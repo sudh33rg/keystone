@@ -21,9 +21,10 @@ import { detectFlakyTests, type FlakyDetectionResult } from "./flakyDetection";
 import { executeTests, type TestExecutionResult } from "./testExecution";
 import { createQuarantineStore } from "./quarantine";
 import { DEFAULT_QA_CONFIG, type QAConfig } from "../../platform/config/qualityConfig";
-import type { RepoIndex } from "../../platform/storage/types";
+import type { OkfGraphProjection } from "../../intelligence/okf/projections";
 import type { CancellationToken } from "./cancellation";
 import { IGNORED_DIRECTORIES } from "../../platform/config/defaults";
+import type { OkfCanonicalEvidenceEnvelope } from "../../intelligence/okf/types";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -108,6 +109,7 @@ export interface GapAnalysisResult {
     gapsFound: number;
     recommendationsGenerated: number;
   };
+  canonicalEvidence?: OkfCanonicalEvidenceEnvelope;
 }
 
 /** Configuration for gap analysis */
@@ -120,6 +122,8 @@ export interface GapAnalysisConfig {
   coverageThreshold?: number;
   /** Minimum severity to report a gap (default: 0.1) */
   minSeverity?: number;
+  /** Optional canonical OKF paths to analyze without rediscovering the repository scope. */
+  scopePaths?: readonly string[];
 }
 
 export interface GapAnalysisContext {
@@ -139,7 +143,8 @@ const DEFAULT_GAP_CONFIG: GapAnalysisConfig = {
   quickScanTimeoutMs: 30_000,
   deepScanTimeoutMs: 120_000,
   coverageThreshold: 0.1,
-  minSeverity: 0.1
+  minSeverity: 0.1,
+  scopePaths: []
 };
 
 // ---------------------------------------------------------------------------
@@ -283,7 +288,37 @@ function discoverExecutionCommand(
   return hint ? [hint.command, ...hint.args].join(" ").trim() : undefined;
 }
 
-function loadCoverageData(workspaceRoot: string, index?: RepoIndex): TestCoverage[] {
+function coverageMappingsFromGraph(
+  graph?: OkfGraphProjection
+): Array<{ testPath: string; coveredPath: string }> {
+  if (!graph) return [];
+  const pathById = new Map<string, string>();
+  const testIds = new Set<string>();
+  for (const node of graph.nodes) {
+    if (node.lifecycle !== "active") continue;
+    const nodePath =
+      typeof node.properties.path === "string"
+        ? node.properties.path
+        : typeof node.properties.filePath === "string"
+          ? node.properties.filePath
+          : undefined;
+    if (!nodePath) continue;
+    pathById.set(node.id, nodePath);
+    if (node.kind === "test") testIds.add(node.id);
+  }
+  const mappings: Array<{ testPath: string; coveredPath: string }> = [];
+  for (const edge of graph.edges) {
+    if (edge.lifecycle !== "active") continue;
+    if (edge.kind !== "covers" && edge.kind !== "tests") continue;
+    if (!testIds.has(edge.sourceId)) continue;
+    const testPath = pathById.get(edge.sourceId);
+    const coveredPath = pathById.get(edge.targetId);
+    if (testPath && coveredPath) mappings.push({ testPath, coveredPath });
+  }
+  return mappings;
+}
+
+function loadCoverageData(workspaceRoot: string, graph?: OkfGraphProjection): TestCoverage[] {
   const persisted = path.join(workspaceRoot, ".keystone", "coverage_index.json");
   try {
     const parsed = JSON.parse(fs.readFileSync(persisted, "utf8")) as { tests?: TestCoverage[] };
@@ -292,11 +327,7 @@ function loadCoverageData(workspaceRoot: string, index?: RepoIndex): TestCoverag
     /* optional runtime artifact */
   }
 
-  const mappings =
-    (
-      index?.summary as unknown as
-        { coverageMappings?: Array<{ testPath: string; coveredPath: string }> } | undefined
-    )?.coverageMappings ?? [];
+  const mappings = coverageMappingsFromGraph(graph);
   if (mappings.length) {
     const byTest = new Map<string, string[]>();
     for (const mapping of mappings) {
@@ -650,12 +681,14 @@ export class GapAnalyzer {
     this.log("Discovering tests", 10);
     this.checkCancellation(ctx);
 
-    const discovery = discoverTests(this.workspaceRoot);
+    const discovery = discoverTests(this.workspaceRoot, {
+      scopePaths: this.config.scopePaths
+    });
     this.log("Enumerating source files", 30);
     this.checkCancellation(ctx);
 
     const discoveredTests = new Set(discovery.testFiles.map((file) => path.resolve(file)));
-    const sourceFiles = enumerateSourceFiles(this.workspaceRoot).filter(
+    const sourceFiles = this.scopedSourceFiles().filter(
       (file) => !discoveredTests.has(path.resolve(file))
     );
     this.log("Computing coverage estimates", 50);
@@ -761,14 +794,19 @@ export class GapAnalyzer {
   /**
    * Run a deep gap analysis (with test execution and real coverage).
    */
-  async analyzeDeep(ctx?: GapAnalysisContext, index?: RepoIndex): Promise<GapAnalysisResult> {
+  async analyzeDeep(
+    ctx?: GapAnalysisContext,
+    graph?: OkfGraphProjection
+  ): Promise<GapAnalysisResult> {
     const startTime = Date.now();
     this.log("Running quick analysis first", 5);
 
     const quickResult = await this.analyzeQuick(ctx);
-    const discovery = discoverTests(this.workspaceRoot);
+    const discovery = discoverTests(this.workspaceRoot, {
+      scopePaths: this.config.scopePaths
+    });
     const discoveredTests = new Set(discovery.testFiles.map((file) => path.resolve(file)));
-    const sourceFiles = enumerateSourceFiles(this.workspaceRoot).filter(
+    const sourceFiles = this.scopedSourceFiles().filter(
       (file) => !discoveredTests.has(path.resolve(file))
     );
     const riskData: FileRiskData[] = sourceFiles.map((file) => ({
@@ -820,7 +858,7 @@ export class GapAnalyzer {
 
     this.log("Loading coverage evidence", 50);
     this.checkCancellation(ctx);
-    const coverageData = loadCoverageData(this.workspaceRoot, index);
+    const coverageData = loadCoverageData(this.workspaceRoot, graph);
     const coverageMap = computeCoverageMap(
       discovery.testFiles,
       coverageData,
@@ -881,9 +919,9 @@ export class GapAnalyzer {
     this.log("Analyzing impacted tests", 82);
     this.checkCancellation(ctx);
     let impactedTests: ImpactedTestSuggestion[] | undefined;
-    if (index && (ctx?.changedPaths?.length ?? 0) > 0) {
+    if (graph && (ctx?.changedPaths?.length ?? 0) > 0) {
       try {
-        impactedTests = suggestImpactedTests(index, ctx!.changedPaths!);
+        impactedTests = suggestImpactedTests(graph, ctx!.changedPaths!);
       } catch {
         impactedTests = [];
       }
@@ -959,6 +997,32 @@ export class GapAnalyzer {
     if (ctx?.cancellation?.isCancellationRequested) {
       throw Object.assign(new Error("Gap analysis cancelled"), { name: "CancellationError" });
     }
+  }
+
+  private scopedSourceFiles(): string[] {
+    const scopePaths = this.config.scopePaths ?? [];
+    if (!scopePaths.length) return enumerateSourceFiles(this.workspaceRoot);
+    const root = path.resolve(this.workspaceRoot);
+    return [
+      ...new Set(
+        scopePaths
+          .map((value) => value.replace(/\\/g, "/").replace(/^\.\//, ""))
+          .filter((relative) => {
+            const absolute = path.resolve(root, relative);
+            return absolute === root || absolute.startsWith(`${root}${path.sep}`);
+          })
+          .map((relative) => path.resolve(root, relative))
+          .filter((file) => {
+            if (!/\.(?:ts|tsx|js|jsx|mjs|cjs|py|go|java|rs|rb|php|cs|kt|scala)$/i.test(file))
+              return false;
+            try {
+              return fs.statSync(file).isFile();
+            } catch {
+              return false;
+            }
+          })
+      )
+    ];
   }
 }
 

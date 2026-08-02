@@ -121,6 +121,7 @@ export interface RedactionReport {
   safeToShare: boolean;
 }
 import type { SDLCPlan } from "../sdlc/engine";
+import type { CorrectionPacket } from "../../domain/types";
 
 export interface TaskStatePackage {
   schemaVersion: string;
@@ -139,6 +140,7 @@ export interface TaskStatePackage {
   context: EngineeringContext;
   changes: ChangeAwareness;
   quality: QualityState;
+  correctionPackets?: CorrectionPacket[];
   decisions: DecisionState;
   continuation: ContinuationState;
   redactionReport: RedactionReport;

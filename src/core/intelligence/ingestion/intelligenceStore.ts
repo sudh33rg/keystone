@@ -16,6 +16,8 @@ export class IntelligenceStore extends JsonStorage<RepoIntelligence> {
       calls: [],
       controlFlows: [],
       dataFlows: [],
+      typeRelationships: [],
+      engineeringEntities: [],
       ownershipHints: [],
       frameworkHints: [],
       securitySensitiveAreas: [],

@@ -91,6 +91,51 @@ export interface ContextSection {
   score?: number;
   evidence?: EvidenceItem[];
 }
+export type ContextPacketSegmentKind = "summary" | "selected-intelligence" | "source-excerpts";
+export interface ContextPacketSegment {
+  kind: ContextPacketSegmentKind;
+  path?: string;
+  content: string;
+  estimatedTokens: number;
+}
+export interface ContextPacketPayload {
+  id: string;
+  sequence: number;
+  total: number;
+  continuationToken?: string;
+  segmentKinds: ContextPacketSegmentKind[];
+  paths: string[];
+  estimatedTokens: number;
+  segments: ContextPacketSegment[];
+  content: string;
+}
+export interface CorrectionPacket {
+  id: string;
+  taskId: string;
+  reason: "validation-failure" | "delegation-failure" | "manual";
+  createdAt: string;
+  snapshotDigest: string;
+  validation: { commands: string[]; failures: string[]; remediations: string[] };
+  copilot: {
+    captured: boolean;
+    mode?: string;
+    artifactPath?: string;
+    responseExcerpt?: string;
+  };
+  canonical: {
+    unitIds: string[];
+    relationshipIds: string[];
+    evidenceIds: string[];
+    paths: string[];
+  };
+  changedPaths?: string[];
+  affectedPaths?: string[];
+  diffHash?: string;
+  resolvedAt?: string;
+  resolvedByValidation?: string[];
+  selectedPaths: string[];
+  prompt: string;
+}
 export interface TaskResult {
   intentId: string;
   researchStatus: "ready" | "approved";
@@ -111,6 +156,15 @@ export interface TaskResult {
   prMarkdown?: string;
   validationCommands?: string[];
   contextTokens?: { raw: number; selected: number; prompt: number; packets: number; tier: string };
+  contextPackets?: Array<{
+    id: string;
+    sequence: number;
+    total: number;
+    continuationToken?: string;
+    segmentKinds: string[];
+    paths: string[];
+    estimatedTokens: number;
+  }>;
   contextManifest?: {
     delegationTokenBudget: number;
     usedTokens: number;
@@ -118,6 +172,7 @@ export interface TaskResult {
     omittedFiles: number;
     protectedFiles: number;
     traceableEvidence: number;
+    snapshotDigest?: string;
     generatedAt: string;
   };
   contextSections?: ContextSection[];
@@ -137,6 +192,20 @@ export interface TaskResult {
   };
   evidence?: EvidenceItem[];
   analysisEvidence?: {
+    canonicalEvidence?: Partial<
+      Record<
+        "qa" | "security" | "performance" | "modernization",
+        {
+          snapshotDigest: string;
+          extractionRunId: string;
+          unitIds: string[];
+          relationshipIds: string[];
+          evidenceIds: string[];
+          paths: string[];
+          generatedAt: string;
+        }
+      >
+    >;
     qa: {
       scanMode: string;
       gaps: Array<{ type: string; path: string; severity: number; reason: string }>;
@@ -361,7 +430,11 @@ export interface IntelligenceExplorerItem {
 export interface IntelligenceExplorerResult {
   query: string;
   kind?: string;
+  cursor?: string;
+  nextCursor?: string;
+  pageSize: number;
   totalActive: number;
+  totalMatching: number;
   kindCounts: Record<string, number>;
   items: IntelligenceExplorerItem[];
 }
@@ -454,10 +527,27 @@ export interface IngestionState {
 }
 export type BackgroundWorkerId = "qa" | "security" | "performance" | "modernization";
 export interface BackgroundWorkerState {
-  status: "idle" | "running" | "complete" | "cancelled" | "failed";
+  status: "idle" | "running" | "complete" | "cancelled" | "stale" | "failed";
   progress?: number;
   message?: string;
   error?: string;
+  result?: unknown;
+  canonicalEvidence?: {
+    snapshotDigest: string;
+    extractionRunId: string;
+    unitIds: string[];
+    relationshipIds: string[];
+    evidenceIds: string[];
+    paths: string[];
+    generatedAt: string;
+  };
+  workerId?: string;
+  snapshotDigest?: string;
+  extractionRunId?: string;
+  scopePaths?: string[];
+  startedAt?: string;
+  completedAt?: string;
+  durationMs?: number;
   updatedAt: string;
 }
 export interface ApplicationState {
@@ -467,6 +557,7 @@ export interface ApplicationState {
   intelligence?: IntelligenceSummary;
   taskAnalysis?: TaskResult;
   delegationResult?: CopilotDelegationResult;
+  correctionPacket?: CorrectionPacket;
   sdlc?: SdlcPlan;
   ingestion?: IngestionState;
   backgroundWorkers?: Partial<Record<BackgroundWorkerId, BackgroundWorkerState>>;

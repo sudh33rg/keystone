@@ -1,278 +1,119 @@
 # Keystone Gap Analysis
 
-**Date**: 2025-08-01  
-**Status**: Complete - All 14 documentation files cross-referenced with implementation
+**Assessment date:** 2026-08-02
+**Reference:** attached Keystone product plan and current source tree
+**Status:** Active phased work; this file records gaps that materially affect product conformance.
 
----
+## Executive summary
 
-## Executive Summary
+Keystone has the intended product spine: deterministic local ingestion, OKF persistence, graph/CPG/query surfaces, intent-led SDLC, bounded Copilot delegation, validation, handoff, and Browser View. The remaining work is concentrated in the quality of the intelligence contract rather than the existence of screens.
 
-This document identifies gaps between the documented architecture (14 documentation files) and the actual implementation in the Keystone codebase. The analysis covers all major modules: Intelligence Layer (CPG, OKF, Pipeline, Languages, Ingestion, Explorer, Graph, Analysis, Repository), Platform Layer (Config, Contracts, Events, Git, Metrics, Storage), Workflow Layer (Agents, Handoff, Modernization, Orchestration, Quality, SDLC, Tasks, Validation), Extension Integration, and Webview UI.
+The highest-risk issue is architectural: OKF is authoritative for several UI projections, but some task-time consumers still rebuild and consume parallel `RepoIntelligence` or `RepositoryModel` data. This can produce different answers in Explorer, Query, R&D, QA, and Copilot context.
 
-**Total Gaps Identified**: 4 critical gaps + 3 minor gaps
+## Priority gaps
 
-**Implementation Plans**: Detailed implementation plans for all gaps are documented in [IMPLEMENTATION_PLANS.md](./IMPLEMENTATION_PLANS.md). All gaps are marked as **PLANNED** with implementation priorities.
+### P0-1 — Canonical OKF-first task boundary
 
----
+**Status:** Partial
+**Evidence:** `src/core/intelligence/okf/canonicalContext.ts` provides the shared OKF query plus bounded graph-neighborhood selector and a canonical retrieval-shape adapter. When a promoted snapshot exists, Intent context and prompt enhancement rank paths only from the OKF query/graph; raw repository records are used for source-body excerpts. Task QA/security/performance/modernization, the task R&D/SDLC evidence matrix, and background workers carry the same bounded selection envelope. Background workers now wait for successful promotion, consume the persisted structural snapshot, scope source and test discovery to canonical paths, and persist worker/snapshot/timing metadata. Persisted envelopes are restored into shared application state, shown in Activity, and included in task engineering evidence. Missing worker artifacts no longer trigger repository-wide task-evidence rescans: task analysis uses the canonical Captain-agent result and snapshot findings, while standalone QA is scoped to the promoted OKF selection and modernization requires the persisted snapshot.
 
-## Critical Gaps
+**Impact:** The same intent may receive different intelligence depending on which feature produced it. OKF becomes an export/projection for some paths rather than the common engineering knowledge contract.
 
-### Gap 1: Continuation Packets (Context Compression Step 6)
+**Closure:** Envelope validation, restoration, task evidence, and UI display are complete for the current slice. The task-evidence rescan fallback is closed; remove or consolidate the remaining standalone QA/test-discovery path and deepen provider semantics. Raw repository records may remain ingestion inputs and source-body lookup, but task-time retrieval must use OKF IDs, relationships, evidence, confidence, freshness, and source locations.
 
-**Documentation Reference**: `docs/ARCHITECTURE.md` lines 105-115 (Context Compression section)
+### P0-2 — Missing canonical engineering entities
 
-**Documented Behavior**:
+**Status:** Partial
+**Evidence:** `EngineeringEntityFact` and `engineeringEntityDetector.ts` now discover database, table, ORM entity, query, feature flag, fixture, CI/CD, infrastructure, component, event, build-system, and package-manager facts; OKF promotion maps them into typed units and validated relationships. The project-aware TypeScript semantic worker now merges compiler-resolved cross-file calls and `extends`/`implements` bindings into the structural model before a second atomic OKF promotion. Coverage remains provider-agnostic for languages/frameworks without semantic enrichment.
 
-> "6. **Continuation Packets**: For large contexts, split into ordered packets for Copilot consumption"
+**Impact:** The canonical model can answer basic table/query/flag/build/infrastructure questions and compiler-backed TypeScript/JavaScript call/type questions, but cross-file ORM resolution, framework-specific database semantics, and API → service → repository → table chains remain incomplete.
 
-**Implementation Status**: **NOT IMPLEMENTED**
+**Closure:** Add semantic providers and framework adapters, then validate cross-file and cross-language entity relationships against CPG/data-flow evidence.
 
-**Location**: `src/core/context/intentContextBuilder.ts`
+### P0-3 — Security and performance depth
 
-**Current Implementation**: The `buildContextPacket` function creates a single `ContextPacket` with all sections. There is no logic to split large contexts into multiple ordered packets.
+**Status:** Partial
+**Evidence:** Repository analysis and task agents use regex/pattern libraries for security and performance signals.
 
-**Impact**:
+**Impact:** Findings can identify suspicious text but cannot reliably explain source-to-sink paths, authorization boundaries, hot calls, database access, or measured regressions.
 
-- Large contexts exceeding token budgets cannot be delivered to Copilot in chunks
-- No support for streaming/paginated context delivery
-- Copilot delegation may fail or truncate silently for large repositories
+**Closure:** Consume CPG, control/data flow, API boundaries, persistence relationships, call paths, runtime evidence, and benchmark evidence where available.
 
-**Required Implementation**:
+### P0-4 — Large intelligence navigation
 
-- Add packet splitting logic in `buildContextPacket` or new function
-- Implement packet ordering/sequencing
-- Add packet metadata (sequence number, total packets, continuation token)
-- Update `ContextPacket` type in `src/core/domain/types.ts` to support continuation
+**Status:** Partial
+**Evidence:** Explorer returns a bounded 120-unit page with a snapshot-bound opaque cursor, matching-unit count, and UI continuation. Graph views support bounded expansion plus active-frame branch collapse; graph/CPG views still lack progressive segment loading and virtualization.
 
----
+**Impact:** Large repositories are indexed but not meaningfully explorable.
 
-### Gap 2: Context Compression Caching
+**Closure:** Add Explorer virtualization, progressive graph segments, and explicit freshness/degraded indicators; cursor pagination and active-frame graph collapse are complete slices.
 
-**Documentation Reference**: `docs/ARCHITECTURE.md` line 97 (Intelligent Caching section)
+### P0-5 — Context continuation and adaptive segments
 
-**Documented Behavior**:
+**Status:** Partial
+**Evidence:** Context packs now contain ordered packet metadata with stable packet IDs, segment kinds, token estimates, and continuation tokens; task workspaces persist the manifest and payloads in `context.json` and `context-packets.json`. The shared UI can retrieve a full packet or adaptive summary/intelligence/source-excerpt segments, and retrieval rejects an outdated OKF snapshot.
 
-> "5. **Context Compression Caching**: Compressed context packets are cached by intent and file hash"
+**Impact:** Packet continuation and correction context are actionable; a user-approved retry can now re-enter Copilot from `review-required` and captured output is attached to the same SDLC delegation. Passing post-correction validation still needs to close the story transition.
 
-**Implementation Status**: **NOT IMPLEMENTED**
+**Closure:** Attach passing post-correction validation evidence to story completion; packet retrieval, adaptive segments, freshness validation, changed-path correlation, affected-path refresh, packet-ID-bound retry delegation, captured result attachment, and impacted retry validation are complete slices.
 
-**Location**: `src/core/context/intentContextBuilder.ts`
+### P1-1 — Persistent caching
 
-**Current Implementation**: No caching layer exists. Every call to `buildContextPacket` recomputes:
+**Status:** Partial
+**Evidence:** Context reuse is persisted under `.keystone/context/cache` and includes the canonical OKF snapshot digest in its key. Deterministic language-analysis payloads persist under `.keystone/cache/extractions` by file path/content hash/extractor version, while query and graph results persist by normalized request and OKF snapshot digest. Extraction/query/graph entries are now age/count-pruned by the cache-maintenance path, and removal metrics are surfaced to the user; persistent semantic-provider cache policy remains open.
 
-- Intent classification
-- Evidence gathering (CPG queries)
-- Deduplication
-- Ranking
-- Structural compression (semantic excerpts)
-- Token budgeting
+**Impact:** Re-indexing still performs full canonical reconciliation and semantic/CPG stages, while persistent cache growth and semantic projection policy need explicit operational controls.
 
-**Impact**:
+**Closure:** Define persistent semantic-provider cache invalidation keyed by provider version and snapshot promotion; extraction/query/graph retention policy and removal metrics are complete for the initial slice.
 
-- Repeated context requests for same intent/files cause redundant computation
-- No performance benefit for repeated queries
-- CPG queries re-executed unnecessarily
+### P1-2 — Polyglot semantic depth
 
-**Required Implementation**:
+**Status:** Partial
+**Evidence:** TypeScript/JavaScript are compiler-backed; other languages mostly use deterministic structural adapters.
 
-- Add cache layer (in-memory or persisted to `.keystone/cache/`)
-- Cache key: `{ intent, fileHashes[], compressionTier }`
-- Cache invalidation on file changes (integrate with file watcher)
-- TTL-based expiration
-- Cache hit/miss metrics
+**Impact:** Broad discovery works, but cross-language callers, implementations, references, and data flow are less precise.
 
----
+**Closure:** Add language-service adapters and framework analyzers with honest per-language capability reporting.
 
-### Gap 3: Query Result Caching (TTL-based)
+### P1-3 — Copilot result feedback
 
-**Documentation Reference**: `docs/ARCHITECTURE.md` line 96 (Intelligent Caching section)
+**Status:** Partial
+**Evidence:** Captured Copilot results are persisted; failed validation or delegation now creates `correction-packets.json` with the prior response excerpt, failure/remediation evidence, current OKF snapshot digest, Git diff hash, changed paths, OKF-affected paths, selected OKF IDs/relationships/evidence, bounded source paths, and a copyable retry prompt. A review-required story can explicitly approve that packet for Copilot; the packet ID and captured artifact are attached to the SDLC delegation. The UI refreshes those paths through incremental canonical reconciliation and runs impacted validation.
 
-**Documented Behavior**:
+**Closure:** Record passing post-correction validation evidence against the active Intent and close the story through the normal SDLC completion transition.
 
-> "4. **Query Result Caching**: Recent query results are cached with TTL-based invalidation"
+### P1-4 — Worker efficiency and isolation
 
-**Implementation Status**: **NOT IMPLEMENTED**
+**Status:** Partial
+**Evidence:** The intelligence stage pool uses configurable default concurrency five. Four role-specific worker threads start only after a successful OKF promotion, consume one persisted structural snapshot plus a bounded canonical scope, persist snapshot/timing/worker metadata, and fail or time out independently. Identical active snapshot runs are coalesced; superseded and cancelled runs persist explicit state; coordinator and worker-thread late writes cannot overwrite a newer snapshot/run; and restored UI state marks older records stale. Task analysis now consumes canonical task-agent/snapshot evidence when a worker artifact is pending; standalone QA is also scoped to a promoted OKF selection. Stage contexts are still serialized per worker and process isolation remains undecided.
 
-**Location**: `src/core/intelligence/okf/queryEngine.ts` and `src/core/intelligence/explorer/intelligenceExplorer.ts`
+**Closure:** Share promoted snapshot/projection inputs across all remaining workflow fallbacks, define thread/process semantics, and strengthen automatic retry/recovery policy for failed workers. Run coalescing, cross-run freshness, explicit cancellation/staleness, and late-write protection are now implemented.
 
-**Current Implementation**:
+### P2-1 — Documentation and evidence drift
 
-- `queryEngine.ts`: `executeQuery` method executes queries directly against OKF snapshot with no caching
-- `intelligenceExplorer.ts`: `explore` method executes exploration queries directly with no caching
+**Status:** Addressed for the current slice
+**Evidence:** The conformance, gap, architecture, OKF profile, storage, and implementation-plan documents now record the same partial capabilities, landed slices, remaining gaps, and verification policy. Runtime/schema evidence artifacts remain required before they are used as acceptance proof.
 
-**Impact**:
+**Closure:** Keep the reconciled-document rule active after every material change and never mark a capability complete from counters alone.
 
-- Repeated identical queries re-execute full graph traversal
-- No performance benefit for common query patterns
-- Explorer views re-query on every navigation
+## Dependency order
 
-**Required Implementation**:
-
-- Add query result cache in `queryEngine.ts`
-- Cache key: normalized query string + snapshot digest
-- TTL configuration (default: 5 minutes)
-- Invalidation on snapshot promotion
-- Cache statistics/metrics
-
----
-
-### Gap 4: "adaptive-segments" Delivery Mode
-
-**Documentation Reference**: `src/core/domain/types.ts` line 117 (ContextDeliveryMode type)
-
-**Documented Type**:
-
-```typescript
-export type ContextDeliveryMode = "full" | "summary" | "references-only" | "adaptive-segments"; // ← DOCUMENTED BUT NOT IMPLEMENTED
+```text
+Contract baseline
+      ↓
+Canonical OKF boundary
+      ↓
+Entity and analyzer depth
+      ↓
+Explorer / graph / query scale
+      ↓
+Context continuation and Copilot feedback
+      ↓
+SDLC evidence closure
+      ↓
+Caching and large-repository hardening
 ```
 
-**Implementation Status**: **NOT IMPLEMENTED**
+## Verification approach
 
-**Location**: `src/core/context/intentContextBuilder.ts` - `buildContextPacket` function
-
-**Current Implementation**: The `buildContextPacket` function accepts `deliveryMode` parameter but only handles:
-
-- `'full'` - full context
-- `'summary'` - summary only
-- `'references-only'` - references only
-
-The `'adaptive-segments'` case falls through to default behavior (full).
-
-**Impact**:
-
-- TypeScript compiles but runtime behavior doesn't match type contract
-- No adaptive segment delivery for progressive context loading
-- Webview/UI cannot request adaptive segments
-
-**Required Implementation**:
-
-- Add `'adaptive-segments'` case in `buildContextPacket`
-- Implement progressive segment loading (summary → details → full)
-- Segment metadata for client-side assembly
-- Update webview message handlers to support adaptive segments
-
----
-
-## Minor Gaps
-
-### Gap 5: File Hash Caching Persistence
-
-**Documentation Reference**: `docs/ARCHITECTURE.md` line 93, `docs/UNBOUNDED_INCREMENTAL_INGESTION.md` lines 255-257
-
-**Documented Behavior**: File content hash cache and file structure hash cache
-
-**Implementation Status**: **PARTIALLY IMPLEMENTED**
-
-**Location**: `src/core/intelligence/ingestion/repoIndexer.ts`
-
-**Current Implementation**:
-
-- `FileState` interface includes `contentHash` and `structureHash`
-- Hashes computed during indexing and stored in `FileState`
-- **Gap**: No persistent cache file - hashes recomputed on every startup
-- **Gap**: No separate cache layer - embedded in indexer state only
-
-**Required Implementation**:
-
-- Persist hash cache to `.keystone/cache/hashes.json`
-- Load cache on startup
-- Invalidate on file modification
-
----
-
-### Gap 6: Extraction Result Caching Persistence
-
-**Documentation Reference**: `docs/ARCHITECTURE.md` line 94, `docs/UNBOUNDED_INCREMENTAL_INGESTION.md` lines 255-258
-
-**Documented Behavior**: Results from language frontends cached by file hash and extractor version
-
-**Implementation Status**: **PARTIALLY IMPLEMENTED**
-
-**Location**: `src/core/intelligence/ingestion/repoIndexer.ts`
-
-**Current Implementation**:
-
-- `FileState` includes `extractorVersion` and `lastExtractionRunId`
-- Extraction results stored in OKF snapshot
-- **Gap**: No separate extraction result cache for reuse across runs
-- **Gap**: Extractor version checking not implemented for cache invalidation
-
-**Required Implementation**:
-
-- Persist extraction cache to `.keystone/cache/extractions/`
-- Key by `{ fileHash, extractorName, extractorVersion }`
-- Version-aware invalidation
-
----
-
-### Gap 7: Projection Caching Persistence
-
-**Documentation Reference**: `docs/ARCHITECTURE.md` line 95, `docs/ONTOLOGY_AND_GRAPH.md` line 385
-
-**Documented Behavior**: Graph, CPG, and search projections cached and only regenerated when OKF changes
-
-**Implementation Status**: **PARTIALLY IMPLEMENTED**
-
-**Location**: `src/core/intelligence/okf/store.ts` and `src/core/intelligence/pipeline/derivedGraph.ts`
-
-**Current Implementation**:
-
-- Projections generated and stored in OKF snapshot directory (`projections/`)
-- `OkfStore` loads projections from promoted snapshot
-- **Gap**: No in-memory cache layer for hot projections
-- **Gap**: No projection version checking - always loads from disk
-
-**Required Implementation**:
-
-- In-memory projection cache with snapshot digest validation
-- Lazy loading with cache warming
-- Metrics for cache hit/miss
-
----
-
-## Implementation Status Summary
-
-| Feature                           | Documented | Implemented | Status           | Plan Reference                                                                                                   |
-| --------------------------------- | ---------- | ----------- | ---------------- | ---------------------------------------------------------------------------------------------------------------- |
-| File Hash Caching                 | ✅         | ⚠️ Partial  | **Planned (P1)** | [IMPLEMENTATION_PLANS.md#gap-5](./IMPLEMENTATION_PLANS.md#gap-5-file-hash-caching-not-persisted-across-restarts) |
-| Extraction Result Caching         | ✅         | ⚠️ Partial  | **Planned (P1)** | [IMPLEMENTATION_PLANS.md#gap-6](./IMPLEMENTATION_PLANS.md#gap-6-extraction-result-caching-not-persisted)         |
-| Projection Caching                | ✅         | ⚠️ Partial  | **Planned (P1)** | [IMPLEMENTATION_PLANS.md#gap-7](./IMPLEMENTATION_PLANS.md#gap-7-projection-caching-not-persisted)                |
-| Query Result Caching (TTL)        | ✅         | ❌          | **Planned (P0)** | [IMPLEMENTATION_PLANS.md#gap-3](./IMPLEMENTATION_PLANS.md#gap-3-query-result-caching-not-implemented)            |
-| Context Compression Caching       | ✅         | ❌          | **Planned (P0)** | [IMPLEMENTATION_PLANS.md#gap-2](./IMPLEMENTATION_PLANS.md#gap-2-context-compression-caching-not-implemented)     |
-| Continuation Packets              | ✅         | ❌          | **Planned (P0)** | [IMPLEMENTATION_PLANS.md#gap-1](./IMPLEMENTATION_PLANS.md#gap-1-continuation-packets-not-implemented)            |
-| adaptive-segments Delivery Mode   | ✅ (type)  | ❌          | **Planned (P0)** | [IMPLEMENTATION_PLANS.md#gap-4](./IMPLEMENTATION_PLANS.md#gap-4-adaptive-segments-delivery-mode-not-implemented) |
-| Context Compression (Steps 1-5)   | ✅         | ✅          | Complete         | -                                                                                                                |
-| OKF Profile/Generation/Validation | ✅         | ✅          | Complete         | -                                                                                                                |
-| CPG Building/Querying             | ✅         | ✅          | Complete         | -                                                                                                                |
-| Pipeline (Incremental/Evolution)  | ✅         | ✅          | Complete         | -                                                                                                                |
-| SDLC Engine (16 stages)           | ✅         | ✅          | Complete         | -                                                                                                                |
-| Quality Gates (11 modules)        | ✅         | ✅          | Complete         | -                                                                                                                |
-| Task Handoff (Encryption)         | ✅         | ✅          | Complete         | -                                                                                                                |
-| ValueEdge Integration             | ✅         | ✅          | Complete         | -                                                                                                                |
-| Browser View (SSE)                | ✅         | ✅          | Complete         | -                                                                                                                |
-| Webview UI (React)                | ✅         | ✅          | Complete         | -                                                                                                                |
-
----
-
-## Priority Matrix
-
-| Priority | Gap                                 | Effort | Risk   | Dependencies              | Status      |
-| -------- | ----------------------------------- | ------ | ------ | ------------------------- | ----------- |
-| P0       | Continuation Packets                | Medium | High   | ContextPacket type update | **Planned** |
-| P0       | Context Compression Caching         | Medium | Medium | Cache infrastructure      | **Planned** |
-| P0       | Query Result Caching                | Low    | Low    | QueryEngine modification  | **Planned** |
-| P0       | adaptive-segments Delivery          | Low    | Low    | intentContextBuilder only | **Planned** |
-| P1       | File Hash Cache Persistence         | Low    | Low    | repoIndexer + storage     | **Planned** |
-| P1       | Extraction Result Cache Persistence | Medium | Low    | repoIndexer + storage     | **Planned** |
-| P1       | Projection Cache In-Memory          | Low    | Low    | OkfStore + derivedGraph   | **Planned** |
-
----
-
-## Next Steps
-
-1. **Create implementation plans** for each critical gap (P0)
-2. **Update documentation** to reflect actual implementation status
-3. **Remove stale documentation** that describes unimplemented features as implemented
-4. **Implement P0 gaps** in priority order
-5. **Add tests** for new caching and continuation packet functionality
-6. **Update PRODUCT_PLAN_CONFORMANCE.md** to reflect gaps
+Verification for this work uses source inspection, type/build/lint checks, persisted snapshot inspection, runtime evidence, and visual UI checks. No new automated tests are required by the current product direction.

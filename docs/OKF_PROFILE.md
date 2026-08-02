@@ -5,12 +5,12 @@ OKF is the authoritative knowledge contract inside the Keystone Intelligence Lay
 ## Identity
 
 - Profile ID: `https://keystone.local/okf/profiles/repository-intelligence/v2`
-- Profile version: `2.0.0`
+- Profile version: `2.1.0`
 - Format: `keystone-okf`
 - Format version: `2`
 - Source of truth: `src/core/intelligence/okf/`
 
-The profile digest is generated from the executable profile definition and stored in every manifest.
+The profile digest is generated from the executable profile definition and stored in every manifest. Version `2.1.0` adds first-class engineering entities while preserving the existing unit, relationship, observation, and evidence contract.
 
 ## Portable Open Knowledge Format bundle
 
@@ -29,9 +29,29 @@ Keystone also exports the promoted machine snapshot as an interoperable **OKF v0
 
 The public OKF bundle is the portable exchange surface. Keystone's internal `keystone-okf` JSONL snapshot remains the richer authoritative local machine index from which graph, search, CPG, impact, context, and UI projections are derived.
 
+## Task-time canonical selection
+
+Task-time consumers must cross the promoted OKF snapshot before selecting repository evidence. `src/core/intelligence/okf/canonicalContext.ts` provides the shared selection boundary: it resolves the intent through the OKF query engine, chooses an intent-appropriate graph mode, traverses a bounded neighborhood, and returns stable unit IDs, source paths, and evidence IDs. Raw `RepoIntelligence` records may still supply source bodies and excerpts, but they must not replace OKF identity, relationships, confidence, or provenance when a snapshot is available.
+
+The integration routes Intent context construction, prompt enhancement, task QA/security/performance/modernization analysis, the task R&D/SDLC evidence matrix, and background workers through this selector. The full snapshot is reduced to one bounded task selection before those agents run; the context and enhancement paths adapt that selection to their retrieval metrics without running a second repository-wide ranking pass. Background workers wait for the successful promotion, read the persisted structural snapshot instead of rebuilding repository discovery, and scope source analysis to their per-role selection. If a worker artifact is pending, task evidence reuses the canonical task-agent result and persisted snapshot findings rather than invoking an unbounded analyzer. Raw repository records remain available only for source excerpts and ingestion-compatible adapters. Background artifacts persist an `OkfCanonicalEvidenceEnvelope` containing the snapshot digest, extraction run, selected IDs, evidence IDs, and paths, plus worker identity and timing metadata.
+
+Project-aware TypeScript/JavaScript semantic binding is also promoted through the same boundary. Compiler-resolved cross-file calls and `extends`/`implements` relationships are merged into the structural repository model and re-promoted into OKF before downstream stages run. These edges carry `typescript-checker` evidence and resolved declaration locations; a failed compiler or promotion path is recorded as a warning and does not create an unverified relationship.
+
 ## Schema Documentation
 
 The OKF profile defines a structured data format for representing repository intelligence. The schema consists of four main components:
+
+### Engineering entity coverage
+
+The canonical profile explicitly represents the engineering objects required for repository research:
+
+- `database`, `table`, `orm-entity`, and `query` for persistence structure and access paths;
+- `feature-flag` and `configuration` for runtime behavior controls;
+- `fixture` and `test` for validation assets;
+- `ci-cd`, `infrastructure`, and `build-system` for delivery and runtime topology;
+- `component`, `event`, `package-manager`, `module`, and `package` for architecture and dependency boundaries.
+
+The deterministic ingestion adapter records these facts with source locations and confidence. Promotion adds validated relationships such as `database contains table`, `orm-entity maps-to table`, `query reads/writes table`, `file configured-by feature-flag`, and component/event flow edges when the corresponding evidence is present.
 
 ### 1. Knowledge Units
 
@@ -68,7 +88,7 @@ Knowledge units represent the fundamental entities in the repository. Each unit 
 **Knowledge Unit Fields**:
 
 - `id`: Unique identifier for the knowledge unit (required)
-- `type`: Type of knowledge unit (file, module, package, service, symbol, api, data-entity, configuration, test, documentation, call-flow, data-flow, architecture-boundary, risk-area, change-impact) (required)
+- `type`: Type of knowledge unit (file, module, package, service, symbol, api, data-entity, database, table, orm-entity, query, configuration, feature-flag, test, fixture, documentation, call-flow, data-flow, architecture-boundary, ci-cd, infrastructure, component, event, build-system, package-manager, risk-area, change-impact) (required)
 - `name`: Name of the unit (required for most types)
 - `path`: File system path to the unit (required for file types)
 - `language`: Programming language of the unit (optional)
@@ -114,7 +134,7 @@ Relationships represent connections between knowledge units. Each relationship h
 **Relationship Fields**:
 
 - `id`: Unique identifier for the relationship (required)
-- `type`: Type of relationship (contains, defines, imports, depends-on, calls, reads, writes, exposes, implements, extends, tests, covers, configured-by, documented-by, flows-to, may-impact) (required)
+- `type`: Type of relationship (contains, defines, imports, depends-on, calls, reads, writes, exposes, implements, extends, tests, covers, configured-by, documented-by, flows-to, may-impact, maps-to) (required)
 - `source`: ID of the source knowledge unit (required)
 - `target`: ID of the target knowledge unit (required)
 - `confidence`: Confidence score (0.0-1.0) (required)
@@ -216,7 +236,7 @@ The manifest contains metadata about the extraction run and the OKF snapshot.
 {
   "version": "2",
   "profileId": "https://keystone.local/okf/profiles/repository-intelligence/v2",
-  "profileVersion": "2.0.0",
+  "profileVersion": "2.1.0",
   "runId": "run-123",
   "timestamp": "2026-08-01T12:34:56Z",
   "repository": {
@@ -294,7 +314,18 @@ The manifest contains metadata about the extraction run and the OKF snapshot.
 - `architecture-boundary`: Represents an architectural boundary or layer
 - `risk-area`: Represents a potential risk area
 - `change-impact`: Represents the impact of a change
-- `dependency`: Represents a dependency relationship
+- `database`: Represents a database or persistence boundary
+- `table`: Represents a database table or collection
+- `orm-entity`: Represents an ORM or application persistence entity
+- `query`: Represents a SQL or ORM data-access query
+- `feature-flag`: Represents a runtime feature flag
+- `fixture`: Represents a fixture, mock, factory, or seed asset
+- `ci-cd`: Represents a continuous integration or delivery definition
+- `infrastructure`: Represents infrastructure-as-code or runtime topology
+- `component`: Represents a UI or application component
+- `event`: Represents an emitted, published, or dispatched event
+- `build-system`: Represents a build configuration or build tool
+- `package-manager`: Represents a package manager or lockfile boundary
 
 ## Relationship Kinds
 
@@ -314,6 +345,7 @@ The manifest contains metadata about the extraction run and the OKF snapshot.
 - `documented-by`: Indicates documentation relationship (e.g., API documented by file)
 - `flows-to`: Indicates flow relationship (e.g., data flows to function)
 - `may-impact`: Indicates potential impact relationship (e.g., change may impact function)
+- `maps-to`: Indicates a semantic mapping relationship (e.g., ORM entity maps to table)
 
 ## Required Semantics
 
@@ -332,7 +364,7 @@ The manifest contains metadata about the extraction run and the OKF snapshot.
 
 The validator checks profile/version identity, mandatory fields, canonical-key uniqueness, ID uniqueness, timestamp and confidence validity, evidence/provenance integrity, observation predicates/value types, relationship endpoint existence, semantic source/target constraints, workspace/extraction consistency, manifest counts, and record digests.
 
-All 17 knowledge kinds and all 16 relationship kinds are produced by the executable OKF acceptance fixture. Observations and evidence are non-empty, and deletion creates stable-ID tombstones with stale historical evidence.
+The executable profile currently defines 29 knowledge kinds and 17 relationship kinds. Repository ingestion produces the applicable subset for each workspace; observations and evidence are non-empty for promoted facts, and deletion creates stable-ID tombstones with stale historical evidence.
 
 ## Validation Process
 

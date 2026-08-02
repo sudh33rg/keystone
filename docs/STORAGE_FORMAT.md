@@ -2,6 +2,10 @@
 
 Keystone stores local state beneath `.keystone/`. Candidate writes use temporary locations, validation, and atomic rename/pointer promotion.
 
+The running extension keeps the authoritative OKF snapshot and bounded hot query/graph results in memory, invalidated by the manifest snapshot digest. Deterministic per-file language extraction is also persisted under `.keystone/cache/extractions`, keyed by normalized workspace path, content hash, and extractor version. Persisted query and graph results live under `.keystone/cache/query` and `.keystone/cache/graph`, keyed by normalized request and OKF snapshot digest. Complete context results are cached under `.keystone/context/cache`, while each materialized task persists its ordered packet manifest and payloads in `.keystone/tasks/<task>/context.json` and `context-packets.json`. Failed validation persists bounded OKF-grounded retry prompts in the task’s `correction-packets.json`. Packet retrieval and correction generation validate the task’s stored OKF snapshot digest before returning or using content. The cache-maintenance path retains recent extraction/query/graph JSON entries for 30 days and within per-family entry limits, and reports scanned/retained/removed entries.
+
+Verified Task Handoff packages carry the active task’s bounded `correctionPackets` when present. Each packet may include `changedPaths`, `affectedPaths`, a `diffHash`, and resolution metadata; restoring a package writes those packets into the recipient task workspace so validation failures and user-approved Copilot retry context remain available without copying the repository or allowing repository-wide search. A passing impacted validation marks the latest packet resolved while retaining the historical packet for handoff/audit.
+
 ```text
 .keystone/
 ├── state/
@@ -11,12 +15,10 @@ Keystone stores local state beneath `.keystone/`. Candidate writes use temporary
 ├── context/
 ├── validation/
 ├── background/
-├── cache/                      # Intelligent caching layer (planned)
-│   ├── file-hashes.json        # File content/structure hashes (planned: persistent)
-│   ├── extraction-results/     # Language frontend extraction cache (planned)
-│   ├── projections/            # In-memory projection cache (planned)
-│   ├── query-results/          # Query result TTL cache (planned)
-│   └── context-compression/    # Compressed context packets cache (planned)
+├── cache/                      # Persistent extraction/query/graph caches
+│   ├── extractions/            # Versioned language frontend extraction cache
+│   ├── query/                  # Digest-keyed query result cache
+│   └── graph/                  # Digest-keyed graph result cache
 └── intelligence/
     ├── summary.json
     ├── snapshot.json
@@ -45,6 +47,18 @@ Keystone stores local state beneath `.keystone/`. Candidate writes use temporary
             └── cpg-bindings.jsonl
 ```
 
+Background worker records are stored as `.keystone/background/<worker>.json`. A
+completed, failed, cancelled, or stale record includes the worker status, worker
+ID, promoted OKF snapshot digest, extraction run ID, canonical scope paths,
+start/completion timestamps, duration, and (when successful) the worker result
+plus its `OkfCanonicalEvidenceEnvelope`. Workers never promote intelligence or
+replace the authoritative snapshot. Superseded runs are marked stale, explicit
+disposal is marked cancelled, and a late old run cannot overwrite a newer
+record with a different snapshot digest or newer start time. Both the coordinator
+and worker-thread writers apply this guard, so a late completion or failure cannot
+overwrite a newer record. A timeout or analysis error is persisted for that worker
+and does not stop the other workers.
+
 The internal OKF snapshot is the authoritative local machine knowledge store. The sibling `okf-bundle/` directory is its validated portable OKF v0.2 projection. There is no second `.keystone/knowledge` database. Graph, search, and CPG are derived projections and shards linked through OKF identity.
 
 Task and handoff state use versioned schemas and integrity checks. Handoff exports are redacted, checksummed, and encrypted; credentials and repository archives are excluded.
@@ -59,7 +73,7 @@ The `summary.json` file provides a high-level overview of the intelligence state
 {
   "version": "2",
   "profileId": "https://keystone.local/okf/profiles/repository-intelligence/v2",
-  "profileVersion": "2.0.0",
+  "profileVersion": "2.1.0",
   "lastRunId": "run-123",
   "lastRunTimestamp": "2026-08-01T12:34:56Z",
   "repository": {
@@ -108,7 +122,7 @@ The `snapshot.json` file contains the latest promoted OKF snapshot.
 {
   "version": "2",
   "profileId": "https://keystone.local/okf/profiles/repository-intelligence/v2",
-  "profileVersion": "2.0.0",
+  "profileVersion": "2.1.0",
   "runId": "run-123",
   "timestamp": "2026-08-01T12:34:56Z",
   "repository": {
@@ -271,7 +285,7 @@ The `manifest.json` file contains metadata about the OKF snapshot.
 {
   "version": "2",
   "profileId": "https://keystone.local/okf/profiles/repository-intelligence/v2",
-  "profileVersion": "2.0.0",
+  "profileVersion": "2.1.0",
   "runId": "run-123",
   "timestamp": "2026-08-01T12:34:56Z",
   "repository": {

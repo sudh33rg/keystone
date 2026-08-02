@@ -13,7 +13,7 @@ export interface IntelligenceRetrievalQuery {
 }
 
 export interface IntelligenceRetrievalResult {
-  readonly mode: "lexical-graph" | "hybrid";
+  readonly mode: "lexical-graph" | "hybrid" | "canonical-okf";
   readonly results: ReadonlyArray<{
     path: string;
     score: number;

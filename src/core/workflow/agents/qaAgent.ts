@@ -1,5 +1,6 @@
 import { DEFAULT_QA_CHECKLIST } from "../../platform/config/defaults";
 import type { ContextPack, QaAnalysis, RepoIntelligence, TestMapping } from "../../domain/types";
+import type { CanonicalContextSelection } from "../../intelligence/okf/canonicalContext";
 import { analyzeRepositoryGraph } from "../../intelligence/pipeline/derivedGraph";
 
 /**
@@ -8,10 +9,25 @@ import { analyzeRepositoryGraph } from "../../intelligence/pipeline/derivedGraph
  * No test-count ceiling is applied.
  */
 export class QaAgent {
-  analyze(pack: ContextPack, intelligence: RepoIntelligence): QaAnalysis {
+  analyze(
+    pack: ContextPack,
+    intelligence: RepoIntelligence,
+    canonical?: CanonicalContextSelection
+  ): QaAnalysis {
     const selectedFiles = pack.relevantFiles.map((file) => file.path);
-    const graphImpact = analyzeRepositoryGraph(intelligence).impactedBy(selectedFiles);
-    const impactedPaths = new Set([...selectedFiles, ...graphImpact.files]);
+    const graphImpact = canonical
+      ? { files: [] as string[], tests: [] as string[] }
+      : analyzeRepositoryGraph(intelligence).impactedBy(selectedFiles);
+    const canonicalImpactPaths = canonical
+      ? canonical.graph.nodes
+          .map((node) => node.path)
+          .filter((value): value is string => Boolean(value))
+      : [];
+    const impactedPaths = new Set([
+      ...selectedFiles,
+      ...graphImpact.files,
+      ...canonicalImpactPaths
+    ]);
     const mapped = intelligence.tests.filter(
       (test) =>
         impactedPaths.has(test.testFile) ||
@@ -30,7 +46,8 @@ export class QaAgent {
           evidencePath: testFile,
           extractorVersion: "qa-impact-v2"
         }
-      }))
+      })),
+      ...(canonical ? canonicalTestMappings(canonical, impactedPaths) : [])
     ]);
     const missingTestAreas =
       impactedTests.length === 0
@@ -47,7 +64,7 @@ export class QaAgent {
       ],
       checklist: [
         ...DEFAULT_QA_CHECKLIST,
-        `Review all ${graphImpact.files.length} graph-impacted file(s).`,
+        `Review all ${canonical ? canonicalImpactPaths.length : graphImpact.files.length} ${canonical ? "OKF graph-impacted" : "graph-impacted"} file(s).`,
         `Run all ${impactedTests.length} mapped or graph-impacted test file(s).`
       ],
       coverageConfidence:
@@ -67,6 +84,30 @@ export class QaAgent {
         "If validation fails, classify the failure, show evidence, and propose the smallest user-approved remediation without weakening tests."
     };
   }
+}
+
+function canonicalTestMappings(
+  canonical: CanonicalContextSelection,
+  impactedPaths: ReadonlySet<string>
+): TestMapping[] {
+  const nodes = new Map(canonical.graph.nodes.map((node) => [node.id, node]));
+  return canonical.graph.edges
+    .filter((edge) => edge.kind === "tests" || edge.kind === "covers")
+    .map((edge) => ({ source: nodes.get(edge.sourceId), target: nodes.get(edge.targetId), edge }))
+    .filter(
+      (item) =>
+        item.source?.kind === "test" &&
+        Boolean(item.source.path) &&
+        Boolean(item.target?.path) &&
+        ((item.source.path ? impactedPaths.has(item.source.path) : false) ||
+          (item.target?.path ? impactedPaths.has(item.target.path) : false))
+    )
+    .map(({ source, target, edge }) => ({
+      testFile: source!.path!,
+      targetFile: target!.path!,
+      confidence: edge.confidence,
+      reason: `Canonical OKF ${edge.kind} relationship links this test to the selected change context; evidence ${edge.evidenceIds.join(", ") || "not recorded"}.`
+    }));
 }
 
 function mergeTests(values: TestMapping[]): TestMapping[] {

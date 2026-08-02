@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import { createHash } from "node:crypto";
+import path from "node:path";
 import { scanFiles } from "../ingestion/fileScanner";
 import type { InsightSeverity, RepositoryInsight, RepositoryInsightReport } from "./model";
 
@@ -176,19 +177,32 @@ const PERFORMANCE_RULES: Rule[] = [
   )
 ];
 
-export async function analyzeRepositorySecurity(root: string): Promise<RepositoryInsightReport> {
-  return analyze(root, "security", SECURITY_RULES);
+export interface RepositoryInsightAnalysisOptions {
+  /** Canonical OKF paths to inspect; an omitted scope preserves full discovery for compatibility. */
+  scopePaths?: readonly string[];
 }
-export async function analyzeRepositoryPerformance(root: string): Promise<RepositoryInsightReport> {
-  return analyze(root, "performance", PERFORMANCE_RULES);
+export async function analyzeRepositorySecurity(
+  root: string,
+  options: RepositoryInsightAnalysisOptions = {}
+): Promise<RepositoryInsightReport> {
+  return analyze(root, "security", SECURITY_RULES, options);
+}
+export async function analyzeRepositoryPerformance(
+  root: string,
+  options: RepositoryInsightAnalysisOptions = {}
+): Promise<RepositoryInsightReport> {
+  return analyze(root, "performance", PERFORMANCE_RULES, options);
 }
 
 async function analyze(
   root: string,
   kind: RepositoryInsightReport["kind"],
-  rules: Rule[]
+  rules: Rule[],
+  options: RepositoryInsightAnalysisOptions
 ): Promise<RepositoryInsightReport> {
-  const scanned = await scanFiles(root);
+  const scanned = options.scopePaths?.length
+    ? await scanSelectedFiles(root, options.scopePaths)
+    : await scanFiles(root);
   const files = scanned.filter((file) => CODE.test(file.path));
   const findings: RepositoryInsight[] = [];
   const safeguards: RepositoryInsightReport["safeguards"] = [];
@@ -273,6 +287,37 @@ async function analyze(
     recommendations,
     truncated: truncated || skippedFiles.length > 0
   };
+}
+
+async function scanSelectedFiles(
+  root: string,
+  scopePaths: readonly string[]
+): Promise<
+  Array<{ path: string; absolutePath: string; sizeBytes: number; modifiedTimeMs: number }>
+> {
+  const workspaceRoot = path.resolve(root);
+  const files = await Promise.all(
+    scopePaths.map(async (value) => {
+      const relativePath = value.replace(/\\/g, "/").replace(/^\.\//, "");
+      const absolutePath = path.resolve(workspaceRoot, relativePath);
+      if (absolutePath !== workspaceRoot && !absolutePath.startsWith(`${workspaceRoot}${path.sep}`))
+        return undefined;
+      try {
+        const stat = await fs.stat(absolutePath);
+        return stat.isFile()
+          ? { path: relativePath, absolutePath, sizeBytes: stat.size, modifiedTimeMs: stat.mtimeMs }
+          : undefined;
+      } catch {
+        return undefined;
+      }
+    })
+  );
+  return files.filter(
+    (
+      file
+    ): file is { path: string; absolutePath: string; sizeBytes: number; modifiedTimeMs: number } =>
+      Boolean(file)
+  );
 }
 
 function rule(

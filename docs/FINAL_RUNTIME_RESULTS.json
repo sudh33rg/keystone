@@ -937,15 +937,15 @@
   },
   "actualProject": {
     "source": "clean copy of current Keystone source/tests/scripts/config; generated state and build outputs excluded",
-    "files": 200,
+    "files": 159,
     "persisted": true,
     "okfValid": true,
-    "indexElapsedMs": 14171,
-    "queryElapsedMs": 214,
-    "intentElapsedMs": 723,
-    "queryResults": 48,
-    "queryTraversals": 24,
-    "okfIntentRetrieval": "okf-compound+lexical-graph",
+    "indexElapsedMs": 10588,
+    "queryElapsedMs": 240,
+    "intentElapsedMs": 1137,
+    "queryResults": 50,
+    "queryTraversals": 30,
+    "okfIntentRetrieval": "okf-compound+canonical-okf",
     "readOnlyGitEvidence": true,
     "copilotCustomizations": {
       "agents": 0,
@@ -1065,5 +1065,5 @@
   "browserAuthenticationAndOriginChecks": true,
   "browserStaleVersionAndReconnectChecks": true,
   "gitPolicy": "read-only",
-  "productionAcceptanceVerifiedAt": "2026-08-02T10:07:04.306Z"
+  "productionAcceptanceVerifiedAt": "2026-08-02T18:52:47.461Z"
 }

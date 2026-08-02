@@ -14,6 +14,7 @@ import type {
   RepositorySymbolKind,
   SourceFile
 } from "./model";
+import type { RepoIntelligence } from "../../domain/types";
 import { IGNORED_DIRECTORIES } from "../../platform/config/defaults";
 
 const LANGUAGE_BY_EXTENSION: Readonly<Record<string, string>> = {
@@ -74,6 +75,92 @@ export class RepositoryModelBuilder {
       directories: this.directoriesFor(repositoryId, absoluteRoot, files),
       files,
       symbols,
+      dependencies,
+      languages: this.languagesFor(files),
+      frameworks: this.frameworksFor(absoluteRoot),
+      buildMetadata: this.buildMetadataFor(repositoryId, absoluteRoot),
+      documentation: this.documentationFor(repositoryId, files)
+    });
+  }
+
+  /**
+   * Rehydrates the legacy modernization model from the promoted structural
+   * snapshot. Background workers use this adapter so they do not perform a
+   * second repository discovery pass after OKF promotion.
+   */
+  buildFromIntelligence(rootPath: string, intelligence: RepoIntelligence): RepositoryModel {
+    const absoluteRoot = path.resolve(rootPath);
+    const repositoryId = stableId("repository", absoluteRoot);
+    const fileIds = new Map(
+      intelligence.files.map((file) => [file.path, stableId("file", repositoryId, file.path)])
+    );
+    const symbolsByFile = new Map<string, RepositorySymbol[]>();
+    for (const symbol of intelligence.symbols) {
+      const fileId = fileIds.get(symbol.filePath);
+      if (!fileId) continue;
+      const value: RepositorySymbol = {
+        id: stableId("symbol", fileId, symbol.name, symbol.kind, String(symbol.line)),
+        repositoryId,
+        fileId,
+        name: symbol.name,
+        kind: repositorySymbolKind(symbol.kind),
+        location: { path: symbol.filePath, line: symbol.line, column: 0 }
+      };
+      symbolsByFile.set(symbol.filePath, [...(symbolsByFile.get(symbol.filePath) ?? []), value]);
+    }
+    const files: SourceFile[] = intelligence.files.map((file) => {
+      const fileId = fileIds.get(file.path)!;
+      const imports = intelligence.dependencies
+        .filter((dependency) => dependency.from === file.path)
+        .map((dependency, index) => ({
+          id: stableId("import", fileId, dependency.to, String(index)),
+          sourceFileId: fileId,
+          sourcePath: file.path,
+          target: dependency.to,
+          line: dependency.evidence?.evidenceLine ?? 1
+        }));
+      return {
+        id: fileId,
+        repositoryId,
+        path: file.path,
+        absolutePath: path.join(absoluteRoot, file.path),
+        language: file.language,
+        checksum: file.contentHash ?? file.structuralHash ?? stableId("content", file.path),
+        size: file.sizeBytes,
+        lineCount: file.lineCount,
+        symbols: symbolsByFile.get(file.path) ?? [],
+        imports
+      };
+    });
+    const dependencies: RepositoryDependency[] = intelligence.dependencies.map(
+      (dependency, index) => ({
+        id: stableId("dependency", repositoryId, dependency.from, dependency.to, String(index)),
+        repositoryId,
+        sourceAssetId: fileIds.get(dependency.from) ?? repositoryId,
+        target: dependency.to,
+        dependencyType: dependency.kind === "package" ? "package" : "import",
+        scope: dependency.kind === "package" ? "runtime" : "unknown",
+        evidence: [dependency.evidence?.evidencePath ?? `${dependency.from}`]
+      })
+    );
+    const version = stableId(
+      "model-version",
+      ...intelligence.files.map((file) => file.contentHash ?? file.structuralHash ?? file.path)
+    );
+    return deepFreeze({
+      id: repositoryId,
+      name: path.basename(absoluteRoot),
+      rootPath: absoluteRoot,
+      type: fs.existsSync(path.join(absoluteRoot, ".git")) ? "git" : "local",
+      version,
+      createdAt: intelligence.indexedAt,
+      git: undefined,
+      modules: this.modulesFor(repositoryId, absoluteRoot, files),
+      packages: this.packagesFor(repositoryId, absoluteRoot),
+      projects: [],
+      directories: this.directoriesFor(repositoryId, absoluteRoot, files),
+      files,
+      symbols: files.flatMap((file) => file.symbols),
       dependencies,
       languages: this.languagesFor(files),
       frameworks: this.frameworksFor(absoluteRoot),
@@ -372,6 +459,14 @@ export class RepositoryModelBuilder {
         checksum: file.checksum
       }));
   }
+}
+
+function repositorySymbolKind(
+  value: RepoIntelligence["symbols"][number]["kind"]
+): RepositorySymbolKind {
+  if (value === "route") return "method";
+  if (value === "unknown") return "variable";
+  return value;
 }
 
 function hash(content: string): string {

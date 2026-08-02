@@ -1,9 +1,14 @@
 import { randomUUID } from "node:crypto";
 
+import {
+  canonicalRetrievalResult,
+  selectCanonicalContext
+} from "../intelligence/okf/canonicalContext";
 import { analyzeRepositoryGraph } from "../intelligence/pipeline/derivedGraph";
 import { buildIntelligenceFindings } from "../intelligence/pipeline/findings";
 import { retrieveRepositoryIntelligence } from "../intelligence/pipeline/retrieval";
 import type { RepoIntelligence } from "../domain/types";
+import type { KeystoneOkfSnapshot } from "../intelligence/okf/types";
 
 export type EnhancementMode = "manual" | "auto";
 export type EnhancementTurn = { role: "user" | "assistant"; content: string; timestamp: string };
@@ -34,6 +39,7 @@ export type EnhanceIntentInput = {
   intelligence: RepoIntelligence;
   currentFile?: string;
   previous?: EnhancementSession;
+  okfSnapshot?: KeystoneOkfSnapshot;
 };
 
 /** Progressively turns vague user language into a repository-grounded engineering intent. */
@@ -48,16 +54,23 @@ export async function enhanceIntent(input: EnhanceIntentInput): Promise<Enhancem
     .filter((turn) => turn.role === "user")
     .map((turn) => turn.content)
     .join("\nFollow-up: ");
-  const graph = analyzeRepositoryGraph(input.intelligence);
-  const findings = buildIntelligenceFindings(input.intelligence, graph);
-  const retrieval = await retrieveRepositoryIntelligence(input.intelligence, graph, findings, {
-    text: conversation,
-    limit: 8,
-    graphDepth: 1
-  });
+  const canonical = input.okfSnapshot
+    ? selectCanonicalContext(input.okfSnapshot, conversation, { queryLimit: 16, graphLimit: 32 })
+    : undefined;
+  const graph = canonical ? undefined : analyzeRepositoryGraph(input.intelligence);
+  const findings = graph ? buildIntelligenceFindings(input.intelligence, graph) : [];
+  const retrieval = canonical
+    ? canonicalRetrievalResult(canonical)
+    : await retrieveRepositoryIntelligence(input.intelligence, graph!, findings, {
+        text: conversation,
+        limit: 8,
+        graphDepth: 1
+      });
   const evidence = [
     ...new Set([
       ...(input.currentFile ? [`active:${input.currentFile}`] : []),
+      ...(canonical?.paths.map((value) => `${value} (canonical OKF evidence)`) ?? []),
+      ...(canonical?.query.items.map((item) => `OKF ${item.label} (${item.reason})`) ?? []),
       ...retrieval.results.map((result) => `${result.path} (${result.reasons.join(", ")})`)
     ])
   ];

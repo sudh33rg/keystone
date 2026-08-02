@@ -1,5 +1,16 @@
 import type { EventBus } from "../../platform/events/EventBus";
-import type { KnowledgePlatformGraph, KnowledgeNode } from "../../intelligence/graph/platformModel";
+/**
+ * Minimal node shape used internally to derive capabilities from repository
+ * modules. Kept local so modernization does not depend on a graph model.
+ */
+interface CapabilitySourceNode {
+  readonly id: string;
+  readonly type: "Module";
+  readonly category: "architecture";
+  readonly title: string;
+  readonly description?: string;
+}
+
 import type { RepositoryDependency, RepositoryModel } from "../../intelligence/repository/model";
 import type { WorkflowPlatformApi } from "../orchestration/workflow-api";
 import type { WorkflowRequest } from "../orchestration/model";
@@ -49,11 +60,10 @@ export class ModernizationPlatformApi {
 
   async assess(
     repository: RepositoryModel,
-    knowledgeGraph?: KnowledgePlatformGraph,
     correlationId?: string
   ): Promise<LegacyAssessmentReport> {
     const metrics = assessmentMetrics(repository);
-    const risks = assessRisks(repository, metrics, knowledgeGraph);
+    const risks = assessRisks(repository, metrics);
     const technicalDebtScore = clamp(
       risks.reduce((sum, risk) => sum + severityWeight(risk.severity) * 8, 0) +
         Math.max(0, metrics.averageFileLines - 200) / 8 +
@@ -103,15 +113,8 @@ export class ModernizationPlatformApi {
     return report;
   }
 
-  async mapCapabilities(
-    repository: RepositoryModel,
-    knowledgeGraph?: KnowledgePlatformGraph
-  ): Promise<readonly BusinessCapability[]> {
-    const nodes =
-      knowledgeGraph?.nodes.filter(
-        (node) => node.type === "Service" || node.type === "Module" || node.type === "Component"
-      ) ?? [];
-    const source = nodes.length > 0 ? nodes : repository.modules.map(moduleToNode);
+  async mapCapabilities(repository: RepositoryModel): Promise<readonly BusinessCapability[]> {
+    const source = repository.modules.map(moduleToNode);
     const capabilities = source.map((node, index) => {
       const assets = assetReferencesFor(node, repository);
       return deepFreeze({
@@ -119,7 +122,7 @@ export class ModernizationPlatformApi {
         name: capabilityName(node.title),
         assets,
         criticality: assets.length > 4 ? "high" : "medium",
-        confidence: round(node.confidence || 0.66)
+        confidence: round(0.6)
       } satisfies BusinessCapability);
     });
     if (capabilities.length > 0) return Object.freeze(capabilities);
@@ -134,13 +137,10 @@ export class ModernizationPlatformApi {
     ]);
   }
 
-  async discoverArchitecture(
-    repository: RepositoryModel,
-    knowledgeGraph?: KnowledgePlatformGraph
-  ): Promise<ArchitectureDiscovery> {
-    const components = buildComponents(repository, knowledgeGraph);
+  async discoverArchitecture(repository: RepositoryModel): Promise<ArchitectureDiscovery> {
+    const components = buildComponents(repository);
     const boundaries = buildBoundaries(repository, components);
-    const style = inferArchitectureStyle(repository, knowledgeGraph, components);
+    const style = inferArchitectureStyle(repository, components);
     return deepFreeze({
       id: `architecture-${repository.id}-${repository.version}`,
       repositoryId: repository.id,
@@ -327,12 +327,9 @@ export class ModernizationPlatformApi {
         `Modernization discovery requires a complete repository scan (${coverage.analyzedFiles}/${coverage.expectedFiles} files indexed)`
       );
     }
-    const assessment = await this.assess(request.repository, request.knowledgeGraph, correlationId);
-    const architecture = await this.discoverArchitecture(
-      request.repository,
-      request.knowledgeGraph
-    );
-    const capabilities = await this.mapCapabilities(request.repository, request.knowledgeGraph);
+    const assessment = await this.assess(request.repository, correlationId);
+    const architecture = await this.discoverArchitecture(request.repository);
+    const capabilities = await this.mapCapabilities(request.repository);
     const architectureRecommendations = this.recommendTargets(assessment, architecture);
     const provisionalTarget = request.targetArchitecture ?? architectureRecommendations[0].target;
     const gaps = await this.analyzeGaps(assessment, provisionalTarget);
@@ -437,12 +434,9 @@ export class ModernizationPlatformApi {
   }
 
   async plan(request: ModernizationRequest, correlationId?: string): Promise<ModernizationPlan> {
-    const assessment = await this.assess(request.repository, request.knowledgeGraph, correlationId);
-    const capabilities = await this.mapCapabilities(request.repository, request.knowledgeGraph);
-    const architecture = await this.discoverArchitecture(
-      request.repository,
-      request.knowledgeGraph
-    );
+    const assessment = await this.assess(request.repository, correlationId);
+    const capabilities = await this.mapCapabilities(request.repository);
+    const architecture = await this.discoverArchitecture(request.repository);
     const targetArchitecture =
       request.targetArchitecture ?? defaultTargetArchitecture(request.repository, architecture);
     const gaps = await this.analyzeGaps(assessment, targetArchitecture);
@@ -765,8 +759,7 @@ function assessmentMetrics(repository: RepositoryModel): LegacyAssessmentMetrics
 
 function assessRisks(
   repository: RepositoryModel,
-  metrics: LegacyAssessmentMetrics,
-  graph?: KnowledgePlatformGraph
+  metrics: LegacyAssessmentMetrics
 ): readonly ModernizationRisk[] {
   const risks: ModernizationRisk[] = [];
   if (metrics.tests === 0) {
@@ -825,22 +818,20 @@ function assessRisks(
       )
     );
   }
-  const weakArchitecture =
-    !graph || graph.nodes.filter((node) => node.category === "architecture").length === 0;
-  if (weakArchitecture) {
-    risks.push(
-      risk(
-        "architecture-unknowns",
-        "architecture",
-        "Architecture boundaries are not explicitly modeled.",
-        "medium",
-        0.6,
-        "high",
-        ["Run architecture discovery and require review for boundary changes"],
-        ["Knowledge graph architecture nodes absent or unavailable"]
-      )
-    );
-  }
+  // Architecture boundaries are not modeled by the repository model on its own,
+  // so this risk is always reported until an explicit boundary source exists.
+  risks.push(
+    risk(
+      "architecture-unknowns",
+      "architecture",
+      "Architecture boundaries are not explicitly modeled.",
+      "medium",
+      0.6,
+      "high",
+      ["Run architecture discovery and require review for boundary changes"],
+      ["No explicit architecture boundary model is available"]
+    )
+  );
   if (repository.frameworks.some((framework) => framework.category === "database")) {
     risks.push(
       risk(
@@ -915,22 +906,20 @@ function moduleToNode(module: {
   readonly id: string;
   readonly name: string;
   readonly path: string;
-}): KnowledgeNode {
+}): CapabilitySourceNode {
   return {
     id: module.id,
     type: "Module",
     category: "architecture",
     title: module.name,
-    description: module.path,
-    metadata: {},
-    confidence: 0.6,
-    version: 1,
-    lifecycle: "created",
-    evidence: []
+    description: module.path
   };
 }
 
-function assetReferencesFor(node: KnowledgeNode, repository: RepositoryModel): readonly string[] {
+function assetReferencesFor(
+  node: CapabilitySourceNode,
+  repository: RepositoryModel
+): readonly string[] {
   const title = node.title.toLowerCase();
   const matched = repository.files
     .filter(
@@ -946,30 +935,7 @@ function capabilityName(title: string): string {
   return title.replace(/[-_]/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-function buildComponents(
-  repository: RepositoryModel,
-  graph?: KnowledgePlatformGraph
-): readonly ArchitectureComponent[] {
-  const graphComponents =
-    graph?.nodes.filter(
-      (node) => node.type === "Service" || node.type === "Component" || node.type === "Module"
-    ) ?? [];
-  if (graphComponents.length > 0) {
-    return Object.freeze(
-      graphComponents.map((node) =>
-        deepFreeze({
-          id: `component-${node.id}`,
-          name: node.title,
-          kind:
-            node.type === "Service" ? "service" : node.type === "Package" ? "package" : "module",
-          assets: assetReferencesFor(node, repository),
-          dependencies:
-            graph?.edges.filter((edge) => edge.sourceId === node.id).map((edge) => edge.targetId) ??
-            []
-        } satisfies ArchitectureComponent)
-      )
-    );
-  }
+function buildComponents(repository: RepositoryModel): readonly ArchitectureComponent[] {
   const directories = repository.directories
     .filter((dir) => !dir.parentPath || dir.parentPath === ".")
     .slice(0, 12);
@@ -1031,15 +997,8 @@ function buildBoundaries(
 
 function inferArchitectureStyle(
   repository: RepositoryModel,
-  graph: KnowledgePlatformGraph | undefined,
   components: readonly ArchitectureComponent[]
 ): ArchitectureDiscovery["style"] {
-  if (
-    graph?.edges.some(
-      (edge) => edge.relationship === "Publishes" || edge.relationship === "Consumes"
-    )
-  )
-    return "event-driven";
   if (components.filter((component) => component.kind === "service").length > 1)
     return "service-oriented";
   if (

@@ -12,6 +12,10 @@ import {
 import { LanguageCapabilityRegistry } from "../../intelligence/languages/languageRegistry";
 import type {
   ContextPack,
+  ContextPacketPayload,
+  ContextPacketSegmentKind,
+  CorrectionPacket,
+  CorrectionPacketReason,
   DeveloperIntent,
   KeystoneRunResult,
   RepoIntelligence
@@ -51,15 +55,20 @@ import {
 } from "../../workflow/tasks/taskWorkspaceManager";
 import type { TaskStatePackage } from "../../workflow/handoff/contracts";
 import { OkfSnapshotStore, type OkfSnapshotSummaryProjection } from "../../intelligence/okf/store";
-import { queryOkfSnapshot } from "../../intelligence/okf/queryEngine";
+import { queryOkfSnapshot, type OkfQueryResult } from "../../intelligence/okf/queryEngine";
+import type {
+  KeystoneOkfSnapshot,
+  OkfCanonicalEvidenceEnvelope
+} from "../../intelligence/okf/types";
+import {
+  canonicalEvidenceEnvelope,
+  selectCanonicalContext,
+  type CanonicalContextSelection
+} from "../../intelligence/okf/canonicalContext";
 import { PORTABLE_OKF_VERSION } from "../../intelligence/okf/bundle";
 import { GitReadOnly } from "../../platform/git/gitReadOnly";
-import {
-  analyzeRepositoryPerformance,
-  analyzeRepositorySecurity
-} from "../../intelligence/analysis";
 import type { RepositoryInsightReport } from "../../intelligence/analysis/model";
-import { createGapAnalyzer, type GapAnalysisResult } from "../../workflow/quality/qaGapAnalysis";
+import type { GapAnalysisResult } from "../../workflow/quality/qaGapAnalysis";
 import type { SemanticEnrichmentProvider } from "../../intelligence/languages/semanticEnrichment";
 import {
   discoverCopilotCustomizations,
@@ -90,10 +99,12 @@ const MANIFEST_PATH = `${INTELLIGENCE_DIR}/manifest.json`;
 const ACTIVITY_PATH = `${INTELLIGENCE_DIR}/activity.json`;
 const SETTINGS_PATH = ".keystone/settings.json";
 const CONTEXT_CACHE_DIR = ".keystone/context/cache";
-const CONTEXT_PACKET_VERSION = 2;
+const CONTEXT_PACKET_VERSION = 4;
 const CONTEXT_EVALUATIONS_PATH = ".keystone/context/evaluations.json";
 const ENHANCEMENT_SESSIONS_DIR = ".keystone/context/sessions";
 const CONTEXT_FEEDBACK_PATH = ".keystone/context/feedback.json";
+const QUERY_CACHE_DIR = ".keystone/cache/query";
+const GRAPH_CACHE_DIR = ".keystone/cache/graph";
 
 export class CockpitService {
   private cancelled = false;
@@ -103,6 +114,10 @@ export class CockpitService {
   private readonly taskWorkspaces: TaskWorkspaceManager;
   private activeTaskWorkspace?: TaskWorkspaceRef;
   private activityWrite: Promise<void> = Promise.resolve();
+  private okfSnapshotCache?: KeystoneOkfSnapshot;
+  private okfSnapshotDigest?: string;
+  private readonly queryCache = new Map<string, OkfQueryResult>();
+  private readonly graphCache = new Map<string, IntelligenceGraphResult>();
 
   constructor(
     private readonly workspaceRoot: string,
@@ -112,6 +127,63 @@ export class CockpitService {
     } = {}
   ) {
     this.taskWorkspaces = new TaskWorkspaceManager(workspaceRoot);
+  }
+
+  private async readOkfSnapshot(): Promise<KeystoneOkfSnapshot | undefined> {
+    const store = new OkfSnapshotStore(this.workspaceRoot);
+    const manifest = await store.readManifest();
+    if (!manifest) {
+      this.invalidateOkfCaches();
+      return undefined;
+    }
+    const digest = manifest.digests.snapshot ?? manifest.extractionRunId;
+    if (this.okfSnapshotCache && this.okfSnapshotDigest === digest) return this.okfSnapshotCache;
+    const snapshot = await store.read();
+    if (!snapshot) {
+      this.invalidateOkfCaches();
+      return undefined;
+    }
+    if (this.okfSnapshotDigest !== digest) {
+      this.queryCache.clear();
+      this.graphCache.clear();
+    }
+    this.okfSnapshotDigest = digest;
+    this.okfSnapshotCache = snapshot;
+    return snapshot;
+  }
+
+  private invalidateOkfCaches(): void {
+    this.okfSnapshotCache = undefined;
+    this.okfSnapshotDigest = undefined;
+    this.queryCache.clear();
+    this.graphCache.clear();
+  }
+
+  private okfCacheKey(
+    snapshot: KeystoneOkfSnapshot,
+    kind: "query" | "graph",
+    input: Record<string, unknown>
+  ): string {
+    const normalizedInput = {
+      ...input,
+      ...(typeof input.query === "string"
+        ? { query: input.query.trim().replace(/\s+/g, " ").toLowerCase() }
+        : {})
+    };
+    return createHash("sha256")
+      .update(
+        JSON.stringify({
+          snapshot: snapshot.manifest.digests.snapshot ?? snapshot.manifest.extractionRunId,
+          kind,
+          input: normalizedInput
+        })
+      )
+      .digest("hex");
+  }
+
+  private remember<T>(cache: Map<string, T>, key: string, value: T): void {
+    if (!cache.has(key) && cache.size >= 64) cache.delete(cache.keys().next().value!);
+    cache.set(key, value);
   }
 
   cancelIngestion(): void {
@@ -128,6 +200,9 @@ export class CockpitService {
     const intelligence =
       snapshot?.intelligence ?? (await this.readJson<RepoIntelligence>(SUMMARY_PATH));
     const okf = await new OkfSnapshotStore(this.workspaceRoot).readSummaryProjection();
+    const currentSnapshotDigest = okf
+      ? (okf.manifest.digests.snapshot ?? okf.manifest.digests.okf ?? okf.manifest.extractionRunId)
+      : undefined;
     const portableOkf = await this.readJson<PortableOkfBundleManifest>(
       `${INTELLIGENCE_DIR}/okf-bundle/.keystone-bundle.json`
     );
@@ -147,10 +222,76 @@ export class CockpitService {
     const backgroundAnalysis = Object.fromEntries(
       backgroundEntries.filter((entry) => entry[1] !== undefined)
     );
+    const backgroundWorkers = Object.fromEntries(
+      backgroundEntries
+        .filter((entry) => entry[1] !== undefined)
+        .map(([name, value]) => {
+          const record = value as {
+            status?: string;
+            workerStatus?: string;
+            error?: string;
+            canonicalEvidence?: unknown;
+            generatedAt?: string;
+            workerId?: string;
+            snapshotDigest?: string;
+            extractionRunId?: string;
+            scopePaths?: string[];
+            startedAt?: string;
+            completedAt?: string;
+            durationMs?: number;
+            reason?: string;
+          };
+          const storedStatus =
+            record.workerStatus ?? (record.status === "failed" ? "failed" : "complete");
+          const stale =
+            storedStatus === "complete" &&
+            Boolean(
+              currentSnapshotDigest &&
+              record.snapshotDigest &&
+              record.snapshotDigest !== currentSnapshotDigest
+            );
+          const status = stale ? "stale" : storedStatus;
+          const failed = status === "failed";
+          const inactive = status !== "complete";
+          return [
+            name,
+            {
+              status,
+              progress: inactive ? 0 : 100,
+              message: stale
+                ? `${name} worker result is stale; a newer promoted OKF snapshot is active.`
+                : failed
+                  ? (record.error ?? `${name} background worker failed.`)
+                  : status === "cancelled"
+                    ? (record.reason ?? `${name} background worker was cancelled.`)
+                    : `${name} background worker result restored from disk.`,
+              error: stale ? (record.reason ?? "Worker result is stale.") : record.error,
+              result: stale ? undefined : value,
+              canonicalEvidence: stale ? undefined : record.canonicalEvidence,
+              workerId: record.workerId,
+              snapshotDigest: record.snapshotDigest,
+              extractionRunId: record.extractionRunId,
+              scopePaths: record.scopePaths,
+              startedAt: record.startedAt,
+              completedAt: record.completedAt,
+              durationMs: record.durationMs,
+              updatedAt: record.generatedAt ?? new Date().toISOString()
+            }
+          ];
+        })
+    );
     const settings = await this.readJson<CockpitSettings>(SETTINGS_PATH);
     const activeTask = this.activeTaskWorkspace
       ? await this.taskWorkspaces.snapshot(this.activeTaskWorkspace)
       : undefined;
+    const latestCorrectionPacket = this.activeTaskWorkspace
+      ? await this.taskWorkspaces.latestCorrectionPacket(this.activeTaskWorkspace)
+      : undefined;
+    const snapshotDigest = currentSnapshotDigest;
+    const activeCorrectionPacket =
+      latestCorrectionPacket && snapshotDigest === latestCorrectionPacket.snapshotDigest
+        ? latestCorrectionPacket
+        : undefined;
     if (modernizationProposal) this.modernization.restoreProposal(modernizationProposal);
     const degraded = snapshot?.status === "degraded";
     return {
@@ -174,8 +315,10 @@ export class CockpitService {
       modernizationProposal,
       modernizationPlan,
       backgroundAnalysis,
+      backgroundWorkers,
       settings,
-      activeTask
+      activeTask,
+      correctionPacket: activeCorrectionPacket
     };
   }
 
@@ -185,7 +328,8 @@ export class CockpitService {
       progress: number,
       stage: string,
       workerPool?: IntelligenceWorkerPoolProgress
-    ) => void
+    ) => void,
+    affectedPaths: readonly string[] = []
   ): Promise<KeystoneWebviewState> {
     const generation = ++this.runGeneration;
     // Clear cancelled flag BEFORE building controller so concurrent
@@ -208,7 +352,13 @@ export class CockpitService {
       await this.recordBestEffort("warning", warning, 4.8);
     }
     await this.recordBestEffort("indexing", "Repository ingestion started.", 5);
-    onProgress("Scanning repository files without LLM calls...", 12, "scanning");
+    onProgress(
+      affectedPaths.length
+        ? `Refreshing ${affectedPaths.length} changed/affected path(s) while reconciling the canonical snapshot...`
+        : "Scanning repository files without LLM calls...",
+      12,
+      "scanning"
+    );
     // Ensure no cancellation race: before the expensive work, re-check.
     if (this.cancelled) return this.cancelledState();
     let snapshot: RepositoryIntelligenceSnapshot;
@@ -218,6 +368,7 @@ export class CockpitService {
         cognitive: true,
         semanticEnricher: this.runtime.semanticEnricher,
         maxWorkers: this.runtime.maxWorkers,
+        affectedPaths,
         onWarning: (warning) => {
           onProgress(`Warning: ${warning}`, 4.8, "structural");
           void this.recordBestEffort("warning", warning, 4.8);
@@ -261,6 +412,7 @@ export class CockpitService {
     }
     // After the expensive operation: check both guards.
     if (this.cancelled || generation !== this.runGeneration) return this.cancelledState();
+    this.invalidateOkfCaches();
     const okf = await new OkfSnapshotStore(this.workspaceRoot).readSummaryProjection();
     const portableOkf = await this.readJson<PortableOkfBundleManifest>(
       `${INTELLIGENCE_DIR}/okf-bundle/.keystone-bundle.json`
@@ -340,6 +492,11 @@ export class CockpitService {
       throw new Error(
         "Repository intelligence is not ready. Wait for background indexing to finish."
       );
+    const canonicalSnapshot = await this.readOkfSnapshot();
+    if (!canonicalSnapshot)
+      throw new Error(
+        "The canonical OKF snapshot is not ready. Wait for intelligence promotion to finish."
+      );
     const gitDiff = await this.gitDiff();
     const copilotCustomizations = await discoverCopilotCustomizations(this.workspaceRoot);
     const customizationFingerprint = createHash("sha256")
@@ -347,6 +504,12 @@ export class CockpitService {
       .digest("hex");
     const feedback = (await this.readJson<ContextFeedback[]>(CONTEXT_FEEDBACK_PATH)) ?? [];
     const learnedFeedback = feedbackForIntent(text, feedback);
+    const okfManifest = canonicalSnapshot.manifest;
+    const canonicalSnapshotDigest =
+      okfManifest?.digests.snapshot ??
+      okfManifest?.extractionRunId ??
+      snapshot?.ingestion.inputFingerprint ??
+      intelligence.indexedAt;
     const cacheKey = createHash("sha256")
       .update(
         JSON.stringify({
@@ -355,7 +518,7 @@ export class CockpitService {
           currentFile: editorContext.currentFile,
           gitDiff: createHash("sha256").update(gitDiff).digest("hex"),
           feedback: learnedFeedback,
-          fingerprint: snapshot?.ingestion.inputFingerprint ?? intelligence.indexedAt,
+          fingerprint: canonicalSnapshotDigest,
           customizationFingerprint,
           settings: {
             compressionTier: settings?.compressionTier,
@@ -365,9 +528,13 @@ export class CockpitService {
         })
       )
       .digest("hex");
-    const cached = await this.readJson<{ createdAt: string; result: KeystoneTaskResult }>(
-      `${CONTEXT_CACHE_DIR}/${cacheKey}.json`
-    );
+    const cached = await this.readJson<{
+      createdAt: string;
+      result: KeystoneTaskResult;
+      contextPacketPayloads?: NonNullable<ContextPack["contextPacketPayloads"]>;
+      contextPackId?: string;
+      contextSnapshotDigest?: string;
+    }>(`${CONTEXT_CACHE_DIR}/${cacheKey}.json`);
     if (cached && Date.now() - Date.parse(cached.createdAt) < 24 * 60 * 60 * 1000) {
       const detected = await detectValidationCommands(this.workspaceRoot);
       const result = ensureTaskResearch(text, {
@@ -381,21 +548,30 @@ export class CockpitService {
       if (!cached.result.researchDocument || !cached.result.intentId)
         await this.writeJson(`${CONTEXT_CACHE_DIR}/${cacheKey}.json`, {
           createdAt: cached.createdAt,
-          result
+          result,
+          contextPacketPayloads: cached.contextPacketPayloads ?? [],
+          contextPackId: cached.contextPackId,
+          contextSnapshotDigest:
+            cached.contextSnapshotDigest ?? result.contextManifest?.snapshotDigest
         });
       await this.record(
         "context-cache-hit",
         `Reused intent context ${cacheKey.slice(0, 12)} with ${result.contextTokens?.prompt ?? 0} prompt tokens and pre-plan R&D ${result.researchDocument.id}.`
       );
       await this.recordEvaluation(text, result);
-      return this.materializeTaskWorkspace(text, result);
+      return this.materializeTaskWorkspace(text, result, {
+        contextPacketPayloads: cached.contextPacketPayloads ?? [],
+        contextPackId: cached.contextPackId,
+        contextSnapshotDigest:
+          cached.contextSnapshotDigest ?? result.contextManifest?.snapshotDigest
+      });
     }
     const retrievalText: string | undefined = undefined;
     // Keep the authoritative OKF snapshot scoped only to context construction. On a real
     // repository it can be tens of MB on disk and substantially larger in memory. Releasing
     // it before QA/security/performance/modernization prevents extension-host memory spikes.
     const run = await (async () => {
-      const okfSnapshot = await new OkfSnapshotStore(this.workspaceRoot).read();
+      const okfSnapshot = canonicalSnapshot;
       return new CaptainAgent().run(intent, intelligence, {
         compressionTier: settings?.compressionTier ?? "standard",
         codingStandards: settings?.codingStandards,
@@ -420,7 +596,9 @@ export class CockpitService {
     );
     const analysisEvidence = await this.loadTaskAnalysisEvidence(
       run.contextPack.relevantFiles.map((file) => file.path),
-      gitDiff
+      gitDiff,
+      snapshot ?? { findings: [], intelligence },
+      run
     );
     const testGeneration = await generateTests({
       feature: text,
@@ -442,19 +620,28 @@ export class CockpitService {
     });
     await this.writeJson(`${CONTEXT_CACHE_DIR}/${cacheKey}.json`, {
       createdAt: new Date().toISOString(),
-      result
+      result,
+      contextPacketPayloads: run.contextPack.contextPacketPayloads ?? [],
+      contextPackId: run.contextPack.id,
+      contextSnapshotDigest: run.contextPack.contextManifest?.snapshotDigest
     });
     await this.record(
       "intent-research-ready",
       `Pre-plan R&D ${result.researchDocument.id} is ready for review before SDLC planning.`
     );
     await this.recordEvaluation(text, result);
-    return this.materializeTaskWorkspace(text, result);
+    return this.materializeTaskWorkspace(text, result, {
+      contextPacketPayloads: run.contextPack.contextPacketPayloads ?? [],
+      contextPackId: run.contextPack.id,
+      contextSnapshotDigest: run.contextPack.contextManifest?.snapshotDigest
+    });
   }
 
   private async loadTaskAnalysisEvidence(
     relevantFiles: readonly string[],
-    gitDiff: string
+    gitDiff: string,
+    repositorySnapshot: Pick<RepositoryIntelligenceSnapshot, "findings" | "intelligence">,
+    run: KeystoneRunResult
   ): Promise<NonNullable<KeystoneTaskResult["analysisEvidence"]>> {
     const relevant = new Set(relevantFiles.map(normalizeWorkspacePath));
     const [qaCached, securityCached, performanceCached, modernizationCached] = await Promise.all([
@@ -463,55 +650,6 @@ export class CockpitService {
       this.readJson<RepositoryInsightReport>(".keystone/background/performance.json"),
       this.readJson<ModernizationProposal>(".keystone/background/modernization.json")
     ]);
-    // Missing repository evidence is intentionally produced with bounded concurrency. These
-    // analyzers each scan the workspace; running all of them together duplicates file buffers
-    // and can starve the VS Code extension host on medium/large repositories.
-    const qa =
-      qaCached ?? (await createGapAnalyzer({ workspaceRoot: this.workspaceRoot }).analyzeQuick());
-    const security =
-      securityCached?.kind === "security"
-        ? securityCached
-        : await analyzeRepositorySecurity(this.workspaceRoot);
-    const performance =
-      performanceCached?.kind === "performance"
-        ? performanceCached
-        : await analyzeRepositoryPerformance(this.workspaceRoot);
-    const modernization =
-      modernizationCached?.status === "awaiting-user-decision"
-        ? modernizationCached
-        : await this.modernization.propose({
-            repository: new RepositoryModelBuilder().build(this.workspaceRoot)
-          });
-    await Promise.all([
-      qaCached ? Promise.resolve() : this.writeJson(".keystone/background/qa.json", qa),
-      securityCached?.kind === "security"
-        ? Promise.resolve()
-        : this.writeJson(".keystone/background/security.json", security),
-      performanceCached?.kind === "performance"
-        ? Promise.resolve()
-        : this.writeJson(".keystone/background/performance.json", performance),
-      modernizationCached?.status === "awaiting-user-decision"
-        ? Promise.resolve()
-        : this.writeJson(".keystone/background/modernization.json", modernization)
-    ]);
-
-    const relevantInsight = (report: RepositoryInsightReport) =>
-      report.findings.filter(
-        (finding) => relevant.size === 0 || relevant.has(normalizeWorkspacePath(finding.path))
-      );
-    const securityFindings = relevantInsight(security);
-    const performanceFindings = relevantInsight(performance);
-    const qaGaps = qa.gaps.filter(
-      (gap) =>
-        relevant.size === 0 ||
-        relevant.has(
-          normalizeWorkspacePath(
-            path.isAbsolute(gap.filePath)
-              ? path.relative(this.workspaceRoot, gap.filePath)
-              : gap.filePath
-          )
-        )
-    );
     const git = new GitReadOnly(this.workspaceRoot);
     const [branch, status] = await Promise.all([git.branch(), git.status()]);
     const changedFiles = [
@@ -525,26 +663,206 @@ export class CockpitService {
       )
     ];
     const signalPaths = new Set([...relevant, ...changedFiles]);
-    const graphProjection = await new OkfSnapshotStore(this.workspaceRoot).readGraphProjection();
-    const securitySignals = taskIntelligenceSignals(graphProjection, signalPaths, "security");
-    const performanceSignals = taskIntelligenceSignals(graphProjection, signalPaths, "performance");
-    const diffHash = createHash("sha256").update(gitDiff).digest("hex");
-    const diffArtifactPath = ".keystone/reviews/latest-read-only.diff";
-    await this.writeText(diffArtifactPath, gitDiff);
-    return {
-      qa: {
-        scanMode: qa.scanMode,
-        gaps: qaGaps.map((gap) => ({
-          type: gap.type,
-          path: normalizeWorkspacePath(
+    const okfStore = new OkfSnapshotStore(this.workspaceRoot);
+    const graphProjection = await okfStore.readGraphProjection();
+    const canonicalSnapshot = await this.readOkfSnapshot();
+    if (!canonicalSnapshot)
+      throw new Error(
+        "The canonical OKF snapshot is not ready. Wait for intelligence promotion to finish."
+      );
+    const canonicalSelection = selectCanonicalContext(
+      canonicalSnapshot,
+      [...signalPaths].join(" "),
+      {
+        graphMode: "impact",
+        graphLimit: 120,
+        preferredPaths: [...signalPaths]
+      }
+    );
+    const sharedCanonicalEvidence = canonicalEvidenceEnvelope(
+      canonicalSnapshot,
+      canonicalSelection
+    );
+    const persistedCanonicalEvidence = (
+      value: unknown
+    ): OkfCanonicalEvidenceEnvelope | undefined => {
+      if (!value || typeof value !== "object") return undefined;
+      const candidate = (value as { canonicalEvidence?: unknown }).canonicalEvidence;
+      if (!candidate || typeof candidate !== "object") return undefined;
+      const envelope = candidate as Partial<OkfCanonicalEvidenceEnvelope>;
+      return envelope.snapshotDigest &&
+        envelope.extractionRunId &&
+        Array.isArray(envelope.unitIds) &&
+        Array.isArray(envelope.relationshipIds) &&
+        Array.isArray(envelope.evidenceIds) &&
+        Array.isArray(envelope.paths) &&
+        envelope.generatedAt
+        ? (candidate as OkfCanonicalEvidenceEnvelope)
+        : undefined;
+    };
+    const promotedDigest =
+      canonicalSnapshot.manifest.digests.snapshot ?? canonicalSnapshot.manifest.extractionRunId;
+    const promotedRun = canonicalSnapshot.manifest.extractionRunId;
+    const isCurrentWorkerArtifact = (value: unknown): boolean => {
+      const envelope = persistedCanonicalEvidence(value);
+      return Boolean(
+        envelope &&
+        envelope.snapshotDigest === promotedDigest &&
+        envelope.extractionRunId === promotedRun
+      );
+    };
+    const qaIsCurrent = Boolean(qaCached && isCurrentWorkerArtifact(qaCached));
+    const securityIsCurrent = Boolean(securityCached && isCurrentWorkerArtifact(securityCached));
+    const performanceIsCurrent = Boolean(
+      performanceCached && isCurrentWorkerArtifact(performanceCached)
+    );
+    const modernizationIsCurrent = Boolean(
+      modernizationCached && isCurrentWorkerArtifact(modernizationCached)
+    );
+    const pendingWorkers = [
+      !qaIsCurrent && "qa",
+      !securityIsCurrent && "security",
+      !performanceIsCurrent && "performance",
+      !modernizationIsCurrent && "modernization"
+    ].filter((value): value is string => Boolean(value));
+    if (pendingWorkers.length)
+      await this.record(
+        "background-worker-evidence-pending",
+        `Canonical task analysis supplied evidence while ${pendingWorkers.join(", ")} worker artifact(s) await the promoted snapshot ${promotedDigest.slice(0, 12)}….`
+      );
+
+    const relevantInsight = (report: RepositoryInsightReport) =>
+      report.findings.filter(
+        (finding) => relevant.size === 0 || relevant.has(normalizeWorkspacePath(finding.path))
+      );
+    const canonicalFindings = (
+      category: "security" | "performance",
+      fallbackRisk: string
+    ): Array<{
+      id: string;
+      severity: string;
+      title: string;
+      path: string;
+      line: number;
+      explanation: string;
+      remediation: string;
+      confidence: number;
+    }> => {
+      const findings = repositorySnapshot.findings
+        .filter(
+          (finding) =>
+            finding.category === category &&
+            (!finding.filePath ||
+              relevant.size === 0 ||
+              relevant.has(normalizeWorkspacePath(finding.filePath)))
+        )
+        .map((finding) => ({
+          id: finding.id,
+          severity: String(finding.severity),
+          title: finding.title,
+          path: normalizeWorkspacePath(finding.filePath ?? "workspace"),
+          line: 0,
+          explanation: finding.description,
+          remediation: finding.remediation,
+          confidence: finding.confidence
+        }));
+      if (!findings.length && fallbackRisk !== "low")
+        findings.push({
+          id: `${category}-canonical-summary`,
+          severity: fallbackRisk,
+          title: `Canonical ${category} summary`,
+          path: relevantFiles[0] ?? "workspace",
+          line: 0,
+          explanation: `${fallbackRisk} risk was reported by the canonical task agent.`,
+          remediation: `Review the selected OKF ${category} evidence before delegation.`,
+          confidence: 0.65
+        });
+      return findings;
+    };
+    const securityFindings = securityIsCurrent
+      ? relevantInsight(securityCached!)
+      : canonicalFindings("security", run.security.riskLevel);
+    const performanceFindings = performanceIsCurrent
+      ? relevantInsight(performanceCached!)
+      : canonicalFindings("performance", run.performance.riskLevel);
+    const rawQaGaps = qaIsCurrent
+      ? qaCached!.gaps
+      : run.qa.missingTestAreas.map((reason, index) => ({
+          type: "no-coverage-data",
+          filePath: relevantFiles[index] ?? relevantFiles[0] ?? "workspace",
+          severity: 0.35,
+          reason: `Canonical OKF task analysis: ${reason}`
+        }));
+    const qaGaps = rawQaGaps.filter(
+      (gap) =>
+        relevant.size === 0 ||
+        relevant.has(
+          normalizeWorkspacePath(
             path.isAbsolute(gap.filePath)
               ? path.relative(this.workspaceRoot, gap.filePath)
               : gap.filePath
-          ),
-          severity: gap.severity,
-          reason: gap.reason
-        })),
-        recommendations: qa.recommendations
+          )
+        )
+    );
+    const modernizationGaps = modernizationIsCurrent
+      ? modernizationCached!.gaps
+      : repositorySnapshot.findings
+          .filter(
+            (finding) =>
+              finding.category === "modernization" &&
+              (!finding.filePath || relevant.size === 0 || relevant.has(finding.filePath))
+          )
+          .map((finding) => ({
+            id: finding.id,
+            area: "code",
+            title: finding.title,
+            priority: finding.severity,
+            evidence: [...finding.evidence]
+          }))
+          .concat(
+            run.modernization.candidates.map((candidate, index) => ({
+              id: `canonical-modernization-${index + 1}`,
+              area: "code",
+              title: candidate,
+              priority: run.modernization.riskLevel,
+              evidence: ["Canonical OKF task selection"]
+            }))
+          );
+    const canonicalEvidence = Object.fromEntries(
+      (
+        [
+          ["qa", qaIsCurrent ? persistedCanonicalEvidence(qaCached) : undefined],
+          ["security", securityIsCurrent ? persistedCanonicalEvidence(securityCached) : undefined],
+          [
+            "performance",
+            performanceIsCurrent ? persistedCanonicalEvidence(performanceCached) : undefined
+          ],
+          [
+            "modernization",
+            modernizationIsCurrent ? persistedCanonicalEvidence(modernizationCached) : undefined
+          ]
+        ] as const
+      )
+        .map(([name, evidence]) => [name, evidence ?? sharedCanonicalEvidence] as const)
+        .filter(
+          (
+            entry
+          ): entry is readonly [
+            "qa" | "security" | "performance" | "modernization",
+            OkfCanonicalEvidenceEnvelope
+          ] => Boolean(entry[1])
+        )
+    );
+    const securitySignals = mergeTaskIntelligenceSignals(
+      taskIntelligenceSignals(graphProjection, signalPaths, "security"),
+      canonicalTaskIntelligenceSignals(canonicalSelection, signalPaths, "security")
+    );
+    const performanceSignals = mergeTaskIntelligenceSignals(
+      taskIntelligenceSignals(graphProjection, signalPaths, "performance"),
+      canonicalTaskIntelligenceSignals(canonicalSelection, signalPaths, "performance")
+    );
+    const qaRecommendations = qaIsCurrent
+      ? qaCached!.recommendations
           .filter(
             (item) =>
               !item.affectedFiles?.length ||
@@ -557,9 +875,34 @@ export class CockpitService {
               )
           )
           .map((item) => `${item.priority}: ${item.title} — ${item.description}`)
+      : [
+          ...run.qa.recommendedTests,
+          "Background QA worker evidence is pending; this task result remains bounded to the promoted OKF selection."
+        ];
+    const diffHash = createHash("sha256").update(gitDiff).digest("hex");
+    const diffArtifactPath = ".keystone/reviews/latest-read-only.diff";
+    await this.writeText(diffArtifactPath, gitDiff);
+    return {
+      canonicalEvidence,
+      qa: {
+        scanMode: qaIsCurrent ? qaCached!.scanMode : "canonical-okf",
+        gaps: qaGaps.map((gap) => ({
+          type: gap.type,
+          path: normalizeWorkspacePath(
+            path.isAbsolute(gap.filePath)
+              ? path.relative(this.workspaceRoot, gap.filePath)
+              : gap.filePath
+          ),
+          severity: gap.severity,
+          reason: gap.reason
+        })),
+        recommendations: qaRecommendations
       },
       security: {
-        riskLevel: riskLevelForFindings(securityFindings, security.riskLevel),
+        riskLevel: riskLevelForFindings(
+          securityFindings,
+          securityIsCurrent ? securityCached!.riskLevel : run.security.riskLevel
+        ),
         findings: securityFindings.map((item) => ({
           id: item.id,
           severity: item.severity,
@@ -573,7 +916,10 @@ export class CockpitService {
         intelligenceSignals: securitySignals
       },
       performance: {
-        riskLevel: riskLevelForFindings(performanceFindings, performance.riskLevel),
+        riskLevel: riskLevelForFindings(
+          performanceFindings,
+          performanceIsCurrent ? performanceCached!.riskLevel : run.performance.riskLevel
+        ),
         findings: performanceFindings.map((item) => ({
           id: item.id,
           severity: item.severity,
@@ -587,9 +933,11 @@ export class CockpitService {
         intelligenceSignals: performanceSignals
       },
       modernization: {
-        proposalId: modernization.id,
-        coveragePercent: modernization.scanCoverage.coveragePercent,
-        gaps: modernization.gaps.map((gap) => ({
+        proposalId: modernizationIsCurrent ? modernizationCached!.id : undefined,
+        coveragePercent: modernizationIsCurrent
+          ? modernizationCached!.scanCoverage.coveragePercent
+          : 0,
+        gaps: modernizationGaps.map((gap) => ({
           id: gap.id,
           area: gap.area,
           title: gap.title,
@@ -635,7 +983,19 @@ export class CockpitService {
           `${ENHANCEMENT_SESSIONS_DIR}/${safeId(sessionId)}.json`
         )
       : undefined;
-    const session = await enhanceIntent({ text, mode, intelligence, currentFile, previous });
+    const okfSnapshot = await this.readOkfSnapshot();
+    if (!okfSnapshot)
+      throw new Error(
+        "The canonical OKF snapshot is not ready. Wait for intelligence promotion to finish."
+      );
+    const session = await enhanceIntent({
+      text,
+      mode,
+      intelligence,
+      currentFile,
+      previous,
+      okfSnapshot
+    });
     await this.writeJson(`${ENHANCEMENT_SESSIONS_DIR}/${session.id}.json`, session);
     await this.record(
       "intent-enhanced",
@@ -698,6 +1058,78 @@ export class CockpitService {
       truncated: content.length > limit,
       changed: Boolean(expectedHash && expectedHash !== currentHash),
       currentHash
+    };
+  }
+
+  async loadContextPacket(
+    packetId: string,
+    segmentKinds?: readonly ContextPacketSegmentKind[]
+  ): Promise<{
+    taskId: string;
+    packetId: string;
+    stale: boolean;
+    snapshotDigest?: string;
+    currentSnapshotDigest?: string;
+    segmentKinds?: ContextPacketSegmentKind[];
+    packet?: ContextPacketPayload;
+  }> {
+    const active = await this.ensureActiveTask();
+    const envelope = await this.taskWorkspaces.contextPacketEnvelope(active);
+    if (!envelope) throw new Error("The active task has no persisted context packet envelope.");
+    const packet = envelope.packets.find((item) => item.id === packetId);
+    if (!packet) throw new Error(`Context packet ${packetId} is not available in the active task.`);
+    const manifest = await new OkfSnapshotStore(this.workspaceRoot).readManifest();
+    const currentSnapshotDigest = manifest
+      ? (manifest.digests.snapshot ?? manifest.extractionRunId)
+      : undefined;
+    const stale = Boolean(
+      envelope.snapshotDigest &&
+      currentSnapshotDigest &&
+      envelope.snapshotDigest !== currentSnapshotDigest
+    );
+    if (stale) {
+      await this.record(
+        "context-packet-stale",
+        `Rejected ${packetId}; task snapshot ${envelope.snapshotDigest?.slice(0, 12)} differs from current OKF ${currentSnapshotDigest?.slice(0, 12)}.`
+      );
+      return {
+        taskId: active.id,
+        packetId,
+        stale: true,
+        snapshotDigest: envelope.snapshotDigest,
+        currentSnapshotDigest
+      };
+    }
+    const requested = segmentKinds?.length ? new Set(segmentKinds) : undefined;
+    const segments = requested
+      ? packet.segments.filter((segment) => requested.has(segment.kind))
+      : packet.segments;
+    if (!segments.length)
+      throw new Error(`Context packet ${packetId} has no segments matching the requested mode.`);
+    const selectedKinds = [...new Set(segments.map((segment) => segment.kind))];
+    const selectedPaths = [
+      ...new Set(segments.flatMap((segment) => (segment.path ? [segment.path] : [])))
+    ];
+    const selectedPacket: ContextPacketPayload = {
+      ...packet,
+      segmentKinds: selectedKinds,
+      paths: selectedPaths,
+      estimatedTokens: segments.reduce((sum, segment) => sum + segment.estimatedTokens, 0),
+      segments,
+      content: segments.map((segment) => segment.content).join("\n\n")
+    };
+    await this.record(
+      "context-packet-loaded",
+      `Loaded ${packetId} (${selectedKinds.join(", ")}) from the current OKF snapshot.`
+    );
+    return {
+      taskId: active.id,
+      packetId,
+      stale: false,
+      snapshotDigest: envelope.snapshotDigest,
+      currentSnapshotDigest,
+      segmentKinds: selectedKinds,
+      packet: selectedPacket
     };
   }
 
@@ -782,10 +1214,38 @@ export class CockpitService {
       relationshipPath: string[];
     }>;
   }> {
-    const snapshot = await new OkfSnapshotStore(this.workspaceRoot).read();
+    const snapshot = await this.readOkfSnapshot();
     if (!snapshot)
       throw new Error("Authoritative OKF intelligence is not ready. Index the repository first.");
+    const cacheKey = this.okfCacheKey(snapshot, "query", { query, limit: 50 });
+    const cached = this.queryCache.get(cacheKey);
+    if (cached) {
+      await this.recordBestEffort(
+        "intelligence-query-cache-hit",
+        `Reused cached OKF query for ${query.trim() || "empty query"}.`
+      );
+      return {
+        ...cached,
+        items: cached.items.map((item) => ({
+          ...item,
+          evidenceIds: [...item.evidenceIds],
+          relationshipPath: [...item.relationshipPath]
+        })),
+        warnings: [...cached.warnings]
+      };
+    }
+    const persisted = await this.readJson<OkfQueryResult>(`${QUERY_CACHE_DIR}/${cacheKey}.json`);
+    if (persisted) {
+      this.remember(this.queryCache, cacheKey, persisted);
+      await this.recordBestEffort(
+        "intelligence-query-persistent-cache-hit",
+        `Reused persisted OKF query for ${query.trim() || "empty query"}.`
+      );
+      return cloneQueryResult(persisted);
+    }
     const result = queryOkfSnapshot(snapshot, query, 50);
+    this.remember(this.queryCache, cacheKey, result);
+    await this.writeCacheBestEffort(`${QUERY_CACHE_DIR}/${cacheKey}.json`, result);
     await this.recordBestEffort(
       "intelligence-query",
       `${result.intent} query returned ${result.items.length} evidence-backed result(s) after ${result.traversedRelationships} relationship traversal(s).`
@@ -801,14 +1261,18 @@ export class CockpitService {
     };
   }
 
-  async exploreIntelligence(query = "", kind = "all"): Promise<IntelligenceExplorerResult> {
-    const snapshot = await new OkfSnapshotStore(this.workspaceRoot).read();
+  async exploreIntelligence(
+    query = "",
+    kind = "all",
+    cursor?: string
+  ): Promise<IntelligenceExplorerResult> {
+    const snapshot = await this.readOkfSnapshot();
     if (!snapshot)
       throw new Error("Authoritative OKF intelligence is not ready. Index the repository first.");
-    const result = exploreOkfSnapshot(snapshot, { query, kind, limit: 120 });
+    const result = exploreOkfSnapshot(snapshot, { query, kind, cursor, limit: 120 });
     await this.recordBestEffort(
       "intelligence-explorer",
-      `Explorer returned ${result.items.length} ${kind === "all" ? "knowledge" : kind} item(s)${query ? ` for ${query}` : ""}.`
+      `Explorer returned page ${result.items.length} ${kind === "all" ? "knowledge" : kind} item(s)${query ? ` for ${query}` : ""}.`
     );
     return result;
   }
@@ -818,9 +1282,29 @@ export class CockpitService {
     query = "",
     seedIds: readonly string[] = []
   ): Promise<IntelligenceGraphResult> {
-    const snapshot = await new OkfSnapshotStore(this.workspaceRoot).read();
+    const snapshot = await this.readOkfSnapshot();
     if (!snapshot)
       throw new Error("Authoritative OKF intelligence is not ready. Index the repository first.");
+    const cacheKey = this.okfCacheKey(snapshot, "graph", { mode, query, seedIds });
+    const cached = this.graphCache.get(cacheKey);
+    if (cached) {
+      await this.recordBestEffort(
+        "intelligence-graph-cache-hit",
+        `Reused cached ${mode} graph neighborhood.`
+      );
+      return cached;
+    }
+    const persisted = await this.readJson<IntelligenceGraphResult>(
+      `${GRAPH_CACHE_DIR}/${cacheKey}.json`
+    );
+    if (persisted) {
+      this.remember(this.graphCache, cacheKey, persisted);
+      await this.recordBestEffort(
+        "intelligence-graph-persistent-cache-hit",
+        `Reused persisted ${mode} graph neighborhood.`
+      );
+      return persisted;
+    }
     const result = buildOkfGraphView(snapshot, {
       mode,
       query,
@@ -828,6 +1312,8 @@ export class CockpitService {
       depth: mode === "impact" ? 3 : mode === "flows" ? 2 : 2,
       limit: mode === "repository" ? 90 : mode === "flows" ? 70 : 120
     });
+    this.remember(this.graphCache, cacheKey, result);
+    await this.writeCacheBestEffort(`${GRAPH_CACHE_DIR}/${cacheKey}.json`, result);
     await this.recordBestEffort(
       "intelligence-graph",
       `${mode} graph returned ${result.nodes.length} node(s) and ${result.edges.length} edge(s).`
@@ -867,6 +1353,27 @@ export class CockpitService {
     return new GitReadOnly(this.workspaceRoot).diff();
   }
 
+  private async latestCopilotResult(
+    taskId: string
+  ): Promise<(CopilotDelegationResult & { taskWorkspaceId?: string }) | undefined> {
+    const directory = path.join(this.workspaceRoot, ".keystone/copilot/results");
+    try {
+      const files = (await fs.readdir(directory))
+        .filter((file) => file.endsWith(".json"))
+        .sort()
+        .reverse();
+      for (const file of files) {
+        const result = await this.readJson<CopilotDelegationResult & { taskWorkspaceId?: string }>(
+          `.keystone/copilot/results/${file}`
+        );
+        if (result?.taskWorkspaceId === taskId) return result;
+      }
+    } catch {
+      /* No captured Copilot result exists yet. */
+    }
+    return undefined;
+  }
+
   private async recordEvaluation(intent: string, result: KeystoneTaskResult): Promise<void> {
     const history =
       (await this.readJson<Array<Record<string, unknown>>>(CONTEXT_EVALUATIONS_PATH)) ?? [];
@@ -879,16 +1386,31 @@ export class CockpitService {
     await this.writeJson(CONTEXT_EVALUATIONS_PATH, history.slice(0, 200));
   }
 
-  async approveDelegation(mode: string, prompt: string): Promise<void> {
+  async approveDelegation(
+    mode: string,
+    prompt: string,
+    correctionPacketId?: string
+  ): Promise<void> {
     const active = await this.ensureActiveTask();
     const expected = await this.taskWorkspaces.delegationPrompt(active);
-    if (normalizePrompt(prompt) !== normalizePrompt(expected))
+    const matchesTaskPrompt = normalizePrompt(prompt) === normalizePrompt(expected);
+    if (!matchesTaskPrompt && correctionPacketId) {
+      const packet = await this.taskWorkspaces.latestCorrectionPacket(active);
+      if (
+        packet?.id !== correctionPacketId ||
+        normalizePrompt(prompt) !== normalizePrompt(packet.prompt)
+      )
+        throw new Error(
+          "The approved correction prompt does not match the active OKF correction packet. Regenerate it before delegating."
+        );
+    } else if (!matchesTaskPrompt) {
       throw new Error(
         "The approved prompt does not match the generated task delegation packet. Regenerate the context before delegating."
       );
+    }
     await this.record(
       "delegation-approved",
-      `${mode} approved with ${Math.ceil(prompt.length / 4)} estimated tokens.`
+      `${mode} approved${correctionPacketId ? ` for correction packet ${correctionPacketId}` : ""} with ${Math.ceil(prompt.length / 4)} estimated tokens.`
     );
     this.activeTaskWorkspace = await this.taskWorkspaces.update(active, "approved", {
       percent: 30,
@@ -941,6 +1463,180 @@ export class CockpitService {
           : `${result.mode} failed: ${result.error ?? "unknown error"}.`
     );
     return relative;
+  }
+
+  async createCorrectionPacket(
+    request: {
+      reason?: CorrectionPacketReason;
+      commands?: readonly string[];
+      failures?: readonly string[];
+      remediations?: readonly string[];
+      changedPaths?: readonly string[];
+    } = {}
+  ): Promise<CorrectionPacket> {
+    const active = await this.ensureActiveTask();
+    const task = await this.taskWorkspaces.snapshot(active);
+    const latestValidation = await this.readJson<{ results?: ValidationRunResult[] }>(
+      ".keystone/validation/latest.json"
+    );
+    const validationResults = latestValidation?.results ?? [];
+    const commands = [
+      ...(request.commands ?? validationResults.map((result) => result.command))
+    ].filter(Boolean);
+    const failures = [
+      ...(request.failures ??
+        validationResults
+          .filter((result) => result.status === "failed")
+          .flatMap((result) =>
+            result.summary.errors?.length
+              ? result.summary.errors.map((error) => `${result.command}: ${error}`)
+              : [`${result.command}: ${result.stderr || "Validation failed."}`]
+          ))
+    ].filter(Boolean);
+    const remediations = [
+      ...(request.remediations ??
+        validationResults.flatMap((result) =>
+          (result.remediation ?? []).flatMap((proposal) => [
+            proposal.summary,
+            ...proposal.recommendedActions,
+            proposal.copilotPrompt
+          ])
+        ))
+    ].filter(Boolean);
+    const snapshot = await this.readOkfSnapshot();
+    if (!snapshot)
+      throw new Error("Cannot create a correction packet without a current OKF snapshot.");
+    const git = new GitReadOnly(this.workspaceRoot);
+    const [gitStatus, gitDiff] = await Promise.all([
+      git.status().catch(() => ""),
+      git.diff().catch(() => "")
+    ]);
+    const changedPaths = uniqueStrings([
+      ...(request.changedPaths ?? []).map(normalizeWorkspacePath),
+      ...gitStatus
+        .split(/\r?\n/)
+        .map((line) => line.slice(3).trim())
+        .filter(Boolean)
+        .map((value) => (value.includes(" -> ") ? value.split(" -> ").at(-1)! : value))
+        .map(normalizeWorkspacePath)
+    ]);
+    const diffHash = createHash("sha256").update(gitDiff).digest("hex");
+    const envelope = await this.taskWorkspaces.contextPacketEnvelope(active);
+    const originalPaths = envelope?.packets.flatMap((packet) => packet.paths) ?? [];
+    const intent = String(
+      task.task.intent ?? task.task.normalizedProblemStatement ?? "Active Keystone task"
+    );
+    const selection = selectCanonicalContext(snapshot, `${intent}\n${failures.join("\n")}`, {
+      graphMode: "impact",
+      graphLimit: 120,
+      preferredPaths: [...changedPaths, ...originalPaths]
+    });
+    const affectedPaths = uniqueStrings([...changedPaths, ...selection.paths]);
+    const selectedPaths = uniqueStrings([
+      ...changedPaths,
+      ...selection.paths,
+      ...originalPaths
+    ]).slice(0, 8);
+    const sourceExcerpts = (
+      await Promise.all(
+        selectedPaths.map(async (sourcePath) => {
+          try {
+            const source = await this.retrieveContextOriginal(sourcePath);
+            return `## ${sourcePath}\n${truncate(source.content, 3_000)}`;
+          } catch {
+            return undefined;
+          }
+        })
+      )
+    ).filter((value): value is string => Boolean(value));
+    const latestCopilot = await this.latestCopilotResult(active.id);
+    const snapshotDigest =
+      snapshot.manifest.digests.snapshot ??
+      snapshot.manifest.digests.okf ??
+      snapshot.manifest.extractionRunId;
+    const canonicalEvidence = [
+      `OKF snapshot: ${snapshotDigest}`,
+      `Query intent: ${selection.query.intent}; confidence ${selection.query.confidence.toFixed(2)}.`,
+      ...selection.query.items
+        .slice(0, 16)
+        .map(
+          (item) =>
+            `- ${item.kind} ${item.label}${item.path ? ` — ${item.path}` : ""}: ${item.reason}`
+        ),
+      ...selection.query.traversals
+        .slice(0, 24)
+        .map(
+          (traversal) =>
+            `- ${traversal.sourceLabel} -[${traversal.relationship}]-> ${traversal.targetLabel}`
+        )
+    ];
+    const packet: CorrectionPacket = {
+      id: createHash("sha256")
+        .update(
+          `${active.id}|${snapshotDigest}|${request.reason ?? "manual"}|${commands.join("\n")}|${failures.join("\n")}|${Date.now()}`
+        )
+        .digest("hex")
+        .slice(0, 24),
+      taskId: active.id,
+      reason: request.reason ?? (failures.length ? "validation-failure" : "manual"),
+      createdAt: new Date().toISOString(),
+      snapshotDigest,
+      validation: {
+        commands: uniqueStrings(commands),
+        failures: uniqueStrings(failures).slice(0, 40),
+        remediations: uniqueStrings(remediations).slice(0, 40)
+      },
+      copilot: {
+        captured: Boolean(latestCopilot?.captured),
+        mode: latestCopilot?.mode,
+        artifactPath: latestCopilot?.artifactPath,
+        responseExcerpt: latestCopilot?.text ? truncate(latestCopilot.text, 4_000) : undefined
+      },
+      canonical: {
+        unitIds: [...selection.unitIds],
+        relationshipIds: [...selection.relationshipIds],
+        evidenceIds: [...selection.evidenceIds],
+        paths: [...selection.paths]
+      },
+      changedPaths,
+      affectedPaths,
+      diffHash,
+      selectedPaths,
+      prompt: [
+        "You are GitHub Copilot performing a user-approved Keystone correction pass.",
+        "Keystone has reselected the current repository evidence from the promoted OKF snapshot.",
+        "Do not search, crawl, enumerate, or retrieve the entire repository. Use only the selected evidence below and report a missing-evidence gap instead of widening scope.",
+        `\n# Intent\n${intent}`,
+        `\n# Validation failures\n${failures.map((failure) => `- ${failure}`).join("\n") || "- No structured failure text was captured; inspect the listed commands."}`,
+        `\n# Validation commands\n${commands.map((command) => `- ${command}`).join("\n") || "- None recorded."}`,
+        `\n# Changed-file evidence\n${changedPaths.map((value) => `- ${value}`).join("\n") || "- No Git working-tree changes were detected."}`,
+        `\n# OKF affected paths\n${
+          affectedPaths
+            .slice(0, 120)
+            .map((value) => `- ${value}`)
+            .join("\n") || "- No affected path was selected."
+        }`,
+        `Diff SHA-256: ${diffHash}`,
+        `\n# Remediation guidance\n${remediations.map((item) => `- ${item}`).join("\n") || "- Classify the failure before changing product or test behavior."}`,
+        `\n# Previous Copilot result\n${latestCopilot?.text ? truncate(latestCopilot.text, 4_000) : "No captured Copilot response is available; use the validation evidence as the source of truth."}`,
+        `\n# Canonical OKF evidence\n${canonicalEvidence.join("\n")}`,
+        `\n# Current selected source excerpts\n${sourceExcerpts.join("\n\n") || "No selected source body could be read; report the evidence gap."}`,
+        "\nExecution boundary: propose the smallest correction, preserve the stated intent and tests, return changed files plus validation results, and do not perform Git write or remote merge operations."
+      ].join("\n")
+    };
+    await this.taskWorkspaces.appendCorrectionPacket(active, packet);
+    if (packet.validation.failures.length) {
+      this.activeTaskWorkspace = await this.taskWorkspaces.update(active, "blocked", {
+        percent: 78,
+        current: "Correction packet ready; awaiting user-approved Copilot retry",
+        blockers: ["Validation failure requires correction packet review"]
+      });
+    }
+    await this.record(
+      "correction-packet-generated",
+      `${packet.id} generated from ${packet.validation.failures.length} validation failure(s), ${packet.canonical.unitIds.length} OKF unit(s), and ${packet.canonical.relationshipIds.length} relationship(s).`
+    );
+    return packet;
   }
 
   async recordDecision(category: "task" | "risk", action: string, subject: string): Promise<void> {
@@ -1014,6 +1710,12 @@ export class CockpitService {
       "validation",
       `${scope} validation finished: ${results.filter((result) => result.status === "passed").length}/${results.length} passed.`
     );
+    if (results.every((result) => result.status === "passed")) {
+      await this.taskWorkspaces.resolveCorrectionPackets(
+        active,
+        results.map((result) => result.command)
+      );
+    }
     this.activeTaskWorkspace = await this.taskWorkspaces.update(
       this.activeTaskWorkspace!,
       results.every((result) => result.status === "passed") ? "in-progress" : "blocked",
@@ -1070,6 +1772,10 @@ export class CockpitService {
     return this.taskWorkspaces.exportForHandoff(await this.ensureActiveTask(), targetRoot);
   }
 
+  async correctionPacketsForActiveTask(): Promise<CorrectionPacket[]> {
+    return this.taskWorkspaces.correctionPackets(await this.ensureActiveTask());
+  }
+
   async discardTaskWorkspace(ref: TaskWorkspaceRef): Promise<void> {
     await this.taskWorkspaces.cancel(ref, "Analysis cancelled or superseded");
     if (this.activeTaskWorkspace?.id === ref.id) this.activeTaskWorkspace = undefined;
@@ -1093,7 +1799,12 @@ export class CockpitService {
 
   private async materializeTaskWorkspace(
     intent: string,
-    result: KeystoneTaskResult
+    result: KeystoneTaskResult,
+    packetContext: {
+      contextPacketPayloads: NonNullable<ContextPack["contextPacketPayloads"]>;
+      contextPackId?: string;
+      contextSnapshotDigest?: string;
+    } = { contextPacketPayloads: [] }
   ): Promise<KeystoneTaskResult> {
     const taskFiles = result.relevantFiles.filter((file) => planningPathUseful(file));
     const taskSymbols = result.relevantSymbols.filter((symbol) => {
@@ -1111,6 +1822,10 @@ export class CockpitService {
       securityRisk: result.securityRisk,
       performanceRisk: result.performanceRisk,
       modernizationNotes: result.modernizationNotes,
+      contextPackets: result.contextPackets,
+      contextPacketPayloads: packetContext.contextPacketPayloads,
+      contextPackId: packetContext.contextPackId,
+      contextSnapshotDigest: packetContext.contextSnapshotDigest,
       copilotPrompt: result.copilotPrompt,
       research: {
         intentId: result.intentId,
@@ -1128,25 +1843,46 @@ export class CockpitService {
   }
 
   async analyzeModernization(): Promise<ModernizationProposal> {
+    const snapshot = await this.readJson<RepositoryIntelligenceSnapshot>(
+      `${INTELLIGENCE_DIR}/snapshot.json`
+    );
+    if (!snapshot?.intelligence)
+      throw new Error(
+        "Repository intelligence is not ready. Wait for background indexing to finish."
+      );
+    const canonicalSnapshot = await this.readOkfSnapshot();
+    if (!canonicalSnapshot)
+      throw new Error(
+        "The canonical OKF snapshot is not ready. Wait for intelligence promotion to finish."
+      );
     const builder = new RepositoryModelBuilder();
-    const repository = builder.build(this.workspaceRoot);
+    const repository = builder.buildFromIntelligence(this.workspaceRoot, snapshot.intelligence);
+    const selection = selectCanonicalContext(
+      canonicalSnapshot,
+      "modernization architecture dependency database testing operations",
+      { graphMode: "impact", graphLimit: 120 }
+    );
     const proposal = await this.modernization.propose({
       repository,
       objectives: [
         "Preserve existing business behavior while modernizing the accepted technology stack"
       ],
       scanScope: {
-        expectedFiles: repository.files.length,
+        expectedFiles: snapshot.intelligence.files.length,
         indexedFiles: repository.files.length,
         excludedPaths: builder.getExcludedPaths()
       }
     });
-    await this.writeJson(".keystone/modernization/proposal.json", proposal);
+    const canonicalProposal = {
+      ...proposal,
+      canonicalEvidence: canonicalEvidenceEnvelope(canonicalSnapshot, selection)
+    };
+    await this.writeJson(".keystone/modernization/proposal.json", canonicalProposal);
     await this.record(
       "modernization-proposed",
-      `${proposal.scanCoverage.analyzedFiles} files assessed; ${proposal.gaps.length} gaps and ${proposal.technologyRecommendations.length} technology recommendations produced.`
+      `${canonicalProposal.scanCoverage.analyzedFiles} files assessed from the promoted OKF snapshot; ${canonicalProposal.gaps.length} gaps and ${canonicalProposal.technologyRecommendations.length} technology recommendations produced.`
     );
-    return proposal;
+    return canonicalProposal;
   }
 
   async restoreModernizationProposal(proposal: ModernizationProposal): Promise<void> {
@@ -1271,6 +2007,16 @@ export class CockpitService {
     await fs.writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, "utf8");
     await fs.rename(temporary, target);
   }
+  private async writeCacheBestEffort(relative: string, value: unknown): Promise<void> {
+    try {
+      await this.writeJson(relative, value);
+    } catch (error) {
+      await this.recordBestEffort(
+        "cache-warning",
+        `Persistent cache write failed for ${relative}: ${error instanceof Error ? error.message : String(error)}.`
+      );
+    }
+  }
   private async writeText(relative: string, value: string): Promise<void> {
     const target = path.join(this.workspaceRoot, relative);
     await fs.mkdir(path.dirname(target), { recursive: true });
@@ -1345,6 +2091,14 @@ function emptyManifest(): IntelligenceManifest {
 
 function safeId(value: string): string {
   return value.replace(/[^a-zA-Z0-9-]/g, "");
+}
+
+function uniqueStrings(values: readonly string[]): string[] {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+}
+
+function truncate(value: string, limit: number): string {
+  return value.length <= limit ? value : `${value.slice(0, limit)}\n[truncated]`;
 }
 
 type ContextFeedback = {
@@ -1536,6 +2290,18 @@ function toWorkspaceSummary(
 function normalizeWorkspacePath(value: string): string {
   return value.replace(/\\/g, "/").replace(/^\.\//, "");
 }
+
+function cloneQueryResult(result: OkfQueryResult) {
+  return {
+    ...result,
+    items: result.items.map((item) => ({
+      ...item,
+      evidenceIds: [...item.evidenceIds],
+      relationshipPath: [...item.relationshipPath]
+    })),
+    warnings: [...result.warnings]
+  };
+}
 function taskIntelligenceSignals(
   projection: OkfGraphProjection | undefined,
   relevantPaths: ReadonlySet<string>,
@@ -1634,8 +2400,102 @@ function taskIntelligenceSignals(
   }
   return signals;
 }
+
+function canonicalTaskIntelligenceSignals(
+  selection: CanonicalContextSelection | undefined,
+  relevantPaths: ReadonlySet<string>,
+  category: "security" | "performance"
+): TaskIntelligenceSignal[] {
+  if (!selection) return [];
+  const nodes = new Map(selection.graph.nodes.map((node) => [node.id, node]));
+  const nodePath = (id: string): string | undefined => {
+    const value = nodes.get(id)?.path;
+    return value ? normalizeWorkspacePath(value) : undefined;
+  };
+  const focus = new Set(
+    selection.graph.nodes
+      .filter((node) => {
+        const value = node.path ? normalizeWorkspacePath(node.path) : undefined;
+        return value ? relevantPaths.has(value) : false;
+      })
+      .map((node) => node.id)
+  );
+  const signals: TaskIntelligenceSignal[] = [];
+  const seen = new Set<string>();
+  const add = (signal: TaskIntelligenceSignal): void => {
+    const key = `${signal.kind}|${signal.okfId ?? ""}|${signal.relationship ?? ""}|${signal.relatedLabel ?? ""}`;
+    if (seen.has(key) || signals.length >= 30) return;
+    seen.add(key);
+    signals.push(signal);
+  };
+  for (const node of selection.graph.nodes) {
+    if (
+      node.kind !== "risk-area" ||
+      String(node.properties.category ?? "").toLowerCase() !== category
+    )
+      continue;
+    const pathValue = node.path ? normalizeWorkspacePath(node.path) : undefined;
+    const connected = selection.graph.edges.some(
+      (edge) => edge.kind === "may-impact" && edge.sourceId === node.id && focus.has(edge.targetId)
+    );
+    if (
+      (relevantPaths.size && !connected && !(pathValue && relevantPaths.has(pathValue))) ||
+      (!relevantPaths.size && signals.length >= 8)
+    )
+      continue;
+    add({
+      kind: "risk-area",
+      label: node.label,
+      path: pathValue,
+      line: node.line,
+      okfId: node.id,
+      summary: `${category} risk-area from the canonical OKF task selection.`
+    });
+  }
+  for (const edge of selection.graph.edges) {
+    if (!(["calls", "flows-to", "reads", "writes"] as string[]).includes(edge.kind)) continue;
+    if (!focus.has(edge.sourceId) && !focus.has(edge.targetId)) continue;
+    const source = nodes.get(edge.sourceId);
+    const target = nodes.get(edge.targetId);
+    if (!source || !target) continue;
+    const pathValue = nodePath(edge.sourceId) ?? nodePath(edge.targetId);
+    const kind: TaskIntelligenceSignal["kind"] =
+      edge.kind === "calls"
+        ? "call"
+        : edge.kind === "reads" || edge.kind === "writes"
+          ? "data-access"
+          : "flow";
+    add({
+      kind,
+      label: `${source.label} —[${edge.kind}]→ ${target.label}`,
+      path: pathValue,
+      line: source.line ?? target.line,
+      okfId: edge.id,
+      relationship: edge.kind,
+      relatedLabel: target.label,
+      summary: `${category} task context from canonical OKF relationship ${edge.kind}.`
+    });
+  }
+  return signals;
+}
+
+function mergeTaskIntelligenceSignals(
+  ...groups: readonly TaskIntelligenceSignal[][]
+): TaskIntelligenceSignal[] {
+  const output: TaskIntelligenceSignal[] = [];
+  const seen = new Set<string>();
+  for (const group of groups)
+    for (const signal of group) {
+      const key = `${signal.kind}|${signal.okfId ?? ""}|${signal.relationship ?? ""}|${signal.relatedLabel ?? ""}`;
+      if (seen.has(key) || output.length >= 30) continue;
+      seen.add(key);
+      output.push(signal);
+    }
+  return output;
+}
+
 function riskLevelForFindings(findings: readonly { severity: string }[], fallback: string): string {
-  if (!findings.length) return "low";
+  if (!findings.length) return fallback;
   const weight = (value: string): number =>
     value === "critical" ? 4 : value === "high" ? 3 : value === "medium" ? 2 : 1;
   return findings.reduce(
@@ -1658,6 +2518,13 @@ function mergeTaskEvidence(
 ): NonNullable<KeystoneTaskResult["evidence"]> {
   if (!analysis) return base;
   const extra: NonNullable<KeystoneTaskResult["evidence"]> = [];
+  for (const [worker, envelope] of Object.entries(analysis.canonicalEvidence ?? {}))
+    extra.push({
+      kind: "architecture",
+      label: `${worker} background analysis · OKF snapshot ${envelope.snapshotDigest.slice(0, 12)}…`,
+      confidence: 1,
+      summary: `${envelope.unitIds.length} OKF unit(s), ${envelope.relationshipIds.length} relationship(s), and ${envelope.evidenceIds.length} evidence link(s).`
+    });
   for (const item of analysis.qa.gaps)
     extra.push({
       kind: "test",
@@ -1953,7 +2820,7 @@ function normalizeRunResult(
       raw: run.contextPack.estimatedRawTokens,
       selected: run.contextPack.selectedContextTokens ?? run.contextPack.estimatedPackedTokens,
       prompt: run.contextPack.estimatedPackedTokens,
-      packets: 1,
+      packets: run.contextPack.contextPackets?.length ?? 1,
       tier: run.contextPack.compressionTier ?? "standard"
     },
     contextSections: run.contextPack.contextSections?.map((section) => ({
@@ -1965,6 +2832,7 @@ function normalizeRunResult(
       score: section.score,
       evidence: section.evidence
     })),
+    contextPackets: run.contextPack.contextPackets,
     boundedIntelligence: run.contextPack.boundedIntelligence,
     omittedContext: run.contextPack.omittedContext,
     contextManifest: run.contextPack.contextManifest,

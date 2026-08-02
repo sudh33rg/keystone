@@ -1,7 +1,7 @@
 /** Authoritative local OKF profile used by every Keystone intelligence projection. */
 export const KEYSTONE_OKF_PROFILE_ID =
   "https://keystone.local/okf/profiles/repository-intelligence/v2";
-export const KEYSTONE_OKF_PROFILE_VERSION = "2.0.0";
+export const KEYSTONE_OKF_PROFILE_VERSION = "2.1.0";
 
 export type OkfConfidenceLevel = "observed" | "derived" | "inferred";
 export type OkfLifecycle = "active" | "deprecated" | "deleted";
@@ -22,7 +22,19 @@ export type KeystoneKnowledgeKind =
   | "data-flow"
   | "architecture-boundary"
   | "risk-area"
-  | "change-impact";
+  | "change-impact"
+  | "database"
+  | "table"
+  | "orm-entity"
+  | "query"
+  | "feature-flag"
+  | "fixture"
+  | "ci-cd"
+  | "infrastructure"
+  | "component"
+  | "event"
+  | "build-system"
+  | "package-manager";
 export type KeystoneRelationshipKind =
   | "contains"
   | "defines"
@@ -39,7 +51,8 @@ export type KeystoneRelationshipKind =
   | "configured-by"
   | "documented-by"
   | "flows-to"
-  | "may-impact";
+  | "may-impact"
+  | "maps-to";
 
 export interface OkfSourceLocation {
   readonly workspaceRelativePath: string;
@@ -158,4 +171,15 @@ export interface KeystoneOkfSnapshot {
   readonly relationships: readonly KeystoneKnowledgeRelationship[];
   readonly observations: readonly KeystoneKnowledgeObservation[];
   readonly evidence: readonly OkfEvidence[];
+}
+
+/** Stable provenance carried by derived background-analysis artifacts. */
+export interface OkfCanonicalEvidenceEnvelope {
+  readonly snapshotDigest: string;
+  readonly extractionRunId: string;
+  readonly unitIds: readonly string[];
+  readonly relationshipIds: readonly string[];
+  readonly evidenceIds: readonly string[];
+  readonly paths: readonly string[];
+  readonly generatedAt: string;
 }

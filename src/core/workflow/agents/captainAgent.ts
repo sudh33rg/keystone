@@ -12,6 +12,7 @@ import { routeIntent } from "../../context/routing/intentRouter";
 import { MetricsStore } from "../../platform/metrics/metricsStore";
 import type { DeveloperIntent, KeystoneRunResult, RepoIntelligence } from "../../domain/types";
 import { discoverCopilotCustomizations } from "../../context/copilotCustomizations";
+import { selectCanonicalContext } from "../../intelligence/okf/canonicalContext";
 
 /**
  * Orchestrates one intent analysis from deterministic repository intelligence to a
@@ -33,6 +34,7 @@ export class CaptainAgent {
     const customizations = await stage("Copilot customization discovery", () =>
       discoverCopilotCustomizations(intent.workspaceRoot)
     );
+    let okfSnapshot = contextOptions.okfSnapshot;
     const contextPack = await stage("context engineering", () =>
       buildIntentContextPack(
         intent,
@@ -42,17 +44,28 @@ export class CaptainAgent {
         contextOptions
       )
     );
+    const canonicalTaskContext = okfSnapshot
+      ? selectCanonicalContext(okfSnapshot, intent.text, {
+          graphMode: "impact",
+          graphLimit: 120,
+          preferredPaths: contextPack.relevantFiles.map((file) => file.path)
+        })
+      : undefined;
+    // The bounded canonical selection is sufficient for downstream task analysis. Release the
+    // full snapshot reference before QA/security/performance/modernization continue.
+    okfSnapshot = undefined;
+    contextOptions.okfSnapshot = undefined;
     const qa = stageSync("task QA analysis", () =>
-      new QaAgent().analyze(contextPack, intelligence)
+      new QaAgent().analyze(contextPack, intelligence, canonicalTaskContext)
     );
     const security = stageSync("task security analysis", () =>
-      new SecurityAgent().analyze(contextPack)
+      new SecurityAgent().analyze(contextPack, canonicalTaskContext)
     );
     const performance = stageSync("task performance analysis", () =>
-      new PerformanceAgent().analyze(contextPack)
+      new PerformanceAgent().analyze(contextPack, canonicalTaskContext)
     );
     const modernization = stageSync("task modernization analysis", () =>
-      new ModernizationAgent().assess(contextPack)
+      new ModernizationAgent().assess(contextPack, canonicalTaskContext)
     );
     const prEvidence = stageSync("PR evidence generation", () =>
       new PrEvidenceAgent().generate(contextPack, qa, security, performance, modernization)

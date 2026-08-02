@@ -61,6 +61,15 @@ export class OkfSnapshotStore {
   get root(): string {
     return path.join(this.intelligenceRoot, "okf");
   }
+  async readManifest(): Promise<KeystoneOkfManifest | undefined> {
+    try {
+      return JSON.parse(
+        await fs.readFile(path.join(this.root, "manifest.json"), "utf8")
+      ) as KeystoneOkfManifest;
+    } catch {
+      return undefined;
+    }
+  }
   async read(): Promise<KeystoneOkfSnapshot | undefined> {
     try {
       const [manifest, units, relationships, observations, evidence] = await Promise.all([

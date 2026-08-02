@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import type { ContextPacket, ContextPacketPayload, CorrectionPacket } from "../../domain/types";
 import type { ModernizationPlan } from "../modernization/model";
 import type { SDLCPlan } from "../sdlc/engine";
 import type { TaskStatePackage } from "../handoff/contracts";
@@ -25,6 +26,10 @@ export interface TaskWorkspaceSeed {
   securityRisk: string;
   performanceRisk: string;
   modernizationNotes: readonly string[];
+  contextPackets?: readonly ContextPacket[];
+  contextPacketPayloads?: readonly ContextPacketPayload[];
+  contextPackId?: string;
+  contextSnapshotDigest?: string;
   copilotPrompt: string;
   research?: { intentId: string; title: string; markdown: string; status: "ready" | "approved" };
 }
@@ -43,6 +48,14 @@ export interface TaskWorkspaceSnapshot {
   context: Record<string, unknown>;
   progress: Record<string, unknown>;
   delegationPrompt: string;
+}
+
+export interface TaskContextPacketEnvelope {
+  version: 1;
+  contextPackId?: string;
+  snapshotDigest?: string;
+  generatedAt: string;
+  packets: ContextPacketPayload[];
 }
 
 export class TaskWorkspaceManager {
@@ -101,8 +114,19 @@ export class TaskWorkspaceManager {
         qaChecks: seed.qaChecks,
         securityRisk: seed.securityRisk,
         performanceRisk: seed.performanceRisk,
-        modernizationNotes: seed.modernizationNotes
+        modernizationNotes: seed.modernizationNotes,
+        contextPackets: seed.contextPackets ?? [],
+        contextPackId: seed.contextPackId,
+        snapshotDigest: seed.contextSnapshotDigest
       }),
+      this.write(absolutePath, "context-packets.json", {
+        version: 1,
+        contextPackId: seed.contextPackId,
+        snapshotDigest: seed.contextSnapshotDigest,
+        generatedAt: now,
+        packets: [...(seed.contextPacketPayloads ?? [])]
+      } satisfies TaskContextPacketEnvelope),
+      this.write(absolutePath, "correction-packets.json", []),
       this.write(absolutePath, "delegation.md", seed.copilotPrompt),
       this.write(absolutePath, "status.json", {
         status: "research-ready",
@@ -316,6 +340,7 @@ export class TaskWorkspaceManager {
       this.write(destination, "plan.json", packageValue.plan ?? {}),
       this.write(destination, "progress.json", packageValue.progress ?? {}),
       this.write(destination, "context.json", packageValue.context ?? {}),
+      this.write(destination, "correction-packets.json", packageValue.correctionPackets ?? []),
       this.write(
         destination,
         "instructions.md",
@@ -407,6 +432,7 @@ export class TaskWorkspaceManager {
         performanceFindings: packageValue.quality.performanceFindings,
         repositoryReference: packageValue.repositoryReference
       }),
+      this.write(absolutePath, "correction-packets.json", packageValue.correctionPackets ?? []),
       this.write(absolutePath, "delegation.md", packageValue.continuation.suggestedFirstPrompt),
       this.write(absolutePath, "status.json", {
         status,
@@ -471,6 +497,57 @@ export class TaskWorkspaceManager {
 
   async delegationPrompt(ref: TaskWorkspaceRef): Promise<string> {
     return (await fs.readFile(path.join(ref.absolutePath, "delegation.md"), "utf8")).trimEnd();
+  }
+
+  async contextPacketEnvelope(
+    ref: TaskWorkspaceRef
+  ): Promise<TaskContextPacketEnvelope | undefined> {
+    return this.read<TaskContextPacketEnvelope>(ref.absolutePath, "context-packets.json");
+  }
+
+  async contextPacket(
+    ref: TaskWorkspaceRef,
+    packetId: string
+  ): Promise<ContextPacketPayload | undefined> {
+    const envelope = await this.contextPacketEnvelope(ref);
+    return envelope?.packets.find((packet) => packet.id === packetId);
+  }
+
+  async correctionPackets(ref: TaskWorkspaceRef): Promise<CorrectionPacket[]> {
+    return (await this.read<CorrectionPacket[]>(ref.absolutePath, "correction-packets.json")) ?? [];
+  }
+
+  async latestCorrectionPacket(ref: TaskWorkspaceRef): Promise<CorrectionPacket | undefined> {
+    const packets = await this.correctionPackets(ref);
+    return [...packets].reverse().find((packet: CorrectionPacket) => !packet.resolvedAt);
+  }
+
+  async appendCorrectionPacket(ref: TaskWorkspaceRef, packet: CorrectionPacket): Promise<void> {
+    const packets = await this.correctionPackets(ref);
+    await this.write(ref.absolutePath, "correction-packets.json", [...packets, packet].slice(-20));
+  }
+
+  async resolveCorrectionPackets(
+    ref: TaskWorkspaceRef,
+    validationCommands: readonly string[]
+  ): Promise<void> {
+    const packets = await this.correctionPackets(ref);
+    if (!packets.length) return;
+    const latest = [...packets].reverse().find((packet: CorrectionPacket) => !packet.resolvedAt);
+    if (!latest) return;
+    await this.write(
+      ref.absolutePath,
+      "correction-packets.json",
+      packets.map((packet) =>
+        packet.id === latest.id
+          ? {
+              ...packet,
+              resolvedAt: new Date().toISOString(),
+              resolvedByValidation: [...validationCommands]
+            }
+          : packet
+      )
+    );
   }
 
   async snapshot(ref: TaskWorkspaceRef): Promise<TaskWorkspaceSnapshot> {

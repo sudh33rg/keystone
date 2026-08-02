@@ -45,6 +45,7 @@ const topLevelKeys = [
   "context",
   "changes",
   "quality",
+  "correctionPackets",
   "decisions",
   "continuation",
   "redactionReport",
@@ -231,6 +232,8 @@ export function validateTaskStatePackage(value: unknown): asserts value is TaskS
     ],
     "quality"
   );
+  if (value.correctionPackets !== undefined && !Array.isArray(value.correctionPackets))
+    throw new TaskStateValidationError("Task state correctionPackets must be an array.");
   const decisions = value.decisions as Record<string, unknown>;
   requireArrays(
     decisions,

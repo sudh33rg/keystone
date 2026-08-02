@@ -17,6 +17,7 @@ export type OkfQueryIntent =
   | "flow"
   | "security"
   | "performance"
+  | "data"
   | "configuration"
   | "documentation"
   | "generic"
@@ -230,12 +231,12 @@ export function queryOkfSnapshot(
           follow(seed, rel, rel.targetId, seedScore + 4, "callee via OKF calls relationship", []);
       } else if (queryIntent === "dependencies") {
         for (const rel of out.filter((rel) =>
-          ["imports", "depends-on", "configured-by"].includes(rel.kind)
+          ["imports", "depends-on", "configured-by", "maps-to"].includes(rel.kind)
         ))
           follow(seed, rel, rel.targetId, seedScore + 3, `dependency via ${rel.kind}`, []);
       } else if (queryIntent === "dependents") {
         for (const rel of inc.filter((rel) =>
-          ["imports", "depends-on", "configured-by"].includes(rel.kind)
+          ["imports", "depends-on", "configured-by", "maps-to"].includes(rel.kind)
         ))
           follow(seed, rel, rel.sourceId, seedScore + 3, `dependent via ${rel.kind}`, []);
       } else if (queryIntent === "tests") {
@@ -257,6 +258,13 @@ export function queryOkfSnapshot(
           const next = rel.sourceId === seed ? rel.targetId : rel.sourceId;
           follow(seed, rel, next, seedScore + 2.5, `flow evidence via ${rel.kind}`, []);
         }
+      } else if (queryIntent === "data") {
+        for (const rel of [...out, ...inc].filter((rel) =>
+          ["reads", "writes", "maps-to", "flows-to", "depends-on"].includes(rel.kind)
+        )) {
+          const next = rel.sourceId === seed ? rel.targetId : rel.sourceId;
+          follow(seed, rel, next, seedScore + 3, `data evidence via ${rel.kind}`, []);
+        }
       } else if (queryIntent === "generic" || queryIntent === "definition") {
         for (const rel of [...out, ...inc]
           .filter((rel) =>
@@ -271,7 +279,8 @@ export function queryOkfSnapshot(
               "exposes",
               "configured-by",
               "flows-to",
-              "may-impact"
+              "may-impact",
+              "maps-to"
             ].includes(rel.kind)
           )
           .slice(0, 40)) {
@@ -309,6 +318,12 @@ export function queryOkfSnapshot(
     for (const unit of activeUnits.filter((unit) => unit.kind === "documentation"))
       if (unitScore(unit, normalized, terms, intent) > 0 || terms.length <= 2)
         add(unit.id, 6, "documentation evidence");
+  if (intents.includes("data"))
+    for (const unit of activeUnits.filter((unit) =>
+      ["database", "table", "orm-entity", "query", "data-entity"].includes(unit.kind)
+    ))
+      if (unitScore(unit, normalized, terms, "data") > 0 || terms.length <= 2)
+        add(unit.id, 6, "data model evidence");
 
   const ranked = [...candidates.entries()]
     .map(([id, value]) => ({ unit: byId.get(id)!, ...value }))
@@ -383,7 +398,9 @@ function traverseImpact(
     const current = queue.shift()!;
     if (current.depth >= maxDepth) continue;
     const inbound = (incoming.get(current.id) ?? []).filter((rel) =>
-      ["imports", "depends-on", "calls", "tests", "covers", "may-impact"].includes(rel.kind)
+      ["imports", "depends-on", "calls", "tests", "covers", "may-impact", "maps-to"].includes(
+        rel.kind
+      )
     );
     for (const rel of inbound) {
       const next = rel.sourceId;
@@ -436,6 +453,7 @@ function classifyAll(query: string): OkfQueryIntent[] {
   if (/\bflow|data flow|call flow|path through\b/.test(q)) add("flow");
   if (/\bsecurity|secret|auth|authorization|vulnerab|injection|xss\b/.test(q)) add("security");
   if (/\bperformance|slow|latency|hot path|n\+1|blocking|benchmark\b/.test(q)) add("performance");
+  if (/\b(?:database|table|schema|orm|query|sql|persistence|data model)\b/.test(q)) add("data");
   if (/\bconfig|configuration|setting|environment\b/.test(q)) add("configuration");
   if (/\bdoc|documentation|readme|design\b/.test(q)) add("documentation");
   if (!intents.length && /\bwhere|defined|definition|implemented|implements?\b/.test(q))
@@ -467,6 +485,10 @@ function resultAllowed(intent: OkfQueryIntent, unit: KeystoneKnowledgeUnit): boo
     return ["call-flow", "data-flow", "symbol", "api", "service", "file", "test"].includes(
       unit.kind
     );
+  if (intent === "data")
+    return ["database", "table", "orm-entity", "query", "data-entity", "file", "service"].includes(
+      unit.kind
+    );
   if (intent === "security" || intent === "performance")
     return (
       unit.kind === "risk-area" ||
@@ -478,6 +500,11 @@ function resultAllowed(intent: OkfQueryIntent, unit: KeystoneKnowledgeUnit): boo
   if (intent === "configuration")
     return (
       unit.kind === "configuration" ||
+      unit.kind === "feature-flag" ||
+      unit.kind === "ci-cd" ||
+      unit.kind === "infrastructure" ||
+      unit.kind === "build-system" ||
+      unit.kind === "package-manager" ||
       unit.kind === "file" ||
       unit.kind === "symbol" ||
       unit.kind === "service"
@@ -545,6 +572,11 @@ function unitScore(
     intent === "performance" &&
     unit.kind === "risk-area" &&
     unit.properties.category === "performance"
+  )
+    score += 4;
+  if (
+    intent === "data" &&
+    ["database", "table", "orm-entity", "query", "data-entity"].includes(unit.kind)
   )
     score += 4;
   return score;
@@ -629,11 +661,13 @@ function summarizeIntents(
                       ? "security"
                       : intent === "performance"
                         ? "performance"
-                        : intent === "configuration"
-                          ? "configuration"
-                          : intent === "documentation"
-                            ? "documentation"
-                            : "repository"
+                        : intent === "data"
+                          ? "data"
+                          : intent === "configuration"
+                            ? "configuration"
+                            : intent === "documentation"
+                              ? "documentation"
+                              : "repository"
   );
   const prefix = names.length > 1 ? `${names.join(" + ")} evidence` : `${names[0]} evidence`;
   return `${prefix}: ${lead}${items.length > 5 ? ` and ${items.length - 5} more` : ""}.`;

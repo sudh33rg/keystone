@@ -21,10 +21,21 @@ import {
 } from "@core/workflow/handoff/handoffSecurity";
 import { TaskStateRestorer, WorkspaceStateTaskStore } from "../task-handoff/taskStateRestorer";
 import type { QaService, QaServiceEvent } from "../core/qaService";
-import type { BackgroundWorkerEvent } from "../core/backgroundWorkerCoordinator";
+import type {
+  BackgroundWorkerEvent,
+  BackgroundWorkerInput
+} from "../core/backgroundWorkerCoordinator";
 import type { GapAnalysisResult } from "@core/workflow/quality/qaGapAnalysis";
 import type { ModernizationProposal } from "@core/workflow/modernization/model";
 import type { KeystoneTaskResult } from "@core/integration/webview/messageRouter";
+import type { CorrectionPacket } from "@core/domain/types";
+import type { OkfCanonicalEvidenceEnvelope } from "@core/intelligence/okf/types";
+import {
+  canonicalEvidenceEnvelope,
+  selectCanonicalContext
+} from "@core/intelligence/okf/canonicalContext";
+import { OkfSnapshotStore } from "@core/intelligence/okf/store";
+import type { RepositoryIntelligenceSnapshot } from "@core/intelligence/pipeline/types";
 import { ApplicationStore } from "@core/application/applicationStore";
 import { startBrowserViewServer, type BrowserViewHandle } from "../browser-view/browserViewServer";
 import { SDLCEngine, type SDLCPlan } from "@core/workflow/sdlc/engine";
@@ -48,9 +59,10 @@ export class VscodeProvider {
   private indexing = false;
   private refreshQueued = false;
   private readonly pendingIndexRoots = new Set<string>();
+  private readonly pendingAffectedPaths = new Map<string, Set<string>>();
   private latestQaEvent?: QaServiceEvent;
   private webviewReady = false;
-  private activeIndexPromise?: Promise<void>;
+  private activeIndexPromise?: Promise<boolean>;
   private activeIndexRoot?: string;
   private readonly intelligenceRecoveryRoots = new Set<string>();
   private readonly applicationStore = new ApplicationStore();
@@ -118,7 +130,18 @@ export class VscodeProvider {
         type: "QA_BACKGROUND_STATUS",
         status: event.status,
         result,
-        message: event.error
+        message:
+          event.error ??
+          event.reason ??
+          (event.status === "running" ? "Running against the promoted OKF snapshot." : undefined),
+        reason: event.reason,
+        workerId: event.workerId,
+        snapshotDigest: event.snapshotDigest,
+        extractionRunId: event.extractionRunId,
+        scopePaths: event.scopePaths,
+        startedAt: event.startedAt,
+        completedAt: event.completedAt,
+        durationMs: event.durationMs
       });
       return;
     }
@@ -142,7 +165,15 @@ export class VscodeProvider {
       worker: event.kind,
       status: event.status,
       result: event.result,
-      error: event.error
+      error: event.error,
+      reason: event.reason,
+      workerId: event.workerId,
+      snapshotDigest: event.snapshotDigest,
+      extractionRunId: event.extractionRunId,
+      scopePaths: event.scopePaths,
+      startedAt: event.startedAt,
+      completedAt: event.completedAt,
+      durationMs: event.durationMs
     });
   }
 
@@ -158,7 +189,10 @@ export class VscodeProvider {
   }
 
   // Rest of the implementation unchanged (copied from original provider)
-  async indexWorkspace(rootOverride?: string): Promise<void> {
+  async indexWorkspace(
+    rootOverride?: string,
+    affectedPaths: readonly string[] = []
+  ): Promise<boolean> {
     const requestedRoot = rootOverride ?? this.workspaceRoot();
     if (!requestedRoot) {
       this.post({
@@ -166,9 +200,10 @@ export class VscodeProvider {
         operation: "intelligence",
         message: "Open a workspace to index repository intelligence."
       });
-      return;
+      return false;
     }
     if (this.indexing) {
+      this.queueAffectedPaths(requestedRoot, affectedPaths);
       if (this.activeIndexRoot === requestedRoot || !this.activeIndexRoot) {
         this.refreshQueued = true;
       } else {
@@ -177,21 +212,30 @@ export class VscodeProvider {
       const message = `Refresh queued for ${requestedRoot}; the current intelligence run will finish first.`;
       this.logInfo(message);
       this.post({ type: "NOTIFICATION", level: "info", message });
-      return;
+      let indexed = false;
+      while (this.indexing || this.refreshQueued || this.pendingIndexRoots.has(requestedRoot)) {
+        const active = this.activeIndexPromise;
+        if (active) indexed = await active;
+        else await new Promise<void>((resolve) => setImmediate(resolve));
+      }
+      return indexed && Boolean(await this.readPromotedWorkerInput(requestedRoot));
     }
-    const run = this.runIndexWorkspace(requestedRoot);
+    const run = this.runIndexWorkspace(requestedRoot, affectedPaths);
     this.activeIndexPromise = run;
     this.activeIndexRoot = requestedRoot;
-    await run;
+    return run;
   }
 
-  private async runIndexWorkspace(root: string): Promise<void> {
+  private async runIndexWorkspace(
+    root: string,
+    affectedPaths: readonly string[] = []
+  ): Promise<boolean> {
     this.indexing = true;
     const generation = ++this.indexGeneration;
     const isVisibleRoot = (): boolean => root === this.workspaceRoot();
     const startedAt = Date.now();
     this.logInfo(
-      `Starting full ${generation === 1 ? "automatic" : "incremental"} intelligence pipeline for ${root}.`
+      `Starting ${affectedPaths.length ? "affected-path refresh" : "full"} ${generation === 1 ? "automatic" : "incremental"} intelligence pipeline for ${root}${affectedPaths.length ? ` (${affectedPaths.length} changed/affected path(s); unchanged files remain hash-reused)` : ""}.`
     );
     if (isVisibleRoot())
       this.post({
@@ -213,8 +257,8 @@ export class VscodeProvider {
           this.logInfo(`[${String(progress).padStart(3, " ")}%] ${stage}: ${message}`);
           this.post({ type: "INDEX_PROGRESS", message, progress, stage, workerPool });
         }
-      });
-      if (generation !== this.indexGeneration) return;
+      }, affectedPaths);
+      if (generation !== this.indexGeneration) return false;
       const indexed = state.intelligence?.fileCount ?? 0;
       if (isVisibleRoot())
         this.statusBar.text = `Keystone: Indexed | Files: ${indexed} | Graph: Ready`;
@@ -229,7 +273,7 @@ export class VscodeProvider {
       );
       if (isVisibleRoot()) this.post({ type: "STATE_UPDATE", state });
     } catch (error) {
-      if (generation !== this.indexGeneration) return;
+      if (generation !== this.indexGeneration) return false;
       const message = error instanceof Error ? error.message : String(error);
       if (isVisibleRoot()) this.statusBar.text = "Keystone: Intelligence failed";
       this.logError(`Intelligence pipeline failed after ${Date.now() - startedAt}ms: ${message}`);
@@ -249,6 +293,7 @@ export class VscodeProvider {
         });
         this.post({ type: "ERROR", operation: "intelligence", message });
       }
+      return false;
     } finally {
       this.indexing = false;
       if (this.activeIndexRoot === root) {
@@ -259,11 +304,81 @@ export class VscodeProvider {
       const next = this.pendingIndexRoots.values().next().value as string | undefined;
       if (next) {
         this.pendingIndexRoots.delete(next);
-        void this.indexWorkspace(next);
+        const nextPaths = this.takeAffectedPaths(next);
+        void this.indexWorkspace(next, nextPaths);
       } else if (this.refreshQueued) {
         this.refreshQueued = false;
-        void this.indexWorkspace(root);
+        const refreshPaths = this.takeAffectedPaths(root);
+        void this.indexWorkspace(root, refreshPaths);
       }
+    }
+    return true;
+  }
+
+  private queueAffectedPaths(root: string, paths: readonly string[]): void {
+    if (!paths.length) return;
+    const queued = this.pendingAffectedPaths.get(root) ?? new Set<string>();
+    for (const value of paths) queued.add(value.replace(/\\/g, "/").replace(/^\.\//, ""));
+    this.pendingAffectedPaths.set(root, queued);
+  }
+
+  private takeAffectedPaths(root: string): string[] {
+    const paths = [...(this.pendingAffectedPaths.get(root) ?? [])];
+    this.pendingAffectedPaths.delete(root);
+    return paths;
+  }
+
+  private async reindexAffectedAndValidate(): Promise<void> {
+    const root = this.workspaceRoot();
+    if (!root) return;
+    const packet = this.applicationStore.snapshot().correctionPacket as
+      { affectedPaths?: readonly string[]; changedPaths?: readonly string[] } | undefined;
+    const paths = [...(packet?.affectedPaths ?? []), ...(packet?.changedPaths ?? [])].filter(
+      (value, index, values) => values.indexOf(value) === index
+    );
+    if (!paths.length) {
+      this.post({
+        type: "NOTIFICATION",
+        level: "error",
+        message:
+          "No changed or affected paths are available. Generate a fresh correction packet first."
+      });
+      return;
+    }
+    try {
+      this.post({
+        type: "NOTIFICATION",
+        level: "info",
+        message: `Refreshing ${paths.length} changed/affected path(s) and running impacted validation...`
+      });
+      if (this.indexing) {
+        this.queueAffectedPaths(root, paths);
+        this.refreshQueued = true;
+        while (this.indexing || this.refreshQueued || this.pendingIndexRoots.has(root)) {
+          const active = this.activeIndexPromise;
+          if (active) await active;
+          else await new Promise<void>((resolve) => setImmediate(resolve));
+        }
+      } else {
+        await this.indexWorkspace(root, paths);
+      }
+      await this.runValidation(
+        "impacted",
+        this.sdlcPlan?.stories.find((story) =>
+          ["delegated", "in-progress", "awaiting-validation", "review-required"].includes(
+            story.status
+          )
+        )?.id
+      );
+    } catch (error) {
+      this.post({
+        type: "NOTIFICATION",
+        level: "error",
+        message:
+          error instanceof Error
+            ? `Affected-path refresh failed: ${error.message}`
+            : "Affected-path refresh failed."
+      });
     }
   }
 
@@ -434,6 +549,21 @@ export class VscodeProvider {
           );
       return;
     }
+    if (message.type === "LOAD_CONTEXT_PACKET") {
+      const root = this.workspaceRoot();
+      if (root)
+        void this.getService(root)
+          .loadContextPacket(message.packetId, message.segmentKinds)
+          .then((result) => this.post({ type: "CONTEXT_PACKET_RESULT", ...result }))
+          .catch((error) =>
+            this.post({
+              type: "ERROR",
+              operation: "analysis",
+              message: error instanceof Error ? error.message : String(error)
+            })
+          );
+      return;
+    }
     if (message.type === "RECORD_CONTEXT_FEEDBACK") {
       const root = this.workspaceRoot();
       if (root)
@@ -446,6 +576,28 @@ export class VscodeProvider {
               message: "Context feedback recorded for future retrieval."
             })
           );
+      return;
+    }
+    if (message.type === "REQUEST_CORRECTION_PACKET") {
+      const root = this.workspaceRoot();
+      if (root)
+        void this.getService(root)
+          .createCorrectionPacket({ reason: "manual" })
+          .then((packet) => {
+            this.applicationStore.update({ correctionPacket: packet });
+            this.post({ type: "CORRECTION_PACKET_RESULT", packet });
+          })
+          .catch((error) =>
+            this.post({
+              type: "ERROR",
+              operation: "analysis",
+              message: error instanceof Error ? error.message : String(error)
+            })
+          );
+      return;
+    }
+    if (message.type === "REINDEX_AFFECTED_AND_VALIDATE") {
+      void this.reindexAffectedAndValidate();
       return;
     }
     if (message.type === "CANCEL_INGESTION") {
@@ -624,7 +776,11 @@ export class VscodeProvider {
       const root = this.workspaceRoot();
       if (root)
         void this.whenIndexReady(root, () =>
-          this.getService(root).exploreIntelligence(message.query ?? "", message.kind ?? "all")
+          this.getService(root).exploreIntelligence(
+            message.query ?? "",
+            message.kind ?? "all",
+            message.cursor
+          )
         )
           .then((result) => this.post({ type: "INTELLIGENCE_EXPLORER_RESULT", result }))
           .catch((error) =>
@@ -1143,7 +1299,8 @@ export class VscodeProvider {
       if (!root) throw new Error("Open a workspace before creating Task Handoff.");
       const task = this.applicationStore.snapshot().taskAnalysis as KeystoneTaskResult | undefined;
       if (!task) throw new Error("Analyze an intent before creating Task Handoff.");
-      const input = authoritativeHandoffInput(task, root, this.sdlcPlan);
+      const correctionPackets = await this.getService(root).correctionPacketsForActiveTask();
+      const input = authoritativeHandoffInput(task, root, this.sdlcPlan, correctionPackets);
       const packageValue = new TaskStatePackageBuilder().build(input);
       const encrypted = await encryptHandoffPackage(JSON.stringify(packageValue), passphrase);
       await this.getService(root).exportActiveTaskForHandoff(root);
@@ -1243,18 +1400,38 @@ export class VscodeProvider {
     message: Extract<WebviewToExtensionMessage, { type: "APPROVE_DELEGATION" }>
   ): Promise<CopilotDelegationResult> {
     let storyId = message.storyId;
+    const correctionPacket = message.correctionPacketId
+      ? (this.applicationStore.snapshot().correctionPacket as
+          { id: string; snapshotDigest?: string } | undefined)
+      : undefined;
+    if (message.correctionPacketId && correctionPacket?.id !== message.correctionPacketId)
+      throw new Error("The correction packet is no longer active. Regenerate it before retrying.");
     if (this.sdlcPlan) {
       const story = storyId
         ? this.sdlcPlan.stories.find((item) => item.id === storyId)
         : this.sdlcPlan.stories.find((item) => item.status === "in-progress");
       if (story) {
         storyId = story.id;
+        if (message.correctionPacketId) {
+          if (story.status === "review-required") {
+            this.sdlcPlan = this.sdlcEngine.transition(this.sdlcPlan, story.id, "in-progress", {
+              evidence: [
+                `Correction packet ${message.correctionPacketId} selected for user-approved Copilot recovery.`
+              ]
+            });
+          } else if (story.status !== "in-progress") {
+            throw new Error(
+              `Correction delegation requires a review-required or in-progress story, found ${story.status}.`
+            );
+          }
+        }
         this.sdlcPlan = this.sdlcEngine.prepareDelegation(this.sdlcPlan, story.id, {
           agent: message.agent ?? "GitHub Copilot",
           skills: message.skills,
           instructions: message.instructions,
           prompt: message.prompt,
-          contextPackId: message.contextPackId
+          contextPackId: message.contextPackId,
+          correctionPacketId: message.correctionPacketId
         });
         this.sdlcPlan = this.sdlcEngine.approveDelegation(this.sdlcPlan, story.id);
         await this.persistSdlcPlan(this.sdlcPlan);
@@ -1266,20 +1443,50 @@ export class VscodeProvider {
       storyId,
       agent: message.agent,
       skills: message.skills,
-      instructions: message.instructions
+      instructions: message.instructions,
+      correctionPacketId: message.correctionPacketId
     });
     if (result.captured && result.success && this.sdlcPlan && storyId) {
       const story = this.sdlcPlan.stories.find((item) => item.id === storyId);
       if (story?.status === "delegated") {
+        const correctionEvidence = story.delegation?.correctionPacketId
+          ? [
+              `Captured Copilot result is attached to correction packet ${story.delegation.correctionPacketId}.`,
+              "The corrected workspace result is ready for the next validation transition."
+            ]
+          : [];
         this.sdlcPlan = this.sdlcEngine.completeDelegation(this.sdlcPlan, storyId, [
           `Copilot response captured by Keystone (${result.model?.name ?? result.model?.id ?? "GitHub Copilot"}).`,
           result.artifactPath
             ? `Captured result artifact: ${result.artifactPath}`
-            : "Captured result stored locally."
+            : "Captured result stored locally.",
+          ...correctionEvidence
         ]);
         await this.persistSdlcPlan(this.sdlcPlan);
         this.applicationStore.update({ sdlc: this.sdlcPlan });
         this.post({ type: "SDLC_PLAN_RESULT", plan: this.sdlcPlan });
+      }
+    }
+    if (!result.success) {
+      try {
+        const packet = await this.getService(root).createCorrectionPacket({
+          reason: "delegation-failure",
+          failures: [result.error ?? `${result.mode} failed.`],
+          remediations: [
+            "Review the bounded OKF evidence and validation guidance, then retry only after confirming the selected context is sufficient."
+          ]
+        });
+        this.applicationStore.update({ correctionPacket: packet });
+        this.post({ type: "CORRECTION_PACKET_RESULT", packet });
+      } catch (error) {
+        this.post({
+          type: "NOTIFICATION",
+          level: "error",
+          message:
+            error instanceof Error
+              ? `Delegation failed; correction packet could not be generated: ${error.message}`
+              : "Delegation failed; correction packet could not be generated."
+        });
       }
     }
     this.applicationStore.update({ delegationResult: result });
@@ -1295,10 +1502,11 @@ export class VscodeProvider {
       agent?: string;
       skills?: readonly string[];
       instructions?: readonly string[];
+      correctionPacketId?: string;
     } = {}
   ): Promise<CopilotDelegationResult> {
     const startedAt = new Date().toISOString();
-    await this.getService(root).approveDelegation(mode, prompt);
+    await this.getService(root).approveDelegation(mode, prompt, options.correctionPacketId);
     if (mode === "Manual Copy Prompt") {
       await vscode.env.clipboard.writeText(prompt);
       const result: CopilotDelegationResult = {
@@ -1460,8 +1668,8 @@ export class VscodeProvider {
         activeStory = this.sdlcPlan.stories.find((story) => story.id === activeStory!.id);
       }
       const results = await this.getService(root).runValidation(scope);
+      const passed = results.length > 0 && results.every((result) => result.status === "passed");
       if (this.sdlcPlan && activeStory) {
-        const passed = results.length > 0 && results.every((result) => result.status === "passed");
         const evidence = results.flatMap((result) => [
           `${result.command}: ${result.status}`,
           ...result.summary.errors.map((error) => `${result.command}: ${error}`)
@@ -1474,6 +1682,39 @@ export class VscodeProvider {
         await this.persistSdlcPlan(this.sdlcPlan);
         this.applicationStore.update({ sdlc: this.sdlcPlan });
         this.post({ type: "SDLC_PLAN_RESULT", plan: this.sdlcPlan });
+      }
+      if (!passed) {
+        try {
+          const packet = await this.getService(root).createCorrectionPacket({
+            reason: "validation-failure",
+            commands: results.map((result) => result.command),
+            failures: results
+              .filter((result) => result.status === "failed")
+              .flatMap((result) =>
+                result.summary.errors?.length
+                  ? result.summary.errors.map((error) => `${result.command}: ${error}`)
+                  : [`${result.command}: ${result.stderr || "Validation failed."}`]
+              ),
+            remediations: results.flatMap((result) =>
+              (result.remediation ?? []).flatMap((proposal) => [
+                proposal.summary,
+                ...proposal.recommendedActions,
+                proposal.copilotPrompt
+              ])
+            )
+          });
+          this.applicationStore.update({ correctionPacket: packet });
+          this.post({ type: "CORRECTION_PACKET_RESULT", packet });
+        } catch (error) {
+          this.post({
+            type: "NOTIFICATION",
+            level: "error",
+            message: `Validation failed, but Keystone could not generate the correction packet: ${error instanceof Error ? error.message : String(error)}`
+          });
+        }
+      } else {
+        this.applicationStore.update({ correctionPacket: undefined });
+        this.post({ type: "STATE_UPDATE", state: { correctionPacket: undefined } });
       }
       this.post({ type: "VALIDATION_RESULT", results });
     } catch (error) {
@@ -1498,7 +1739,11 @@ export class VscodeProvider {
     // The initial persisted-state read can overlap automatic recovery indexing.
     // Never let that stale idle/ready snapshot replace the live progress state.
     if (this.indexing && this.activeIndexRoot === root) return;
-    this.post({ type: "STATE_UPDATE", state });
+    this.applicationStore.update({ correctionPacket: state.correctionPacket });
+    this.post({
+      type: "STATE_UPDATE",
+      state: { ...state, correctionPacket: state.correctionPacket }
+    });
     if (this.sdlcPlan) this.post({ type: "SDLC_PLAN_RESULT", plan: this.sdlcPlan });
   }
 
@@ -1533,6 +1778,52 @@ export class VscodeProvider {
     } finally {
       this.intelligenceRecoveryRoots.delete(root);
     }
+  }
+
+  /**
+   * Returns one shared worker input after ingestion has settled on a promoted
+   * OKF snapshot. Background analyzers must not start from a stale snapshot or
+   * rediscover the repository while the canonical run is still in progress.
+   */
+  async getBackgroundWorkerInput(root: string): Promise<BackgroundWorkerInput | undefined> {
+    if (this.indexing || this.refreshQueued || this.pendingIndexRoots.has(root)) return undefined;
+    return this.readPromotedWorkerInput(root);
+  }
+
+  private async readPromotedWorkerInput(root: string): Promise<BackgroundWorkerInput | undefined> {
+    const snapshotPath = path.join(root, ".keystone", "intelligence", "snapshot.json");
+    const intelligencePath = path.join(root, ".keystone", "intelligence", "summary.json");
+    let snapshot: RepositoryIntelligenceSnapshot;
+    try {
+      snapshot = JSON.parse(
+        await fs.readFile(snapshotPath, "utf8")
+      ) as RepositoryIntelligenceSnapshot;
+    } catch {
+      return undefined;
+    }
+    if (snapshot.workspaceRoot !== root || !["ready", "degraded"].includes(snapshot.status))
+      return undefined;
+    const okf = await new OkfSnapshotStore(root).read();
+    if (!okf || !snapshot.intelligence) return undefined;
+    const snapshotDigest =
+      okf.manifest.digests.snapshot ?? okf.manifest.digests.okf ?? okf.manifest.extractionRunId;
+    const canonicalEvidence = Object.fromEntries(
+      (["qa", "security", "performance", "modernization"] as const).map((kind) => {
+        const selection = selectCanonicalContext(okf, `${kind} repository evidence`, {
+          graphMode: kind === "qa" ? "tests" : "impact",
+          graphLimit: 180
+        });
+        return [kind, canonicalEvidenceEnvelope(okf, selection)] as const;
+      })
+    ) as BackgroundWorkerInput["canonicalEvidence"];
+    return {
+      root,
+      snapshotPath,
+      intelligencePath,
+      snapshotDigest,
+      extractionRunId: okf.manifest.extractionRunId,
+      canonicalEvidence
+    };
   }
 
   private async loadRestoredTaskHandoff(): Promise<void> {
@@ -1700,6 +1991,7 @@ export class VscodeProvider {
       });
     if (message.type === "QA_BACKGROUND_STATUS") {
       const current = this.applicationStore.snapshot();
+      const result = message.result as { canonicalEvidence?: unknown } | undefined;
       this.applicationStore.update({
         backgroundWorkers: {
           ...current.backgroundWorkers,
@@ -1707,6 +1999,19 @@ export class VscodeProvider {
             status: message.status,
             progress: message.progress ?? (message.status === "complete" ? 100 : undefined),
             message: message.message,
+            result: message.result,
+            canonicalEvidence:
+              result && typeof result === "object" && result !== null
+                ? ((result as { canonicalEvidence?: unknown }).canonicalEvidence as
+                    OkfCanonicalEvidenceEnvelope | undefined)
+                : undefined,
+            workerId: message.workerId,
+            snapshotDigest: message.snapshotDigest,
+            extractionRunId: message.extractionRunId,
+            scopePaths: message.scopePaths ? [...message.scopePaths] : undefined,
+            startedAt: message.startedAt,
+            completedAt: message.completedAt,
+            durationMs: message.durationMs,
             updatedAt: new Date().toISOString()
           }
         }
@@ -1714,6 +2019,7 @@ export class VscodeProvider {
     }
     if (message.type === "BACKGROUND_ANALYSIS_STATUS") {
       const current = this.applicationStore.snapshot();
+      const result = message.result as { canonicalEvidence?: unknown } | undefined;
       this.applicationStore.update({
         backgroundWorkers: {
           ...current.backgroundWorkers,
@@ -1722,6 +2028,16 @@ export class VscodeProvider {
             progress: message.status === "complete" ? 100 : undefined,
             message: message.error ?? `${message.worker} background worker is ${message.status}.`,
             error: message.error,
+            result: message.result,
+            canonicalEvidence: result?.canonicalEvidence as
+              OkfCanonicalEvidenceEnvelope | undefined,
+            workerId: message.workerId,
+            snapshotDigest: message.snapshotDigest,
+            extractionRunId: message.extractionRunId,
+            scopePaths: message.scopePaths ? [...message.scopePaths] : undefined,
+            startedAt: message.startedAt,
+            completedAt: message.completedAt,
+            durationMs: message.durationMs,
             updatedAt: new Date().toISOString()
           }
         }
@@ -1798,6 +2114,16 @@ export class VscodeProvider {
       vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
     );
   }
+
+  /** Public accessor for the current workspace root, used by maintenance commands. */
+  get activeWorkspaceRoot(): string | undefined {
+    return this.workspaceRoot();
+  }
+
+  /** Surface an informational message to the user (toast). Used by maintenance commands. */
+  notify(message: string): void {
+    this.output.info(message);
+  }
 }
 
 type PersistedHandoffRecord = {
@@ -1810,7 +2136,8 @@ type PersistedHandoffRecord = {
 function authoritativeHandoffInput(
   result: KeystoneTaskResult,
   root: string,
-  plan?: SDLCPlan
+  plan?: SDLCPlan,
+  correctionPackets: CorrectionPacket[] = []
 ): TaskStatePackageInput {
   const stories = plan?.stories ?? [];
   const completed = stories.filter((s) => s.status === "completed");
@@ -2000,6 +2327,7 @@ function authoritativeHandoffInput(
         s.acceptanceCriteria.filter((c) => !s.satisfiedCriteria.includes(c))
       )
     },
+    correctionPackets: correctionPackets.length ? correctionPackets : undefined,
     decisions: {
       acceptedDecisions: stories.flatMap((s) => s.decisions),
       rejectedAlternatives: [],

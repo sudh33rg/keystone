@@ -26,7 +26,13 @@ export interface IntelligenceExplorerItem {
 export interface IntelligenceExplorerResult {
   readonly query: string;
   readonly kind?: string;
+  /** Cursor supplied for this page; omitted for the first page. */
+  readonly cursor?: string;
+  /** Opaque cursor for the next bounded page, when more matches remain. */
+  readonly nextCursor?: string;
+  readonly pageSize: number;
   readonly totalActive: number;
+  readonly totalMatching: number;
   readonly kindCounts: Readonly<Record<string, number>>;
   readonly items: readonly IntelligenceExplorerItem[];
 }
@@ -39,6 +45,7 @@ export interface IntelligenceGraphNode {
   readonly line?: number;
   readonly confidence: number;
   readonly evidenceIds: readonly string[];
+  readonly properties: Readonly<Record<string, unknown>>;
   readonly seed: boolean;
 }
 
@@ -116,7 +123,8 @@ const GRAPH_RELATIONSHIPS: Record<IntelligenceGraphMode, ReadonlySet<string>> = 
     "configured-by",
     "documented-by",
     "flows-to",
-    "may-impact"
+    "may-impact",
+    "maps-to"
   ]),
   architecture: new Set([
     "contains",
@@ -124,9 +132,10 @@ const GRAPH_RELATIONSHIPS: Record<IntelligenceGraphMode, ReadonlySet<string>> = 
     "depends-on",
     "exposes",
     "configured-by",
-    "documented-by"
+    "documented-by",
+    "maps-to"
   ]),
-  dependencies: new Set(["imports", "depends-on", "configured-by"]),
+  dependencies: new Set(["imports", "depends-on", "configured-by", "maps-to"]),
   calls: new Set(["calls", "defines"]),
   tests: new Set(["tests", "covers", "defines"]),
   impact: new Set([
@@ -137,9 +146,10 @@ const GRAPH_RELATIONSHIPS: Record<IntelligenceGraphMode, ReadonlySet<string>> = 
     "tests",
     "covers",
     "defines",
-    "exposes"
+    "exposes",
+    "maps-to"
   ]),
-  flows: new Set(["flows-to", "calls", "reads", "writes", "defines"])
+  flows: new Set(["flows-to", "calls", "reads", "writes", "defines", "maps-to"])
 };
 
 const ARCHITECTURE_KINDS = new Set([
@@ -151,7 +161,18 @@ const ARCHITECTURE_KINDS = new Set([
   "api",
   "architecture-boundary",
   "configuration",
-  "data-entity"
+  "data-entity",
+  "database",
+  "table",
+  "orm-entity",
+  "query",
+  "feature-flag",
+  "ci-cd",
+  "infrastructure",
+  "component",
+  "event",
+  "build-system",
+  "package-manager"
 ]);
 const FLOW_KINDS = new Set([
   "call-flow",
@@ -160,14 +181,21 @@ const FLOW_KINDS = new Set([
   "service",
   "api",
   "file",
-  "data-entity"
+  "data-entity",
+  "database",
+  "table",
+  "orm-entity",
+  "query",
+  "event",
+  "component"
 ]);
 
 export function exploreOkfSnapshot(
   snapshot: KeystoneOkfSnapshot,
-  options: { query?: string; kind?: string; limit?: number } = {}
+  options: { query?: string; kind?: string; cursor?: string; limit?: number } = {}
 ): IntelligenceExplorerResult {
   const query = options.query?.trim() ?? "";
+  const kind = options.kind && options.kind !== "all" ? options.kind : undefined;
   const terms = tokenize(query);
   const units = snapshot.units.filter((unit) => unit.lifecycle === "active");
   const kindCounts: Record<string, number> = {};
@@ -180,7 +208,7 @@ export function exploreOkfSnapshot(
   }
   const evidence = new Map(snapshot.evidence.map((item) => [item.id, item]));
   const ranked = units
-    .filter((unit) => !options.kind || options.kind === "all" || unit.kind === options.kind)
+    .filter((unit) => !kind || unit.kind === kind)
     .map((unit) => ({ unit, score: explorerScore(unit, query, terms) }))
     .filter((item) => !query || item.score > 0)
     .sort(
@@ -190,18 +218,74 @@ export function exploreOkfSnapshot(
           (outgoing.get(right.unit.id) ?? 0) -
           ((incoming.get(left.unit.id) ?? 0) + (outgoing.get(left.unit.id) ?? 0)) ||
         left.unit.canonicalKey.localeCompare(right.unit.canonicalKey)
-    )
-    .slice(0, Math.max(1, Math.min(options.limit ?? 100, 250)))
+    );
+  const pageSize = Math.max(1, Math.min(options.limit ?? 120, 250));
+  const page = readExplorerCursor(options.cursor, query, kind, snapshot.manifest.digests.snapshot);
+  const start = page?.offset ?? 0;
+  const items = ranked
+    .slice(start, start + pageSize)
     .map(({ unit }) =>
       toExplorerItem(unit, incoming.get(unit.id) ?? 0, outgoing.get(unit.id) ?? 0, evidence)
     );
+  const end = start + items.length;
   return {
     query,
-    kind: options.kind && options.kind !== "all" ? options.kind : undefined,
+    kind,
+    cursor: page ? options.cursor : undefined,
+    nextCursor:
+      end < ranked.length
+        ? writeExplorerCursor({
+            query,
+            kind,
+            offset: end,
+            snapshotDigest: snapshot.manifest.digests.snapshot
+          })
+        : undefined,
+    pageSize,
     totalActive: units.length,
+    totalMatching: ranked.length,
     kindCounts,
-    items: ranked
+    items
   };
+}
+
+interface ExplorerCursor {
+  readonly version: 1;
+  readonly query: string;
+  readonly kind?: string;
+  readonly offset: number;
+  readonly snapshotDigest?: string;
+}
+
+function writeExplorerCursor(cursor: Omit<ExplorerCursor, "version">): string {
+  return Buffer.from(JSON.stringify({ version: 1, ...cursor }), "utf8").toString("base64url");
+}
+
+function readExplorerCursor(
+  value: string | undefined,
+  query: string,
+  kind: string | undefined,
+  snapshotDigest: string | undefined
+): ExplorerCursor | undefined {
+  if (!value) return undefined;
+  try {
+    const cursor = JSON.parse(
+      Buffer.from(value, "base64url").toString("utf8")
+    ) as Partial<ExplorerCursor>;
+    if (
+      cursor.version !== 1 ||
+      cursor.query !== query ||
+      cursor.kind !== kind ||
+      cursor.snapshotDigest !== snapshotDigest ||
+      typeof cursor.offset !== "number" ||
+      !Number.isInteger(cursor.offset) ||
+      cursor.offset < 0
+    )
+      return undefined;
+    return cursor as ExplorerCursor;
+  } catch {
+    return undefined;
+  }
 }
 
 export function buildOkfGraphView(
@@ -449,7 +533,22 @@ function nodeAllowed(mode: IntelligenceGraphMode, unit: KeystoneKnowledgeUnit): 
 }
 function flowUnitUseful(unit: KeystoneKnowledgeUnit | undefined): boolean {
   if (!unit) return false;
-  if (["call-flow", "data-flow", "service", "api", "data-entity", "test"].includes(unit.kind))
+  if (
+    [
+      "call-flow",
+      "data-flow",
+      "service",
+      "api",
+      "data-entity",
+      "database",
+      "table",
+      "orm-entity",
+      "query",
+      "event",
+      "component",
+      "test"
+    ].includes(unit.kind)
+  )
     return true;
   if (unit.kind === "file") return !isNoisePath(unitPath(unit) ?? unit.name);
   if (unit.kind !== "symbol") return false;
@@ -484,7 +583,13 @@ function defaultSeeds(
         "package",
         "service",
         "api",
-        "data-entity"
+        "data-entity",
+        "database",
+        "table",
+        "orm-entity",
+        "query",
+        "component",
+        "event"
       ].includes(unit.kind)
     );
     if (preferred.length)
@@ -499,7 +604,7 @@ function defaultSeeds(
   }
   if (mode === "flows") {
     const preferred = candidates.filter((unit) =>
-      ["call-flow", "data-flow", "service", "api", "symbol"].includes(unit.kind)
+      ["call-flow", "data-flow", "service", "api", "symbol", "query", "event"].includes(unit.kind)
     );
     return preferred
       .sort(
@@ -533,7 +638,19 @@ function kindPriority(kind: string): number {
     "symbol",
     "test",
     "call-flow",
-    "data-flow"
+    "data-flow",
+    "database",
+    "table",
+    "orm-entity",
+    "query",
+    "feature-flag",
+    "fixture",
+    "ci-cd",
+    "infrastructure",
+    "component",
+    "event",
+    "build-system",
+    "package-manager"
   ].indexOf(kind) >= 0
     ? [
         "repository",
@@ -623,6 +740,7 @@ function toGraphNode(
     line: unitLine(unit, evidence),
     confidence: unit.confidence.score,
     evidenceIds: [...unit.provenance.evidenceIds],
+    properties: unit.properties,
     seed
   };
 }

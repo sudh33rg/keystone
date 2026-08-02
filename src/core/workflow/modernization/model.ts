@@ -1,7 +1,7 @@
 import type { RepositoryModel } from "../../intelligence/repository/model";
-import type { KnowledgePlatformGraph } from "../../intelligence/graph/platformModel";
 import type { ExecutionHandle, WorkflowRequest } from "../orchestration/model";
 import type { TaskWorkspaceRef } from "../tasks/taskWorkspaceManager";
+import type { OkfCanonicalEvidenceEnvelope } from "../../intelligence/okf/types";
 
 export type ModernizationSeverity = "low" | "medium" | "high" | "critical";
 export type ModernizationStrategy =
@@ -30,7 +30,6 @@ export type ModernizationArea =
 
 export interface ModernizationRequest {
   readonly repository: RepositoryModel;
-  readonly knowledgeGraph?: KnowledgePlatformGraph;
   readonly objectives?: readonly string[];
   readonly targetArchitecture?: TargetArchitecture;
   readonly constraints?: readonly ModernizationConstraint[];
@@ -172,6 +171,7 @@ export interface ModernizationProposal {
   readonly architectureRecommendations: readonly TargetArchitectureRecommendation[];
   readonly technologyRecommendations: readonly TechnologyRecommendation[];
   readonly questions: readonly string[];
+  readonly canonicalEvidence?: OkfCanonicalEvidenceEnvelope;
 }
 
 export interface ModernizationDecisionInput {

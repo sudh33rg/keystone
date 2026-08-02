@@ -138,6 +138,9 @@ export interface SemanticCall {
   caller?: string;
   callee: string;
   line: number;
+  /** Resolved declaration location when a project-aware semantic provider supplies it. */
+  targetFilePath?: string;
+  targetLine?: number;
   evidence?: EvidenceMetadata;
 }
 export interface ControlFlowFact {
@@ -159,6 +162,50 @@ export interface TypeRelationshipFact {
   target: string;
   kind: "extends" | "implements";
   line: number;
+  /** Resolved declaration location for cross-file type relationships. */
+  targetFilePath?: string;
+  targetLine?: number;
+  evidence?: EvidenceMetadata;
+}
+
+export type EngineeringEntityKind =
+  | "database"
+  | "table"
+  | "orm-entity"
+  | "query"
+  | "feature-flag"
+  | "fixture"
+  | "ci-cd"
+  | "infrastructure"
+  | "component"
+  | "event"
+  | "build-system"
+  | "package-manager";
+
+export type EngineeringEntityRelationKind =
+  | "contains"
+  | "reads"
+  | "writes"
+  | "depends-on"
+  | "configured-by"
+  | "maps-to"
+  | "flows-to"
+  | "exposes";
+
+export interface EngineeringEntityRelation {
+  kind: EngineeringEntityRelationKind;
+  targetKind: EngineeringEntityKind;
+  targetName: string;
+  targetPath?: string;
+}
+
+export interface EngineeringEntityFact {
+  kind: EngineeringEntityKind;
+  name: string;
+  filePath: string;
+  line: number;
+  properties: Record<string, unknown>;
+  relations?: EngineeringEntityRelation[];
   evidence?: EvidenceMetadata;
 }
 
@@ -197,6 +244,7 @@ export interface RepoIntelligence {
   controlFlows?: ControlFlowFact[];
   dataFlows?: DataFlowFact[];
   typeRelationships?: TypeRelationshipFact[];
+  engineeringEntities?: EngineeringEntityFact[];
   ownershipHints: string[];
   frameworkHints: string[];
   securitySensitiveAreas: string[];
@@ -219,6 +267,64 @@ export interface RepoSkill {
   version: number;
   confidence: number;
   updatedAt: string;
+}
+
+export type ContextPacketSegmentKind = "summary" | "selected-intelligence" | "source-excerpts";
+
+export interface ContextPacket {
+  id: string;
+  sequence: number;
+  total: number;
+  continuationToken?: string;
+  segmentKinds: ContextPacketSegmentKind[];
+  paths: string[];
+  estimatedTokens: number;
+}
+
+export interface ContextPacketSegment {
+  kind: ContextPacketSegmentKind;
+  path?: string;
+  content: string;
+  estimatedTokens: number;
+}
+
+export interface ContextPacketPayload extends ContextPacket {
+  segments: ContextPacketSegment[];
+  content: string;
+}
+
+export type CorrectionPacketReason = "validation-failure" | "delegation-failure" | "manual";
+
+export interface CorrectionPacket {
+  id: string;
+  taskId: string;
+  reason: CorrectionPacketReason;
+  createdAt: string;
+  snapshotDigest: string;
+  validation: {
+    commands: string[];
+    failures: string[];
+    remediations: string[];
+  };
+  copilot: {
+    captured: boolean;
+    mode?: string;
+    artifactPath?: string;
+    responseExcerpt?: string;
+  };
+  canonical: {
+    unitIds: string[];
+    relationshipIds: string[];
+    evidenceIds: string[];
+    paths: string[];
+  };
+  changedPaths?: string[];
+  affectedPaths?: string[];
+  diffHash?: string;
+  resolvedAt?: string;
+  resolvedByValidation?: string[];
+  selectedPaths: string[];
+  prompt: string;
 }
 
 export interface ContextPack {
@@ -261,6 +367,8 @@ export interface ContextPack {
   /** Compact OKF/graph intelligence digest passed to Copilot with the selected excerpts. */
   boundedIntelligence?: string;
   omittedContext?: Array<{ path: string; reason: string; estimatedTokens: number }>;
+  contextPackets?: ContextPacket[];
+  contextPacketPayloads?: ContextPacketPayload[];
   contextManifest?: {
     delegationTokenBudget: number;
     usedTokens: number;
@@ -268,6 +376,9 @@ export interface ContextPack {
     omittedFiles: number;
     protectedFiles: number;
     traceableEvidence: number;
+    packetCount?: number;
+    packetIds?: string[];
+    snapshotDigest?: string;
     generatedAt: string;
   };
   selectedContextTokens?: number;

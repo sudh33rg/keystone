@@ -341,6 +341,12 @@ label {
   color: #f0a0a0;
   background: #3a1b21;
 }
+.status.stale,
+.status.cancelled {
+  border-color: #8b7044;
+  color: #f5bb6e;
+  background: #3a2c18;
+}
 .status.in-progress,
 .status.running,
 .status.delegated,
@@ -575,6 +581,10 @@ label {
 .status-dot.review-required {
   background: var(--bad);
 }
+.status-dot.stale,
+.status-dot.cancelled {
+  background: var(--warn);
+}
 .status-dot.ready {
   background: var(--warn);
 }
@@ -730,6 +740,24 @@ label {
   color: #a5bfca;
   font-size: 11px;
   line-height: 1.4;
+}
+.worker-evidence,
+.worker-meta {
+  display: block;
+  margin-top: 7px;
+  color: #83c9df;
+  font-size: 10px;
+  line-height: 1.35;
+}
+.worker-meta {
+  color: var(--muted);
+}
+.worker-error {
+  display: block;
+  margin-top: 7px;
+  color: #f5bb6e;
+  font-size: 10px;
+  line-height: 1.35;
 }
 .evidence-grid {
   max-height: 320px;
@@ -1140,6 +1168,41 @@ select {
 }
 .context-sections pre {
   max-height: 180px;
+}
+.context-packets {
+  display: grid;
+  gap: 7px;
+  margin-top: 8px;
+}
+.context-packets article {
+  display: grid;
+  gap: 4px;
+  padding: 9px;
+  border: 1px solid #284e60;
+  border-radius: 7px;
+  background: #071f2a;
+}
+.context-packets article > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.context-packets p,
+.context-packets small,
+.context-packets code {
+  color: #9bb5c0;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.packet-actions {
+  margin-top: 4px;
+}
+.context-packet-content {
+  max-height: 340px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 11px;
 }
 .status[class*="%-"] {
   text-transform: none;

@@ -51,6 +51,11 @@ export type TestDiscoveryResult = {
   };
 };
 
+export interface TestDiscoveryOptions {
+  /** Optional canonical OKF paths to inspect instead of rediscovering every test file. */
+  scopePaths?: readonly string[];
+}
+
 // ---------------------------------------------------------------------------
 // Glob patterns per framework
 // ---------------------------------------------------------------------------
@@ -317,7 +322,10 @@ function detectFromCsProj(content: string): TestFrameworkName {
 /**
  * Detect the primary test framework by scanning all project config files.
  */
-function detectFramework(workspaceRoot: string): TestFrameworkName {
+function detectFramework(
+  workspaceRoot: string,
+  scopePaths: readonly string[] = []
+): TestFrameworkName {
   const pkgPath = path.join(workspaceRoot, "package.json");
   const pyprojectPath = path.join(workspaceRoot, "pyproject.toml");
   const goModPath = path.join(workspaceRoot, "go.mod");
@@ -369,17 +377,26 @@ function detectFramework(workspaceRoot: string): TestFrameworkName {
   }
 
   // Fallback: look for test files to infer framework
-  const testPyFiles = globFiles(workspaceRoot, "test_*.py");
-  if (testPyFiles.length > 0) return "pytest";
+  const scoped = (pattern: string): boolean =>
+    scopePaths.some((value) => globPatternToRegExp(pattern).test(value.replaceAll("\\", "/")));
+  if (scopePaths.length) {
+    if (scoped("test_*.py")) return "pytest";
+    if (scoped("**/*_test.go")) return "go-test";
+    if (scoped("**/*Test.java")) return "junit";
+    if (scoped("**/*.test.{ts,tsx,js,jsx}")) return "vitest";
+  } else {
+    const testPyFiles = globFiles(workspaceRoot, "test_*.py");
+    if (testPyFiles.length > 0) return "pytest";
 
-  const testGoFiles = globFiles(workspaceRoot, "**/*_test.go");
-  if (testGoFiles.length > 0) return "go-test";
+    const testGoFiles = globFiles(workspaceRoot, "**/*_test.go");
+    if (testGoFiles.length > 0) return "go-test";
 
-  const testJavaFiles = globFiles(workspaceRoot, "**/*Test.java");
-  if (testJavaFiles.length > 0) return "junit";
+    const testJavaFiles = globFiles(workspaceRoot, "**/*Test.java");
+    if (testJavaFiles.length > 0) return "junit";
 
-  const testTsFiles = globFiles(workspaceRoot, "**/*.test.{ts,tsx,js,jsx}");
-  if (testTsFiles.length > 0) return "vitest";
+    const testTsFiles = globFiles(workspaceRoot, "**/*.test.{ts,tsx,js,jsx}");
+    if (testTsFiles.length > 0) return "vitest";
+  }
 
   return "unknown";
 }
@@ -496,18 +513,29 @@ function estimateCoverage(
  * Scans build files to detect the test framework, then enumerates test
  * files using framework-specific glob patterns.
  */
-export function discoverTests(workspaceRoot: string): TestDiscoveryResult {
-  const framework = detectFramework(workspaceRoot);
+export function discoverTests(
+  workspaceRoot: string,
+  options: TestDiscoveryOptions = {}
+): TestDiscoveryResult {
+  const scope = new Set(
+    (options.scopePaths ?? []).map((value) => value.replace(/\\/g, "/").replace(/^\.\//, ""))
+  );
+  const framework = detectFramework(workspaceRoot, [...scope]);
   const patterns = TEST_PATTERNS[framework];
-  const allFiles: string[] = [];
-
-  for (const pattern of patterns) {
-    const files = globFiles(workspaceRoot, pattern);
-    allFiles.push(...files);
-  }
-
-  // Deduplicate
-  const testFiles = [...new Set(allFiles)];
+  const testFiles = scope.size
+    ? [...scope]
+        .filter((relative) =>
+          patterns.some((pattern) => globPatternToRegExp(pattern).test(relative))
+        )
+        .map((relative) => path.resolve(workspaceRoot, relative))
+        .filter((file) => {
+          try {
+            return fs.statSync(file).isFile();
+          } catch {
+            return false;
+          }
+        })
+    : [...new Set(patterns.flatMap((pattern) => globFiles(workspaceRoot, pattern)))];
 
   // Build command hints
   const coreCommands = DEFAULT_COMMANDS[framework];

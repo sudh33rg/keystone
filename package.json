@@ -5,6 +5,7 @@
   "version": "1.0.0",
   "author": "Sudheer G",
   "private": true,
+  "packageManager": "npm@11.12.1",
   "engines": {
     "vscode": "^1.92.0",
     "node": ">=20"
@@ -113,6 +114,8 @@
     "format": "prettier --write \"src/**/*.{ts,tsx}\" \"scripts/**/*.mjs\" \"*.config.{js,ts,mjs}\" package.json tsconfig*.json",
     "format:check": "prettier --check \"src/**/*.{ts,tsx}\" \"scripts/**/*.mjs\" \"*.config.{js,ts,mjs}\" package.json tsconfig*.json",
     "verify:source": "npm run clean && npm run typecheck && npm run lint && node scripts/check-active-boundary.mjs",
+    "verify:core": "npm run build && node scripts/verify-core.mjs",
+    "verify:okf": "npm run build && node scripts/verify-call-resolution.mjs && node scripts/verify-graph-stack.mjs",
     "verify:cross-feature": "npm run build && node scripts/verify-final.mjs",
     "verify:production": "npm run build && node scripts/verify-production-acceptance.mjs",
     "evidence:browser": "npm run build && node scripts/evidence-browser.mjs",

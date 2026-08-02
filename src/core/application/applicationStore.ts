@@ -1,3 +1,5 @@
+import type { OkfCanonicalEvidenceEnvelope } from "../intelligence/okf/types";
+
 export interface KeystoneOperation {
   id: string;
   kind: "intelligence" | "analysis" | "validation" | "delegation" | "handoff";
@@ -26,10 +28,19 @@ export interface KeystoneIngestionState {
 
 export type KeystoneBackgroundWorker = "qa" | "security" | "performance" | "modernization";
 export interface KeystoneBackgroundWorkerState {
-  status: "idle" | "running" | "complete" | "cancelled" | "failed";
+  status: "idle" | "running" | "complete" | "cancelled" | "stale" | "failed";
   progress?: number;
   message?: string;
   error?: string;
+  result?: unknown;
+  canonicalEvidence?: OkfCanonicalEvidenceEnvelope;
+  workerId?: string;
+  snapshotDigest?: string;
+  extractionRunId?: string;
+  scopePaths?: string[];
+  startedAt?: string;
+  completedAt?: string;
+  durationMs?: number;
   updatedAt: string;
 }
 
@@ -45,6 +56,7 @@ export interface KeystoneApplicationState {
   activeTask?: unknown;
   taskAnalysis?: unknown;
   delegationResult?: unknown;
+  correctionPacket?: unknown;
   sdlc?: unknown;
   valueEdgeFeature?: unknown;
   handoffs: unknown[];

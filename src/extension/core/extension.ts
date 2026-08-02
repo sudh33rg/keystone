@@ -32,10 +32,30 @@ export function activate(context: vscode.ExtensionContext): void {
   const startWorkspace = (folder: vscode.WorkspaceFolder): void => {
     const root = folder.uri.fsPath;
     output.info(`Workspace opened; starting automatic intelligence for ${root}.`);
-    void provider.indexWorkspace(root);
     const coordinator = backgroundWorkers.get(root) ?? new BackgroundWorkerCoordinator();
     backgroundWorkers.set(root, coordinator);
-    coordinator.start(root, (event) => provider.reportBackgroundWorker(event));
+    const startBackgroundWorkers = async (): Promise<void> => {
+      const indexed = await provider.indexWorkspace(root);
+      if (!indexed) {
+        output.warn(
+          `Background workers were not started because ${root} has no new promoted OKF snapshot.`
+        );
+        return;
+      }
+      const input = await provider.getBackgroundWorkerInput(root);
+      if (!input) {
+        output.warn(
+          `Background workers were not started because ${root} has no validated OKF input.`
+        );
+        return;
+      }
+      coordinator.start(root, (event) => provider.reportBackgroundWorker(event), input);
+    };
+    void startBackgroundWorkers().catch((error) =>
+      output.error(
+        `Background workers could not start for ${root}: ${error instanceof Error ? error.message : String(error)}`
+      )
+    );
   };
 
   for (const folder of vscode.workspace.workspaceFolders ?? []) startWorkspace(folder);
@@ -70,10 +90,22 @@ export function activate(context: vscode.ExtensionContext): void {
       root,
       setTimeout(() => {
         refreshTimers.delete(root);
-        void provider.indexWorkspace(root);
         const coordinator = backgroundWorkers.get(root) ?? new BackgroundWorkerCoordinator();
         backgroundWorkers.set(root, coordinator);
-        coordinator.start(root, (event) => provider.reportBackgroundWorker(event));
+        coordinator.dispose("superseded");
+        void provider
+          .indexWorkspace(root)
+          .then(async (indexed) => {
+            if (!indexed) return;
+            const input = await provider.getBackgroundWorkerInput(root);
+            if (input)
+              coordinator.start(root, (event) => provider.reportBackgroundWorker(event), input);
+          })
+          .catch((error) =>
+            output.error(
+              `Background workers could not restart for ${root}: ${error instanceof Error ? error.message : String(error)}`
+            )
+          );
       }, 2_000)
     );
   };
@@ -83,6 +115,7 @@ export function activate(context: vscode.ExtensionContext): void {
     const folder = vscode.workspace.getWorkspaceFolder(uri);
     if (!folder) return;
     const root = folder.uri.fsPath;
+    backgroundWorkers.get(root)?.dispose("superseded");
     const existingTimer = recoveryTimers.get(root);
     if (existingTimer) clearTimeout(existingTimer);
     recoveryTimers.set(

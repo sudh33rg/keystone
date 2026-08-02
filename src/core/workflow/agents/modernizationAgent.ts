@@ -1,8 +1,14 @@
 import type { ContextPack, ModernizationAssessment, RiskLevel } from "../../domain/types";
+import type { CanonicalContextSelection } from "../../intelligence/okf/canonicalContext";
+import { canonicalRiskAreas } from "./canonicalTaskEvidence";
 
 export class ModernizationAgent {
-  assess(pack: ContextPack): ModernizationAssessment {
-    const candidates = pack.modernizationConstraints.concat(
+  assess(pack: ContextPack, canonical?: CanonicalContextSelection): ModernizationAssessment {
+    const candidates = [
+      ...new Set(
+        pack.modernizationConstraints.concat(canonicalRiskAreas(canonical, "modernization"))
+      )
+    ].concat(
       pack.relevantFiles
         .filter((file) => file.lineCount > 500 || /legacy|old|deprecated/i.test(file.path))
         .map((file) => `${file.path}: modernization hotspot`)

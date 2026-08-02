@@ -11,6 +11,7 @@ Task Handoff is an action on the active SDLC task. It transfers portable task st
 - relevant files, symbols, relationships, context, and intelligence snapshot reference
 - branch/revision metadata for manual verification
 - selected Copilot agent, instructions, and skills where present
+- bounded OKF-grounded correction packets, including validation failures, selected paths, and retry prompts
 - exact next recommended action
 - schema version, redaction report, and integrity checksum
 ```
@@ -197,7 +198,7 @@ Task Handoff is an action on the active SDLC task. It transfers portable task st
   },
   "intelligence": {
     "snapshotId": "snapshot:123",
-    "snapshotVersion": "2.0.0",
+    "snapshotVersion": "2.1.0",
     "okfDigest": "sha256:jkl012...",
     "repository": {
       "url": "https://github.com/user/repo",
@@ -589,7 +590,7 @@ Task Handoff is an action on the active SDLC task. It transfers portable task st
   - `graph`: Knowledge graph (required)
     - `nodes`: Array of nodes (required)
       - `id`: Unique identifier for the node (required)
-      - `type`: Type of node (file, module, package, service, symbol, api, data-entity, configuration, test, documentation, call-flow, data-flow, architecture-boundary, risk-area, change-impact) (required)
+      - `type`: Type of node (file, module, package, service, symbol, api, data-entity, configuration, test, documentation, call-flow, data-flow, architecture-boundary, risk-area, change-impact, database, table, orm-entity, query, feature-flag, fixture, ci-cd, infrastructure, component, event, build-system, package-manager) (required)
       - `name`: Name of the node (required for most types)
       - `path`: File system path to the node (required for file types)
       - `language`: Programming language of the node (optional)
@@ -694,6 +695,8 @@ Task Handoff is an action on the active SDLC task. It transfers portable task st
 - `signature`: PGP signature of the package (optional)
 - `algorithm`: Hash algorithm used (required)
 - `version`: Integrity schema version (required)
+
+The verified package may also include an optional top-level `correctionPackets` array. Each packet retains its OKF snapshot digest, Git diff hash, changed paths, OKF-affected paths, selected unit/relationship/evidence IDs, bounded source paths, validation failures and remediations, any captured Copilot excerpt, the user-approved retry prompt, and optional resolution metadata. Restoring a package materializes these packets in the recipient task workspace as `correction-packets.json`.
 
 ## Creation Process
 

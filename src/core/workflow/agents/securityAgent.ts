@@ -1,4 +1,6 @@
 import type { ContextPack, RiskLevel, SecurityAnalysis } from "../../domain/types";
+import type { CanonicalContextSelection } from "../../intelligence/okf/canonicalContext";
+import { canonicalGraphDigest, canonicalRiskAreas } from "./canonicalTaskEvidence";
 
 // ---------------------------------------------------------------------------
 // Pattern libraries for static analysis
@@ -38,7 +40,7 @@ const MEDIUM_RISK_PATTERNS = [
 ];
 
 /** Extract all source content from the context pack. */
-function extractSource(pack: ContextPack): string {
+function extractSource(pack: ContextPack, canonical?: CanonicalContextSelection): string {
   const parts: string[] = [];
 
   // Direct excerpts are the richest signal
@@ -64,7 +66,8 @@ function extractSource(pack: ContextPack): string {
     parts.push(svc.name, ...svc.hints);
   }
 
-  return parts.join("\n").toLowerCase();
+  const canonicalDigest = canonicalGraphDigest(canonical);
+  return [...parts, canonicalDigest].filter(Boolean).join("\n").toLowerCase();
 }
 
 /**
@@ -104,9 +107,13 @@ export class SecurityAgent {
    * Performs static pattern matching on source excerpts, API contracts,
    * and file paths to identify security-sensitive areas.
    */
-  analyze(pack: ContextPack): SecurityAnalysis {
-    const source = extractSource(pack);
-    const { riskLevel, sensitiveAreas } = classifySecurityRisk(source);
+  analyze(pack: ContextPack, canonical?: CanonicalContextSelection): SecurityAnalysis {
+    const source = extractSource(pack, canonical);
+    const classified = classifySecurityRisk(source);
+    const canonicalAreas = canonicalRiskAreas(canonical, "security");
+    const sensitiveAreas = [...new Set([...classified.sensitiveAreas, ...canonicalAreas])];
+    const riskLevel =
+      classified.riskLevel === "high" || canonicalAreas.length > 0 ? "high" : classified.riskLevel;
 
     // Build a checklist based on what was found
     const checklist: string[] = [];

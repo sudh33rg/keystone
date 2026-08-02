@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 
 import type { VscodeProvider } from "../ui/vscodeProvider";
+import { registerCacheMaintenanceCommands } from "./cacheMaintenance";
 
 /**
  * Registers all extension commands with VS Code.
@@ -34,4 +35,5 @@ export function indexCommands(context: vscode.ExtensionContext, provider: Vscode
       if (text?.trim()) await provider.analyzeIntent(text);
     })
   );
+  registerCacheMaintenanceCommands(context, provider);
 }

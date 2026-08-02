@@ -40,6 +40,7 @@ export interface SDLCDelegation {
   skills: string[];
   instructions: string[];
   promptHash: string;
+  correctionPacketId?: string;
   approvedAt?: string;
   delegatedAt?: string;
   completedAt?: string;
@@ -480,6 +481,7 @@ export class SDLCEngine {
       instructions?: readonly string[];
       prompt: string;
       contextPackId?: string;
+      correctionPacketId?: string;
     }
   ): SDLCPlan {
     const story = this.storyById(plan, storyId);
@@ -492,7 +494,8 @@ export class SDLCEngine {
       agent: input.agent.trim() || "GitHub Copilot",
       skills: unique(input.skills ?? []),
       instructions: unique(input.instructions ?? []),
-      promptHash: createHash("sha256").update(input.prompt).digest("hex")
+      promptHash: createHash("sha256").update(input.prompt).digest("hex"),
+      correctionPacketId: input.correctionPacketId
     };
     return this.updateStory(plan, storyId, {
       ...story,

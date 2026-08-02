@@ -171,6 +171,7 @@ declare module "vscode" {
       items: readonly T[],
       options?: Record<string, unknown>
     ): Thenable<T | undefined>;
+    function showInformationMessage(message: string): Thenable<string | undefined>;
     function showWarningMessage<T extends string>(
       message: string,
       options: Record<string, unknown>,

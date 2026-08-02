@@ -132,4 +132,6 @@ export interface IntelligencePipelineOptions {
   cognitive?: boolean;
   semanticEnricher?: SemanticEnrichmentProvider;
   maxWorkers?: number;
+  /** Paths that triggered an incremental refresh; the full snapshot remains reconciled. */
+  affectedPaths?: readonly string[];
 }

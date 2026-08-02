@@ -3,7 +3,12 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { CpgShardStore } from "../intelligence/cpg";
-import { queryOkfSnapshot, type OkfQueryResult } from "../intelligence/okf/queryEngine";
+import {
+  canonicalRetrievalResult,
+  selectCanonicalContext,
+  type CanonicalContextSelection
+} from "../intelligence/okf/canonicalContext";
+import type { OkfQueryResult } from "../intelligence/okf/queryEngine";
 import type { KeystoneOkfSnapshot } from "../intelligence/okf/types";
 import { analyzeRepositoryGraph } from "../intelligence/pipeline/derivedGraph";
 import { buildIntelligenceFindings } from "../intelligence/pipeline/findings";
@@ -13,6 +18,9 @@ import {
 } from "../intelligence/pipeline/retrieval";
 import type {
   ContextPack,
+  ContextPacket,
+  ContextPacketPayload,
+  ContextPacketSegment,
   DeveloperIntent,
   RepoIntelligence,
   RepoSkill,
@@ -44,20 +52,28 @@ export async function buildIntentContextPack(
   options: ContextBuildOptions = {}
 ): Promise<ContextPack> {
   const tier = options.compressionTier ?? "standard";
-  const graph = analyzeRepositoryGraph(intelligence);
-  const findings = buildIntelligenceFindings(intelligence, graph);
-  const okfQuery = options.okfSnapshot
-    ? queryOkfSnapshot(
+  const preferredPaths = [
+    options.currentFile,
+    ...diffPaths(options.gitDiff ?? ""),
+    ...(options.preferredPaths ?? [])
+  ].filter((value): value is string => Boolean(value));
+  const canonicalSelection = options.okfSnapshot
+    ? selectCanonicalContext(
         options.okfSnapshot,
         options.retrievalText ? `${intent.text} ${options.retrievalText}` : intent.text,
-        40
+        { preferredPaths }
       )
     : undefined;
-  const retrieval = await retrieveRepositoryIntelligence(intelligence, graph, findings, {
-    text: options.retrievalText ? `${intent.text}\n${options.retrievalText}` : intent.text,
-    limit: 30,
-    graphDepth: tier === "aggressive" ? 1 : 2
-  });
+  const graph = canonicalSelection ? undefined : analyzeRepositoryGraph(intelligence);
+  const findings = graph ? buildIntelligenceFindings(intelligence, graph) : [];
+  const okfQuery = canonicalSelection?.query;
+  const retrieval = canonicalSelection
+    ? canonicalRetrievalResult(canonicalSelection)
+    : await retrieveRepositoryIntelligence(intelligence, graph!, findings, {
+        text: options.retrievalText ? `${intent.text}\n${options.retrievalText}` : intent.text,
+        limit: 30,
+        graphDepth: tier === "aggressive" ? 1 : 2
+      });
   const fileByPath = new Map(intelligence.files.map((file) => [file.path, file]));
   const selected = retrieval.results.flatMap((result) => {
     const file = fileByPath.get(result.path);
@@ -66,12 +82,35 @@ export async function buildIntentContextPack(
   const okfByPath = new Map(
     (okfQuery?.items ?? []).filter((item) => item.path).map((item) => [item.path!, item])
   );
+  const canonicalByPath = new Map(
+    (canonicalSelection?.paths ?? []).map((pathValue) => [pathValue, pathValue])
+  );
+  const canonicalGraphByPath = new Map(
+    (canonicalSelection?.graph.nodes ?? [])
+      .filter((node) => node.path)
+      .map((node) => [node.path!, node])
+  );
+  const canonicalCandidates = [...canonicalByPath.keys()].flatMap((pathValue) => {
+    const file = fileByPath.get(pathValue);
+    if (!file) return [];
+    const okf = okfByPath.get(pathValue);
+    return [
+      {
+        file,
+        result: {
+          path: file.path,
+          score: (okf?.score ?? 0) + 2,
+          reasons: [
+            okf ? `canonical OKF evidence: ${okf.reason}` : "canonical OKF graph neighborhood"
+          ] as readonly string[]
+        }
+      }
+    ];
+  });
   const priorityPaths = [
-    options.currentFile,
-    ...diffPaths(options.gitDiff ?? ""),
-    ...(options.preferredPaths ?? []),
+    ...preferredPaths,
     ...(okfQuery?.items.flatMap((item) => (item.path ? [item.path] : [])) ?? [])
-  ].filter((value): value is string => Boolean(value));
+  ];
   const priority = priorityPaths.flatMap((priorityPath) => {
     const file = fileByPath.get(priorityPath);
     const okf = okfByPath.get(priorityPath);
@@ -100,7 +139,7 @@ export async function buildIntentContextPack(
     [options.currentFile, ...diffPaths(options.gitDiff ?? "")].filter(Boolean)
   );
   const excludedPaths = new Set(options.excludedPaths ?? []);
-  const ranked = [...priority, ...selected]
+  const ranked = [...priority, ...canonicalCandidates, ...selected]
     .filter((item) => protectedPaths.has(item.file.path) || !excludedPaths.has(item.file.path))
     .filter(
       (item) =>
@@ -112,17 +151,19 @@ export async function buildIntentContextPack(
     );
   const fallback = ranked.length
     ? ranked
-    : intelligence.files
-        .filter((file) => !file.isGenerated && implementationContextPath(file.path, intent.text))
-        .slice(0, 8)
-        .map((file) => ({
-          file,
-          result: {
-            path: file.path,
-            score: 0,
-            reasons: ["repository fallback"] as readonly string[]
-          }
-        }));
+    : canonicalSelection
+      ? []
+      : intelligence.files
+          .filter((file) => !file.isGenerated && implementationContextPath(file.path, intent.text))
+          .slice(0, 8)
+          .map((file) => ({
+            file,
+            result: {
+              path: file.path,
+              score: 0,
+              reasons: ["repository fallback"] as readonly string[]
+            }
+          }));
   const relevantFiles = fallback.map((item) => item.file);
   const selectedPaths = new Set(relevantFiles.map((file) => file.path));
   const relevantSymbols = intelligence.symbols
@@ -196,9 +237,21 @@ export async function buildIntentContextPack(
         : compressed;
     const acceptedTokens = estimateTokens(accepted);
     const okfItem = okfByPath.get(item.file.path);
-    const okfRefs = okfItem
-      ? [{ okfId: okfItem.id, kind: okfItem.kind, label: okfItem.label }]
-      : [];
+    const canonicalNode = canonicalGraphByPath.get(item.file.path);
+    const okfRefs = [
+      ...(okfItem ? [{ okfId: okfItem.id, kind: okfItem.kind, label: okfItem.label }] : []),
+      ...(canonicalNode
+        ? [
+            {
+              okfId: canonicalNode.id,
+              kind: canonicalNode.kind,
+              label: canonicalNode.label,
+              startLine: canonicalNode.line,
+              endLine: canonicalNode.line
+            }
+          ]
+        : [])
+    ];
     const refs = dedupeRefs([...okfRefs, ...evidence.refs, ...excerpt.refs]);
     traceableEvidence += refs.length;
     contextSections.push({
@@ -229,11 +282,26 @@ export async function buildIntentContextPack(
     typeRelationships: intelligence.typeRelationships,
     findings,
     retrieval,
-    okfQuery
+    okfQuery,
+    canonicalSelection
   });
+  const contextPackId = crypto.randomUUID();
+  const packetBuild = buildContextPackets(
+    contextPackId,
+    intent.text,
+    boundedIntelligence,
+    contextSections,
+    delegationTokenBudget
+  );
+  const contextPackets = packetBuild.packets;
+  const contextPacketPayloads = packetBuild.payloads;
+  const snapshotDigest = options.okfSnapshot
+    ? (options.okfSnapshot.manifest.digests.snapshot ??
+      options.okfSnapshot.manifest.extractionRunId)
+    : undefined;
 
   const base: Omit<ContextPack, "copilotPrompt"> = {
-    id: crypto.randomUUID(),
+    id: contextPackId,
     taskSummary: intent.text,
     routeDecision,
     relevantFiles,
@@ -272,6 +340,8 @@ export async function buildIntentContextPack(
     contextSections,
     boundedIntelligence,
     omittedContext,
+    contextPackets,
+    contextPacketPayloads,
     contextManifest: {
       delegationTokenBudget,
       usedTokens,
@@ -279,6 +349,9 @@ export async function buildIntentContextPack(
       omittedFiles: omittedContext.length,
       protectedFiles: [...protectedPaths].filter(Boolean).length,
       traceableEvidence,
+      packetCount: contextPackets.length,
+      packetIds: contextPackets.map((packet) => packet.id),
+      snapshotDigest,
       generatedAt: new Date().toISOString()
     },
     selectedContextTokens: contextSections.reduce(
@@ -609,6 +682,7 @@ function compose(pack: Omit<ContextPack, "copilotPrompt">): string {
     "Use the packet as the authoritative working context. Do not search, crawl, enumerate, or retrieve the entire repository.",
     "You may open only the explicitly selected source paths below to verify current content. If the packet is insufficient, report the missing evidence instead of expanding to a repository-wide search.",
     `\n# Intent\n${pack.taskSummary}`,
+    `\n# Ordered context packet manifest\n${pack.contextPackets?.map((packet) => `- Packet ${packet.sequence}/${packet.total} ${packet.id}: ${packet.segmentKinds.join(", ")}; ${packet.estimatedTokens} tokens; ${packet.paths.length} source path(s)${packet.continuationToken ? `; continuation ${packet.continuationToken.slice(0, 16)}…` : "; final packet"}`).join("\n") || "One bounded context packet."}`,
     `\n# Bounded Keystone intelligence\n${pack.boundedIntelligence || "No additional OKF/graph digest was available; use the selected excerpts and report any evidence gap."}`,
     `\n# Selected source excerpts\n${pack.contextSections?.map((section) => `## ${section.path}\nReason: ${section.reason}\n\`\`\`\n${section.content}\n\`\`\``).join("\n\n") || "No file excerpts were selected."}`,
     `\n# Relevant symbols\n${pack.relevantSymbols.map((symbol) => `- ${symbol.kind} ${symbol.name} — ${symbol.filePath}:${symbol.line}`).join("\n")}`,
@@ -620,6 +694,92 @@ function compose(pack: Omit<ContextPack, "copilotPrompt">): string {
     `\n# Acceptance criteria\n${pack.acceptanceCriteria.map((item) => `- ${item}`).join("\n")}`,
     "\nExecution boundary: implement only the stated intent, keep changes within the selected paths unless a missing dependency is explicitly reported, and return changed files plus validation results. Do not perform Git write or remote merge operations."
   ].join("\n");
+}
+
+function buildContextPackets(
+  contextId: string,
+  intentText: string,
+  boundedIntelligence: string,
+  sections: NonNullable<ContextPack["contextSections"]>,
+  delegationTokenBudget: number
+): {
+  packets: NonNullable<ContextPack["contextPackets"]>;
+  payloads: NonNullable<ContextPack["contextPacketPayloads"]>;
+} {
+  const packetBudget = Math.max(1_600, Math.min(5_000, Math.floor(delegationTokenBudget * 0.42)));
+  type Draft = {
+    segmentKinds: ContextPacket["segmentKinds"];
+    paths: string[];
+    estimatedTokens: number;
+    segments: ContextPacketSegment[];
+  };
+  const summaryContent = `Intent: ${intentText}\nThis packet is selected from Keystone's canonical repository intelligence; it is not a repository-wide search.`;
+  const summaryTokens = estimateTokens(summaryContent);
+  const intelligenceTokens = estimateTokens(boundedIntelligence);
+  const drafts: Draft[] = [];
+  let current: Draft = {
+    segmentKinds: ["summary", "selected-intelligence"],
+    paths: [],
+    estimatedTokens: Math.min(packetBudget, summaryTokens + intelligenceTokens),
+    segments: [
+      { kind: "summary", content: summaryContent, estimatedTokens: summaryTokens },
+      {
+        kind: "selected-intelligence",
+        content: boundedIntelligence,
+        estimatedTokens: intelligenceTokens
+      }
+    ]
+  };
+  for (const section of sections) {
+    const content = `## ${section.path}\nReason: ${section.reason}\n\n${section.content}`;
+    const estimatedTokens = estimateTokens(content);
+    if (current.paths.length && current.estimatedTokens + estimatedTokens > packetBudget) {
+      drafts.push(current);
+      current = {
+        segmentKinds: ["source-excerpts"],
+        paths: [],
+        estimatedTokens: 0,
+        segments: []
+      };
+    }
+    current.paths.push(section.path);
+    if (!current.segmentKinds.includes("source-excerpts"))
+      current.segmentKinds.push("source-excerpts");
+    current.estimatedTokens += estimatedTokens;
+    current.segments.push({
+      kind: "source-excerpts",
+      path: section.path,
+      content,
+      estimatedTokens
+    });
+  }
+  if (current.paths.length || !drafts.length) drafts.push(current);
+  const packets = drafts.map((draft, index) => {
+    const sequence = index + 1;
+    const total = drafts.length;
+    const next = drafts[index + 1];
+    const continuationToken = next
+      ? crypto
+          .createHash("sha256")
+          .update(`${contextId}:${sequence}:${next.paths.join("\n")}`)
+          .digest("base64url")
+      : undefined;
+    return {
+      id: `${contextId}:packet:${sequence}`,
+      sequence,
+      total,
+      continuationToken,
+      segmentKinds: [...draft.segmentKinds],
+      paths: [...draft.paths],
+      estimatedTokens: draft.estimatedTokens
+    };
+  });
+  const payloads = drafts.map((draft, index) => ({
+    ...packets[index],
+    segments: draft.segments,
+    content: draft.segments.map((segment) => segment.content).join("\n\n")
+  }));
+  return { packets, payloads };
 }
 
 function buildBoundedIntelligence(input: {
@@ -639,6 +799,7 @@ function buildBoundedIntelligence(input: {
   findings: ReturnType<typeof buildIntelligenceFindings>;
   retrieval: IntelligenceRetrievalResult;
   okfQuery?: OkfQueryResult;
+  canonicalSelection?: CanonicalContextSelection;
 }): string {
   const lines = [
     "Source: persisted Keystone repository intelligence (not a fresh repository search).",
@@ -670,6 +831,25 @@ function buildBoundedIntelligence(input: {
         `- ${item.kind} ${item.label}${item.path ? ` — ${item.path}${item.line ? `:${item.line}` : ""}` : ""}; ${item.reason}; confidence ${Math.round(item.confidence * 100)}%`
     )
   );
+
+  const canonicalGraph = input.canonicalSelection?.graph;
+  if (canonicalGraph) {
+    lines.push(
+      "",
+      `Canonical OKF graph neighborhood (${canonicalGraph.mode}; ${canonicalGraph.nodes.length} nodes, ${canonicalGraph.edges.length} edges):`
+    );
+    lines.push(
+      ...canonicalGraph.nodes.slice(0, 32).map((node) => {
+        const location = node.path ? ` — ${node.path}${node.line ? `:${node.line}` : ""}` : "";
+        return `- ${node.kind} ${node.label}${location}; confidence ${Math.round(node.confidence * 100)}%; evidence ${node.evidenceIds.length}`;
+      })
+    );
+    lines.push(
+      ...canonicalGraph.edges
+        .slice(0, 48)
+        .map((edge) => `- ${edge.kind}: ${edge.sourceId} → ${edge.targetId}`)
+    );
+  }
   if (input.okfQuery?.answer) lines.push(`- Query answer: ${input.okfQuery.answer}`);
 
   const selectedOkfIds = new Set(okfItems.map((item) => item.id));
@@ -679,38 +859,46 @@ function buildBoundedIntelligence(input: {
     .map((item) => `- ${item.sourceLabel} -[${item.relationship}]-> ${item.targetLabel}`);
   if (traversalLines.length) lines.push("", "OKF relationship paths:", ...traversalLines);
 
-  const graphLines = [
-    ...input.dependencies
-      .filter((edge) => input.selectedPaths.has(edge.from) || input.selectedPaths.has(edge.to))
-      .slice(0, 18)
-      .map((edge) => `- ${edge.kind}: ${edge.from} -> ${edge.to}`),
-    ...(input.calls ?? [])
-      .filter((call) => input.selectedPaths.has(call.filePath))
-      .slice(0, 18)
-      .map(
-        (call) => `- call: ${call.caller ?? "?"} -> ${call.callee} (${call.filePath}:${call.line})`
-      ),
-    ...(input.controlFlows ?? [])
-      .filter((flow) => input.selectedPaths.has(flow.filePath))
-      .slice(0, 12)
-      .map((flow) => `- control-flow: ${flow.kind} (${flow.filePath}:${flow.line})`),
-    ...(input.dataFlows ?? [])
-      .filter((flow) => input.selectedPaths.has(flow.filePath))
-      .slice(0, 12)
-      .map(
-        (flow) => `- data-flow: ${flow.source} -> ${flow.target} (${flow.filePath}:${flow.line})`
-      ),
-    ...(input.typeRelationships ?? [])
-      .filter((relationship) => input.selectedPaths.has(relationship.filePath))
-      .slice(0, 12)
-      .map(
-        (relationship) =>
-          `- type: ${relationship.source} ${relationship.kind} ${relationship.target} (${relationship.filePath}:${relationship.line})`
-      )
-  ].slice(0, 56);
+  const graphLines = (
+    input.canonicalSelection
+      ? []
+      : [
+          ...input.dependencies
+            .filter(
+              (edge) => input.selectedPaths.has(edge.from) || input.selectedPaths.has(edge.to)
+            )
+            .slice(0, 18)
+            .map((edge) => `- ${edge.kind}: ${edge.from} -> ${edge.to}`),
+          ...(input.calls ?? [])
+            .filter((call) => input.selectedPaths.has(call.filePath))
+            .slice(0, 18)
+            .map(
+              (call) =>
+                `- call: ${call.caller ?? "?"} -> ${call.callee} (${call.filePath}:${call.line})`
+            ),
+          ...(input.controlFlows ?? [])
+            .filter((flow) => input.selectedPaths.has(flow.filePath))
+            .slice(0, 12)
+            .map((flow) => `- control-flow: ${flow.kind} (${flow.filePath}:${flow.line})`),
+          ...(input.dataFlows ?? [])
+            .filter((flow) => input.selectedPaths.has(flow.filePath))
+            .slice(0, 12)
+            .map(
+              (flow) =>
+                `- data-flow: ${flow.source} -> ${flow.target} (${flow.filePath}:${flow.line})`
+            ),
+          ...(input.typeRelationships ?? [])
+            .filter((relationship) => input.selectedPaths.has(relationship.filePath))
+            .slice(0, 12)
+            .map(
+              (relationship) =>
+                `- type: ${relationship.source} ${relationship.kind} ${relationship.target} (${relationship.filePath}:${relationship.line})`
+            )
+        ]
+  ).slice(0, 56);
   if (graphLines.length) lines.push("", "Selected graph relationships:", ...graphLines);
 
-  const findingLines = input.findings
+  const findingLines = (input.canonicalSelection ? [] : input.findings)
     .filter((finding) => !finding.filePath || input.selectedPaths.has(finding.filePath))
     .slice(0, 16)
     .map(
@@ -719,7 +907,7 @@ function buildBoundedIntelligence(input: {
     );
   if (findingLines.length) lines.push("", "Selected intelligence findings:", ...findingLines);
 
-  const retrievalLines = input.retrieval.results
+  const retrievalLines = (input.canonicalSelection ? [] : input.retrieval.results)
     .filter((result) => input.selectedPaths.has(result.path))
     .slice(0, 24)
     .map((result) => `- ${result.path}: ${result.reasons.join(", ") || "ranked evidence"}`);
