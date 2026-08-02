@@ -45,3 +45,17 @@ An Intent is the parent work object. Research precedes approval. Keystone presen
 ## External boundary
 
 A live Copilot model response requires an authorized VS Code/Copilot session. Keystone may test its Language Model API contract headlessly, but it must never manufacture a Copilot response to make an acceptance gate pass.
+
+## Gap Analysis References
+
+The following gaps identified in [GAP_ANALYSIS.md](./GAP_ANALYSIS.md) affect the Product Specification:
+
+| Gap       | Title                                                                                                              | Impact on Product Specification                                                                         | Implementation Plan                                                                    |
+| --------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| **Gap 1** | [Continuation Packets for Long-Running Tasks](./GAP_ANALYSIS.md#gap-1-continuation-packets-for-long-running-tasks) | Required for "Repository ingestion is not capped to fit prompts" invariant; enables unbounded ingestion | [Plan 1](./IMPLEMENTATION_PLANS.md#plan-1-continuation-packets-for-long-running-tasks) |
+| **Gap 2** | [Context Compression Caching](./GAP_ANALYSIS.md#gap-2-context-compression-caching)                                 | Supports "context engineering / compression" step with persistent cached compressed context             | [Plan 2](./IMPLEMENTATION_PLANS.md#plan-2-context-compression-caching)                 |
+| **Gap 3** | [Query Result Caching](./GAP_ANALYSIS.md#gap-3-query-result-caching)                                               | Enhances "visible Explorer / Graph / CPG / Flows / Query" with faster query responses                   | [Plan 3](./IMPLEMENTATION_PLANS.md#plan-3-query-result-caching)                        |
+| **Gap 4** | [Adaptive-Segments Delivery Mode](./GAP_ANALYSIS.md#gap-4-adaptive-segments-delivery-mode)                         | Enables progressive disclosure for large intelligence data in UI surfaces                               | [Plan 4](./IMPLEMENTATION_PLANS.md#plan-4-adaptive-segments-delivery-mode)             |
+| **Gap 5** | [File Hash Caching Persistence](./GAP_ANALYSIS.md#gap-5-file-hash-caching-persistence)                             | Supports deterministic intelligence with persistent file identity tracking                              | [Plan 5](./IMPLEMENTATION_PLANS.md#plan-5-file-hash-caching-persistence)               |
+| **Gap 6** | [Extraction Result Caching Persistence](./GAP_ANALYSIS.md#gap-6-extraction-result-caching-persistence)             | Accelerates "deterministic intelligence" generation by avoiding re-extraction                           | [Plan 6](./IMPLEMENTATION_PLANS.md#plan-6-extraction-result-caching-persistence)       |
+| **Gap 7** | [Projection Caching Persistence](./GAP_ANALYSIS.md#gap-7-projection-caching-persistence)                           | Accelerates "OKF + graph + CPG + flows" projection loading                                              | [Plan 7](./IMPLEMENTATION_PLANS.md#plan-7-projection-caching-persistence)              |

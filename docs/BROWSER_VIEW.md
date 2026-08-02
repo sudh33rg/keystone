@@ -323,8 +323,23 @@ app.use((req, res, next) => {
   next();
 });
 ```
+
 13. **Token Expiration**: Verify that bootstrap token expires
 14. **Command Validation**: Verify that commands are validated
 15. **State Version Validation**: Verify that state version is validated
 
 The Browser View system provides a secure, consistent, and reliable way to access Keystone's intelligence outside of VS Code while maintaining the same security and integrity guarantees as the extension.
+
+## Gap Analysis References
+
+The following gaps identified in [GAP_ANALYSIS.md](./GAP_ANALYSIS.md) affect the Browser View system:
+
+| Gap       | Title                                                                                                              | Impact on Browser View                                                                                        | Implementation Plan                                                                    |
+| --------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| **Gap 1** | [Continuation Packets for Long-Running Tasks](./GAP_ANALYSIS.md#gap-1-continuation-packets-for-long-running-tasks) | Large intelligence snapshots sent to browser may exceed payload limits; continuation packets enable streaming | [Plan 1](./IMPLEMENTATION_PLANS.md#plan-1-continuation-packets-for-long-running-tasks) |
+| **Gap 2** | [Context Compression Caching](./GAP_ANALYSIS.md#gap-2-context-compression-caching)                                 | Compressed context sent to browser could benefit from persistent caching to avoid recompression               | [Plan 2](./IMPLEMENTATION_PLANS.md#plan-2-context-compression-caching)                 |
+| **Gap 3** | [Query Result Caching](./GAP_ANALYSIS.md#gap-3-query-result-caching)                                               | Graph/search/CPG query results displayed in browser could be cached for faster rendering                      | [Plan 3](./IMPLEMENTATION_PLANS.md#plan-3-query-result-caching)                        |
+| **Gap 4** | [Adaptive-Segments Delivery Mode](./GAP_ANALYSIS.md#gap-4-adaptive-segments-delivery-mode)                         | Browser view could use adaptive segmentation for progressive disclosure of large intelligence data            | [Plan 4](./IMPLEMENTATION_PLANS.md#plan-4-adaptive-segments-delivery-mode)             |
+| **Gap 5** | [File Hash Caching Persistence](./GAP_ANALYSIS.md#gap-5-file-hash-caching-persistence)                             | File hashes used for state synchronization could be cached persistently                                       | [Plan 5](./IMPLEMENTATION_PLANS.md#plan-5-file-hash-caching-persistence)               |
+| **Gap 6** | [Extraction Result Caching Persistence](./GAP_ANALYSIS.md#gap-6-extraction-result-caching-persistence)             | Intelligence extraction results sent to browser could be cached to avoid re-extraction                        | [Plan 6](./IMPLEMENTATION_PLANS.md#plan-6-extraction-result-caching-persistence)       |
+| **Gap 7** | [Projection Caching Persistence](./GAP_ANALYSIS.md#gap-7-projection-caching-persistence)                           | Graph/search/CPG projections displayed in browser could be cached for faster loading                          | [Plan 7](./IMPLEMENTATION_PLANS.md#plan-7-projection-caching-persistence)              |

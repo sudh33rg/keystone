@@ -877,3 +877,18 @@ Keystone ensures security in Task Handoff:
 10. **No Persistent Storage**: The package is not stored persistently
 
 The Task Handoff system allows users to securely and reliably transfer SDLC state between systems while maintaining security, integrity, and usability.
+
+## Gap Analysis References
+
+The following gaps identified in [GAP_ANALYSIS.md](./GAP_ANALYSIS.md) affect the Task Handoff system:
+
+| Gap       | Title                                                                                                              | Impact on Task Handoff                                                                                                     | Implementation Plan                                                                    |
+| --------- | ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| **Gap 1** | [Continuation Packets for Long-Running Tasks](./GAP_ANALYSIS.md#gap-1-continuation-packets-for-long-running-tasks) | Task handoff packages may exceed token limits for large repositories; continuation packets enable streaming large handoffs | [Plan 1](./IMPLEMENTATION_PLANS.md#plan-1-continuation-packets-for-long-running-tasks) |
+| **Gap 2** | [Context Compression Caching](./GAP_ANALYSIS.md#gap-2-context-compression-caching)                                 | Compressed context in handoff packages could benefit from persistent caching to avoid recompression                        | [Plan 2](./IMPLEMENTATION_PLANS.md#plan-2-context-compression-caching)                 |
+| **Gap 4** | [Adaptive-Segments Delivery Mode](./GAP_ANALYSIS.md#gap-4-adaptive-segments-delivery-mode)                         | Handoff packages could use adaptive segmentation for progressive disclosure of intelligence data                           | [Plan 4](./IMPLEMENTATION_PLANS.md#plan-4-adaptive-segments-delivery-mode)             |
+| **Gap 5** | [File Hash Caching Persistence](./GAP_ANALYSIS.md#gap-5-file-hash-caching-persistence)                             | File hashes in handoff packages could be cached persistently to speed up integrity verification                            | [Plan 5](./IMPLEMENTATION_PLANS.md#plan-5-file-hash-caching-persistence)               |
+| **Gap 6** | [Extraction Result Caching Persistence](./GAP_ANALYSIS.md#gap-6-extraction-result-caching-persistence)             | Intelligence extraction results in handoff packages could be cached to avoid re-extraction                                 | [Plan 6](./IMPLEMENTATION_PLANS.md#plan-6-extraction-result-caching-persistence)       |
+| **Gap 7** | [Projection Caching Persistence](./GAP_ANALYSIS.md#gap-7-projection-caching-persistence)                           | Graph/search/CPG projections in handoff packages could be cached for faster restoration                                    | [Plan 7](./IMPLEMENTATION_PLANS.md#plan-7-projection-caching-persistence)              |
+
+**Note**: Gap 3 (Query Result Caching) has minimal direct impact on Task Handoff but is relevant for the intelligence data included in handoff packages.

@@ -90,6 +90,7 @@ const MANIFEST_PATH = `${INTELLIGENCE_DIR}/manifest.json`;
 const ACTIVITY_PATH = `${INTELLIGENCE_DIR}/activity.json`;
 const SETTINGS_PATH = ".keystone/settings.json";
 const CONTEXT_CACHE_DIR = ".keystone/context/cache";
+const CONTEXT_PACKET_VERSION = 2;
 const CONTEXT_EVALUATIONS_PATH = ".keystone/context/evaluations.json";
 const ENHANCEMENT_SESSIONS_DIR = ".keystone/context/sessions";
 const CONTEXT_FEEDBACK_PATH = ".keystone/context/feedback.json";
@@ -349,6 +350,7 @@ export class CockpitService {
     const cacheKey = createHash("sha256")
       .update(
         JSON.stringify({
+          contextPacketVersion: CONTEXT_PACKET_VERSION,
           text: text.trim(),
           currentFile: editorContext.currentFile,
           gitDiff: createHash("sha256").update(gitDiff).digest("hex"),
@@ -1963,6 +1965,7 @@ function normalizeRunResult(
       score: section.score,
       evidence: section.evidence
     })),
+    boundedIntelligence: run.contextPack.boundedIntelligence,
     omittedContext: run.contextPack.omittedContext,
     contextManifest: run.contextPack.contextManifest,
     relatedApis: run.contextPack.relatedApis.map(

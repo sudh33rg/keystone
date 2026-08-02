@@ -329,3 +329,17 @@ While the Browser View is currently a presentation surface, the architecture is 
 - **Hybrid Plugin**: A hybrid plugin could be added
 
 The non-goals ensure that Keystone remains focused on its core mission: converting unknown repositories into deterministic, evidence-backed engineering intelligence and using that intelligence to drive an intent-led SDLC. The architecture is designed to be extensible, allowing future features to be added as plugins without compromising the core principles.
+
+## Gap Analysis References
+
+The following gaps identified in [GAP_ANALYSIS.md](./GAP_ANALYSIS.md) are relevant to Non-Goals considerations:
+
+| Gap       | Title                                                                                                              | Relevance to Non-Goals                                                                            | Implementation Plan                                                                    |
+| --------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| **Gap 1** | [Continuation Packets for Long-Running Tasks](./GAP_ANALYSIS.md#gap-1-continuation-packets-for-long-running-tasks) | Ensures local-first processing can handle arbitrarily large repositories without cloud offloading | [Plan 1](./IMPLEMENTATION_PLANS.md#plan-1-continuation-packets-for-long-running-tasks) |
+| **Gap 2** | [Context Compression Caching](./GAP_ANALYSIS.md#gap-2-context-compression-caching)                                 | Local caching avoids need for cloud-based context storage                                         | [Plan 2](./IMPLEMENTATION_PLANS.md#plan-2-context-compression-caching)                 |
+| **Gap 3** | [Query Result Caching](./GAP_ANALYSIS.md#gap-3-query-result-caching)                                               | Local query caching maintains offline capability                                                  | [Plan 3](./IMPLEMENTATION_PLANS.md#plan-3-query-result-caching)                        |
+| **Gap 4** | [Adaptive-Segments Delivery Mode](./GAP_ANALYSIS.md#gap-4-adaptive-segments-delivery-mode)                         | Progressive disclosure works within local-first architecture                                      | [Plan 4](./IMPLEMENTATION_PLANS.md#plan-4-adaptive-segments-delivery-mode)             |
+| **Gap 5** | [File Hash Caching Persistence](./GAP_ANALYSIS.md#gap-5-file-hash-caching-persistence)                             | Persistent local file hashes support offline incremental analysis                                 | [Plan 5](./IMPLEMENTATION_PLANS.md#plan-5-file-hash-caching-persistence)               |
+| **Gap 6** | [Extraction Result Caching Persistence](./GAP_ANALYSIS.md#gap-6-extraction-result-caching-persistence)             | Local extraction caching avoids cloud-based re-extraction                                         | [Plan 6](./IMPLEMENTATION_PLANS.md#plan-6-extraction-result-caching-persistence)       |
+| **Gap 7** | [Projection Caching Persistence](./GAP_ANALYSIS.md#gap-7-projection-caching-persistence)                           | Local projection caching maintains performance without cloud                                      | [Plan 7](./IMPLEMENTATION_PLANS.md#plan-7-projection-caching-persistence)              |

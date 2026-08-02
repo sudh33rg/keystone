@@ -11,6 +11,12 @@ Keystone stores local state beneath `.keystone/`. Candidate writes use temporary
 ├── context/
 ├── validation/
 ├── background/
+├── cache/                      # Intelligent caching layer (planned)
+│   ├── file-hashes.json        # File content/structure hashes (planned: persistent)
+│   ├── extraction-results/     # Language frontend extraction cache (planned)
+│   ├── projections/            # In-memory projection cache (planned)
+│   ├── query-results/          # Query result TTL cache (planned)
+│   └── context-compression/    # Compressed context packets cache (planned)
 └── intelligence/
     ├── summary.json
     ├── snapshot.json

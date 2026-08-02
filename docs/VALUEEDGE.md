@@ -363,3 +363,17 @@ Keystone ensures security in the integration:
 7. **Scope Limitation**: API access is limited to required scopes
 
 The ValueEdge integration allows Keystone to seamlessly integrate with existing workflow systems while maintaining its local-first, intelligence-driven approach.
+
+## Gap Analysis References
+
+The following gaps identified in [GAP_ANALYSIS.md](./GAP_ANALYSIS.md) affect the ValueEdge integration:
+
+| Gap       | Title                                                                                                              | Impact on ValueEdge Integration                                                                                | Implementation Plan                                                                    |
+| --------- | ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| **Gap 1** | [Continuation Packets for Long-Running Tasks](./GAP_ANALYSIS.md#gap-1-continuation-packets-for-long-running-tasks) | Large feature/story imports or publications may exceed payload limits; continuation packets enable streaming   | [Plan 1](./IMPLEMENTATION_PLANS.md#plan-1-continuation-packets-for-long-running-tasks) |
+| **Gap 2** | [Context Compression Caching](./GAP_ANALYSIS.md#gap-2-context-compression-caching)                                 | Compressed R&D documents and intelligence context for ValueEdge features could benefit from persistent caching | [Plan 2](./IMPLEMENTATION_PLANS.md#plan-2-context-compression-caching)                 |
+| **Gap 3** | [Query Result Caching](./GAP_ANALYSIS.md#gap-3-query-result-caching)                                               | Intelligence queries for feature analysis could be cached for faster import/planning                           | [Plan 3](./IMPLEMENTATION_PLANS.md#plan-3-query-result-caching)                        |
+| **Gap 4** | [Adaptive-Segments Delivery Mode](./GAP_ANALYSIS.md#gap-4-adaptive-segments-delivery-mode)                         | Large feature intelligence data could use adaptive segmentation for progressive disclosure                     | [Plan 4](./IMPLEMENTATION_PLANS.md#plan-4-adaptive-segments-delivery-mode)             |
+| **Gap 5** | [File Hash Caching Persistence](./GAP_ANALYSIS.md#gap-5-file-hash-caching-persistence)                             | File hashes for repository analysis during import could be cached persistently                                 | [Plan 5](./IMPLEMENTATION_PLANS.md#plan-5-file-hash-caching-persistence)               |
+| **Gap 6** | [Extraction Result Caching Persistence](./GAP_ANALYSIS.md#gap-6-extraction-result-caching-persistence)             | Intelligence extraction results for feature analysis could be cached to avoid re-extraction                    | [Plan 6](./IMPLEMENTATION_PLANS.md#plan-6-extraction-result-caching-persistence)       |
+| **Gap 7** | [Projection Caching Persistence](./GAP_ANALYSIS.md#gap-7-projection-caching-persistence)                           | Graph/search/CPG projections for feature analysis could be cached for faster planning                          | [Plan 7](./IMPLEMENTATION_PLANS.md#plan-7-projection-caching-persistence)              |

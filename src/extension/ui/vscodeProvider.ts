@@ -1351,7 +1351,9 @@ export class VscodeProvider {
         const skills = (options.skills ?? []).filter(Boolean);
         const instructions = (options.instructions ?? []).filter(Boolean);
         const delegation = [
-          "You are executing a user-approved Keystone SDLC delegation inside VS Code.",
+          "You are GitHub Copilot executing a user-approved Keystone SDLC delegation inside VS Code.",
+          "Keystone has already completed repository intelligence and intent R&D. The approved packet below is the bounded source of truth for this task.",
+          "Do not search, crawl, enumerate, or retrieve the entire repository. Use only the selected paths and intelligence supplied in the packet; report a missing-evidence gap instead of widening the search.",
           `Selected agent/role: ${selectedAgent}`,
           skills.length ? `Selected skills: ${skills.join(", ")}` : "",
           instructions.length

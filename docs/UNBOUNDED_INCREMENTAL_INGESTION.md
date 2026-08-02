@@ -18,6 +18,16 @@ Keystone does not impose a repository file-count ceiling, source-file-size ceili
 - Progress uses discovered/indexed counts without assuming a final total before discovery completes.
 - Read or race failures are recorded and retried during later incremental runs.
 
+**Current Caching State (Gap Analysis)**:
+
+- **File Hash Caching**: In-memory only during a single run; not persisted across restarts. See [GAP_ANALYSIS.md](./GAP_ANALYSIS.md#gap-5-file-hash-caching-not-persisted-across-restarts).
+- **Extraction Result Caching**: Not implemented. See [GAP_ANALYSIS.md](./GAP_ANALYSIS.md#gap-6-extraction-result-caching-not-persisted).
+- **Projection Caching**: No in-memory cache layer; always loads from disk. See [GAP_ANALYSIS.md](./GAP_ANALYSIS.md#gap-7-projection-caching-not-persisted).
+- **Query Result Caching**: Not implemented. See [GAP_ANALYSIS.md](./GAP_ANALYSIS.md#gap-3-query-result-caching-not-implemented).
+- **Context Compression Caching**: Not implemented. See [GAP_ANALYSIS.md](./GAP_ANALYSIS.md#gap-2-context-compression-caching-not-implemented).
+
+Implementation plans for these gaps are documented in [IMPLEMENTATION_PLANS.md](./IMPLEMENTATION_PLANS.md).
+
 ## Batch Processing Mechanism
 
 Keystone employs a sophisticated batch processing mechanism to handle unbounded repositories efficiently:

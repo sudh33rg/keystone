@@ -504,6 +504,22 @@ label {
 .callout {
   display: block;
 }
+.copilot-boundary {
+  display: grid;
+  gap: 5px;
+  margin-top: 0;
+  margin-bottom: 14px;
+  border-color: #4e91aa;
+  background: #0d3040;
+}
+.copilot-boundary strong {
+  color: #d4edf6;
+}
+.copilot-boundary span,
+.copilot-boundary small {
+  color: #a8c7d2;
+  line-height: 1.45;
+}
 .callout.warning {
   border-color: #79643d;
   background: #352d1c;

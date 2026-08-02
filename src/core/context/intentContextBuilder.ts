@@ -3,11 +3,14 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { CpgShardStore } from "../intelligence/cpg";
-import { queryOkfSnapshot } from "../intelligence/okf/queryEngine";
+import { queryOkfSnapshot, type OkfQueryResult } from "../intelligence/okf/queryEngine";
 import type { KeystoneOkfSnapshot } from "../intelligence/okf/types";
 import { analyzeRepositoryGraph } from "../intelligence/pipeline/derivedGraph";
 import { buildIntelligenceFindings } from "../intelligence/pipeline/findings";
-import { retrieveRepositoryIntelligence } from "../intelligence/pipeline/retrieval";
+import {
+  retrieveRepositoryIntelligence,
+  type IntelligenceRetrievalResult
+} from "../intelligence/pipeline/retrieval";
 import type {
   ContextPack,
   DeveloperIntent,
@@ -144,7 +147,11 @@ export async function buildIntentContextPack(
       (tier === "aggressive" ? 6_000 : tier === "off" ? 24_000 : 12_000)
   );
   const reservedForInstructions = Math.min(1_800, Math.floor(delegationTokenBudget * 0.18));
-  const contentBudget = Math.max(1_000, delegationTokenBudget - reservedForInstructions);
+  const reservedForIntelligence = Math.min(1_800, Math.floor(delegationTokenBudget * 0.16));
+  const contentBudget = Math.max(
+    1_000,
+    delegationTokenBudget - reservedForInstructions - reservedForIntelligence
+  );
   let usedTokens = 0;
   let cpgFiles = 0;
   let cpgSymbols = 0;
@@ -206,6 +213,25 @@ export async function buildIntentContextPack(
     usedTokens += acceptedTokens;
   }
 
+  const boundedIntelligence = buildBoundedIntelligence({
+    intent: intent.text,
+    indexedAt: intelligence.indexedAt,
+    selectedFiles: relevantFiles,
+    selectedPaths,
+    selectedSymbols: relevantSymbols,
+    relatedTests,
+    relatedApis,
+    impactedServices,
+    dependencies: intelligence.dependencies,
+    calls: intelligence.calls,
+    controlFlows: intelligence.controlFlows,
+    dataFlows: intelligence.dataFlows,
+    typeRelationships: intelligence.typeRelationships,
+    findings,
+    retrieval,
+    okfQuery
+  });
+
   const base: Omit<ContextPack, "copilotPrompt"> = {
     id: crypto.randomUUID(),
     taskSummary: intent.text,
@@ -244,6 +270,7 @@ export async function buildIntentContextPack(
     estimatedPackedTokens: 0,
     estimatedReductionPercent: 0,
     contextSections,
+    boundedIntelligence,
     omittedContext,
     contextManifest: {
       delegationTokenBudget,
@@ -577,13 +604,130 @@ function implementationContextPath(value: string, intentText: string): boolean {
 
 function compose(pack: Omit<ContextPack, "copilotPrompt">): string {
   return [
-    "You are the coding agent delegated by Keystone. Work inside the opened VS Code repository.",
+    "You are GitHub Copilot, the only implementation agent delegated by Keystone after repository intelligence and intent R&D completed.",
+    "Keystone has already indexed the repository and selected a bounded, evidence-backed packet for this intent.",
+    "Use the packet as the authoritative working context. Do not search, crawl, enumerate, or retrieve the entire repository.",
+    "You may open only the explicitly selected source paths below to verify current content. If the packet is insufficient, report the missing evidence instead of expanding to a repository-wide search.",
     `\n# Intent\n${pack.taskSummary}`,
-    `\n# Relevant context\n${pack.contextSections?.map((section) => `## ${section.path}\nReason: ${section.reason}\n\`\`\`\n${section.content}\n\`\`\``).join("\n\n") || "No file excerpts were selected."}`,
+    `\n# Bounded Keystone intelligence\n${pack.boundedIntelligence || "No additional OKF/graph digest was available; use the selected excerpts and report any evidence gap."}`,
+    `\n# Selected source excerpts\n${pack.contextSections?.map((section) => `## ${section.path}\nReason: ${section.reason}\n\`\`\`\n${section.content}\n\`\`\``).join("\n\n") || "No file excerpts were selected."}`,
     `\n# Relevant symbols\n${pack.relevantSymbols.map((symbol) => `- ${symbol.kind} ${symbol.name} — ${symbol.filePath}:${symbol.line}`).join("\n")}`,
+    `\n# Related API contracts\n${pack.relatedApis.map((api) => `- ${api.method} ${api.path} — ${api.filePath}:${api.line}`).join("\n") || "None selected."}`,
+    `\n# Impacted services\n${pack.impactedServices.map((service) => `- ${service.name} — ${service.filePath} (${service.hints.join(", ") || "no additional hints"})`).join("\n") || "None selected."}`,
     `\n# Tests\n${pack.relatedTests.map((test) => `- ${test.testFile}${test.targetFile ? ` → ${test.targetFile}` : ""}`).join("\n")}`,
     `\n# Constraints\n${[...pack.architectureConstraints, ...pack.securityConstraints, ...pack.performanceConstraints].map((item) => `- ${item}`).join("\n")}`,
+    `\n# Scope exclusions\n${pack.thingsToAvoid.map((item) => `- ${item}`).join("\n")}`,
     `\n# Acceptance criteria\n${pack.acceptanceCriteria.map((item) => `- ${item}`).join("\n")}`,
-    "\nDo not broaden scope. Before editing, verify the selected context against the repository. Report validation results."
+    "\nExecution boundary: implement only the stated intent, keep changes within the selected paths unless a missing dependency is explicitly reported, and return changed files plus validation results. Do not perform Git write or remote merge operations."
   ].join("\n");
+}
+
+function buildBoundedIntelligence(input: {
+  intent: string;
+  indexedAt: string;
+  selectedFiles: RepoIntelligence["files"];
+  selectedPaths: ReadonlySet<string>;
+  selectedSymbols: RepoIntelligence["symbols"];
+  relatedTests: RepoIntelligence["tests"];
+  relatedApis: RepoIntelligence["apis"];
+  impactedServices: RepoIntelligence["services"];
+  dependencies: RepoIntelligence["dependencies"];
+  calls: RepoIntelligence["calls"];
+  controlFlows: RepoIntelligence["controlFlows"];
+  dataFlows: RepoIntelligence["dataFlows"];
+  typeRelationships: RepoIntelligence["typeRelationships"];
+  findings: ReturnType<typeof buildIntelligenceFindings>;
+  retrieval: IntelligenceRetrievalResult;
+  okfQuery?: OkfQueryResult;
+}): string {
+  const lines = [
+    "Source: persisted Keystone repository intelligence (not a fresh repository search).",
+    `Indexed at: ${input.indexedAt}`,
+    `Intent retrieval: ${input.intent}`,
+    `Selected source scope: ${input.selectedFiles.length} file(s).`
+  ];
+
+  lines.push("", "Selected files and structural summaries:");
+  lines.push(
+    ...input.selectedFiles.slice(0, 32).map((file) => {
+      const details = [
+        file.language,
+        `${file.lineCount} lines`,
+        file.isTest ? "test" : "source",
+        file.contentHash ? `content ${file.contentHash.slice(0, 12)}` : "content hash unavailable"
+      ];
+      return `- ${file.path} [${details.join("; ")}]: ${file.summary || "No summary recorded."}`;
+    })
+  );
+
+  const okfItems = (input.okfQuery?.items ?? [])
+    .filter((item) => !item.path || input.selectedPaths.has(item.path))
+    .slice(0, 24);
+  lines.push("", `OKF evidence (${okfItems.length} selected item(s)):`);
+  lines.push(
+    ...okfItems.map(
+      (item) =>
+        `- ${item.kind} ${item.label}${item.path ? ` — ${item.path}${item.line ? `:${item.line}` : ""}` : ""}; ${item.reason}; confidence ${Math.round(item.confidence * 100)}%`
+    )
+  );
+  if (input.okfQuery?.answer) lines.push(`- Query answer: ${input.okfQuery.answer}`);
+
+  const selectedOkfIds = new Set(okfItems.map((item) => item.id));
+  const traversalLines = (input.okfQuery?.traversals ?? [])
+    .filter((item) => selectedOkfIds.has(item.sourceId) || selectedOkfIds.has(item.targetId))
+    .slice(0, 24)
+    .map((item) => `- ${item.sourceLabel} -[${item.relationship}]-> ${item.targetLabel}`);
+  if (traversalLines.length) lines.push("", "OKF relationship paths:", ...traversalLines);
+
+  const graphLines = [
+    ...input.dependencies
+      .filter((edge) => input.selectedPaths.has(edge.from) || input.selectedPaths.has(edge.to))
+      .slice(0, 18)
+      .map((edge) => `- ${edge.kind}: ${edge.from} -> ${edge.to}`),
+    ...(input.calls ?? [])
+      .filter((call) => input.selectedPaths.has(call.filePath))
+      .slice(0, 18)
+      .map(
+        (call) => `- call: ${call.caller ?? "?"} -> ${call.callee} (${call.filePath}:${call.line})`
+      ),
+    ...(input.controlFlows ?? [])
+      .filter((flow) => input.selectedPaths.has(flow.filePath))
+      .slice(0, 12)
+      .map((flow) => `- control-flow: ${flow.kind} (${flow.filePath}:${flow.line})`),
+    ...(input.dataFlows ?? [])
+      .filter((flow) => input.selectedPaths.has(flow.filePath))
+      .slice(0, 12)
+      .map(
+        (flow) => `- data-flow: ${flow.source} -> ${flow.target} (${flow.filePath}:${flow.line})`
+      ),
+    ...(input.typeRelationships ?? [])
+      .filter((relationship) => input.selectedPaths.has(relationship.filePath))
+      .slice(0, 12)
+      .map(
+        (relationship) =>
+          `- type: ${relationship.source} ${relationship.kind} ${relationship.target} (${relationship.filePath}:${relationship.line})`
+      )
+  ].slice(0, 56);
+  if (graphLines.length) lines.push("", "Selected graph relationships:", ...graphLines);
+
+  const findingLines = input.findings
+    .filter((finding) => !finding.filePath || input.selectedPaths.has(finding.filePath))
+    .slice(0, 16)
+    .map(
+      (finding) =>
+        `- ${finding.severity} ${finding.category}: ${finding.title}${finding.filePath ? ` (${finding.filePath})` : ""} — ${finding.description}`
+    );
+  if (findingLines.length) lines.push("", "Selected intelligence findings:", ...findingLines);
+
+  const retrievalLines = input.retrieval.results
+    .filter((result) => input.selectedPaths.has(result.path))
+    .slice(0, 24)
+    .map((result) => `- ${result.path}: ${result.reasons.join(", ") || "ranked evidence"}`);
+  if (retrievalLines.length) lines.push("", "Retrieval basis:", ...retrievalLines);
+
+  lines.push(
+    "",
+    `Selected symbols: ${input.selectedSymbols.length}; APIs: ${input.relatedApis.length}; services: ${input.impactedServices.length}; mapped tests: ${input.relatedTests.length}.`
+  );
+  return truncateToTokens(lines.join("\n"), 1_800);
 }

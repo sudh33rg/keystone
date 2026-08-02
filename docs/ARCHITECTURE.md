@@ -86,24 +86,24 @@ The compression algorithm preserves:
 
 This allows Keystone to handle repositories of any size while maintaining high-quality context for Copilot delegation.
 
-## Intelligent Caching
+## Intelligent Caching (Planned / Partially Implemented)
 
-Keystone employs a sophisticated caching system to optimize performance:
+Keystone employs a caching system to optimize performance. The following cache layers are **planned** or **partially implemented**:
 
-1. **File Hash Caching**: File content and structure hashes are cached to avoid reprocessing unchanged files
-2. **Extraction Result Caching**: Results from language frontends are cached by file hash and extractor version
-3. **Projection Caching**: Graph, CPG, and search projections are cached and only regenerated when OKF changes
-4. **Query Result Caching**: Recent query results are cached with TTL-based invalidation
-5. **Context Compression Caching**: Compressed context packets are cached by intent and file hash
+1. **File Hash Caching** (Partially Implemented): File content and structure hashes are computed during ingestion but **not persisted** across restarts. Cache is in-memory only.
+2. **Extraction Result Caching** (Planned): Results from language frontends should be cached by file hash and extractor version. **Not yet implemented.**
+3. **Projection Caching** (Partially Implemented): Graph, CPG, and search projections are derived from OKF but **no in-memory cache layer** exists for hot projections. Always loads from disk.
+4. **Query Result Caching** (Planned): Recent query results should be cached with TTL-based invalidation. **Not yet implemented.**
+5. **Context Compression Caching** (Planned): Compressed context packets should be cached by intent and file hash. **Not yet implemented.**
 
-The cache is stored in `.keystone/cache/` and is automatically invalidated when:
+The cache is planned to be stored in `.keystone/cache/` and automatically invalidated when:
 
 - File content changes
 - Extractor versions update
 - OKF snapshot is updated
 - Configuration changes
 
-This caching system enables near-instantaneous response times for subsequent operations on the same repository.
+**Gap Analysis**: See [GAP_ANALYSIS.md](./GAP_ANALYSIS.md) and [IMPLEMENTATION_PLANS.md](./IMPLEMENTATION_PLANS.md) for detailed gap analysis and implementation plans for the caching system.
 
 ## Event-Driven Architecture
 

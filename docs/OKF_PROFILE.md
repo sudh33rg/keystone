@@ -392,3 +392,15 @@ The bundle is stored in `.keystone/intelligence/okf-bundle/` and contains:
 - .keystone-bundle.json: Bundle metadata
 
 The bundle is designed to be human-readable and portable, allowing the repository intelligence to be shared and reviewed outside of Keystone.
+
+---
+
+## Gap Analysis References
+
+The following gaps identified in [GAP_ANALYSIS.md](./GAP_ANALYSIS.md) relate to OKF functionality:
+
+- **Gap 3: Query Result Caching** - OKF QueryEngine lacks TTL-based query result caching. See [IMPLEMENTATION_PLANS.md#gap-3](./IMPLEMENTATION_PLANS.md#gap-3-query-result-caching-not-implemented).
+- **Gap 6: Extraction Result Caching Persistence** - Language frontend extraction results not cached across runs. See [IMPLEMENTATION_PLANS.md#gap-6](./IMPLEMENTATION_PLANS.md#gap-6-extraction-result-caching-not-persisted).
+- **Gap 7: Projection Caching Persistence** - Graph, CPG, and search projections lack in-memory cache layer. See [IMPLEMENTATION_PLANS.md#gap-7](./IMPLEMENTATION_PLANS.md#gap-7-projection-caching-not-persisted).
+
+All gaps are marked as **PLANNED** with detailed implementation plans in [IMPLEMENTATION_PLANS.md](./IMPLEMENTATION_PLANS.md).

@@ -121,6 +121,7 @@ export interface TaskResult {
     generatedAt: string;
   };
   contextSections?: ContextSection[];
+  boundedIntelligence?: string;
   omittedContext?: Array<{ path: string; reason: string; estimatedTokens: number }>;
   relatedApis?: string[];
   impactedServices?: string[];

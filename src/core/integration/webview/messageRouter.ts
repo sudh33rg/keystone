@@ -406,6 +406,8 @@ export interface KeystoneTaskResult {
       endLine?: number;
     }>;
   }>;
+  /** Compact OKF/graph intelligence digest passed to Copilot with the selected excerpts. */
+  boundedIntelligence?: string;
   omittedContext?: Array<{ path: string; reason: string; estimatedTokens: number }>;
   contextManifest?: ContextPack["contextManifest"];
   relatedApis?: string[];

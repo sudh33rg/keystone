@@ -648,7 +648,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
         <div className="two-column">
           <Panel
             title="Start from intent"
-            subtitle="Keystone researches the actual repository before planning."
+            subtitle="Keystone researches the actual repository first, then hands only relevant intelligence to Copilot for implementation."
           >
             <textarea
               ref={(element: HTMLTextAreaElement | null) => {
@@ -1916,8 +1916,22 @@ export class App extends React.Component<Record<string, never>, AppState> {
         </Panel>
         <Panel
           title="Copilot delegation"
-          subtitle="Keystone understands and prepares; Copilot generates. Repository agents, skills and instructions remain visible and user-approved."
+          subtitle="After repository intelligence and approved R&D, Copilot is the implementation worker. Keystone sends the selected intelligence packet instead of asking Copilot to rediscover the repository."
         >
+          <div className="callout copilot-boundary">
+            <strong>Bounded intelligence handoff</strong>
+            <span>
+              {task.contextManifest?.selectedFiles ?? task.contextSections?.length ?? 0} selected
+              file(s) · {task.contextManifest?.traceableEvidence ?? 0} evidence link(s) ·{" "}
+              {task.contextManifest?.omittedFiles ?? task.omittedContext?.length ?? 0} omitted by
+              relevance or budget
+            </span>
+            <small>
+              Copilot receives the intent, OKF evidence, graph relationships, symbols, contracts,
+              excerpts and validation context below. It is instructed not to perform a
+              repository-wide search.
+            </small>
+          </div>
           <label>
             Agent
             <select
@@ -1970,6 +1984,13 @@ export class App extends React.Component<Record<string, never>, AppState> {
               Use repository instructions
             </button>
           )}
+          <details>
+            <summary>Intelligence passed to Copilot</summary>
+            <pre>
+              {task.boundedIntelligence ??
+                "This task was created before the bounded intelligence digest was available. Regenerate the intent context to include it."}
+            </pre>
+          </details>
           <details>
             <summary>Delegation prompt</summary>
             <pre>{task.copilotPrompt}</pre>

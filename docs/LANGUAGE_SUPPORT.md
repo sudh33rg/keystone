@@ -143,3 +143,17 @@ The Intelligence UI reports, per language:
 - warnings and provenance
 
 The conformance suite also indexes every category plus an unknown future-language fixture through OKF and CPG end to end.
+
+## Gap Analysis References
+
+The following gaps identified in [GAP_ANALYSIS.md](./GAP_ANALYSIS.md) affect Language Support:
+
+| Gap       | Title                                                                                                              | Impact on Language Support                                                                                                         | Implementation Plan                                                                    |
+| --------- | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| **Gap 1** | [Continuation Packets for Long-Running Tasks](./GAP_ANALYSIS.md#gap-1-continuation-packets-for-long-running-tasks) | Large language analysis tasks (e.g., full repo TypeScript analysis) may exceed token limits; continuation packets enable streaming | [Plan 1](./IMPLEMENTATION_PLANS.md#plan-1-continuation-packets-for-long-running-tasks) |
+| **Gap 2** | [Context Compression Caching](./GAP_ANALYSIS.md#gap-2-context-compression-caching)                                 | Compressed language-specific context (ASTs, symbols, CPGs) could benefit from persistent caching to avoid recompression            | [Plan 2](./IMPLEMENTATION_PLANS.md#plan-2-context-compression-caching)                 |
+| **Gap 3** | [Query Result Caching](./GAP_ANALYSIS.md#gap-3-query-result-caching)                                               | Language-specific query results (symbol lookups, call hierarchies, type queries) could be cached for faster responses              | [Plan 3](./IMPLEMENTATION_PLANS.md#plan-3-query-result-caching)                        |
+| **Gap 4** | [Adaptive-Segments Delivery Mode](./GAP_ANALYSIS.md#gap-4-adaptive-segments-delivery-mode)                         | Large language intelligence data (full CPGs, symbol tables) could use adaptive segmentation for progressive disclosure             | [Plan 4](./IMPLEMENTATION_PLANS.md#plan-4-adaptive-segments-delivery-mode)             |
+| **Gap 5** | [File Hash Caching Persistence](./GAP_ANALYSIS.md#gap-5-file-hash-caching-persistence)                             | File hashes for language file detection and change tracking could be cached persistently                                           | [Plan 5](./IMPLEMENTATION_PLANS.md#plan-5-file-hash-caching-persistence)               |
+| **Gap 6** | [Extraction Result Caching Persistence](./GAP_ANALYSIS.md#gap-6-extraction-result-caching-persistence)             | Language extraction results (ASTs, symbols, structural entities) could be cached to avoid re-extraction                            | [Plan 6](./IMPLEMENTATION_PLANS.md#plan-6-extraction-result-caching-persistence)       |
+| **Gap 7** | [Projection Caching Persistence](./GAP_ANALYSIS.md#gap-7-projection-caching-persistence)                           | Language-specific projections (graph, search, CPG) could be cached for faster loading                                              | [Plan 7](./IMPLEMENTATION_PLANS.md#plan-7-projection-caching-persistence)              |

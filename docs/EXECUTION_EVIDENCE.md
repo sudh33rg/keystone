@@ -30,3 +30,17 @@ The runtime gate verifies that:
 - Git remains strictly read-only.
 
 No screenshot, handcrafted application state, previous `dist`, previous `.keystone` data, or VSIX package is required to establish source completeness.
+
+## Gap Analysis References
+
+The following gaps identified in [GAP_ANALYSIS.md](./GAP_ANALYSIS.md) affect Execution Evidence and Runtime Acceptance:
+
+| Gap       | Title                                                                                                              | Impact on Execution Evidence                                                                                                | Implementation Plan                                                                    |
+| --------- | ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| **Gap 1** | [Continuation Packets for Long-Running Tasks](./GAP_ANALYSIS.md#gap-1-continuation-packets-for-long-running-tasks) | Required for "built production scanner discovers all 5,205 files in the uncapped scale fixture" to complete without timeout | [Plan 1](./IMPLEMENTATION_PLANS.md#plan-1-continuation-packets-for-long-running-tasks) |
+| **Gap 2** | [Context Compression Caching](./GAP_ANALYSIS.md#gap-2-context-compression-caching)                                 | Improves "intent analysis retrieves OKF/graph/CPG evidence" performance for repeated runs                                   | [Plan 2](./IMPLEMENTATION_PLANS.md#plan-2-context-compression-caching)                 |
+| **Gap 3** | [Query Result Caching](./GAP_ANALYSIS.md#gap-3-query-result-caching)                                               | Accelerates "authoritative OKF queries return traceable evidence" for repeated queries                                      | [Plan 3](./IMPLEMENTATION_PLANS.md#plan-3-query-result-caching)                        |
+| **Gap 4** | [Adaptive-Segments Delivery Mode](./GAP_ANALYSIS.md#gap-4-adaptive-segments-delivery-mode)                         | Enables progressive evidence delivery for large-scale acceptance runs                                                       | [Plan 4](./IMPLEMENTATION_PLANS.md#plan-4-adaptive-segments-delivery-mode)             |
+| **Gap 5** | [File Hash Caching Persistence](./GAP_ANALYSIS.md#gap-5-file-hash-caching-persistence)                             | Supports "unchanged intelligence is reused" with persistent file identity                                                   | [Plan 5](./IMPLEMENTATION_PLANS.md#plan-5-file-hash-caching-persistence)               |
+| **Gap 6** | [Extraction Result Caching Persistence](./GAP_ANALYSIS.md#gap-6-extraction-result-caching-persistence)             | Accelerates "all 43 registered language/artifact categories" pipeline by avoiding re-extraction                             | [Plan 6](./IMPLEMENTATION_PLANS.md#plan-6-extraction-result-caching-persistence)       |
+| **Gap 7** | [Projection Caching Persistence](./GAP_ANALYSIS.md#gap-7-projection-caching-persistence)                           | Accelerates "authoritative OKF queries" by caching graph/search/CPG projections                                             | [Plan 7](./IMPLEMENTATION_PLANS.md#plan-7-projection-caching-persistence)              |
