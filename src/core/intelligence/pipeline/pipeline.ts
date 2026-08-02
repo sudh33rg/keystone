@@ -103,7 +103,15 @@ export async function buildRepositoryIntelligence(
     progress: 4,
     message: "Building repository dependency graph..."
   });
+  const graphStartedAt = Date.now();
   const graph = analyzeRepositoryGraph(intelligence);
+  options.onProgress?.({
+    stage: "structural",
+    order: 1,
+    total: STAGES.length,
+    progress: 5,
+    message: `Repository dependency graph ready in ${Date.now() - graphStartedAt}ms (${graph.localEdges.length} local edges).`
+  });
   const semanticPaths = intelligence.files
     .filter((file) => /\.(?:[cm]?js|jsx|ts|tsx)$/i.test(file.path) && !file.isGenerated)
     .map((file) => file.path);
@@ -111,19 +119,46 @@ export async function buildRepositoryIntelligence(
     stage: "structural",
     order: 1,
     total: STAGES.length,
-    progress: 4,
+    progress: 6,
     message: `Resolving compiler semantics for ${semanticPaths.length} TypeScript/JavaScript files...`
   });
-  const semantic = await analyzeTypeScriptProjectIsolated(root, semanticPaths, options.signal);
+  const semanticStartedAt = Date.now();
+  const semantic = await analyzeTypeScriptProjectIsolated(
+    root,
+    semanticPaths,
+    options.signal,
+    (message) =>
+      options.onProgress?.({
+        stage: "structural",
+        order: 1,
+        total: STAGES.length,
+        progress: message.includes("complete") ? 8 : 7,
+        message
+      })
+  );
   options.onProgress?.({
     stage: "structural",
     order: 1,
     total: STAGES.length,
-    progress: 4,
+    progress: 8,
+    message: `Compiler semantics ready in ${Date.now() - semanticStartedAt}ms; planning repository projections...`
+  });
+  options.onProgress?.({
+    stage: "structural",
+    order: 1,
+    total: STAGES.length,
+    progress: 8,
     message: "Planning incremental, evolution, dead-code, finding, and runtime projections..."
   });
   const incremental = planIncrementalUpdate(previousSnapshot?.intelligence, intelligence);
   const evolution = await buildRepositoryEvolution(root, incremental);
+  options.onProgress?.({
+    stage: "structural",
+    order: 1,
+    total: STAGES.length,
+    progress: 9,
+    message: "Repository projection planning complete; preparing intelligence stages..."
+  });
   const deadCode = analyzeDeadCode(intelligence, graph, semantic);
   const findings = buildIntelligenceFindings(intelligence, graph, evolution, deadCode);
   const runtime = await buildRuntimeVerification(root, findings);
@@ -143,7 +178,7 @@ export async function buildRepositoryIntelligence(
   for (let index = 0; index < STAGES.length; index += 1) {
     const definition = STAGES[index];
     if (options.signal?.aborted) throw new IntelligencePipelineCancelledError(definition.id);
-    const progress = Math.round((index / STAGES.length) * 100);
+    const progress = 10 + Math.round((index / Math.max(STAGES.length - 1, 1)) * 88);
     options.onProgress?.({
       stage: definition.id,
       order: index + 1,

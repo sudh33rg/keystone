@@ -57,11 +57,13 @@ export interface SemanticTypeRelationship {
 export async function analyzeTypeScriptProjectIsolated(
   workspaceRoot: string,
   sourcePaths: readonly string[],
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onProgress?: (message: string) => void
 ): Promise<TypeScriptSemanticResult> {
-  if (!sourcePaths.length) return analyzeTypeScriptProject(workspaceRoot, sourcePaths);
+  if (!sourcePaths.length) return analyzeTypeScriptProject(workspaceRoot, sourcePaths, onProgress);
   const workerPath = path.join(__dirname, "typescriptSemanticWorker.js");
-  if (!fs.existsSync(workerPath)) return analyzeTypeScriptProject(workspaceRoot, sourcePaths);
+  if (!fs.existsSync(workerPath))
+    return analyzeTypeScriptProject(workspaceRoot, sourcePaths, onProgress);
   return new Promise<TypeScriptSemanticResult>((resolve, reject) => {
     const worker = new Worker(workerPath);
     let settled = false;
@@ -90,9 +92,18 @@ export async function analyzeTypeScriptProjectIsolated(
     const onAbort = (): void =>
       rejectAndTerminate(new Error("TypeScript semantic analysis cancelled."));
     signal?.addEventListener("abort", onAbort, { once: true });
-    worker.once(
+    worker.on(
       "message",
-      (message: { ok: true; result: TypeScriptSemanticResult } | { ok: false; error: string }) => {
+      (
+        message:
+          | { type: "progress"; message: string }
+          | { ok: true; result: TypeScriptSemanticResult }
+          | { ok: false; error: string }
+      ) => {
+        if ("type" in message) {
+          if (message.type === "progress") onProgress?.(message.message);
+          return;
+        }
         if (message.ok) finishWithTermination(message.result);
         else rejectAndTerminate(new Error(message.error));
       }
@@ -119,7 +130,8 @@ export async function analyzeTypeScriptProjectIsolated(
 /** Build project-aware, type-checker-bound call edges for TS/JS sources. */
 export function analyzeTypeScriptProject(
   workspaceRoot: string,
-  sourcePaths: readonly string[]
+  sourcePaths: readonly string[],
+  onProgress?: (message: string) => void
 ): TypeScriptSemanticResult {
   const eligible = new Map(
     sourcePaths.map((file) => [
@@ -146,9 +158,10 @@ export function analyzeTypeScriptProject(
       }),
       config: configPath
     });
+    onProgress?.(`Prepared compiler program for ${relative(workspaceRoot, configPath)}.`);
   }
   const remaining = [...eligible.values()].filter((file) => !assigned.has(normalize(file)));
-  if (remaining.length)
+  if (remaining.length) {
     programs.push({
       program: ts.createProgram({
         rootNames: remaining,
@@ -166,6 +179,8 @@ export function analyzeTypeScriptProject(
         }
       })
     });
+    onProgress?.(`Prepared fallback compiler program for ${remaining.length} source files.`);
+  }
   const calls: SemanticCallEdge[] = [];
   const relationships: SemanticTypeRelationship[] = [];
   const callbacks: SemanticCallbackEdge[] = [];
@@ -177,6 +192,8 @@ export function analyzeTypeScriptProject(
   let fallbackFiles = 0;
   const diagnosticCodes: Record<string, number> = {};
   const diagnosticExamples: string[] = [];
+  let analyzedFiles = 0;
+  onProgress?.(`Binding compiler semantics for ${eligible.size} source files...`);
   for (const { program, config } of programs) {
     const checker = program.getTypeChecker();
     // Repository intelligence needs compiler-backed binding, not a second full project
@@ -213,6 +230,11 @@ export function analyzeTypeScriptProject(
     }
     for (const sourceFile of program.getSourceFiles()) {
       if (sourceFile.isDeclarationFile || !eligible.has(normalize(sourceFile.fileName))) continue;
+      analyzedFiles += 1;
+      if (analyzedFiles === 1 || analyzedFiles % 25 === 0 || analyzedFiles === eligible.size)
+        onProgress?.(
+          `Binding compiler semantics for ${analyzedFiles}/${eligible.size} source files...`
+        );
       const visit = (node: ts.Node): void => {
         if ((ts.isClassDeclaration(node) || ts.isInterfaceDeclaration(node)) && node.name) {
           for (const clause of node.heritageClauses ?? []) {
@@ -327,6 +349,7 @@ export function analyzeTypeScriptProject(
       visit(sourceFile);
     }
   }
+  onProgress?.(`Compiler semantics complete for ${analyzedFiles}/${eligible.size} source files.`);
   const usedConfigs = programs.flatMap((item) =>
     item.config ? [relative(workspaceRoot, item.config)] : []
   );

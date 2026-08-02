@@ -47,6 +47,7 @@ export function analyzeRepositoryGraph(intelligence: RepoIntelligence): Reposito
         files.has(edge.to)
     )
     .map((edge) => ({ from: edge.from, to: edge.to, evidence: edge.evidence }));
+  const edgesByNode = edgeAdjacency(localEdges);
   const outgoing = adjacency(localEdges, "from", "to");
   const incoming = adjacency(localEdges, "to", "from");
   const hubs = [...files]
@@ -55,27 +56,25 @@ export function analyzeRepositoryGraph(intelligence: RepoIntelligence): Reposito
       incoming: incoming.get(path)?.size ?? 0,
       outgoing: outgoing.get(path)?.size ?? 0,
       degree: (incoming.get(path)?.size ?? 0) + (outgoing.get(path)?.size ?? 0),
-      evidence: edgeEvidence(localEdges.filter((edge) => edge.from === path || edge.to === path))
+      evidence: edgeEvidence(edgesByNode.get(path) ?? [])
     }))
     .filter((item) => item.degree > 0)
     .sort((a, b) => b.degree - a.degree || a.path.localeCompare(b.path))
     .slice(0, 20);
+  const apiFiles = new Set(intelligence.apis.map((api) => api.filePath));
   const entryPoints = [...files]
-    .filter(
-      (file) =>
-        /(^|\/)(index|main|app|server|cli)\.[^.]+$/i.test(file) ||
-        intelligence.apis.some((api) => api.filePath === file)
-    )
+    .filter((file) => /(^|\/)(index|main|app|server|cli)\.[^.]+$/i.test(file) || apiFiles.has(file))
     .sort();
+  const entryPointSet = new Set(entryPoints);
   const orphanSourceFiles = intelligence.files
     .filter((file) => !file.isTest && !file.isGenerated && isCode(file.path))
     .map((file) => file.path)
-    .filter((file) => !incoming.has(file) && !outgoing.has(file) && !entryPoints.includes(file))
+    .filter((file) => !incoming.has(file) && !outgoing.has(file) && !entryPointSet.has(file))
     .sort();
   const cycles = findCycles(files, outgoing);
-  const communities = findCommunities(files, localEdges);
+  const communities = findCommunities(files, localEdges, edgesByNode);
   const flows = entryPoints.map((entryPoint) =>
-    traceFlow(entryPoint, outgoing, localEdges, 8, 100)
+    traceFlow(entryPoint, outgoing, edgesByNode, 8, 100)
   );
 
   return {
@@ -118,7 +117,8 @@ export function analyzeRepositoryGraph(intelligence: RepoIntelligence): Reposito
 
 function findCommunities(
   files: Set<string>,
-  edges: ReadonlyArray<RepositoryGraphEdge>
+  edges: ReadonlyArray<RepositoryGraphEdge>,
+  edgesByNode: ReadonlyMap<string, ReadonlyArray<RepositoryGraphEdge>>
 ): Array<{
   id: string;
   files: readonly string[];
@@ -157,7 +157,14 @@ function findCommunities(
     }
     component.sort();
     const members = new Set(component);
-    const internalEdges = edges.filter((edge) => members.has(edge.from) && members.has(edge.to));
+    const internalEdges: RepositoryGraphEdge[] = [];
+    const seenEdges = new Set<RepositoryGraphEdge>();
+    for (const member of component)
+      for (const edge of edgesByNode.get(member) ?? [])
+        if (!seenEdges.has(edge) && members.has(edge.from) && members.has(edge.to)) {
+          seenEdges.add(edge);
+          internalEdges.push(edge);
+        }
     result.push({
       id: `community:${component[0]}`,
       files: component,
@@ -171,7 +178,7 @@ function findCommunities(
 function traceFlow(
   entryPoint: string,
   outgoing: Map<string, Set<string>>,
-  edges: ReadonlyArray<RepositoryGraphEdge>,
+  edgesByNode: ReadonlyMap<string, ReadonlyArray<RepositoryGraphEdge>>,
   maxDepth: number,
   limit: number
 ) {
@@ -189,12 +196,35 @@ function traceFlow(
       }
     }
   }
+  const flowEdges: RepositoryGraphEdge[] = [];
+  const seenEdges = new Set<RepositoryGraphEdge>();
+  for (const file of seen)
+    for (const edge of edgesByNode.get(file) ?? [])
+      if (!seenEdges.has(edge) && seen.has(edge.from) && seen.has(edge.to)) {
+        seenEdges.add(edge);
+        flowEdges.push(edge);
+      }
   return {
     entryPoint,
     files: [...seen].sort(),
     depth: reachedDepth,
-    evidence: edgeEvidence(edges.filter((edge) => seen.has(edge.from) && seen.has(edge.to)))
+    evidence: edgeEvidence(flowEdges)
   };
+}
+
+function edgeAdjacency(
+  edges: ReadonlyArray<RepositoryGraphEdge>
+): Map<string, RepositoryGraphEdge[]> {
+  const result = new Map<string, RepositoryGraphEdge[]>();
+  for (const edge of edges) {
+    const from = result.get(edge.from) ?? [];
+    from.push(edge);
+    result.set(edge.from, from);
+    const to = result.get(edge.to) ?? [];
+    if (edge.to !== edge.from) to.push(edge);
+    result.set(edge.to, to);
+  }
+  return result;
 }
 
 function adjacency(

@@ -52,6 +52,7 @@ export class VscodeProvider {
   private webviewReady = false;
   private activeIndexPromise?: Promise<void>;
   private activeIndexRoot?: string;
+  private readonly intelligenceRecoveryRoots = new Set<string>();
   private readonly applicationStore = new ApplicationStore();
   private readonly sdlcEngine = new SDLCEngine();
   private sdlcPlan?: SDLCPlan;
@@ -92,6 +93,8 @@ export class VscodeProvider {
     // live indexing state shown by the progress callbacks.
     void this.loadIntelligence();
     void this.loadRestoredTaskHandoff();
+    const root = this.workspaceRoot();
+    if (root) void this.ensureWorkspaceIntelligence(root);
     if (this.latestQaEvent) this.post({ type: "QA_BACKGROUND_STATUS", ...this.latestQaEvent });
   }
 
@@ -1493,7 +1496,31 @@ export class VscodeProvider {
   }
 
   async activeWorkspaceChanged(): Promise<void> {
+    const root = this.workspaceRoot();
+    if (root) await this.ensureWorkspaceIntelligence(root);
     if (this.panel) await this.loadIntelligence();
+  }
+
+  async ensureWorkspaceIntelligence(root: string): Promise<void> {
+    if (this.indexing) {
+      if (this.activeIndexRoot !== root) this.pendingIndexRoots.add(root);
+      return;
+    }
+    if (this.intelligenceRecoveryRoots.has(root)) return;
+    this.intelligenceRecoveryRoots.add(root);
+    try {
+      const marker = path.join(root, ".keystone", "intelligence", "okf", "manifest.json");
+      const present = await fs
+        .access(marker)
+        .then(() => true)
+        .catch(() => false);
+      if (!present) {
+        this.logInfo(`Persisted intelligence is missing for ${root}; starting recovery indexing.`);
+        await this.indexWorkspace(root);
+      }
+    } finally {
+      this.intelligenceRecoveryRoots.delete(root);
+    }
   }
 
   private async loadRestoredTaskHandoff(): Promise<void> {

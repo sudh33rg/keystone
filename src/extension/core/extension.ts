@@ -50,6 +50,7 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   const refreshTimers = new Map<string, NodeJS.Timeout>();
+  const recoveryTimers = new Map<string, NodeJS.Timeout>();
   const queueIntelligenceRefresh = (uri: vscode.Uri): void => {
     const relative = vscode.workspace.asRelativePath(uri, false).replace(/\\/g, "/");
     if (
@@ -76,12 +77,29 @@ export function activate(context: vscode.ExtensionContext): void {
       }, 2_000)
     );
   };
+  const queueIntelligenceRecovery = (uri: vscode.Uri): void => {
+    const relative = vscode.workspace.asRelativePath(uri, false).replace(/\\/g, "/");
+    if (relative !== ".keystone" && !relative.startsWith(".keystone/")) return;
+    const folder = vscode.workspace.getWorkspaceFolder(uri);
+    if (!folder) return;
+    const root = folder.uri.fsPath;
+    const existingTimer = recoveryTimers.get(root);
+    if (existingTimer) clearTimeout(existingTimer);
+    recoveryTimers.set(
+      root,
+      setTimeout(() => {
+        recoveryTimers.delete(root);
+        void provider.ensureWorkspaceIntelligence(root);
+      }, 750)
+    );
+  };
   const watcher = vscode.workspace.createFileSystemWatcher("**/*");
   context.subscriptions.push(
     watcher,
     watcher.onDidCreate(queueIntelligenceRefresh),
     watcher.onDidChange(queueIntelligenceRefresh),
     watcher.onDidDelete(queueIntelligenceRefresh),
+    watcher.onDidDelete(queueIntelligenceRecovery),
     vscode.window.onDidChangeActiveTextEditor(() => {
       void provider.activeWorkspaceChanged();
     }),
@@ -89,6 +107,8 @@ export function activate(context: vscode.ExtensionContext): void {
       dispose: () => {
         for (const timer of refreshTimers.values()) clearTimeout(timer);
         refreshTimers.clear();
+        for (const timer of recoveryTimers.values()) clearTimeout(timer);
+        recoveryTimers.clear();
       }
     }
   );
