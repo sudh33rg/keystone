@@ -690,9 +690,7 @@ export class CockpitService {
     return removed;
   }
 
-  async queryIntelligence(
-    query: string
-  ): Promise<{
+  async queryIntelligence(query: string): Promise<{
     query: string;
     intent: string;
     answer: string;
@@ -941,15 +939,13 @@ export class CockpitService {
         const messages = result.summary.errors?.length
           ? result.summary.errors
           : [result.stderr || `${command} failed.`];
-        result.remediation = messages
-          .slice(0, 20)
-          .map((failureMessage, index) =>
-            planFailureRemediation({
-              testPath: `${command}#failure-${index + 1}`,
-              failureMessage,
-              failureStackTrace: result.stderr
-            })
-          );
+        result.remediation = messages.slice(0, 20).map((failureMessage, index) =>
+          planFailureRemediation({
+            testPath: `${command}#failure-${index + 1}`,
+            failureMessage,
+            failureStackTrace: result.stderr
+          })
+        );
       }
       results.push(result);
     }
