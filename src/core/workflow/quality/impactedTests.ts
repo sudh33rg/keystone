@@ -10,7 +10,10 @@ export type ImpactedTestSuggestion = {
   confidence: "high" | "medium" | "low";
 };
 
-export function suggestImpactedTests(index: RepoIndex, changedPaths: string[]): ImpactedTestSuggestion[] {
+export function suggestImpactedTests(
+  index: RepoIndex,
+  changedPaths: string[]
+): ImpactedTestSuggestion[] {
   const suggestions = new Map<string, ImpactedTestSuggestion>();
   const testFiles = summaryFiles(index).filter((file) => file.role === "test");
 
@@ -59,7 +62,10 @@ export function suggestImpactedTests(index: RepoIndex, changedPaths: string[]): 
   });
 }
 
-function suggestRuntimeSignalBackedTests(index: RepoIndex, changedPath: string): ImpactedTestSuggestion[] {
+function suggestRuntimeSignalBackedTests(
+  index: RepoIndex,
+  changedPath: string
+): ImpactedTestSuggestion[] {
   const runtimeBehaviors = findRuntimeBehaviorsConnectedToPath(index, changedPath);
   if (runtimeBehaviors.length === 0) {
     return [];
@@ -92,7 +98,12 @@ function findRuntimeBehaviorsConnectedToPath(index: RepoIndex, filePath: string)
     ...evidence.configUsages.map((node) => node.id)
   ];
   const behaviorIds = index.graph.edges
-    .filter((edge) => edge.kind === "observes" && typeof edge.fromNodeId === "string" && declaredNodeIds.includes(edge.fromNodeId))
+    .filter(
+      (edge) =>
+        edge.kind === "observes" &&
+        typeof edge.fromNodeId === "string" &&
+        declaredNodeIds.includes(edge.fromNodeId)
+    )
     .map((edge) => edge.toNodeId)
     .filter((nodeId): nodeId is string => typeof nodeId === "string");
 
@@ -101,12 +112,24 @@ function findRuntimeBehaviorsConnectedToPath(index: RepoIndex, filePath: string)
     .sort((left, right) => left.id.localeCompare(right.id));
 }
 
-function findPathsConnectedToRuntimeBehavior(index: RepoIndex, runtimeBehavior: GraphNode): string[] {
+function findPathsConnectedToRuntimeBehavior(
+  index: RepoIndex,
+  runtimeBehavior: GraphNode
+): string[] {
   const relatedBehaviorIds = index.graph.nodes
-    .filter((node) => node.kind === "runtime_behavior" && runtimeBehaviorKey(node) === runtimeBehaviorKey(runtimeBehavior))
+    .filter(
+      (node) =>
+        node.kind === "runtime_behavior" &&
+        runtimeBehaviorKey(node) === runtimeBehaviorKey(runtimeBehavior)
+    )
     .map((node) => node.id);
   const sourceNodeIds = index.graph.edges
-    .filter((edge) => edge.kind === "observes" && typeof edge.toNodeId === "string" && relatedBehaviorIds.includes(edge.toNodeId))
+    .filter(
+      (edge) =>
+        edge.kind === "observes" &&
+        typeof edge.toNodeId === "string" &&
+        relatedBehaviorIds.includes(edge.toNodeId)
+    )
     .map((edge) => edge.fromNodeId)
     .filter((nodeId): nodeId is string => typeof nodeId === "string");
 
@@ -186,10 +209,16 @@ function summaryImports(index: RepoIndex): ImportReference[] {
 function hasPathAffinity(changedPath: string, testPath: string): boolean {
   const changedDirectory = path.posix.dirname(changedPath);
   const testDirectory = path.posix.dirname(testPath);
-  const changedStem = stripTestSuffix(path.posix.basename(changedPath, path.posix.extname(changedPath)));
+  const changedStem = stripTestSuffix(
+    path.posix.basename(changedPath, path.posix.extname(changedPath))
+  );
   const testStem = stripTestSuffix(path.posix.basename(testPath, path.posix.extname(testPath)));
 
-  return changedDirectory === testDirectory || changedStem === testStem || testDirectory.startsWith(changedDirectory);
+  return (
+    changedDirectory === testDirectory ||
+    changedStem === testStem ||
+    testDirectory.startsWith(changedDirectory)
+  );
 }
 
 function stripTestSuffix(value: string): string {

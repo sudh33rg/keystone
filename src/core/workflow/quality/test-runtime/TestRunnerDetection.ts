@@ -1,9 +1,4 @@
-import type {
-  TestCommandHint,
-  TestCommandResult,
-  TestCommandSource,
-  TestRunResult,
-} from './types';
+import type { TestCommandHint, TestCommandResult, TestCommandSource, TestRunResult } from "./types";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -12,83 +7,83 @@ import type {
 /** Default test commands for common package managers and frameworks */
 const PACKAGE_JSON_DEFAULTS: Record<string, TestCommandHint> = {
   jest: {
-    source: 'package.json',
-    commandName: 'test',
-    command: 'npx jest',
-    confidence: 0.9,
+    source: "package.json",
+    commandName: "test",
+    command: "npx jest",
+    confidence: 0.9
   },
   vitest: {
-    source: 'package.json',
-    commandName: 'test',
-    command: 'npx vitest run',
-    confidence: 0.95,
+    source: "package.json",
+    commandName: "test",
+    command: "npx vitest run",
+    confidence: 0.95
   },
-  'react-scripts': {
-    source: 'package.json',
-    commandName: 'test',
-    command: 'npx react-scripts test --watchAll=false',
-    confidence: 0.85,
+  "react-scripts": {
+    source: "package.json",
+    commandName: "test",
+    command: "npx react-scripts test --watchAll=false",
+    confidence: 0.85
   },
   playwright: {
-    source: 'package.json',
-    commandName: 'test:e2e',
-    command: 'npx playwright test',
-    confidence: 0.8,
-  },
+    source: "package.json",
+    commandName: "test:e2e",
+    command: "npx playwright test",
+    confidence: 0.8
+  }
 };
 
 const POM_XML_DEFAULTS: Record<string, TestCommandHint> = {
   maven: {
-    source: 'pom.xml',
-    commandName: 'test',
-    command: 'mvn test',
-    confidence: 0.95,
+    source: "pom.xml",
+    commandName: "test",
+    command: "mvn test",
+    confidence: 0.95
   },
-  'surefire': {
-    source: 'pom.xml',
-    commandName: 'test',
-    command: 'mvn surefire:test',
-    confidence: 0.9,
-  },
+  surefire: {
+    source: "pom.xml",
+    commandName: "test",
+    command: "mvn surefire:test",
+    confidence: 0.9
+  }
 };
 
 const BUILD_GRADLE_DEFAULTS: Record<string, TestCommandHint> = {
   junit5: {
-    source: 'build.gradle',
-    commandName: 'test',
-    command: './gradlew test',
-    confidence: 0.9,
+    source: "build.gradle",
+    commandName: "test",
+    command: "./gradlew test",
+    confidence: 0.9
   },
-  'spock': {
-    source: 'build.gradle',
-    commandName: 'test',
+  spock: {
+    source: "build.gradle",
+    commandName: "test",
     command: './gradlew test --tests "*Spec"',
-    confidence: 0.85,
-  },
+    confidence: 0.85
+  }
 };
 
 const PYPROJECT_DEFAULTS: Record<string, TestCommandHint> = {
   pytest: {
-    source: 'pyproject.toml',
-    commandName: 'test',
-    command: 'python -m pytest',
-    confidence: 0.9,
-  },
+    source: "pyproject.toml",
+    commandName: "test",
+    command: "python -m pytest",
+    confidence: 0.9
+  }
 };
 
 const GOMOD_DEFAULTS: Record<string, TestCommandHint> = {
   default: {
-    source: 'go.mod',
-    commandName: 'test',
-    command: 'go test ./...',
-    confidence: 0.95,
+    source: "go.mod",
+    commandName: "test",
+    command: "go test ./...",
+    confidence: 0.95
   },
-  'race-detector': {
-    source: 'go.mod',
-    commandName: 'test-race',
-    command: 'go test -race ./...',
-    confidence: 0.85,
-  },
+  "race-detector": {
+    source: "go.mod",
+    commandName: "test-race",
+    command: "go test -race ./...",
+    confidence: 0.85
+  }
 };
 
 // ---------------------------------------------------------------------------
@@ -100,7 +95,7 @@ const GOMOD_DEFAULTS: Record<string, TestCommandHint> = {
  */
 export function detectFromPackageJson(
   packageJson: Record<string, unknown>,
-  rootPath: string,
+  rootPath: string
 ): TestCommandResult[] {
   const commands: TestCommandResult[] = [];
 
@@ -109,19 +104,19 @@ export function detectFromPackageJson(
   for (const [name, cmd] of Object.entries(scripts)) {
     const cmdLower = cmd.toLowerCase();
     if (
-      cmdLower.includes('jest') ||
-      cmdLower.includes('vitest') ||
-      cmdLower.includes('mocha') ||
-      cmdLower.includes('ava') ||
-      cmdLower.includes('karma') ||
-      cmdLower.includes('test')
+      cmdLower.includes("jest") ||
+      cmdLower.includes("vitest") ||
+      cmdLower.includes("mocha") ||
+      cmdLower.includes("ava") ||
+      cmdLower.includes("karma") ||
+      cmdLower.includes("test")
     ) {
       commands.push({
         command: cmd,
-        source: 'package.json',
+        source: "package.json",
         confidence: 0.9,
         impactedTestFiles: [],
-        canRunAutomatically: true,
+        canRunAutomatically: true
       });
     }
   }
@@ -135,10 +130,10 @@ export function detectFromPackageJson(
       if (!commands.some((c) => c.command === hint.command)) {
         commands.push({
           command: hint.command,
-          source: 'package.json',
+          source: "package.json",
           confidence: hint.confidence,
           impactedTestFiles: [],
-          canRunAutomatically: true,
+          canRunAutomatically: true
         });
       }
     }
@@ -150,30 +145,27 @@ export function detectFromPackageJson(
 /**
  * Detect test commands from pom.xml by inspecting the Maven configuration.
  */
-export function detectFromPomXml(
-  pomContent: string,
-  rootPath: string,
-): TestCommandResult[] {
+export function detectFromPomXml(pomContent: string, rootPath: string): TestCommandResult[] {
   const commands: TestCommandResult[] = [];
   const lower = pomContent.toLowerCase();
 
-  if (lower.includes('maven-surefire-plugin') || lower.includes('surefire')) {
+  if (lower.includes("maven-surefire-plugin") || lower.includes("surefire")) {
     commands.push({
-      command: 'mvn surefire:test',
-      source: 'pom.xml',
+      command: "mvn surefire:test",
+      source: "pom.xml",
       confidence: 0.9,
       impactedTestFiles: [],
-      canRunAutomatically: true,
+      canRunAutomatically: true
     });
   }
 
-  if (lower.includes('<artifactId>junit')) {
+  if (lower.includes("<artifactId>junit")) {
     commands.push({
-      command: 'mvn test',
-      source: 'pom.xml',
+      command: "mvn test",
+      source: "pom.xml",
       confidence: 0.95,
       impactedTestFiles: [],
-      canRunAutomatically: true,
+      canRunAutomatically: true
     });
   }
 
@@ -185,28 +177,28 @@ export function detectFromPomXml(
  */
 export function detectFromBuildGradle(
   gradleContent: string,
-  rootPath: string,
+  rootPath: string
 ): TestCommandResult[] {
   const commands: TestCommandResult[] = [];
   const lower = gradleContent.toLowerCase();
 
-  if (lower.includes('test {') || lower.includes('useJUnit') || lower.includes('useJUnitJupiter')) {
+  if (lower.includes("test {") || lower.includes("useJUnit") || lower.includes("useJUnitJupiter")) {
     commands.push({
-      command: './gradlew test',
-      source: 'build.gradle',
+      command: "./gradlew test",
+      source: "build.gradle",
       confidence: 0.9,
       impactedTestFiles: [],
-      canRunAutomatically: true,
+      canRunAutomatically: true
     });
   }
 
-  if (lower.includes('spock') || lower.includes('Spock')) {
+  if (lower.includes("spock") || lower.includes("Spock")) {
     commands.push({
       command: './gradlew test --tests "*Spec"',
-      source: 'build.gradle',
+      source: "build.gradle",
       confidence: 0.85,
       impactedTestFiles: [],
-      canRunAutomatically: true,
+      canRunAutomatically: true
     });
   }
 
@@ -218,28 +210,28 @@ export function detectFromBuildGradle(
  */
 export function detectFromPyProject(
   pyprojectContent: string,
-  rootPath: string,
+  rootPath: string
 ): TestCommandResult[] {
   const commands: TestCommandResult[] = [];
   const lower = pyprojectContent.toLowerCase();
 
-  if (lower.includes('pytest')) {
+  if (lower.includes("pytest")) {
     commands.push({
-      command: 'python -m pytest',
-      source: 'pyproject.toml',
+      command: "python -m pytest",
+      source: "pyproject.toml",
       confidence: 0.9,
       impactedTestFiles: [],
-      canRunAutomatically: true,
+      canRunAutomatically: true
     });
   }
 
-  if (lower.includes('[tool.pytest') || lower.includes('tool.pytest')) {
+  if (lower.includes("[tool.pytest") || lower.includes("tool.pytest")) {
     commands.push({
-      command: 'python -m pytest',
-      source: 'pyproject.toml',
+      command: "python -m pytest",
+      source: "pyproject.toml",
       confidence: 0.95,
       impactedTestFiles: [],
-      canRunAutomatically: true,
+      canRunAutomatically: true
     });
   }
 
@@ -249,29 +241,26 @@ export function detectFromPyProject(
 /**
  * Detect test commands from go.mod by inspecting the Go module configuration.
  */
-export function detectFromGoMod(
-  goModContent: string,
-  rootPath: string,
-): TestCommandResult[] {
+export function detectFromGoMod(goModContent: string, rootPath: string): TestCommandResult[] {
   const commands: TestCommandResult[] = [];
   const lower = goModContent.toLowerCase();
 
-  if (lower.includes('testing/') || lower.includes('github.com/onsi/ginkgo')) {
+  if (lower.includes("testing/") || lower.includes("github.com/onsi/ginkgo")) {
     commands.push({
-      command: 'go test ./...',
-      source: 'go.mod',
+      command: "go test ./...",
+      source: "go.mod",
       confidence: 0.95,
       impactedTestFiles: [],
-      canRunAutomatically: true,
+      canRunAutomatically: true
     });
   }
 
   commands.push({
-    command: 'go test -race ./...',
-    source: 'go.mod',
+    command: "go test -race ./...",
+    source: "go.mod",
     confidence: 0.85,
     impactedTestFiles: [],
-    canRunAutomatically: true,
+    canRunAutomatically: true
   });
 
   return commands;
@@ -286,7 +275,7 @@ export function getAllTestCommands(
   gradleContent?: string,
   pyprojectContent?: string,
   goModContent?: string,
-  rootPath: string = '.',
+  rootPath: string = "."
 ): TestCommandResult[] {
   const allCommands: TestCommandResult[] = [];
 
@@ -320,13 +309,9 @@ export function getAllTestCommands(
 /**
  * Get the highest-confidence test command from the detected results.
  */
-export function getBestTestCommand(
-  results: TestCommandResult[],
-): TestCommandResult | null {
+export function getBestTestCommand(results: TestCommandResult[]): TestCommandResult | null {
   if (results.length === 0) {
     return null;
   }
-  return results.reduce((best, current) =>
-    current.confidence > best.confidence ? current : best,
-  );
+  return results.reduce((best, current) => (current.confidence > best.confidence ? current : best));
 }

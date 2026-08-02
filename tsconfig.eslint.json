@@ -14,12 +14,5 @@
     "vitest.config.ts",
     "vite.config.ts"
   ],
-  "exclude": [
-    "node_modules",
-    "out",
-    ".vscode-test",
-    "coverage",
-    "apps/**/dist",
-    "packages/**/dist"
-  ]
+  "exclude": ["node_modules", "out", ".vscode-test", "coverage", "apps/**/dist", "packages/**/dist"]
 }

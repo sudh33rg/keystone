@@ -7,10 +7,10 @@
  * @module vscode/core/qaService
  */
 
-import type * as vscode from 'vscode';
-import { createGapAnalyzer, type GapAnalysisResult } from '@core/workflow/quality/qaGapAnalysis';
-import { DEFAULT_QA_CONFIG } from '@core/platform/config/qualityConfig';
-import { cancellationFromAbortSignal } from '@core/workflow/quality/cancellation';
+import type * as vscode from "vscode";
+import { createGapAnalyzer, type GapAnalysisResult } from "@core/workflow/quality/qaGapAnalysis";
+import { DEFAULT_QA_CONFIG } from "@core/platform/config/qualityConfig";
+import { cancellationFromAbortSignal } from "@core/workflow/quality/cancellation";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -23,7 +23,7 @@ export interface QaServiceConfig {
   /** Delay before auto-analysis in ms (default: 2_000) */
   autoAnalysisDelayMs: number;
   /** Default scan depth (default: 'quick') */
-  defaultDepth: 'quick' | 'deep';
+  defaultDepth: "quick" | "deep";
   /** Timeout for quick scan in ms (default: 30_000) */
   quickScanTimeoutMs: number;
   /** Timeout for deep scan in ms (default: 120_000) */
@@ -31,7 +31,7 @@ export interface QaServiceConfig {
 }
 
 export interface QaServiceEvent {
-  status: 'running' | 'complete' | 'cancelled' | 'failed';
+  status: "running" | "complete" | "cancelled" | "failed";
   message?: string;
   result?: GapAnalysisResult;
   progress?: number;
@@ -40,9 +40,9 @@ export interface QaServiceEvent {
 const DEFAULT_SERVICE_CONFIG: QaServiceConfig = {
   autoAnalysis: true,
   autoAnalysisDelayMs: 2_000,
-  defaultDepth: 'quick',
+  defaultDepth: "quick",
   quickScanTimeoutMs: 30_000,
-  deepScanTimeoutMs: 120_000,
+  deepScanTimeoutMs: 120_000
 };
 
 // ---------------------------------------------------------------------------
@@ -76,7 +76,11 @@ export class QaService implements vscode.Disposable {
 
   onEvent(callback: (event: QaServiceEvent) => void): vscode.Disposable {
     this.onEventCallbacks.push(callback);
-    return { dispose: () => { this.onEventCallbacks = this.onEventCallbacks.filter(item => item !== callback); } };
+    return {
+      dispose: () => {
+        this.onEventCallbacks = this.onEventCallbacks.filter((item) => item !== callback);
+      }
+    };
   }
 
   /**
@@ -99,7 +103,7 @@ export class QaService implements vscode.Disposable {
   /**
    * Run analysis with the specified depth.
    */
-  async runAnalysis(workspaceRoot: string, depth: 'quick' | 'deep'): Promise<GapAnalysisResult> {
+  async runAnalysis(workspaceRoot: string, depth: "quick" | "deep"): Promise<GapAnalysisResult> {
     this.cancel();
 
     const abort = new AbortController();
@@ -110,34 +114,40 @@ export class QaService implements vscode.Disposable {
         workspaceRoot,
         onProgress: (message, progress) => {
           this.publish({
-            status: 'running',
+            status: "running",
             message,
-            progress,
+            progress
           });
-        },
+        }
       });
-      const context = { cancellation: cancellationFromAbortSignal(abort.signal), signal: abort.signal };
-      const result = depth === 'deep' ? await analyzer.analyzeDeep(context) : await analyzer.analyzeQuick(context);
+      const context = {
+        cancellation: cancellationFromAbortSignal(abort.signal),
+        signal: abort.signal
+      };
+      const result =
+        depth === "deep"
+          ? await analyzer.analyzeDeep(context)
+          : await analyzer.analyzeQuick(context);
 
       this.publish({
-        status: 'complete',
-        result,
+        status: "complete",
+        result
       });
 
       return result;
     } catch (err) {
-      if (err instanceof Error && err.name === 'CancellationError') {
+      if (err instanceof Error && err.name === "CancellationError") {
         return {
           scanMode: depth,
           summary: {
-            testFramework: 'unknown',
+            testFramework: "unknown",
             totalTests: 0,
             totalSourceFiles: 0,
             coverageRatio: 0,
             coverageRate: 0,
             flakyTests: 0,
             brokenTests: 0,
-            riskScore: 0,
+            riskScore: 0
           },
           gaps: [],
           recommendations: [],
@@ -146,11 +156,11 @@ export class QaService implements vscode.Disposable {
             testsDiscovered: 0,
             sourcesAnalyzed: 0,
             gapsFound: 0,
-            recommendationsGenerated: 0,
-          },
+            recommendationsGenerated: 0
+          }
         };
       }
-      this.publish({ status: 'failed', message: err instanceof Error ? err.message : String(err) });
+      this.publish({ status: "failed", message: err instanceof Error ? err.message : String(err) });
       throw err;
     } finally {
       if (this.activeAnalysis === abort) {
@@ -172,8 +182,8 @@ export class QaService implements vscode.Disposable {
       this.activeAnalysis = null;
     }
     this.publish({
-      status: 'cancelled',
-      message: 'Analysis cancelled.',
+      status: "cancelled",
+      message: "Analysis cancelled."
     });
   }
 
@@ -194,7 +204,7 @@ export class QaService implements vscode.Disposable {
 
   private publish(event: QaServiceEvent): void {
     for (const callback of this.onEventCallbacks) callback(event);
-    if (event.status !== 'complete' || !event.result) return;
+    if (event.status !== "complete" || !event.result) return;
     for (const callback of this.onResultCallbacks) {
       try {
         callback(event.result);

@@ -65,7 +65,9 @@ const nodeCommandExecutor: CommandExecutor = (command, options) =>
       },
       (error, stdout, stderr) => {
         const exitCode = error
-          ? typeof error === "object" && "code" in error && typeof error.code === "number" ? error.code : 1
+          ? typeof error === "object" && "code" in error && typeof error.code === "number"
+            ? error.code
+            : 1
           : 0;
 
         resolve({ exitCode, stdout, stderr });

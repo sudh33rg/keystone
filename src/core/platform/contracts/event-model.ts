@@ -1,31 +1,31 @@
-import type { KeystonePlatform, Metadata, RepositoryReference } from './domain-model';
+import type { KeystonePlatform, Metadata, RepositoryReference } from "./domain-model";
 
 export type EventCategory =
-  | 'repository'
-  | 'knowledge'
-  | 'reasoning'
-  | 'workflow'
-  | 'modernization'
-  | 'documentation'
-  | 'ai'
-  | 'observability'
-  | 'security'
-  | 'data'
-  | 'storage'
-  | 'execution'
-  | 'enterprise'
-  | 'analytics'
-  | 'testing-quality'
-  | 'deployment-operations'
-  | 'plugin-marketplace'
-  | 'engineering-standards'
-  | 'engineering'
-  | 'experience'
-  | 'platform';
+  | "repository"
+  | "knowledge"
+  | "reasoning"
+  | "workflow"
+  | "modernization"
+  | "documentation"
+  | "ai"
+  | "observability"
+  | "security"
+  | "data"
+  | "storage"
+  | "execution"
+  | "enterprise"
+  | "analytics"
+  | "testing-quality"
+  | "deployment-operations"
+  | "plugin-marketplace"
+  | "engineering-standards"
+  | "engineering"
+  | "experience"
+  | "platform";
 
 export interface ActorReference {
   readonly id: string;
-  readonly type: 'user' | 'system' | 'agent' | 'plugin' | string;
+  readonly type: "user" | "system" | "agent" | "plugin" | string;
   readonly displayName?: string;
 }
 
@@ -44,11 +44,13 @@ export interface EventMetadata {
   readonly schemaVersion: string;
   readonly platformVersion: string;
   readonly eventVersion: string;
-  readonly payloadClassification?: 'public' | 'internal' | 'sensitive';
+  readonly payloadClassification?: "public" | "internal" | "sensitive";
   readonly attributes: Metadata;
 }
 
-export interface CanonicalEvent<TPayload extends Record<string, unknown> = Record<string, unknown>> {
+export interface CanonicalEvent<
+  TPayload extends Record<string, unknown> = Record<string, unknown>
+> {
   readonly eventId: string;
   readonly eventType: string;
   readonly eventVersion: string;
@@ -65,7 +67,9 @@ export interface CanonicalEvent<TPayload extends Record<string, unknown> = Recor
   readonly schemaVersion: string;
 }
 
-export interface PublishEventInput<TPayload extends Record<string, unknown> = Record<string, unknown>> {
+export interface PublishEventInput<
+  TPayload extends Record<string, unknown> = Record<string, unknown>
+> {
   readonly eventType: string;
   readonly platform: KeystonePlatform;
   readonly source: string;
@@ -95,7 +99,7 @@ export interface EventDeliveryRecord {
   readonly deliveredAt: string;
   readonly durationMs: number;
   readonly retryCount: number;
-  readonly status: 'acknowledged' | 'failed';
+  readonly status: "acknowledged" | "failed";
   readonly failureReason?: string;
   readonly correlationId: string;
   readonly traceId: string;

@@ -11,7 +11,9 @@ export class ModernizationAgent {
     return {
       riskLevel,
       candidates,
-      behaviorMapping: ["Map current inputs, outputs, side effects, error behavior, and tests before implementation."],
+      behaviorMapping: [
+        "Map current inputs, outputs, side effects, error behavior, and tests before implementation."
+      ],
       safetyRequirements: [
         "current behavior mapped",
         "regression tests identified",
@@ -31,7 +33,9 @@ export class ModernizationAgent {
         "Prepare PR evidence"
       ],
       requiresApproval: true,
-      copilotReadyTasks: ["No modernization implementation task is Copilot-ready until approval and safety requirements are complete."]
+      copilotReadyTasks: [
+        "No modernization implementation task is Copilot-ready until approval and safety requirements are complete."
+      ]
     };
   }
 }

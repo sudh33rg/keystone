@@ -1,7 +1,7 @@
 export interface KeystoneOperation {
   id: string;
-  kind: 'intelligence' | 'analysis' | 'validation' | 'delegation' | 'handoff';
-  status: 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
+  kind: "intelligence" | "analysis" | "validation" | "delegation" | "handoff";
+  status: "queued" | "running" | "paused" | "completed" | "failed" | "cancelled";
   progress: number;
   message: string;
   updatedAt: string;
@@ -10,7 +10,7 @@ export interface KeystoneOperation {
 export interface KeystoneApplicationState {
   version: number;
   workspace?: { name: string; root: string; branch?: string };
-  status: 'idle' | 'indexing' | 'ready' | 'analyzing' | 'error';
+  status: "idle" | "indexing" | "ready" | "analyzing" | "error";
   intelligence?: unknown;
   intelligenceManifest?: unknown;
   intelligenceActivity: unknown[];
@@ -22,7 +22,7 @@ export interface KeystoneApplicationState {
   valueEdgeFeature?: unknown;
   handoffs: unknown[];
   operations: KeystoneOperation[];
-  notification?: { level: 'info' | 'error'; message: string };
+  notification?: { level: "info" | "error"; message: string };
 }
 
 export type StateListener = (state: Readonly<KeystoneApplicationState>) => void;
@@ -34,17 +34,21 @@ export class ApplicationStore {
   constructor(initial: Partial<KeystoneApplicationState> = {}) {
     this.state = {
       version: 1,
-      status: 'idle',
+      status: "idle",
       intelligenceActivity: [],
       handoffs: [],
       operations: [],
-      ...initial,
+      ...initial
     };
   }
 
-  snapshot(): Readonly<KeystoneApplicationState> { return structuredClone(this.state); }
+  snapshot(): Readonly<KeystoneApplicationState> {
+    return structuredClone(this.state);
+  }
 
-  update(patch: Partial<Omit<KeystoneApplicationState, 'version'>>): Readonly<KeystoneApplicationState> {
+  update(
+    patch: Partial<Omit<KeystoneApplicationState, "version">>
+  ): Readonly<KeystoneApplicationState> {
     this.state = { ...this.state, ...patch, version: this.state.version + 1 };
     const snapshot = this.snapshot();
     for (const listener of this.listeners) listener(snapshot);
@@ -52,7 +56,7 @@ export class ApplicationStore {
   }
 
   mergeOperation(operation: KeystoneOperation): Readonly<KeystoneApplicationState> {
-    const operations = this.state.operations.filter(item => item.id !== operation.id);
+    const operations = this.state.operations.filter((item) => item.id !== operation.id);
     operations.unshift(operation);
     return this.update({ operations: operations.slice(0, 100) });
   }

@@ -1,32 +1,32 @@
-import type { RepositoryModel } from '../../intelligence/repository/model';
-import type { KnowledgePlatformGraph } from '../../intelligence/graph/platformModel';
-import type { ExecutionHandle, WorkflowRequest } from '../orchestration/model';
-import type { TaskWorkspaceRef } from '../tasks/taskWorkspaceManager';
+import type { RepositoryModel } from "../../intelligence/repository/model";
+import type { KnowledgePlatformGraph } from "../../intelligence/graph/platformModel";
+import type { ExecutionHandle, WorkflowRequest } from "../orchestration/model";
+import type { TaskWorkspaceRef } from "../tasks/taskWorkspaceManager";
 
-export type ModernizationSeverity = 'low' | 'medium' | 'high' | 'critical';
+export type ModernizationSeverity = "low" | "medium" | "high" | "critical";
 export type ModernizationStrategy =
-  | 'rehost'
-  | 'replatform'
-  | 'refactor'
-  | 'rearchitect'
-  | 'replace'
-  | 'retain'
-  | 'retire'
-  | 'strangler-fig'
-  | 'incremental-upgrade';
+  | "rehost"
+  | "replatform"
+  | "refactor"
+  | "rearchitect"
+  | "replace"
+  | "retain"
+  | "retire"
+  | "strangler-fig"
+  | "incremental-upgrade";
 
 export type ModernizationArea =
-  | 'architecture'
-  | 'business-capability'
-  | 'dependency'
-  | 'api'
-  | 'database'
-  | 'code'
-  | 'security'
-  | 'testing'
-  | 'operations'
-  | 'documentation'
-  | 'technology-stack';
+  | "architecture"
+  | "business-capability"
+  | "dependency"
+  | "api"
+  | "database"
+  | "code"
+  | "security"
+  | "testing"
+  | "operations"
+  | "documentation"
+  | "technology-stack";
 
 export interface ModernizationRequest {
   readonly repository: RepositoryModel;
@@ -87,7 +87,7 @@ export interface LegacyAssessmentMetrics {
 
 export interface TechnologyInventoryItem {
   readonly name: string;
-  readonly kind: 'language' | 'framework' | 'dependency' | 'build' | 'database' | 'unknown';
+  readonly kind: "language" | "framework" | "dependency" | "build" | "database" | "unknown";
   readonly version?: string;
   readonly evidence: readonly string[];
 }
@@ -104,7 +104,7 @@ export interface BusinessCapability {
 export interface ArchitectureDiscovery {
   readonly id: string;
   readonly repositoryId: string;
-  readonly style: 'modular-monolith' | 'layered' | 'service-oriented' | 'event-driven' | 'unknown';
+  readonly style: "modular-monolith" | "layered" | "service-oriented" | "event-driven" | "unknown";
   readonly components: readonly ArchitectureComponent[];
   readonly boundaries: readonly ArchitectureBoundary[];
   readonly evidence: readonly string[];
@@ -114,7 +114,7 @@ export interface ArchitectureDiscovery {
 export interface ArchitectureComponent {
   readonly id: string;
   readonly name: string;
-  readonly kind: 'module' | 'package' | 'service' | 'api' | 'database' | 'library';
+  readonly kind: "module" | "package" | "service" | "api" | "database" | "library";
   readonly assets: readonly string[];
   readonly dependencies: readonly string[];
 }
@@ -129,7 +129,7 @@ export interface ArchitectureBoundary {
 export interface TargetArchitecture {
   readonly id: string;
   readonly name: string;
-  readonly style: ArchitectureDiscovery['style'] | 'microservices' | 'serverless';
+  readonly style: ArchitectureDiscovery["style"] | "microservices" | "serverless";
   readonly principles: readonly string[];
   readonly technologyPreferences: readonly string[];
 }
@@ -148,7 +148,7 @@ export interface TargetArchitectureRecommendation {
 
 export interface TechnologyRecommendation {
   readonly id: string;
-  readonly category: 'runtime' | 'framework' | 'data' | 'testing' | 'delivery' | 'observability';
+  readonly category: "runtime" | "framework" | "data" | "testing" | "delivery" | "observability";
   readonly currentTechnology?: string;
   readonly recommendedTechnology: string;
   readonly alternatives: readonly string[];
@@ -161,7 +161,7 @@ export interface ModernizationProposal {
   readonly id: string;
   readonly repositoryId: string;
   readonly generatedAt: string;
-  readonly status: 'awaiting-user-decision';
+  readonly status: "awaiting-user-decision";
   readonly scanCoverage: RepositoryScanCoverage;
   readonly assessment: LegacyAssessmentReport;
   readonly architecture: ArchitectureDiscovery;
@@ -185,7 +185,7 @@ export interface ModernizationDecisionInput {
 export interface ModernizationDecision {
   readonly proposalId: string;
   readonly acceptedAt: string;
-  readonly source: 'keystone-recommendation' | 'user-defined';
+  readonly source: "keystone-recommendation" | "user-defined";
   readonly targetArchitecture: TargetArchitecture;
   readonly technologies: Readonly<Record<string, string>>;
   readonly notes: readonly string[];
@@ -212,7 +212,7 @@ export interface ModernizationGap {
   readonly currentState: string;
   readonly targetState: string;
   readonly priority: ModernizationSeverity;
-  readonly effort: 'low' | 'medium' | 'high';
+  readonly effort: "low" | "medium" | "high";
   readonly evidence: readonly string[];
 }
 
@@ -244,7 +244,8 @@ export interface ModernizationImpact {
 export interface FunctionalEquivalenceCheck {
   readonly id: string;
   readonly scope: string;
-  readonly verification: 'characterization-test' | 'contract-test' | 'integration-test' | 'manual-review';
+  readonly verification:
+    "characterization-test" | "contract-test" | "integration-test" | "manual-review";
   readonly acceptanceCriteria: readonly string[];
 }
 

@@ -1,4 +1,4 @@
-export type WorkflowStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'blocked';
+export type WorkflowStatus = "pending" | "running" | "succeeded" | "failed" | "blocked";
 
 export interface WorkflowStep {
   id: string;

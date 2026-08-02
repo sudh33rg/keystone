@@ -1,5 +1,11 @@
 import { routeForIntent } from "./routingPolicy";
-import type { ContextPack, IntentAnalysis, RouteDecision, RouteKind, RouteStep } from "../../domain/types";
+import type {
+  ContextPack,
+  IntentAnalysis,
+  RouteDecision,
+  RouteKind,
+  RouteStep
+} from "../../domain/types";
 
 export function routeIntent(analysis: IntentAnalysis, contextPack?: ContextPack): RouteDecision {
   const selectedRoute = routeForIntent(analysis);
@@ -11,8 +17,16 @@ export function routeIntent(analysis: IntentAnalysis, contextPack?: ContextPack)
     reason: explainRoute(selectedRoute, analysis.needsCodeChange),
     steps,
     estimatedTokenSaving: tokenSaving,
-    requiredApprovals: selectedRoute === "human-review" ? ["approve modernization plan before Copilot delegation"] : selectedRoute === "hybrid" || selectedRoute === "copilot" ? ["approve Copilot delegation prompt"] : [],
-    risks: analysis.riskHints.length > 0 ? analysis.riskHints.map((hint) => `Task mentions ${hint}`) : ["No major risk keyword detected"],
+    requiredApprovals:
+      selectedRoute === "human-review"
+        ? ["approve modernization plan before Copilot delegation"]
+        : selectedRoute === "hybrid" || selectedRoute === "copilot"
+          ? ["approve Copilot delegation prompt"]
+          : [],
+    risks:
+      analysis.riskHints.length > 0
+        ? analysis.riskHints.map((hint) => `Task mentions ${hint}`)
+        : ["No major risk keyword detected"],
     fallbackPath: selectedRoute === "human-review" ? "hybrid" : "human-review"
   };
 }
@@ -50,14 +64,23 @@ function buildSteps(route: RouteKind, needsCodeChange: boolean): RouteStep[] {
   ];
   if (needsCodeChange || route === "copilot" || route === "hybrid") {
     steps.push(step("context", "Build compact context pack", "keystone", "ready"));
-    steps.push(step("copilot", "Generate Copilot delegation prompt", "copilot", "requires-approval"));
+    steps.push(
+      step("copilot", "Generate Copilot delegation prompt", "copilot", "requires-approval")
+    );
   }
-  steps.push(step("validation", "Run QA, security, performance, modernization checks", "keystone", "pending"));
+  steps.push(
+    step("validation", "Run QA, security, performance, modernization checks", "keystone", "pending")
+  );
   steps.push(step("evidence", "Prepare PR evidence", "keystone", "pending"));
   return steps;
 }
 
-function step(id: string, label: string, owner: RouteStep["owner"], status: RouteStep["status"]): RouteStep {
+function step(
+  id: string,
+  label: string,
+  owner: RouteStep["owner"],
+  status: RouteStep["status"]
+): RouteStep {
   return { id, label, owner, status, description: label };
 }
 
@@ -74,5 +97,7 @@ function explainRoute(route: RouteKind, needsCodeChange: boolean): string {
   if (route === "copilot") {
     return "This task is implementation-heavy. Keystone will still prepare a compact prompt and validation evidence before user-approved Copilot delegation.";
   }
-  return needsCodeChange ? "Graph inspection is not enough because code changes are likely." : "Repository graph inspection is sufficient for the requested analysis.";
+  return needsCodeChange
+    ? "Graph inspection is not enough because code changes are likely."
+    : "Repository graph inspection is sufficient for the requested analysis.";
 }

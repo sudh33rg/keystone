@@ -119,7 +119,7 @@ export function createQuarantineStore(
         flakinessScore,
         quarantinedAt: Date.now(),
         expiresAt: Date.now() + ttlMs,
-        autoQuarantined: true,
+        autoQuarantined: true
       };
       store.add(entry);
       persist(workspaceRoot, store.list(), threshold);
@@ -149,6 +149,6 @@ export function createQuarantineStore(
       return store.get(testPath);
     },
 
-    autoQuarantine,
+    autoQuarantine
   };
 }

@@ -1,4 +1,4 @@
-import type { SDLCBacklogStory } from '../../workflow/sdlc/engine';
+import type { SDLCBacklogStory } from "../../workflow/sdlc/engine";
 
 export interface ValueEdgeConnection {
   baseUrl: string;
@@ -21,7 +21,7 @@ export interface ValueEdgeFeature {
 export interface ValueEdgePublishResult {
   localId: string;
   externalId: string;
-  kind: SDLCBacklogStory['kind'];
+  kind: SDLCBacklogStory["kind"];
   title: string;
 }
 

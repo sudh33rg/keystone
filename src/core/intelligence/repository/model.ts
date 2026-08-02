@@ -1,4 +1,4 @@
-export type RepositoryType = 'git' | 'local' | 'archive' | 'remote';
+export type RepositoryType = "git" | "local" | "archive" | "remote";
 
 export interface GitMetadata {
   readonly branch?: string;
@@ -14,7 +14,7 @@ export interface LanguageSummary {
 
 export interface FrameworkSummary {
   readonly name: string;
-  readonly category: 'frontend' | 'backend' | 'testing' | 'build' | 'database' | 'unknown';
+  readonly category: "frontend" | "backend" | "testing" | "build" | "database" | "unknown";
   readonly evidence: readonly string[];
 }
 
@@ -80,18 +80,18 @@ export interface SourceFile {
 }
 
 export type RepositorySymbolKind =
-  | 'package'
-  | 'namespace'
-  | 'class'
-  | 'interface'
-  | 'enum'
-  | 'method'
-  | 'function'
-  | 'variable'
-  | 'constant'
-  | 'annotation'
-  | 'decorator'
-  | 'type';
+  | "package"
+  | "namespace"
+  | "class"
+  | "interface"
+  | "enum"
+  | "method"
+  | "function"
+  | "variable"
+  | "constant"
+  | "annotation"
+  | "decorator"
+  | "type";
 
 export interface RepositorySymbol {
   readonly id: string;
@@ -119,8 +119,8 @@ export interface RepositoryDependency {
   readonly repositoryId: string;
   readonly sourceAssetId: string;
   readonly target: string;
-  readonly dependencyType: 'package' | 'import' | 'framework' | 'unknown';
-  readonly scope: 'runtime' | 'development' | 'peer' | 'optional' | 'unknown';
+  readonly dependencyType: "package" | "import" | "framework" | "unknown";
+  readonly scope: "runtime" | "development" | "peer" | "optional" | "unknown";
   readonly evidence: readonly string[];
 }
 
@@ -160,7 +160,7 @@ export interface WorkspaceGraph {
 
 export interface WorkspaceGraphNode {
   readonly id: string;
-  readonly type: 'repository' | 'module' | 'package' | 'project' | 'directory' | 'file' | 'symbol';
+  readonly type: "repository" | "module" | "package" | "project" | "directory" | "file" | "symbol";
   readonly label: string;
   readonly path?: string;
 }
@@ -169,7 +169,7 @@ export interface WorkspaceGraphEdge {
   readonly id: string;
   readonly sourceId: string;
   readonly targetId: string;
-  readonly relationship: 'contains' | 'defines' | 'imports' | 'depends-on';
+  readonly relationship: "contains" | "defines" | "imports" | "depends-on";
 }
 
 export interface RepositoryHealth {

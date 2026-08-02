@@ -53,17 +53,29 @@ export function parseValidationOutput(stdout: string, stderr: string): ParsedVal
     testsSkipped: firstDefined(pytest.testsSkipped, cargo.testsSkipped, maven.testsSkipped),
     testsErrored: firstDefined(pytest.testsErrored, maven.testsErrored),
     testSuitesPassed: firstDefined(
-      readFirstNumber(combined, [/Test Suites:.*?(\d+)\s+passed/i, /(\d+)\s+test suites?\s+passed/i]),
+      readFirstNumber(combined, [
+        /Test Suites:.*?(\d+)\s+passed/i,
+        /(\d+)\s+test suites?\s+passed/i
+      ]),
       goTest.testSuitesPassed
     ),
     testSuitesFailed: firstDefined(
-      readFirstNumber(combined, [/Test Suites:\s+(\d+)\s+failed/i, /(\d+)\s+test suites?\s+failed/i]),
+      readFirstNumber(combined, [
+        /Test Suites:\s+(\d+)\s+failed/i,
+        /(\d+)\s+test suites?\s+failed/i
+      ]),
       goTest.testSuitesFailed
     ),
     assertionsPassed: readFirstNumber(combined, [/(\d+)\s+assertions?\s+passed/i]),
     assertionsFailed: readFirstNumber(combined, [/(\d+)\s+assertions?\s+failed/i]),
-    snapshotsPassed: readFirstNumber(combined, [/Snapshots:.*?(\d+)\s+passed/i, /(\d+)\s+snapshots?\s+passed/i]),
-    snapshotsFailed: readFirstNumber(combined, [/Snapshots:\s+(\d+)\s+failed/i, /(\d+)\s+snapshots?\s+failed/i]),
+    snapshotsPassed: readFirstNumber(combined, [
+      /Snapshots:.*?(\d+)\s+passed/i,
+      /(\d+)\s+snapshots?\s+passed/i
+    ]),
+    snapshotsFailed: readFirstNumber(combined, [
+      /Snapshots:\s+(\d+)\s+failed/i,
+      /(\d+)\s+snapshots?\s+failed/i
+    ]),
     lintErrors: eslint.lintErrors,
     lintWarnings: eslint.lintWarnings,
     typeErrors: tsc.typeErrors,
@@ -124,7 +136,10 @@ function parseGoTestSummary(value: string): Partial<ParsedValidationSummary> {
 }
 
 function parseCargoTestSummary(value: string): Partial<ParsedValidationSummary> {
-  const match = /test result:\s+\w+\.\s+(\d+)\s+passed;\s+(\d+)\s+failed;(?:\s+\d+\s+ignored;)?(?:\s+\d+\s+measured;)?(?:\s+(\d+)\s+filtered out;)?/i.exec(value);
+  const match =
+    /test result:\s+\w+\.\s+(\d+)\s+passed;\s+(\d+)\s+failed;(?:\s+\d+\s+ignored;)?(?:\s+\d+\s+measured;)?(?:\s+(\d+)\s+filtered out;)?/i.exec(
+      value
+    );
   if (!match) {
     return {};
   }
@@ -137,7 +152,8 @@ function parseCargoTestSummary(value: string): Partial<ParsedValidationSummary> 
 }
 
 function parseMavenSurefireSummary(value: string): Partial<ParsedValidationSummary> {
-  const match = /Tests run:\s+(\d+),\s+Failures:\s+(\d+),\s+Errors:\s+(\d+),\s+Skipped:\s+(\d+)/i.exec(value);
+  const match =
+    /Tests run:\s+(\d+),\s+Failures:\s+(\d+),\s+Errors:\s+(\d+),\s+Skipped:\s+(\d+)/i.exec(value);
   if (!match) {
     return {};
   }

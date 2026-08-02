@@ -1,22 +1,129 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import ts from 'typescript';
-const root=process.cwd();
-const args=new Set(process.argv.slice(2));
-const extensionOnly=args.has('--extension-only');
-const webviewOnly=args.has('--webview-only');
-if(args.has('--watch')) console.warn('Keystone local toolchain performs a full deterministic rebuild on each invocation; external file watching is intentionally not bundled.');
+import fs from "node:fs";
+import path from "node:path";
+import ts from "typescript";
+const root = process.cwd();
+const args = new Set(process.argv.slice(2));
+const extensionOnly = args.has("--extension-only");
+const webviewOnly = args.has("--webview-only");
+if (args.has("--watch"))
+  console.warn(
+    "Keystone local toolchain performs a full deterministic rebuild on each invocation; external file watching is intentionally not bundled."
+  );
 (async () => {
-  if(!webviewOnly) buildApplication();
-  if(!extensionOnly) await buildWebview();
+  if (!webviewOnly) buildApplication();
+  if (!extensionOnly) await buildWebview();
 })();
-function walk(dir,extensions){const out=[];if(!fs.existsSync(dir))return out;for(const entry of fs.readdirSync(dir,{withFileTypes:true})){const p=path.join(dir,entry.name);if(entry.isDirectory())out.push(...walk(p,extensions));else if(extensions.some(ext=>p.endsWith(ext)))out.push(p);}return out;}
-function ensure(file){fs.mkdirSync(path.dirname(file),{recursive:true});}
-function aliasToRelative(specifier,sourceFile,outFile){const aliases={'@core/':'src/core/','@vscode/':'src/extension/','@webview/':'src/webview/'};for(const [prefix,target] of Object.entries(aliases)){if(!specifier.startsWith(prefix))continue;const sourceTarget=path.join(root,target,specifier.slice(prefix.length));const outTarget=path.join(root,'dist','app',path.relative(path.join(root,'src'),sourceTarget));let relative=path.relative(path.dirname(outFile),outTarget).replaceAll(path.sep,'/');if(!relative.startsWith('.'))relative='./'+relative;return relative;}return specifier;}
-function rewriteAliases(text,sourceFile,outFile){return text.replace(/(from\s+|import\s*\(|require\s*\()(['"])(@(?:core|vscode|webview)\/[^'"]+)\2/g,(full,prefix,quote,spec)=>`${prefix}${quote}${aliasToRelative(spec,sourceFile,outFile)}${quote}`);}
-function buildApplication(){const files=[...walk(path.join(root,'src/core'),['.ts']),...walk(path.join(root,'src/extension'),['.ts'])].filter(f=>!f.endsWith('.d.ts'));for(const file of files){const relative=path.relative(path.join(root,'src'),file).replace(/\.ts$/,'.js');const out=path.join(root,'dist/app',relative);let source=fs.readFileSync(file,'utf8');source=rewriteAliases(source,file,out);const result=ts.transpileModule(source,{fileName:file,compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,moduleResolution:ts.ModuleResolutionKind.Node10,esModuleInterop:true,sourceMap:true,inlineSources:true}});ensure(out);fs.writeFileSync(out,result.outputText);if(result.sourceMapText)fs.writeFileSync(out+'.map',result.sourceMapText);}console.log(`Built ${files.length} extension/core module(s).`);}
-async function buildWebview(){const files=walk(path.join(root,'src/webview'),['.ts','.tsx']).filter(f=>!f.endsWith('.d.ts'));for(const file of files){const base=path.basename(file).replace(/\.tsx?$/,'.js');const out=path.join(root,'dist/media',base==='main.js'?'webview.js':base);let source=fs.readFileSync(file,'utf8');source=source.replace(/from\s+(['"])(\.\/[^'"]+?)(?:\.ts)?\1/g,(m,q,s)=>`from ${q}${s.endsWith('.js')?s:s+'.js'}${q}`);const result=ts.transpileModule(source,{fileName:file,compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022,moduleResolution:ts.ModuleResolutionKind.Bundler,strict:true,jsx:ts.JsxEmit.React}});ensure(out);fs.writeFileSync(out,result.outputText);}fs.mkdirSync(path.join(root,'dist/media'),{recursive:true});fs.copyFileSync(path.join(root,'src/webview/theme.css'),path.join(root,'dist/media/webview.css'));// Copy React from node_modules instead of downloading
-const nodeModules=path.join(root,'node_modules');
-fs.copyFileSync(path.join(nodeModules,'react/umd/react.production.min.js'),path.join(root,'dist/media/react.production.min.js'));
-fs.copyFileSync(path.join(nodeModules,'react-dom/umd/react-dom.production.min.js'),path.join(root,'dist/media/react-dom.production.min.js'));
-let html=fs.readFileSync(path.join(root,'src/webview/index.html'),'utf8').replace('/main.tsx','./webview.js').replace('/main.ts','./webview.js');fs.writeFileSync(path.join(root,'dist/media/index.html'),html);console.log(`Built ${files.length} webview module(s).`);}
+function walk(dir, extensions) {
+  const out = [];
+  if (!fs.existsSync(dir)) return out;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...walk(p, extensions));
+    else if (extensions.some((ext) => p.endsWith(ext))) out.push(p);
+  }
+  return out;
+}
+function ensure(file) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+}
+function aliasToRelative(specifier, sourceFile, outFile) {
+  const aliases = {
+    "@core/": "src/core/",
+    "@vscode/": "src/extension/",
+    "@webview/": "src/webview/"
+  };
+  for (const [prefix, target] of Object.entries(aliases)) {
+    if (!specifier.startsWith(prefix)) continue;
+    const sourceTarget = path.join(root, target, specifier.slice(prefix.length));
+    const outTarget = path.join(
+      root,
+      "dist",
+      "app",
+      path.relative(path.join(root, "src"), sourceTarget)
+    );
+    let relative = path.relative(path.dirname(outFile), outTarget).replaceAll(path.sep, "/");
+    if (!relative.startsWith(".")) relative = "./" + relative;
+    return relative;
+  }
+  return specifier;
+}
+function rewriteAliases(text, sourceFile, outFile) {
+  return text.replace(
+    /(from\s+|import\s*\(|require\s*\()(['"])(@(?:core|vscode|webview)\/[^'"]+)\2/g,
+    (full, prefix, quote, spec) =>
+      `${prefix}${quote}${aliasToRelative(spec, sourceFile, outFile)}${quote}`
+  );
+}
+function buildApplication() {
+  const files = [
+    ...walk(path.join(root, "src/core"), [".ts"]),
+    ...walk(path.join(root, "src/extension"), [".ts"])
+  ].filter((f) => !f.endsWith(".d.ts"));
+  for (const file of files) {
+    const relative = path.relative(path.join(root, "src"), file).replace(/\.ts$/, ".js");
+    const out = path.join(root, "dist/app", relative);
+    let source = fs.readFileSync(file, "utf8");
+    source = rewriteAliases(source, file, out);
+    const result = ts.transpileModule(source, {
+      fileName: file,
+      compilerOptions: {
+        target: ts.ScriptTarget.ES2022,
+        module: ts.ModuleKind.CommonJS,
+        moduleResolution: ts.ModuleResolutionKind.Node10,
+        esModuleInterop: true,
+        sourceMap: true,
+        inlineSources: true
+      }
+    });
+    ensure(out);
+    fs.writeFileSync(out, result.outputText);
+    if (result.sourceMapText) fs.writeFileSync(out + ".map", result.sourceMapText);
+  }
+  console.log(`Built ${files.length} extension/core module(s).`);
+}
+async function buildWebview() {
+  const files = walk(path.join(root, "src/webview"), [".ts", ".tsx"]).filter(
+    (f) => !f.endsWith(".d.ts")
+  );
+  for (const file of files) {
+    const base = path.basename(file).replace(/\.tsx?$/, ".js");
+    const out = path.join(root, "dist/media", base === "main.js" ? "webview.js" : base);
+    let source = fs.readFileSync(file, "utf8");
+    source = source.replace(
+      /from\s+(['"])(\.\/[^'"]+?)(?:\.ts)?\1/g,
+      (m, q, s) => `from ${q}${s.endsWith(".js") ? s : s + ".js"}${q}`
+    );
+    const result = ts.transpileModule(source, {
+      fileName: file,
+      compilerOptions: {
+        target: ts.ScriptTarget.ES2022,
+        module: ts.ModuleKind.ES2022,
+        moduleResolution: ts.ModuleResolutionKind.Bundler,
+        strict: true,
+        jsx: ts.JsxEmit.React
+      }
+    });
+    ensure(out);
+    fs.writeFileSync(out, result.outputText);
+  }
+  fs.mkdirSync(path.join(root, "dist/media"), { recursive: true });
+  fs.copyFileSync(
+    path.join(root, "src/webview/theme.css"),
+    path.join(root, "dist/media/webview.css")
+  ); // Copy React from node_modules instead of downloading
+  const nodeModules = path.join(root, "node_modules");
+  fs.copyFileSync(
+    path.join(nodeModules, "react/umd/react.production.min.js"),
+    path.join(root, "dist/media/react.production.min.js")
+  );
+  fs.copyFileSync(
+    path.join(nodeModules, "react-dom/umd/react-dom.production.min.js"),
+    path.join(root, "dist/media/react-dom.production.min.js")
+  );
+  let html = fs
+    .readFileSync(path.join(root, "src/webview/index.html"), "utf8")
+    .replace("/main.tsx", "./webview.js")
+    .replace("/main.ts", "./webview.js");
+  fs.writeFileSync(path.join(root, "dist/media/index.html"), html);
+  console.log(`Built ${files.length} webview module(s).`);
+}

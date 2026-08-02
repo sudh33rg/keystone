@@ -11,19 +11,19 @@
  * @module qa-intelligence/qaGapAnalysis
  */
 
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import { discoverTests, type TestDiscoveryResult } from './testDiscovery';
-import { computeRiskScores, type FileRiskScore, type FileRiskData } from './riskScoring';
-import { CoverageIndexManager, type TestCoverage } from './coverageMapping';
-import { suggestImpactedTests, type ImpactedTestSuggestion } from './impactedTests';
-import { detectFlakyTests, type FlakyDetectionResult } from './flakyDetection';
-import { executeTests, type TestExecutionResult } from './testExecution';
-import { createQuarantineStore } from './quarantine';
-import { DEFAULT_QA_CONFIG, type QAConfig } from '../../platform/config/qualityConfig';
-import type { RepoIndex } from '../../platform/storage/types';
-import type { CancellationToken } from './cancellation';
-import { IGNORED_DIRECTORIES } from '../../platform/config/defaults';
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { discoverTests, type TestDiscoveryResult } from "./testDiscovery";
+import { computeRiskScores, type FileRiskScore, type FileRiskData } from "./riskScoring";
+import { CoverageIndexManager, type TestCoverage } from "./coverageMapping";
+import { suggestImpactedTests, type ImpactedTestSuggestion } from "./impactedTests";
+import { detectFlakyTests, type FlakyDetectionResult } from "./flakyDetection";
+import { executeTests, type TestExecutionResult } from "./testExecution";
+import { createQuarantineStore } from "./quarantine";
+import { DEFAULT_QA_CONFIG, type QAConfig } from "../../platform/config/qualityConfig";
+import type { RepoIndex } from "../../platform/storage/types";
+import type { CancellationToken } from "./cancellation";
+import { IGNORED_DIRECTORIES } from "../../platform/config/defaults";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -32,7 +32,7 @@ import { IGNORED_DIRECTORIES } from '../../platform/config/defaults';
 /** A coverage gap in the test suite */
 export interface Gap {
   /** Type of gap */
-  type: 'uncovered' | 'under-tested' | 'high-risk-no-test' | 'no-coverage-data' | 'stale-coverage';
+  type: "uncovered" | "under-tested" | "high-risk-no-test" | "no-coverage-data" | "stale-coverage";
   /** File path */
   filePath: string;
   /** Severity (0-1) */
@@ -60,9 +60,9 @@ export interface ModuleCoverage {
 /** A recommendation for improving test coverage */
 export interface Recommendation {
   /** Priority (high / medium / low) */
-  priority: 'high' | 'medium' | 'low';
+  priority: "high" | "medium" | "low";
   /** Category */
-  category: 'coverage' | 'quality' | 'risk' | 'maintenance';
+  category: "coverage" | "quality" | "risk" | "maintenance";
   /** Title */
   title: string;
   /** Description */
@@ -76,17 +76,17 @@ export interface Recommendation {
 /** Full gap analysis result */
 export interface GapAnalysisResult {
   /** Scan mode that was used */
-  scanMode: 'quick' | 'deep';
+  scanMode: "quick" | "deep";
   /** Summary statistics */
   summary: {
-    testFramework: TestDiscoveryResult['framework'];
+    testFramework: TestDiscoveryResult["framework"];
     totalTests: number;
     totalSourceFiles: number;
-    coverageRatio: number;           // tests / source files
-    coverageRate: number;            // source files with tests / total
+    coverageRatio: number; // tests / source files
+    coverageRate: number; // source files with tests / total
     flakyTests: number;
     brokenTests: number;
-    riskScore: number;               // 0-100
+    riskScore: number; // 0-100
   };
   /** Detected gaps */
   gaps: Gap[];
@@ -139,7 +139,7 @@ const DEFAULT_GAP_CONFIG: GapAnalysisConfig = {
   quickScanTimeoutMs: 30_000,
   deepScanTimeoutMs: 120_000,
   coverageThreshold: 0.1,
-  minSeverity: 0.1,
+  minSeverity: 0.1
 };
 
 // ---------------------------------------------------------------------------
@@ -152,11 +152,50 @@ const DEFAULT_GAP_CONFIG: GapAnalysisConfig = {
 function enumerateSourceFiles(workspaceRoot: string): string[] {
   const excluded = new Set([
     ...IGNORED_DIRECTORIES,
-    'node_modules', '.git', '.keystone', 'dist', 'out', 'build', 'coverage',
-    '.next', '.nuxt', '.cache', 'vendor', 'target', 'builds', 'cypress',
+    "node_modules",
+    ".git",
+    ".keystone",
+    "dist",
+    "out",
+    "build",
+    "coverage",
+    ".next",
+    ".nuxt",
+    ".cache",
+    "vendor",
+    "target",
+    "builds",
+    "cypress"
   ]);
-  const excludedExt = new Set(['.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.woff', '.woff2', '.ttf', '.eot']);
-  const sourceExt = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.py', '.go', '.java', '.rs', '.rb', '.php', '.cs', '.kt', '.scala']);
+  const excludedExt = new Set([
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".svg",
+    ".ico",
+    ".woff",
+    ".woff2",
+    ".ttf",
+    ".eot"
+  ]);
+  const sourceExt = new Set([
+    ".ts",
+    ".tsx",
+    ".js",
+    ".jsx",
+    ".mjs",
+    ".cjs",
+    ".py",
+    ".go",
+    ".java",
+    ".rs",
+    ".rb",
+    ".php",
+    ".cs",
+    ".kt",
+    ".scala"
+  ]);
 
   const results: string[] = [];
 
@@ -164,7 +203,7 @@ function enumerateSourceFiles(workspaceRoot: string): string[] {
     try {
       const entries = fs.readdirSync(dir, { withFileTypes: true });
       for (const entry of entries) {
-        if (entry.name.startsWith('.')) continue;
+        if (entry.name.startsWith(".")) continue;
         if (excluded.has(entry.name)) continue;
 
         const fullPath = path.join(dir, entry.name);
@@ -200,7 +239,7 @@ function computeCoverageMap(
   testPaths: string[],
   coverageData: TestCoverage[],
   sourceFiles: string[],
-  workspaceRoot: string,
+  workspaceRoot: string
 ): Map<string, Set<number>> {
   const coverageMap = new Map<string, Set<number>>();
 
@@ -235,20 +274,29 @@ function estimateCoverageRatio(testFiles: string[], sourceFiles: string[]): numb
   return ratio;
 }
 
-function discoverExecutionCommand(discovery: TestDiscoveryResult, configured?: string): string | undefined {
+function discoverExecutionCommand(
+  discovery: TestDiscoveryResult,
+  configured?: string
+): string | undefined {
   if (configured?.trim()) return configured.trim();
   const hint = discovery.testCommands[0];
-  return hint ? [hint.command, ...hint.args].join(' ').trim() : undefined;
+  return hint ? [hint.command, ...hint.args].join(" ").trim() : undefined;
 }
 
 function loadCoverageData(workspaceRoot: string, index?: RepoIndex): TestCoverage[] {
-  const persisted = path.join(workspaceRoot, '.keystone', 'coverage_index.json');
+  const persisted = path.join(workspaceRoot, ".keystone", "coverage_index.json");
   try {
-    const parsed = JSON.parse(fs.readFileSync(persisted, 'utf8')) as { tests?: TestCoverage[] };
+    const parsed = JSON.parse(fs.readFileSync(persisted, "utf8")) as { tests?: TestCoverage[] };
     if (Array.isArray(parsed.tests)) return parsed.tests;
-  } catch { /* optional runtime artifact */ }
+  } catch {
+    /* optional runtime artifact */
+  }
 
-  const mappings = ((index?.summary as unknown as { coverageMappings?: Array<{ testPath: string; coveredPath: string }> } | undefined)?.coverageMappings ?? []);
+  const mappings =
+    (
+      index?.summary as unknown as
+        { coverageMappings?: Array<{ testPath: string; coveredPath: string }> } | undefined
+    )?.coverageMappings ?? [];
   if (mappings.length) {
     const byTest = new Map<string, string[]>();
     for (const mapping of mappings) {
@@ -260,22 +308,24 @@ function loadCoverageData(workspaceRoot: string, index?: RepoIndex): TestCoverag
     return [...byTest.entries()].map(([testPath, coveredPaths]) => ({
       testPath,
       testName: path.basename(testPath),
-      coveredFiles: [...new Set(coveredPaths)].map(filePath => ({ filePath, lines: [] })),
-      framework: 'unknown',
-      builtAtCommit: 'repository-index',
-      builtAt: Date.now(),
+      coveredFiles: [...new Set(coveredPaths)].map((filePath) => ({ filePath, lines: [] })),
+      framework: "unknown",
+      builtAtCommit: "repository-index",
+      builtAt: Date.now()
     }));
   }
 
   // Istanbul-compatible aggregate coverage emitted by Jest/Vitest/nyc. It is
   // not per-test coverage, but it is real executed coverage and is useful for
   // gap/module coverage without pretending to identify an individual test.
-  for (const relative of ['coverage/coverage-final.json', 'coverage/coverage.json']) {
+  for (const relative of ["coverage/coverage-final.json", "coverage/coverage.json"]) {
     try {
-      const value = JSON.parse(fs.readFileSync(path.join(workspaceRoot, relative), 'utf8')) as Record<string, any>;
+      const value = JSON.parse(
+        fs.readFileSync(path.join(workspaceRoot, relative), "utf8")
+      ) as Record<string, any>;
       const result: TestCoverage[] = [];
       for (const [fileName, file] of Object.entries(value)) {
-        if (!file || typeof file !== 'object') continue;
+        if (!file || typeof file !== "object") continue;
         const statementMap = file.statementMap ?? {};
         const counts = file.s ?? {};
         const lines = Object.entries(statementMap)
@@ -286,14 +336,21 @@ function loadCoverageData(workspaceRoot: string, index?: RepoIndex): TestCoverag
         result.push({
           testPath: `aggregate:${relative}`,
           testName: `Executed aggregate coverage for ${path.basename(fileName)}`,
-          coveredFiles: [{ filePath: path.relative(workspaceRoot, fileName), lines: [...new Set(lines)].sort((a,b)=>a-b) }],
-          framework: 'unknown',
-          builtAtCommit: 'executed-workspace',
-          builtAt: Date.now(),
+          coveredFiles: [
+            {
+              filePath: path.relative(workspaceRoot, fileName),
+              lines: [...new Set(lines)].sort((a, b) => a - b)
+            }
+          ],
+          framework: "unknown",
+          builtAtCommit: "executed-workspace",
+          builtAt: Date.now()
         });
       }
       if (result.length) return result;
-    } catch { /* try next coverage artifact */ }
+    } catch {
+      /* try next coverage artifact */
+    }
   }
   return [];
 }
@@ -317,7 +374,7 @@ function detectGaps(
   coverageMap: Map<string, Set<number>>,
   riskScores: FileRiskScore[],
   config: GapAnalysisConfig,
-  workspaceRoot: string,
+  workspaceRoot: string
 ): Gap[] {
   const gaps: Gap[] = [];
   const riskMap = new Map(riskScores.map((r) => [r.filePath, r]));
@@ -337,28 +394,30 @@ function detectGaps(
     if (severity < minSeverity) continue;
 
     gaps.push({
-      type: 'uncovered',
+      type: "uncovered",
       filePath: path.join(workspaceRoot, relativePath),
       severity,
       reason: risk
         ? `High-risk file (${risk.tier}) with no test coverage`
-        : 'Source file with no test coverage',
-      action: risk ? `Write tests for ${path.basename(relativePath)} (risk: ${risk.tier})` : undefined,
+        : "Source file with no test coverage",
+      action: risk
+        ? `Write tests for ${path.basename(relativePath)} (risk: ${risk.tier})`
+        : undefined
     });
   }
 
   // Find high-risk files without tests
-  const highRisk = riskScores.filter((r) => r.tier === 'critical' || r.tier === 'high');
+  const highRisk = riskScores.filter((r) => r.tier === "critical" || r.tier === "high");
   for (const risk of highRisk) {
     const relative = path.relative(workspaceRoot, risk.filePath);
     if (coveredFiles.has(relative)) continue;
 
     gaps.push({
-      type: 'high-risk-no-test',
+      type: "high-risk-no-test",
       filePath: risk.filePath,
       severity: risk.overallScore,
-      reason: `Critical/high risk file (${risk.tier}) without tests: ${risk.riskFactors.join(', ')}`,
-      action: `Priority test coverage for ${path.basename(risk.filePath)}`,
+      reason: `Critical/high risk file (${risk.tier}) without tests: ${risk.riskFactors.join(", ")}`,
+      action: `Priority test coverage for ${path.basename(risk.filePath)}`
     });
   }
 
@@ -377,11 +436,11 @@ function detectGaps(
 
     if (testNearby) {
       gaps.push({
-        type: 'under-tested',
+        type: "under-tested",
         filePath: path.join(workspaceRoot, relative),
         severity: 0.4,
-        reason: 'Source file has nearby tests but no direct coverage',
-        action: 'Add tests that import and exercise this module',
+        reason: "Source file has nearby tests but no direct coverage",
+        action: "Add tests that import and exercise this module"
       });
     }
   }
@@ -389,12 +448,21 @@ function detectGaps(
   return gaps;
 }
 
-function hasConventionMappedTest(sourceFile:string,testFiles:readonly string[]):boolean {
-  const sourceStem=path.basename(sourceFile).replace(/\.[^.]+$/,'').toLowerCase();
-  if(!sourceStem)return false;
-  return testFiles.some(testFile=>{
-    const testStem=path.basename(testFile).replace(/\.(?:test|spec)?\.[^.]+$/i,'').replace(/\.(?:test|spec)$/i,'').toLowerCase();
-    return testStem===sourceStem||testStem.startsWith(sourceStem)||sourceStem.startsWith(testStem);
+function hasConventionMappedTest(sourceFile: string, testFiles: readonly string[]): boolean {
+  const sourceStem = path
+    .basename(sourceFile)
+    .replace(/\.[^.]+$/, "")
+    .toLowerCase();
+  if (!sourceStem) return false;
+  return testFiles.some((testFile) => {
+    const testStem = path
+      .basename(testFile)
+      .replace(/\.(?:test|spec)?\.[^.]+$/i, "")
+      .replace(/\.(?:test|spec)$/i, "")
+      .toLowerCase();
+    return (
+      testStem === sourceStem || testStem.startsWith(sourceStem) || sourceStem.startsWith(testStem)
+    );
   });
 }
 
@@ -407,46 +475,47 @@ function hasConventionMappedTest(sourceFile:string,testFiles:readonly string[]):
  */
 function generateRecommendations(
   gaps: Gap[],
-  summary: GapAnalysisResult['summary'],
-  testDiscovery: TestDiscoveryResult,
+  summary: GapAnalysisResult["summary"],
+  testDiscovery: TestDiscoveryResult
 ): Recommendation[] {
   const recommendations: Recommendation[] = [];
 
   // Coverage gap recommendations
-  const uncovered = gaps.filter((g) => g.type === 'uncovered');
-  const highRiskNoTest = gaps.filter((g) => g.type === 'high-risk-no-test');
+  const uncovered = gaps.filter((g) => g.type === "uncovered");
+  const highRiskNoTest = gaps.filter((g) => g.type === "high-risk-no-test");
 
   if (uncovered.length > 0) {
     recommendations.push({
-      priority: 'high',
-      category: 'coverage',
+      priority: "high",
+      category: "coverage",
       title: `${uncovered.length} uncovered source files`,
       description: `Found ${uncovered.length} source files with no test coverage. Focus on high-risk files first.`,
       affectedFiles: uncovered.slice(0, 10).map((g) => path.basename(g.filePath)),
-      suggestedAction: 'Run `keystone qa analyze --deep` for detailed coverage report',
+      suggestedAction: "Run `keystone qa analyze --deep` for detailed coverage report"
     });
   }
 
   if (highRiskNoTest.length > 0) {
     recommendations.push({
-      priority: 'high',
-      category: 'risk',
+      priority: "high",
+      category: "risk",
       title: `${highRiskNoTest.length} high-risk files without tests`,
-      description: 'Critical or high-risk files have no test coverage. These should be prioritized.',
+      description:
+        "Critical or high-risk files have no test coverage. These should be prioritized.",
       affectedFiles: highRiskNoTest.slice(0, 5).map((g) => path.basename(g.filePath)),
-      suggestedAction: 'Write integration tests for these files before making changes',
+      suggestedAction: "Write integration tests for these files before making changes"
     });
   }
 
   // Framework-specific recommendations
-  if (testDiscovery.framework === 'vitest' || testDiscovery.framework === 'jest') {
+  if (testDiscovery.framework === "vitest" || testDiscovery.framework === "jest") {
     if (summary.coverageRate < 0.5) {
       recommendations.push({
-        priority: 'medium',
-        category: 'coverage',
-        title: 'Low test coverage rate',
+        priority: "medium",
+        category: "coverage",
+        title: "Low test coverage rate",
         description: `Only ${(summary.coverageRate * 100).toFixed(0)}% of source files have test coverage. Consider adding tests for core modules.`,
-        suggestedAction: `Run \`npx ${testDiscovery.framework} --coverage\` for detailed report`,
+        suggestedAction: `Run \`npx ${testDiscovery.framework} --coverage\` for detailed report`
       });
     }
   }
@@ -454,32 +523,32 @@ function generateRecommendations(
   // Maintenance recommendations
   if (summary.flakyTests > 0) {
     recommendations.push({
-      priority: 'medium',
-      category: 'maintenance',
+      priority: "medium",
+      category: "maintenance",
       title: `${summary.flakyTests} flaky tests detected`,
-      description: 'Flaky tests can mask real issues. Consider quarantining or fixing them.',
-      suggestedAction: 'Run `keystone qa quarantine` to quarantine flaky tests',
+      description: "Flaky tests can mask real issues. Consider quarantining or fixing them.",
+      suggestedAction: "Run `keystone qa quarantine` to quarantine flaky tests"
     });
   }
 
   if (summary.brokenTests > 0) {
     recommendations.push({
-      priority: 'high',
-      category: 'quality',
+      priority: "high",
+      category: "quality",
       title: `${summary.brokenTests} broken tests`,
-      description: 'Broken tests block CI and mask real issues. Fix them before adding new tests.',
-      suggestedAction: 'Run `keystone qa repair` to auto-fix common test failures',
+      description: "Broken tests block CI and mask real issues. Fix them before adding new tests.",
+      suggestedAction: "Run `keystone qa repair` to auto-fix common test failures"
     });
   }
 
   // General recommendations
   if (summary.totalTests === 0 && summary.totalSourceFiles > 0) {
     recommendations.push({
-      priority: 'high',
-      category: 'coverage',
-      title: 'No tests discovered',
-      description: 'No test files were found in this workspace. Consider adding a test suite.',
-      suggestedAction: `Initialize ${testDiscovery.framework !== 'unknown' ? testDiscovery.framework : 'a test framework'} and write your first test`,
+      priority: "high",
+      category: "coverage",
+      title: "No tests discovered",
+      description: "No test files were found in this workspace. Consider adding a test suite.",
+      suggestedAction: `Initialize ${testDiscovery.framework !== "unknown" ? testDiscovery.framework : "a test framework"} and write your first test`
     });
   }
 
@@ -497,7 +566,7 @@ function computeModuleCoverage(
   sourceFiles: string[],
   coverageMap: Map<string, Set<number>>,
   testFiles: string[],
-  workspaceRoot: string,
+  workspaceRoot: string
 ): ModuleCoverage[] {
   const moduleMap = new Map<string, { sources: Set<string>; tests: Set<string> }>();
 
@@ -536,7 +605,7 @@ function computeModuleCoverage(
       sourceFileCount: data.sources.size,
       coveredFileCount: coveredFiles.size,
       coverageRatio: data.sources.size > 0 ? coveredFiles.size / data.sources.size : 0,
-      testCount: data.tests.size,
+      testCount: data.tests.size
     });
   }
 
@@ -578,22 +647,23 @@ export class GapAnalyzer {
    */
   async analyzeQuick(ctx?: GapAnalysisContext): Promise<GapAnalysisResult> {
     const startTime = Date.now();
-    this.log('Discovering tests', 10);
+    this.log("Discovering tests", 10);
     this.checkCancellation(ctx);
 
     const discovery = discoverTests(this.workspaceRoot);
-    this.log('Enumerating source files', 30);
+    this.log("Enumerating source files", 30);
     this.checkCancellation(ctx);
 
-    const discoveredTests = new Set(discovery.testFiles.map(file => path.resolve(file)));
-    const sourceFiles = enumerateSourceFiles(this.workspaceRoot).filter(file => !discoveredTests.has(path.resolve(file)));
-    this.log('Computing coverage estimates', 50);
+    const discoveredTests = new Set(discovery.testFiles.map((file) => path.resolve(file)));
+    const sourceFiles = enumerateSourceFiles(this.workspaceRoot).filter(
+      (file) => !discoveredTests.has(path.resolve(file))
+    );
+    this.log("Computing coverage estimates", 50);
     this.checkCancellation(ctx);
 
     const coverageRatio = estimateCoverageRatio(discovery.testFiles, sourceFiles);
-    const coverageRate = sourceFiles.length > 0
-      ? Math.min(discovery.testFiles.length / sourceFiles.length, 1.0)
-      : 0;
+    const coverageRate =
+      sourceFiles.length > 0 ? Math.min(discovery.testFiles.length / sourceFiles.length, 1.0) : 0;
 
     // Build risk data for uncovered files
     const riskData: FileRiskData[] = sourceFiles.map((file) => ({
@@ -603,7 +673,7 @@ export class GapAnalyzer {
       coverage: 0,
       authorConcentration: 0.5,
       testInstability: 0,
-      ageDays: 30,
+      ageDays: 30
     }));
 
     const riskScores = computeRiskScores(riskData);
@@ -619,7 +689,7 @@ export class GapAnalyzer {
       mappedWithoutCoverage.push(sourceFile);
     }
 
-    this.log('Detecting gaps', 70);
+    this.log("Detecting gaps", 70);
     this.checkCancellation(ctx);
 
     const gaps = detectGaps(
@@ -628,30 +698,41 @@ export class GapAnalyzer {
       coverageMap,
       riskScores,
       this.config,
-      this.workspaceRoot,
+      this.workspaceRoot
     );
-    for (const filePath of mappedWithoutCoverage) gaps.push({
-      type: 'no-coverage-data', filePath, severity: 0.2,
-      reason: 'A mapped test file exists, but executed line-coverage evidence is not available in quick analysis.',
-      action: 'Run the relevant test suite with coverage when measured coverage is required.',
-    });
+    for (const filePath of mappedWithoutCoverage)
+      gaps.push({
+        type: "no-coverage-data",
+        filePath,
+        severity: 0.2,
+        reason:
+          "A mapped test file exists, but executed line-coverage evidence is not available in quick analysis.",
+        action: "Run the relevant test suite with coverage when measured coverage is required."
+      });
 
-    this.log('Generating recommendations', 90);
+    this.log("Generating recommendations", 90);
     this.checkCancellation(ctx);
 
-    const recommendations = generateRecommendations(gaps, {
-      testFramework: discovery.framework,
-      totalTests: discovery.testFiles.length,
-      totalSourceFiles: sourceFiles.length,
-      coverageRatio,
-      coverageRate,
-      flakyTests: 0,
-      brokenTests: 0,
-      riskScore: Math.round(riskScores.reduce((a, b) => a + b.overallScore, 0) / Math.max(riskScores.length, 1) * 100),
-    }, discovery);
+    const recommendations = generateRecommendations(
+      gaps,
+      {
+        testFramework: discovery.framework,
+        totalTests: discovery.testFiles.length,
+        totalSourceFiles: sourceFiles.length,
+        coverageRatio,
+        coverageRate,
+        flakyTests: 0,
+        brokenTests: 0,
+        riskScore: Math.round(
+          (riskScores.reduce((a, b) => a + b.overallScore, 0) / Math.max(riskScores.length, 1)) *
+            100
+        )
+      },
+      discovery
+    );
 
     return {
-      scanMode: 'quick',
+      scanMode: "quick",
       summary: {
         testFramework: discovery.framework,
         totalTests: discovery.testFiles.length,
@@ -660,7 +741,10 @@ export class GapAnalyzer {
         coverageRate,
         flakyTests: 0,
         brokenTests: 0,
-        riskScore: Math.round(riskScores.reduce((a, b) => a + b.overallScore, 0) / Math.max(riskScores.length, 1) * 100),
+        riskScore: Math.round(
+          (riskScores.reduce((a, b) => a + b.overallScore, 0) / Math.max(riskScores.length, 1)) *
+            100
+        )
       },
       gaps,
       recommendations,
@@ -669,25 +753,24 @@ export class GapAnalyzer {
         testsDiscovered: discovery.testFiles.length,
         sourcesAnalyzed: sourceFiles.length,
         gapsFound: gaps.length,
-        recommendationsGenerated: recommendations.length,
-      },
+        recommendationsGenerated: recommendations.length
+      }
     };
   }
 
   /**
    * Run a deep gap analysis (with test execution and real coverage).
    */
-  async analyzeDeep(
-    ctx?: GapAnalysisContext,
-    index?: RepoIndex,
-  ): Promise<GapAnalysisResult> {
+  async analyzeDeep(ctx?: GapAnalysisContext, index?: RepoIndex): Promise<GapAnalysisResult> {
     const startTime = Date.now();
-    this.log('Running quick analysis first', 5);
+    this.log("Running quick analysis first", 5);
 
     const quickResult = await this.analyzeQuick(ctx);
     const discovery = discoverTests(this.workspaceRoot);
-    const discoveredTests = new Set(discovery.testFiles.map(file => path.resolve(file)));
-    const sourceFiles = enumerateSourceFiles(this.workspaceRoot).filter(file => !discoveredTests.has(path.resolve(file)));
+    const discoveredTests = new Set(discovery.testFiles.map((file) => path.resolve(file)));
+    const sourceFiles = enumerateSourceFiles(this.workspaceRoot).filter(
+      (file) => !discoveredTests.has(path.resolve(file))
+    );
     const riskData: FileRiskData[] = sourceFiles.map((file) => ({
       filePath: file,
       churn: 0.3,
@@ -695,11 +778,11 @@ export class GapAnalyzer {
       coverage: 0,
       authorConcentration: 0.5,
       testInstability: 0,
-      ageDays: 30,
+      ageDays: 30
     }));
     const riskScores = computeRiskScores(riskData);
 
-    this.log('Running tests for coverage', 35);
+    this.log("Running tests for coverage", 35);
     this.checkCancellation(ctx);
 
     const execConfig = this.qaConfig.execution;
@@ -716,12 +799,13 @@ export class GapAnalyzer {
             maxWorkers: execConfig.maxWorkers,
             timeoutMs: execConfig.timeoutMs,
             excludeQuarantined: execConfig.excludeQuarantined,
-            signal: ctx?.signal,
+            signal: ctx?.signal
           },
-          quarantineStore,
+          quarantineStore
         );
       } catch (error) {
-        if (ctx?.signal?.aborted) throw Object.assign(new Error('Gap analysis cancelled'), { name: 'CancellationError' });
+        if (ctx?.signal?.aborted)
+          throw Object.assign(new Error("Gap analysis cancelled"), { name: "CancellationError" });
         executionResult = {
           command,
           exitCode: -1,
@@ -729,20 +813,37 @@ export class GapAnalyzer {
           passed: 0,
           failed: 0,
           skipped: 0,
-          output: error instanceof Error ? error.message : String(error),
+          output: error instanceof Error ? error.message : String(error)
         };
       }
     }
 
-    this.log('Loading coverage evidence', 50);
+    this.log("Loading coverage evidence", 50);
     this.checkCancellation(ctx);
     const coverageData = loadCoverageData(this.workspaceRoot, index);
-    const coverageMap = computeCoverageMap(discovery.testFiles, coverageData, sourceFiles, this.workspaceRoot);
-    const deepGaps = detectGaps(sourceFiles, discovery.testFiles, coverageMap, riskScores, this.config, this.workspaceRoot);
-    const coverageByModule = computeModuleCoverage(sourceFiles, coverageMap, discovery.testFiles, this.workspaceRoot);
+    const coverageMap = computeCoverageMap(
+      discovery.testFiles,
+      coverageData,
+      sourceFiles,
+      this.workspaceRoot
+    );
+    const deepGaps = detectGaps(
+      sourceFiles,
+      discovery.testFiles,
+      coverageMap,
+      riskScores,
+      this.config,
+      this.workspaceRoot
+    );
+    const coverageByModule = computeModuleCoverage(
+      sourceFiles,
+      coverageMap,
+      discovery.testFiles,
+      this.workspaceRoot
+    );
     const coverageRate = sourceFiles.length > 0 ? coverageMap.size / sourceFiles.length : 0;
 
-    this.log('Detecting flaky tests', 65);
+    this.log("Detecting flaky tests", 65);
     this.checkCancellation(ctx);
     const flakyConfig = this.qaConfig.flakyDetection;
     let flakyResult: FlakyDetectionResult | undefined;
@@ -750,18 +851,34 @@ export class GapAnalyzer {
       try {
         flakyResult = await detectFlakyTests(
           discovery.testFiles,
-          { ...flakyConfig, workspaceRoot: this.workspaceRoot, testCommand: command, signal: ctx?.signal },
-          this.workspaceRoot,
+          {
+            ...flakyConfig,
+            workspaceRoot: this.workspaceRoot,
+            testCommand: command,
+            signal: ctx?.signal
+          },
+          this.workspaceRoot
         );
       } catch (error) {
-        if (ctx?.signal?.aborted) throw Object.assign(new Error('Gap analysis cancelled'), { name: 'CancellationError' });
-        flakyResult = { flakyTests: [], flakyRate: 0, totalTests: discovery.testFiles.length, recommendations: [error instanceof Error ? error.message : String(error)] };
+        if (ctx?.signal?.aborted)
+          throw Object.assign(new Error("Gap analysis cancelled"), { name: "CancellationError" });
+        flakyResult = {
+          flakyTests: [],
+          flakyRate: 0,
+          totalTests: discovery.testFiles.length,
+          recommendations: [error instanceof Error ? error.message : String(error)]
+        };
       }
     } else {
-      flakyResult = { flakyTests: [], flakyRate: 0, totalTests: discovery.testFiles.length, recommendations: [] };
+      flakyResult = {
+        flakyTests: [],
+        flakyRate: 0,
+        totalTests: discovery.testFiles.length,
+        recommendations: []
+      };
     }
 
-    this.log('Analyzing impacted tests', 82);
+    this.log("Analyzing impacted tests", 82);
     this.checkCancellation(ctx);
     let impactedTests: ImpactedTestSuggestion[] | undefined;
     if (index && (ctx?.changedPaths?.length ?? 0) > 0) {
@@ -776,30 +893,48 @@ export class GapAnalyzer {
     const totalFailed = executionResult?.failed ?? 0;
 
     return {
-      scanMode: 'deep',
+      scanMode: "deep",
       summary: {
         ...quickResult.summary,
         flakyTests: totalFlaky,
         brokenTests: totalFailed,
-        coverageRate,
+        coverageRate
       },
       gaps: deepGaps,
       recommendations: [
-        ...generateRecommendations(deepGaps, { ...quickResult.summary, coverageRate, flakyTests: totalFlaky, brokenTests: totalFailed }, discovery),
-        ...(totalFlaky > 0 ? [{
-          priority: 'medium' as const,
-          category: 'maintenance',
-          title: `${totalFlaky} flaky tests detected`,
-          description: 'Flaky tests can mask real issues. Consider quarantining or fixing them.',
-          suggestedAction: 'Run `keystone qa quarantine` to quarantine flaky tests',
-        }] : []),
-        ...(totalFailed > 0 ? [{
-          priority: 'high' as const,
-          category: 'quality',
-          title: `${totalFailed} broken tests`,
-          description: 'Broken tests block CI and mask real issues.',
-          suggestedAction: 'Run `keystone qa repair` to auto-fix common test failures',
-        }] : []),
+        ...generateRecommendations(
+          deepGaps,
+          {
+            ...quickResult.summary,
+            coverageRate,
+            flakyTests: totalFlaky,
+            brokenTests: totalFailed
+          },
+          discovery
+        ),
+        ...(totalFlaky > 0
+          ? [
+              {
+                priority: "medium" as const,
+                category: "maintenance",
+                title: `${totalFlaky} flaky tests detected`,
+                description:
+                  "Flaky tests can mask real issues. Consider quarantining or fixing them.",
+                suggestedAction: "Run `keystone qa quarantine` to quarantine flaky tests"
+              }
+            ]
+          : []),
+        ...(totalFailed > 0
+          ? [
+              {
+                priority: "high" as const,
+                category: "quality",
+                title: `${totalFailed} broken tests`,
+                description: "Broken tests block CI and mask real issues.",
+                suggestedAction: "Run `keystone qa repair` to auto-fix common test failures"
+              }
+            ]
+          : [])
       ] as Recommendation[],
       coverageByModule,
       impactedTests,
@@ -807,8 +942,8 @@ export class GapAnalyzer {
       executionResult,
       metrics: {
         ...quickResult.metrics,
-        elapsedMs: Date.now() - startTime,
-      },
+        elapsedMs: Date.now() - startTime
+      }
     };
   }
 
@@ -822,7 +957,7 @@ export class GapAnalyzer {
 
   private checkCancellation(ctx?: GapAnalysisContext): void {
     if (ctx?.cancellation?.isCancellationRequested) {
-      throw Object.assign(new Error('Gap analysis cancelled'), { name: 'CancellationError' });
+      throw Object.assign(new Error("Gap analysis cancelled"), { name: "CancellationError" });
     }
   }
 }

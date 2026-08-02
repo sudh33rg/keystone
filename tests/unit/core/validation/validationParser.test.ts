@@ -1,6 +1,9 @@
-import { describe, expect, it } from '../../../support/testkit';
+import { describe, expect, it } from "../../../support/testkit";
 
-import { formatParsedValidationSummary, parseValidationOutput } from "@core/workflow/validation/validationParser";
+import {
+  formatParsedValidationSummary,
+  parseValidationOutput
+} from "@core/workflow/validation/validationParser";
 
 describe("parseValidationOutput", () => {
   it("extracts vitest-style passed test counts", () => {
@@ -38,7 +41,10 @@ describe("parseValidationOutput", () => {
   });
 
   it("extracts pytest summary counts", () => {
-    const summary = parseValidationOutput("===== 2 failed, 10 passed, 1 skipped, 3 errors in 1.23s =====", "");
+    const summary = parseValidationOutput(
+      "===== 2 failed, 10 passed, 1 skipped, 3 errors in 1.23s =====",
+      ""
+    );
 
     expect(summary).toMatchObject({
       testsFailed: 2,
@@ -51,7 +57,12 @@ describe("parseValidationOutput", () => {
 
   it("extracts Go test package and test counts", () => {
     const summary = parseValidationOutput(
-      ["--- PASS: TestLogin (0.01s)", "--- FAIL: TestLogout (0.02s)", "ok   example.com/app/auth 0.10s", "FAIL example.com/app/session 0.03s"].join("\n"),
+      [
+        "--- PASS: TestLogin (0.01s)",
+        "--- FAIL: TestLogout (0.02s)",
+        "ok   example.com/app/auth 0.10s",
+        "FAIL example.com/app/session 0.03s"
+      ].join("\n"),
       ""
     );
 
@@ -64,7 +75,10 @@ describe("parseValidationOutput", () => {
   });
 
   it("extracts cargo test result counts", () => {
-    const summary = parseValidationOutput("test result: FAILED. 8 passed; 2 failed; 0 ignored; 0 measured; 1 filtered out;", "");
+    const summary = parseValidationOutput(
+      "test result: FAILED. 8 passed; 2 failed; 0 ignored; 0 measured; 1 filtered out;",
+      ""
+    );
 
     expect(summary).toMatchObject({
       testsPassed: 8,
@@ -85,7 +99,10 @@ describe("parseValidationOutput", () => {
   });
 
   it("extracts ESLint and TypeScript compiler counts", () => {
-    const summary = parseValidationOutput("x 3 problems (2 errors, 1 warning)\nFound 4 errors in 3 files.", "");
+    const summary = parseValidationOutput(
+      "x 3 problems (2 errors, 1 warning)\nFound 4 errors in 3 files.",
+      ""
+    );
 
     expect(summary).toMatchObject({
       lintErrors: 2,

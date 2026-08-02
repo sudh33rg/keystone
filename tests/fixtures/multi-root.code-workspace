@@ -1,7 +1,4 @@
 {
-  "folders": [
-    { "path": "extension-workspace" },
-    { "path": "extension-workspace-two" }
-  ],
+  "folders": [{ "path": "extension-workspace" }, { "path": "extension-workspace-two" }],
   "settings": {}
 }

@@ -7,10 +7,18 @@ import { randomBytes } from "node:crypto";
  */
 export function getWebviewHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string {
   const nonce = createNonce();
-  const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "dist", "media", "webview.js"));
-  const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "dist", "media", "webview.css"));
-  const reactUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "dist", "media", "react.production.min.js"));
-  const reactDomUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "dist", "media", "react-dom.production.min.js"));
+  const scriptUri = webview.asWebviewUri(
+    vscode.Uri.joinPath(extensionUri, "dist", "media", "webview.js")
+  );
+  const styleUri = webview.asWebviewUri(
+    vscode.Uri.joinPath(extensionUri, "dist", "media", "webview.css")
+  );
+  const reactUri = webview.asWebviewUri(
+    vscode.Uri.joinPath(extensionUri, "dist", "media", "react.production.min.js")
+  );
+  const reactDomUri = webview.asWebviewUri(
+    vscode.Uri.joinPath(extensionUri, "dist", "media", "react-dom.production.min.js")
+  );
 
   return `<!doctype html>
 <html lang="en">
@@ -31,5 +39,5 @@ export function getWebviewHtml(webview: vscode.Webview, extensionUri: vscode.Uri
 }
 
 function createNonce(): string {
-  return randomBytes(24).toString('base64url');
+  return randomBytes(24).toString("base64url");
 }

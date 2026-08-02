@@ -1,6 +1,16 @@
 import { METRICS_FILE } from "../config/defaults";
 import { JsonStorage } from "../storage/jsonStorage";
-import type { ContextPack, IntentAnalysis, KeystoneMetrics, ModernizationAssessment, PerformanceAnalysis, PrEvidence, QaAnalysis, RouteDecision, SecurityAnalysis } from "../../domain/types";
+import type {
+  ContextPack,
+  IntentAnalysis,
+  KeystoneMetrics,
+  ModernizationAssessment,
+  PerformanceAnalysis,
+  PrEvidence,
+  QaAnalysis,
+  RouteDecision,
+  SecurityAnalysis
+} from "../../domain/types";
 
 export class MetricsStore extends JsonStorage<KeystoneMetrics[]> {
   constructor(workspaceRoot: string) {

@@ -5,28 +5,17 @@
     "moduleResolution": "Bundler",
     "baseUrl": ".",
     "paths": {
-      "@core/*": [
-        "src/core/*"
-      ],
-      "@vscode/*": [
-        "src/extension/*"
-      ],
-      "@webview/*": [
-        "src/webview/*"
-      ]
+      "@core/*": ["src/core/*"],
+      "@vscode/*": ["src/extension/*"],
+      "@webview/*": ["src/webview/*"]
     },
     "jsx": "react",
     "strict": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "typeRoots": [
-      "./node_modules/@types",
-      "./src/types"
-    ],
+    "typeRoots": ["./node_modules/@types", "./src/types"],
     "types": []
   },
-  "include": [
-    "src/webview/**/*"
-  ]
+  "include": ["src/webview/**/*"]
 }

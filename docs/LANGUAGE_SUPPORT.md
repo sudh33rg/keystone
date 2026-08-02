@@ -25,6 +25,7 @@ The universal deterministic frontend is the core of Keystone's language support.
 3. **Extraction**: Extracts structural information from the file using language-specific grammars and parsers
 
 The frontend is designed to be:
+
 - **Deterministic**: Same input always produces same output
 - **Unbounded**: No limits on file size or repository size
 - **Extensible**: Easy to add new languages and formats
@@ -69,12 +70,14 @@ For languages with available VS Code language extensions, Keystone performs sema
 4. **Enriched Projections**: The enriched semantic information is used to enhance graph, CPG, and search projections
 
 When semantic enrichment is available:
+
 - The UI shows "semantic-enriched" status for the language
 - The language support level is marked as "compiler-backed" or "semantic"
 - More detailed information is available in the intelligence UI
 - CPGs include semantic relationships
 
 When semantic enrichment is not available:
+
 - The language support level is marked as "deterministic-structural"
 - Basic structural information is used for projections
 - All functionality remains available, just with less detailed information
@@ -94,7 +97,7 @@ Keystone uses a multi-stage language detection algorithm:
 3. **Heuristic-Based Detection**: Uses heuristics based on file location and naming conventions
    - Configuration files (e.g., package.json, .gitignore)
    - Build files (e.g., Makefile, pom.xml)
-   - Test files (e.g., *.test.js, Test*.java)
+   - Test files (e.g., _.test.js, Test_.java)
    - Documentation files (e.g., README.md, *.md)
 4. **Machine Learning-Based Detection**: Uses lightweight statistical models trained on known language samples
    - Character n-gram analysis
@@ -102,6 +105,7 @@ Keystone uses a multi-stage language detection algorithm:
    - Structural pattern recognition
 
 The detection algorithm is designed to be:
+
 - **Fast**: Returns results in milliseconds
 - **Accurate**: High precision and recall for common languages
 - **Extensible**: Easy to add new detection rules

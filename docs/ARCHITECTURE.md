@@ -60,6 +60,7 @@ Keystone follows an event-driven architecture with unidirectional data flow:
 7. **UI Update**: UI surfaces (VS Code and Browser View) receive state updates and render them
 
 This architecture ensures that:
+
 - All state changes are deterministic and reproducible
 - The system is resilient to interruptions (cancellation and failure don't corrupt state)
 - Intelligence is never lost between sessions
@@ -77,6 +78,7 @@ Context compression is a key component of Keystone's intelligence layer that ena
 6. **Continuation Packets**: Large contexts are split into ordered packets for Copilot consumption
 
 The compression algorithm preserves:
+
 - All relevant evidence and provenance
 - Semantic relationships between entities
 - Contextual information about the repository
@@ -95,6 +97,7 @@ Keystone employs a sophisticated caching system to optimize performance:
 5. **Context Compression Caching**: Compressed context packets are cached by intent and file hash
 
 The cache is stored in `.keystone/cache/` and is automatically invalidated when:
+
 - File content changes
 - Extractor versions update
 - OKF snapshot is updated
@@ -113,12 +116,14 @@ Keystone's event-driven architecture ensures that:
 - Events are logged for audit and debugging
 
 The event system supports:
+
 - Repository events (file changes, additions, deletions)
 - User events (command execution, UI interactions)
 - System events (state updates, validation results)
 - External events (ValueEdge imports, Task Handoff restores)
 
 Events are processed through a pipeline of handlers that:
+
 1. Validate event structure and source
 2. Transform event data into canonical format
 3. Apply business logic and state updates

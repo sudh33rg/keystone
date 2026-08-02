@@ -1,12 +1,6 @@
-export type CpgNodeKind = 'file' | 'syntax' | 'declaration';
+export type CpgNodeKind = "file" | "syntax" | "declaration";
 
-export type CpgEdgeKind =
-  | 'ast'
-  | 'eog'
-  | 'cfg'
-  | 'dfg'
-  | 'cdg'
-  | 'call';
+export type CpgEdgeKind = "ast" | "eog" | "cfg" | "dfg" | "cdg" | "call";
 
 export interface CpgLocation {
   readonly path: string;
@@ -58,4 +52,3 @@ export interface CodePropertyGraph {
   readonly nodes: readonly CpgNode[];
   readonly edges: readonly CpgEdge[];
 }
-

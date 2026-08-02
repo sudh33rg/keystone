@@ -7,16 +7,25 @@ import type { ContextPack, RiskLevel, SecurityAnalysis } from "../../domain/type
 const HIGH_RISK_PATTERNS = [
   { pattern: /\b(password|passwd|pwd)\b/i, category: "auth" },
   { pattern: /\b(token|jwt|bearer|csrf|secret|apikey|api_key)\b/i, category: "auth" },
-  { pattern: /\b(authorize|authorizeRequest|requireAuth|isAdmin|hasPermission)\b/i, category: "auth" },
+  {
+    pattern: /\b(authorize|authorizeRequest|requireAuth|isAdmin|hasPermission)\b/i,
+    category: "auth"
+  },
   { pattern: /\b(encrypt|decrypt|aes|rsa|sha256|hash|bcrypt|argon2)\b/i, category: "crypto" },
-  { pattern: /\b(sql|query|statement|execute)\b.*\b(insert|delete|update|drop)\b/i, category: "injection" },
-  { pattern: /\b(innerHTML|document\.write|eval|Function\s*\(|setTimeout\s*\(\s*")/i, category: "xss" },
+  {
+    pattern: /\b(sql|query|statement|execute)\b.*\b(insert|delete|update|drop)\b/i,
+    category: "injection"
+  },
+  {
+    pattern: /\b(innerHTML|document\.write|eval|Function\s*\(|setTimeout\s*\(\s*")/i,
+    category: "xss"
+  },
   { pattern: /\b(execute|exec|spawn|system|shell)\s*\(/i, category: "rce" },
   { pattern: /\b(file|fs|readFile|writeFile|unlink|mkdir)\s*\(/i, category: "file-access" },
   { pattern: /\b(email|ssn|social_security|credit_card|card_number|cvv|dob)\b/i, category: "pii" },
   { pattern: /\b(export|download|stream)\s*(file|csv|pdf|data)\b/i, category: "data-export" },
   { pattern: /\b(session|cookie|flash)\s*(set|create|destroy|regenerate)\b/i, category: "session" },
-  { pattern: /\b(ratelimit|throttle|rate_limit)\b/i, category: "rate-limit" },
+  { pattern: /\b(ratelimit|throttle|rate_limit)\b/i, category: "rate-limit" }
 ];
 
 const MEDIUM_RISK_PATTERNS = [
@@ -25,7 +34,7 @@ const MEDIUM_RISK_PATTERNS = [
   { pattern: /\b(upload|download|multipart|form-data)\b/i, category: "data-transfer" },
   { pattern: /\b(import|require|dynamic|webpack|vite)\b/i, category: "dependency" },
   { pattern: /\b(axios|fetch|http|https|superagent)\b/i, category: "network" },
-  { pattern: /\b(database|db|mongoose|sequelize|prisma|typeorm)\b/i, category: "database" },
+  { pattern: /\b(database|db|mongoose|sequelize|prisma|typeorm)\b/i, category: "database" }
 ];
 
 /** Extract all source content from the context pack. */
@@ -146,9 +155,10 @@ export class SecurityAgent {
     checklist.push("Error messages do not expose internal details");
     checklist.push("Security notes included in PR evidence");
 
-    const sensitivePaths = sensitiveAreas.length > 0
-      ? sensitiveAreas.map((area) => `${area}-sensitive areas detected`)
-      : [];
+    const sensitivePaths =
+      sensitiveAreas.length > 0
+        ? sensitiveAreas.map((area) => `${area}-sensitive areas detected`)
+        : [];
 
     return {
       riskLevel,
@@ -157,17 +167,21 @@ export class SecurityAgent {
       acceptanceCriteria: [
         "No secrets, tokens, or PII are logged.",
         "Authorization behavior is preserved before sensitive actions.",
-        "Security notes are included in PR evidence.",
+        "Security notes are included in PR evidence."
       ],
       prNotes: [
         `Security risk classified as ${riskLevel}.`,
-        ...(sensitiveAreas.length > 0 ? [`Sensitive areas: ${sensitiveAreas.join(", ")}`] : []),
+        ...(sensitiveAreas.length > 0 ? [`Sensitive areas: ${sensitiveAreas.join(", ")}`] : [])
       ],
       copilotFixPrompts: [
         "Review logging statements for PII/secrets and replace unsafe fields with safe identifiers.",
-        ...(!sensitiveAreas.includes("auth") ? ["Verify authentication is enforced on all new endpoints."] : []),
-        ...(!sensitiveAreas.includes("pii") ? ["Check that PII fields are not exposed in responses or logs."] : []),
-      ],
+        ...(!sensitiveAreas.includes("auth")
+          ? ["Verify authentication is enforced on all new endpoints."]
+          : []),
+        ...(!sensitiveAreas.includes("pii")
+          ? ["Check that PII fields are not exposed in responses or logs."]
+          : [])
+      ]
     };
   }
 }

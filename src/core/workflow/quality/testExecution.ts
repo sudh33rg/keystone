@@ -75,7 +75,7 @@ const REGEX_PATTERNS = [
   /(\d+)\s+test.*?skipped/i,
   /(\d+)\s+tests?\s+passed/i,
   /(\d+)\s+tests?\s+failed/i,
-  /(\d+)\s+tests?\s+skipped/i,
+  /(\d+)\s+tests?\s+skipped/i
 ];
 
 function countMatches(output: string, regex: RegExp): number {
@@ -89,15 +89,15 @@ function countMatches(output: string, regex: RegExp): number {
 function parseTestCounts(output: string): { passed: number; failed: number; skipped: number } {
   const passed = Math.max(
     countMatches(output, /(\d+)\s+test(?:s)?\s+passed/i),
-    countMatches(output, /(\d+)\s+tests?\s+passed/i),
+    countMatches(output, /(\d+)\s+tests?\s+passed/i)
   );
   const failed = Math.max(
     countMatches(output, /(\d+)\s+test(?:s)?\s+failed/i),
-    countMatches(output, /(\d+)\s+tests?\s+failed/i),
+    countMatches(output, /(\d+)\s+tests?\s+failed/i)
   );
   const skipped = Math.max(
     countMatches(output, /(\d+)\s+test(?:s)?\s+skipped/i),
-    countMatches(output, /(\d+)\s+tests?\s+skipped/i),
+    countMatches(output, /(\d+)\s+tests?\s+skipped/i)
   );
   return { passed, failed, skipped };
 }
@@ -109,7 +109,7 @@ function parseTestCounts(output: string): { passed: number; failed: number; skip
 function buildQuarantineExclusionArgs(
   quarantineStore: QuarantineStore,
   cwd: string,
-  runner: string,
+  runner: string
 ): string[] {
   const quarantined = quarantineStore.list();
   if (quarantined.length === 0) {
@@ -126,11 +126,17 @@ function buildExclusionArgs(paths: string[], runner: string): string[] {
     case "vitest":
       return ["--exclude", paths.map((p) => path.posix.join("**", p)).join(",")];
     case "jest":
-      return ["--testPathIgnorePatterns", paths.map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")];
+      return [
+        "--testPathIgnorePatterns",
+        paths.map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")
+      ];
     case "mocha":
       return ["--ignore", paths.join(" ")];
     case "pytest":
-      return ["-k", `not (${paths.map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join(" or ")})`];
+      return [
+        "-k",
+        `not (${paths.map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join(" or ")})`
+      ];
     default:
       // No standard exclusion flag — return empty
       return [];
@@ -141,7 +147,10 @@ function buildExclusionArgs(paths: string[], runner: string): string[] {
 // Command builder
 // ---------------------------------------------------------------------------
 
-function buildExecutionCommand(options: ExecutionOptions, quarantineStore?: QuarantineStore): string {
+function buildExecutionCommand(
+  options: ExecutionOptions,
+  quarantineStore?: QuarantineStore
+): string {
   const runner = detectRunner(options.command);
   const parts = [options.command];
 
@@ -155,7 +164,9 @@ function buildExecutionCommand(options: ExecutionOptions, quarantineStore?: Quar
   }
 
   if (quarantineStore && options.excludeQuarantined) {
-    parts.push(...buildQuarantineExclusionArgs(quarantineStore, options.cwd, runner).map(shellQuote));
+    parts.push(
+      ...buildQuarantineExclusionArgs(quarantineStore, options.cwd, runner).map(shellQuote)
+    );
   }
 
   return parts.join(" ");
@@ -200,7 +211,7 @@ export function detectRunnerCommand(cwd: string): TestCommandResult | null {
 export async function executeTests(
   options: ExecutionOptions,
   quarantineStore?: QuarantineStore,
-  onProgress?: ProgressCallback,
+  onProgress?: ProgressCallback
 ): Promise<TestExecutionResult> {
   const command = buildExecutionCommand(options, quarantineStore);
   const startTime = Date.now();
@@ -211,7 +222,7 @@ export async function executeTests(
     const child = spawn(command, {
       cwd: options.cwd,
       shell: true,
-      env: { ...process.env },
+      env: { ...process.env }
     });
 
     const stdoutChunks: string[] = [];
@@ -230,12 +241,22 @@ export async function executeTests(
       settled = true;
       clearTimers();
       options.signal?.removeEventListener("abort", abort);
-      const timeoutMessage = timedOut ? `\nKeystone terminated the test command after ${options.timeoutMs}ms.` : "";
+      const timeoutMessage = timedOut
+        ? `\nKeystone terminated the test command after ${options.timeoutMs}ms.`
+        : "";
       const output = stdoutChunks.join("") + stderrChunks.join("") + timeoutMessage;
       const counts = parseTestCounts(output);
       const durationMs = Date.now() - startTime;
       emitProgress(onProgress, "completed", startTime, counts);
-      resolve({ command, exitCode, durationMs, passed: counts.passed, failed: counts.failed, skipped: counts.skipped, output });
+      resolve({
+        command,
+        exitCode,
+        durationMs,
+        passed: counts.passed,
+        failed: counts.failed,
+        skipped: counts.skipped,
+        output
+      });
     };
 
     child.stdout?.on("data", (chunk: Buffer) => {
@@ -264,10 +285,19 @@ export async function executeTests(
 
     const abort = (): void => {
       if (settled) return;
-      try { child.kill("SIGTERM"); } catch { complete(-2); return; }
+      try {
+        child.kill("SIGTERM");
+      } catch {
+        complete(-2);
+        return;
+      }
       forceKillTimer = setTimeout(() => {
         if (settled) return;
-        try { child.kill("SIGKILL"); } catch { /* fall through */ }
+        try {
+          child.kill("SIGKILL");
+        } catch {
+          /* fall through */
+        }
         complete(-2);
       }, 1_000);
       forceKillTimer.unref();
@@ -282,10 +312,19 @@ export async function executeTests(
       timeoutTimer = setTimeout(() => {
         if (settled) return;
         timedOut = true;
-        try { child.kill("SIGTERM"); } catch { complete(-1); return; }
+        try {
+          child.kill("SIGTERM");
+        } catch {
+          complete(-1);
+          return;
+        }
         forceKillTimer = setTimeout(() => {
           if (settled) return;
-          try { child.kill("SIGKILL"); } catch { /* fall through */ }
+          try {
+            child.kill("SIGKILL");
+          } catch {
+            /* fall through */
+          }
           complete(-1);
         }, 1_000);
         forceKillTimer.unref();
@@ -302,12 +341,12 @@ export async function executeTests(
 export async function executeTestsParallel(
   options: Omit<ExecutionOptions, "command"> & { commands: string[] },
   quarantineStore?: QuarantineStore,
-  onProgress?: ProgressCallback,
+  onProgress?: ProgressCallback
 ): Promise<TestExecutionResult[]> {
   const concurrency = options.maxWorkers ?? 4;
   const queued = options.commands.map((cmd) => ({
     command: cmd,
-    ...options,
+    ...options
   }));
 
   const results: TestExecutionResult[] = [];
@@ -318,11 +357,7 @@ export async function executeTestsParallel(
       const item = queued.shift()!;
       active++;
       try {
-        const result = await executeTests(
-          item,
-          quarantineStore,
-          onProgress,
-        );
+        const result = await executeTests(item, quarantineStore, onProgress);
         results.push(result);
       } finally {
         active--;
@@ -346,13 +381,13 @@ function emitProgress(
   status: TestExecutionProgress["status"],
   startTime: number,
   counts: { passed: number; failed: number; skipped: number },
-  outputLines: string[] = [],
+  outputLines: string[] = []
 ): void {
   if (!onProgress) return;
   onProgress({
     status,
     elapsedMs: Date.now() - startTime,
     ...counts,
-    outputLines,
+    outputLines
   });
 }

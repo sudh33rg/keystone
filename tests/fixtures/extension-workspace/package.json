@@ -1,5 +1,7 @@
 {
   "name": "keystone-extension-workspace",
   "private": true,
-  "scripts": { "test": "node --test" }
+  "scripts": {
+    "test": "node --test"
+  }
 }

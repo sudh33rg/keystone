@@ -74,6 +74,7 @@ The `summary.json` file provides a high-level overview of the intelligence state
 ```
 
 **Summary Fields**:
+
 - `version`: OKF format version (required)
 - `profileId`: ID of the OKF profile (required)
 - `profileVersion`: Version of the OKF profile (required)
@@ -152,10 +153,7 @@ The `snapshot.json` file contains the latest promoted OKF snapshot.
       "extractor": "typescript-compiler",
       "extractorVersion": "4.9.5",
       "runId": "run-123",
-      "evidence": [
-        "evidence:123",
-        "evidence:456"
-      ],
+      "evidence": ["evidence:123", "evidence:456"],
       "metadata": {
         "importedFrom": "github.com/user/repo",
         "author": "John Doe",
@@ -174,9 +172,7 @@ The `snapshot.json` file contains the latest promoted OKF snapshot.
       "extractor": "typescript-compiler",
       "extractorVersion": "4.9.5",
       "runId": "run-123",
-      "evidence": [
-        "evidence:789"
-      ],
+      "evidence": ["evidence:789"],
       "metadata": {
         "line": 42,
         "column": 15,
@@ -195,9 +191,7 @@ The `snapshot.json` file contains the latest promoted OKF snapshot.
       "extractor": "security-analyzer",
       "extractorVersion": "1.2.0",
       "runId": "run-123",
-      "evidence": [
-        "evidence:101"
-      ],
+      "evidence": ["evidence:101"],
       "metadata": {
         "issue": "DEP001",
         "recommendation": "Use new API",
@@ -236,6 +230,7 @@ The `snapshot.json` file contains the latest promoted OKF snapshot.
 ```
 
 **Snapshot Fields**:
+
 - `version`: OKF format version (required)
 - `profileId`: ID of the OKF profile (required)
 - `profileVersion`: Version of the OKF profile (required)
@@ -306,6 +301,7 @@ The `manifest.json` file contains metadata about the OKF snapshot.
 ```
 
 **Manifest Fields**:
+
 - `version`: OKF format version (required)
 - `profileId`: ID of the OKF profile (required)
 - `profileVersion`: Version of the OKF profile (required)
@@ -349,10 +345,7 @@ The `activity.json` file logs all extraction activities.
     "details": {
       "filesDiscovered": 5205,
       "languages": 7,
-      "extractors": [
-        "typescript-compiler",
-        "java-compiler"
-      ]
+      "extractors": ["typescript-compiler", "java-compiler"]
     }
   },
   {
@@ -397,6 +390,7 @@ The `activity.json` file logs all extraction activities.
 ```
 
 **Activity Fields**:
+
 - `id`: Unique identifier for the activity (required)
 - `type`: Type of activity (extraction, snapshot, validation, etc.) (required)
 - `timestamp`: Timestamp of the activity (required)
@@ -423,6 +417,7 @@ The `current.json` file points to the currently promoted snapshot.
 ```
 
 **Current Fields**:
+
 - `runId`: ID of the currently promoted snapshot (required)
 - `timestamp`: Timestamp of the currently promoted snapshot (required)
 - `digest`: SHA-256 digest of the currently promoted snapshot (required)
@@ -485,6 +480,7 @@ snapshots/
 ```
 
 **Snapshot Directory Structure**:
+
 - `snapshot.json`: The complete OKF snapshot
 - `manifest.json`: Metadata about the snapshot
 - `activity.json`: Activity log for the snapshot
@@ -511,6 +507,7 @@ okf/
 ```
 
 **OKF Directory Structure**:
+
 - `manifest.json`: Metadata about the OKF snapshot
 - `knowledge/`: Knowledge units, relationships, observations, and evidence
   - `units.jsonl`: Knowledge units (JSONL format)
@@ -533,6 +530,7 @@ cpg/
 ```
 
 **CPG Directory Structure**:
+
 - `manifest.json`: Metadata about the CPG shards
 - `<shard>.json.gz`: Compressed CPG shards (one per artifact)
 
@@ -578,6 +576,7 @@ Each CPG shard is a compressed JSON file containing the CPG for a single artifac
 ```
 
 **CPG Shard Fields**:
+
 - `artifactId`: ID of the artifact this shard represents (required)
 - `nodes`: Array of CPG nodes (required)
   - `id`: Unique identifier for the node (required)
@@ -613,6 +612,7 @@ okf-bundle/
 ```
 
 **OKF Bundle Structure**:
+
 - `index.md`: Main index file with all knowledge units and relationships
 - `log.md`: Date-ordered log of changes
 - `.keystone-bundle.json`: Bundle metadata
@@ -636,6 +636,7 @@ Keystone employs an atomic promotion mechanism to ensure data integrity:
 8. **UI Update**: UI surfaces are updated with the new intelligence
 
 This process ensures that:
+
 - The system always has a valid, consistent state
 - No partial or invalid snapshots can be promoted
 - All projections are generated from a consistent snapshot
@@ -684,6 +685,7 @@ Keystone employs a comprehensive integrity and validation system:
 6. **Projections Validation**: Projections are validated against the OKF snapshot
 
 Validation failures result in:
+
 - Rejection of the candidate snapshot
 - Retention of the previous known-good snapshot
 - Logging of the validation errors
@@ -712,6 +714,7 @@ Keystone provides backup and recovery capabilities:
 4. **Recovery**: The system can recover from corruption
 
 Backup and recovery ensure that:
+
 - Data is not lost
 - Previous states can be recovered
 - The system is resilient to failures
@@ -726,11 +729,13 @@ Keystone monitors storage performance:
 4. **Memory Usage**: Monitors memory usage
 
 Performance monitoring ensures that:
+
 - The system remains responsive
 - Bottlenecks are identified
 - Optimization opportunities are identified
 
 The storage format is designed to be:
+
 - **Robust**: Resilient to failures and corruption
 - **Scalable**: Can handle repositories of any size
 - **Efficient**: Minimizes storage and processing requirements

@@ -6,10 +6,19 @@ import type { ContextPack, PerformanceAnalysis, RiskLevel } from "../../domain/t
 
 const HIGH_RISK_PATTERNS = [
   // N+1: forEach/for...of loop with inner query
-  { pattern: /\b(\.forEach|for\s*\(|for\s+of)\b[\s\S]*?\.(find|filter|map|select|query)\b/i, category: "n-plus-one" },
+  {
+    pattern: /\b(\.forEach|for\s*\(|for\s+of)\b[\s\S]*?\.(find|filter|map|select|query)\b/i,
+    category: "n-plus-one"
+  },
   // Chained array ops on one line
-  { pattern: /\b(\.map|\.forEach)\s*[\s\S]*?\.(find|filter|map|forEach)\b/i, category: "chained-iteration" },
-  { pattern: /\b(\.find|\.filter)\s*[\s\S]*?\.(find|filter|map|forEach)\b/i, category: "chained-iteration" },
+  {
+    pattern: /\b(\.map|\.forEach)\s*[\s\S]*?\.(find|filter|map|forEach)\b/i,
+    category: "chained-iteration"
+  },
+  {
+    pattern: /\b(\.find|\.filter)\s*[\s\S]*?\.(find|filter|map|forEach)\b/i,
+    category: "chained-iteration"
+  },
   { pattern: /\b(fetch|axios|http\.get|http\.request|superagent)\b/i, category: "external-call" },
   { pattern: /\b(serialize|JSON\.stringify|deparse)\b/i, category: "serialization" },
   { pattern: /\b(\.sort|\.reverse)\b/i, category: "sorting" },
@@ -19,17 +28,23 @@ const HIGH_RISK_PATTERNS = [
   { pattern: /\b(file|fs)\.(write|append|copy|unlink|mkdir)\b/i, category: "file-io" },
   { pattern: /\b(console\.(log|debug|info|error|warn)\b)/i, category: "debug-logging" },
   { pattern: /\b(\.exec|\.execSync|\.execFile)\s*\(/i, category: "command-exec" },
-  { pattern: /\b(\.length\s*>\s*\d+|\.length\s*===\s*\d+|\.length\s*<\s*\d+)\b/i, category: "length-check" },
+  {
+    pattern: /\b(\.length\s*>\s*\d+|\.length\s*===\s*\d+|\.length\s*<\s*\d+)\b/i,
+    category: "length-check"
+  }
 ];
 
 const MEDIUM_RISK_PATTERNS = [
-  { pattern: /\b(\.map|\.forEach|\.reduce|\.filter|\.find|\.some|\.every)\b/i, category: "iteration" },
+  {
+    pattern: /\b(\.map|\.forEach|\.reduce|\.filter|\.find|\.some|\.every)\b/i,
+    category: "iteration"
+  },
   { pattern: /\b(\.then|\.catch|await|async)\b/i, category: "async" },
   { pattern: /\b(setTimeout|setInterval)\b/i, category: "timer" },
   { pattern: /\b(require|import|require\.resolve)\b/i, category: "import" },
   { pattern: /\b(console\.(log|debug|info))\b/i, category: "logging" },
   { pattern: /\b(\.filter|\.find|\.some)\b/i, category: "search" },
-  { pattern: /\b(\.push|\.pop|\.shift|\.unshift)\b/i, category: "array-mut" },
+  { pattern: /\b(\.push|\.pop|\.shift|\.unshift)\b/i, category: "array-mut" }
 ];
 
 /** Extract all source content from the context pack. */
@@ -65,7 +80,10 @@ function extractSource(pack: ContextPack): string {
  * chained iterations, external calls, serialization, sorting, file I/O, etc.)
  * and assigns a risk level accordingly.
  */
-function classifyPerformanceRisk(source: string): { riskLevel: RiskLevel; sensitivePaths: string[] } {
+function classifyPerformanceRisk(source: string): {
+  riskLevel: RiskLevel;
+  sensitivePaths: string[];
+} {
   const found: string[] = [];
   let hasHigh = false;
   let hasMedium = false;
@@ -141,8 +159,14 @@ export class PerformanceAgent {
     checklist.push("Async/concurrency impact reviewed");
 
     const benchmarkSuggestions: string[] = [];
-    if (sensitivePaths.some((p) => ["external-call", "serialization", "streaming", "file-io"].includes(p))) {
-      benchmarkSuggestions.push("Benchmark changed request path if external calls, serialization, or file I/O behavior changes.");
+    if (
+      sensitivePaths.some((p) =>
+        ["external-call", "serialization", "streaming", "file-io"].includes(p)
+      )
+    ) {
+      benchmarkSuggestions.push(
+        "Benchmark changed request path if external calls, serialization, or file I/O behavior changes."
+      );
     }
     if (sensitivePaths.includes("n-plus-one")) {
       benchmarkSuggestions.push("Benchmark database query patterns after changes.");
@@ -151,18 +175,24 @@ export class PerformanceAgent {
       benchmarkSuggestions.push("Benchmark sort operations on large datasets.");
     }
     if (benchmarkSuggestions.length === 0) {
-      benchmarkSuggestions.push("Benchmark changed request path if database, export, upload, or search behavior changes.");
+      benchmarkSuggestions.push(
+        "Benchmark changed request path if database, export, upload, or search behavior changes."
+      );
     }
 
     const prNotes = [
       `Performance risk classified as ${riskLevel}.`,
-      ...(sensitivePaths.length > 0 ? [`Sensitive patterns: ${sensitivePaths.join(", ")}`] : []),
+      ...(sensitivePaths.length > 0 ? [`Sensitive patterns: ${sensitivePaths.join(", ")}`] : [])
     ];
 
     const copilotFixPrompts = [
       "Inspect changed loops, queries, and external calls for blocking or N+1 behavior.",
-      ...(!sensitivePaths.includes("n-plus-one") ? ["Check for N+1 query patterns in new code."] : []),
-      ...(!sensitivePaths.includes("external-call") ? ["Verify external calls are non-blocking or batched."] : []),
+      ...(!sensitivePaths.includes("n-plus-one")
+        ? ["Check for N+1 query patterns in new code."]
+        : []),
+      ...(!sensitivePaths.includes("external-call")
+        ? ["Verify external calls are non-blocking or batched."]
+        : [])
     ];
 
     return {
@@ -172,10 +202,10 @@ export class PerformanceAgent {
       benchmarkSuggestions,
       acceptanceCriteria: [
         "No synchronous external call in hot request path.",
-        "No large payload serialization introduced.",
+        "No large payload serialization introduced."
       ],
       prNotes,
-      copilotFixPrompts,
+      copilotFixPrompts
     };
   }
 }

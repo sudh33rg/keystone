@@ -17,12 +17,56 @@ export interface FileScanProgress {
   currentPath: string;
 }
 
-const SOURCE_EXTENSIONS = new Set(LANGUAGE_DEFINITIONS.flatMap(definition => [...definition.extensions]));
-const SPECIAL_SOURCE_FILES = new Set(["dockerfile", "makefile", "cmakelists.txt", "build.gradle", "build.gradle.kts", "pom.xml", "workspace", "build", "justfile"]);
+const SOURCE_EXTENSIONS = new Set(
+  LANGUAGE_DEFINITIONS.flatMap((definition) => [...definition.extensions])
+);
+const SPECIAL_SOURCE_FILES = new Set([
+  "dockerfile",
+  "makefile",
+  "cmakelists.txt",
+  "build.gradle",
+  "build.gradle.kts",
+  "pom.xml",
+  "workspace",
+  "build",
+  "justfile"
+]);
 const registry = new LanguageCapabilityRegistry();
 const YIELD_INTERVAL = 250;
 const INSPECTION_CONCURRENCY = 64;
-const BINARY_EXTENSIONS = new Set([".png",".jpg",".jpeg",".gif",".webp",".ico",".pdf",".zip",".gz",".tar",".7z",".rar",".jar",".class",".dll",".exe",".so",".dylib",".woff",".woff2",".ttf",".otf",".mp3",".mp4",".mov",".avi",".wav",".bin",".db",".sqlite",".lockb"]);
+const BINARY_EXTENSIONS = new Set([
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".webp",
+  ".ico",
+  ".pdf",
+  ".zip",
+  ".gz",
+  ".tar",
+  ".7z",
+  ".rar",
+  ".jar",
+  ".class",
+  ".dll",
+  ".exe",
+  ".so",
+  ".dylib",
+  ".woff",
+  ".woff2",
+  ".ttf",
+  ".otf",
+  ".mp3",
+  ".mp4",
+  ".mov",
+  ".avi",
+  ".wav",
+  ".bin",
+  ".db",
+  ".sqlite",
+  ".lockb"
+]);
 
 /**
  * Discover every supported source artifact in the workspace.
@@ -44,8 +88,9 @@ export async function scanFiles(
   while (pending.length > 0) {
     signal?.throwIfAborted();
     const directory = pending.pop()!;
-    const entries = await fs.readdir(directory, { withFileTypes: true }).catch(error => {
-      if (["ENOENT", "EACCES", "EPERM"].includes((error as NodeJS.ErrnoException).code ?? "")) return [];
+    const entries = await fs.readdir(directory, { withFileTypes: true }).catch((error) => {
+      if (["ENOENT", "EACCES", "EPERM"].includes((error as NodeJS.ErrnoException).code ?? ""))
+        return [];
       throw error;
     });
 
@@ -63,13 +108,16 @@ export async function scanFiles(
     for (let offset = 0; offset < fileEntries.length; offset += INSPECTION_CONCURRENCY) {
       signal?.throwIfAborted();
       const batch = fileEntries.slice(offset, offset + INSPECTION_CONCURRENCY);
-      const inspected = await Promise.all(batch.map(entry => inspectFile(workspaceRoot, directory, entry.name, signal)));
+      const inspected = await Promise.all(
+        batch.map((entry) => inspectFile(workspaceRoot, directory, entry.name, signal))
+      );
       for (const file of inspected) {
         if (!file) continue;
         files.push(file);
         onProgress?.({ discoveredFiles: files.length, currentPath: file.path });
       }
-      if (visitedEntries % YIELD_INTERVAL < batch.length) await new Promise<void>(resolve => setImmediate(resolve));
+      if (visitedEntries % YIELD_INTERVAL < batch.length)
+        await new Promise<void>((resolve) => setImmediate(resolve));
     }
   }
 
@@ -77,18 +125,25 @@ export async function scanFiles(
   return files;
 }
 
-async function inspectFile(workspaceRoot: string, directory: string, name: string, signal?: AbortSignal): Promise<ScannedFile | undefined> {
+async function inspectFile(
+  workspaceRoot: string,
+  directory: string,
+  name: string,
+  signal?: AbortSignal
+): Promise<ScannedFile | undefined> {
   signal?.throwIfAborted();
   const absolutePath = path.join(directory, name);
   const extension = path.extname(name).toLowerCase();
   if (BINARY_EXTENSIONS.has(extension)) return undefined;
-  const registered = SOURCE_EXTENSIONS.has(extension) || SPECIAL_SOURCE_FILES.has(name.toLowerCase());
+  const registered =
+    SOURCE_EXTENSIONS.has(extension) || SPECIAL_SOURCE_FILES.has(name.toLowerCase());
   const [stat, text] = await Promise.all([
-    fs.stat(absolutePath).catch(error => {
-      if (["ENOENT", "EACCES", "EPERM"].includes((error as NodeJS.ErrnoException).code ?? "")) return undefined;
+    fs.stat(absolutePath).catch((error) => {
+      if (["ENOENT", "EACCES", "EPERM"].includes((error as NodeJS.ErrnoException).code ?? ""))
+        return undefined;
       throw error;
     }),
-    registered ? Promise.resolve(true) : isProbablyText(absolutePath),
+    registered ? Promise.resolve(true) : isProbablyText(absolutePath)
   ]);
   signal?.throwIfAborted();
   if (!stat || !text) return undefined;
@@ -106,6 +161,26 @@ export function languageForPath(filePath: string): string {
   return "unknown";
 }
 
-async function isProbablyText(filePath:string):Promise<boolean>{
-  try{const handle=await fs.open(filePath,'r');try{const buffer=Buffer.allocUnsafe(8192);const {bytesRead}=await handle.read(buffer,0,buffer.length,0);if(bytesRead===0)return true;let suspicious=0;for(let i=0;i<bytesRead;i++){const byte=buffer[i];if(byte===0)return false;if(byte<7||(byte>13&&byte<32))suspicious+=1;}return suspicious/bytesRead<0.08;}finally{await handle.close();}}catch(error){if(["ENOENT","EACCES","EPERM"].includes((error as NodeJS.ErrnoException).code??""))return false;throw error;}
+async function isProbablyText(filePath: string): Promise<boolean> {
+  try {
+    const handle = await fs.open(filePath, "r");
+    try {
+      const buffer = Buffer.allocUnsafe(8192);
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+      if (bytesRead === 0) return true;
+      let suspicious = 0;
+      for (let i = 0; i < bytesRead; i++) {
+        const byte = buffer[i];
+        if (byte === 0) return false;
+        if (byte < 7 || (byte > 13 && byte < 32)) suspicious += 1;
+      }
+      return suspicious / bytesRead < 0.08;
+    } finally {
+      await handle.close();
+    }
+  } catch (error) {
+    if (["ENOENT", "EACCES", "EPERM"].includes((error as NodeJS.ErrnoException).code ?? ""))
+      return false;
+    throw error;
+  }
 }

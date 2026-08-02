@@ -1,61 +1,62 @@
 export type KnowledgeNodeCategory =
-  | 'engineering'
-  | 'architecture'
-  | 'business'
-  | 'infrastructure'
-  | 'documentation'
-  | 'workflow'
-  | 'requirement'
-  | 'decision';
+  | "engineering"
+  | "architecture"
+  | "business"
+  | "infrastructure"
+  | "documentation"
+  | "workflow"
+  | "requirement"
+  | "decision";
 
 export type KnowledgeType =
-  | 'Repository'
-  | 'Workspace'
-  | 'System'
-  | 'Module'
-  | 'Package'
-  | 'Component'
-  | 'Service'
-  | 'API'
-  | 'Database'
-  | 'Configuration'
-  | 'Infrastructure'
-  | 'Build'
-  | 'Deployment'
-  | 'Test'
-  | 'Documentation'
-  | 'Class'
-  | 'Interface'
-  | 'Function'
-  | 'Library';
+  | "Repository"
+  | "Workspace"
+  | "System"
+  | "Module"
+  | "Package"
+  | "Component"
+  | "Service"
+  | "API"
+  | "Database"
+  | "Configuration"
+  | "Infrastructure"
+  | "Build"
+  | "Deployment"
+  | "Test"
+  | "Documentation"
+  | "Class"
+  | "Interface"
+  | "Function"
+  | "Library";
 
 export type KnowledgeRelationshipType =
-  | 'Contains'
-  | 'Defines'
-  | 'Extends'
-  | 'Implements'
-  | 'Uses'
-  | 'References'
-  | 'Imports'
-  | 'DependsOn'
-  | 'Calls'
-  | 'Publishes'
-  | 'Consumes'
-  | 'Produces'
-  | 'Reads'
-  | 'Writes'
-  | 'Creates'
-  | 'Destroys'
-  | 'Owns'
-  | 'Exposes'
-  | 'Coordinates'
-  | 'Delegates'
-  | 'Aggregates'
-  | 'IsolatedFrom'
-  | 'CommunicatesWith'
-  | 'Documents';
+  | "Contains"
+  | "Defines"
+  | "Extends"
+  | "Implements"
+  | "Uses"
+  | "References"
+  | "Imports"
+  | "DependsOn"
+  | "Calls"
+  | "Publishes"
+  | "Consumes"
+  | "Produces"
+  | "Reads"
+  | "Writes"
+  | "Creates"
+  | "Destroys"
+  | "Owns"
+  | "Exposes"
+  | "Coordinates"
+  | "Delegates"
+  | "Aggregates"
+  | "IsolatedFrom"
+  | "CommunicatesWith"
+  | "Documents";
 
-export type KnowledgeLifecycle = 'created' | 'validated' | 'active' | 'updated' | 'deprecated' | 'archived';
+export type KnowledgeLifecycle =
+  "created" | "validated" | "active" | "updated" | "deprecated" | "archived";
 
 export interface KnowledgeEvidence {
   readonly sourceAnalyzer: string;
@@ -125,7 +126,7 @@ export interface KnowledgeQuery extends NodeQuery {
 export interface InferredKnowledge {
   readonly id: string;
   readonly repositoryId: string;
-  readonly category: 'structural' | 'behavioral' | 'architectural' | 'business' | 'quality';
+  readonly category: "structural" | "behavioral" | "architectural" | "business" | "quality";
   readonly statement: string;
   readonly nodeIds: readonly string[];
   readonly edgeIds: readonly string[];

@@ -1,14 +1,14 @@
-import { createHash } from 'node:crypto';
+import { createHash } from "node:crypto";
 
 /** Produces stable, workspace-scoped IDs without leaking absolute file paths. */
 export function createOkfId(
   workspaceId: string,
-  recordType: 'unit' | 'relationship' | 'observation' | 'evidence',
-  canonicalKey: string,
+  recordType: "unit" | "relationship" | "observation" | "evidence",
+  canonicalKey: string
 ): string {
-  const digest = createHash('sha256')
+  const digest = createHash("sha256")
     .update(`${workspaceId}\u0000${recordType}\u0000${canonicalKey}`)
-    .digest('hex')
+    .digest("hex")
     .slice(0, 32);
   return `keystone:${recordType}:${digest}`;
 }

@@ -14,7 +14,7 @@ flowchart TD
     G --> I[Authenticated Loopback Browser View]
     H --> B
     I --> B
-    
+
     style A fill:#f9f,stroke:#333
     style B fill:#bbf,stroke:#333
     style C fill:#f9f,stroke:#333
@@ -58,7 +58,7 @@ flowchart TD
     N --> O[UI Rendering]
     O --> P[VS Code Webview]
     O --> Q[Browser View]
-    
+
     style A fill:#f9f,stroke:#333
     style B fill:#f9f,stroke:#333
     style C fill:#f9f,stroke:#333
@@ -113,23 +113,23 @@ Keystone's Browser View uses a secure authentication flow:
    ```http
    GET /auth/bootstrap HTTP/1.1
    Host: localhost:12345
-   
+
    HTTP/1.1 303 See Other
    Location: https://github.com/user/repo?token=abc123...
-   
+
    GET https://github.com/user/repo?token=abc123... HTTP/1.1
    Host: localhost:12345
-   
+
    HTTP/1.1 200 OK
    Set-Cookie: keystone-session=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...; HttpOnly; Secure; SameSite=Strict; Max-Age=1800; Path=/
-   
+
    GET /api/state HTTP/1.1
    Host: localhost:12345
    Cookie: keystone-session=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-   
+
    HTTP/1.1 200 OK
    Content-Type: application/json
-   
+
    {"state": "..."}
    ```
 
@@ -260,13 +260,13 @@ Keystone employs comprehensive security controls:
 ### Content Security Policy
 
 ```http
-Content-Security-Policy: default-src 'self'; 
-    script-src 'self' 'unsafe-inline'; 
-    style-src 'self' 'unsafe-inline'; 
-    img-src 'self' data:; 
-    connect-src 'self'; 
-    font-src 'self'; 
-    frame-ancestors 'none'; 
+Content-Security-Policy: default-src 'self';
+    script-src 'self' 'unsafe-inline';
+    style-src 'self' 'unsafe-inline';
+    img-src 'self' data:;
+    connect-src 'self';
+    font-src 'self';
+    frame-ancestors 'none';
     form-action 'self';
 ```
 
@@ -287,19 +287,19 @@ Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; 
 // Authentication middleware
 app.use((req, res, next) => {
   // Check for session cookie
-  const session = req.cookies['keystone-session'];
-  
+  const session = req.cookies["keystone-session"];
+
   if (!session) {
-    return res.status(401).json({ error: 'Unauthorized' });
+    return res.status(401).json({ error: "Unauthorized" });
   }
-  
+
   // Validate session
   try {
     const payload = jwt.verify(session, process.env.SESSION_SECRET);
     req.user = payload;
     next();
   } catch (err) {
-    return res.status(401).json({ error: 'Unauthorized' });
+    return res.status(401).json({ error: "Unauthorized" });
   }
 });
 
@@ -307,19 +307,19 @@ app.use((req, res, next) => {
 app.use((req, res, next) => {
   // Validate command structure
   if (!req.body || !req.body.type) {
-    return res.status(400).json({ error: 'Invalid command' });
+    return res.status(400).json({ error: "Invalid command" });
   }
-  
+
   // Validate command parameters
   if (!commandSchemas[req.body.type]) {
-    return res.status(400).json({ error: 'Invalid command type' });
+    return res.status(400).json({ error: "Invalid command type" });
   }
-  
+
   // Validate command state version
   if (req.body.stateVersion !== state.version) {
-    return res.status(409).json({ error: 'Stale state', expectedVersion: state.version });
+    return res.status(409).json({ error: "Stale state", expectedVersion: state.version });
   }
-  
+
   next();
 });
 ```

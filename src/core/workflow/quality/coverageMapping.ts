@@ -9,7 +9,7 @@
  * Inspired by Radius's per-test coverage mapping and TDAD-TS's coverage strategy.
  */
 
-import path from 'node:path';
+import path from "node:path";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -55,7 +55,8 @@ export interface CoveredFile {
 }
 
 /** Test framework type */
-export type TestFrameworkName = 'vitest' | 'jest' | 'mocha' | 'pytest' | 'unittest' | 'tap' | 'ava' | 'unknown';
+export type TestFrameworkName =
+  "vitest" | "jest" | "mocha" | "pytest" | "unittest" | "tap" | "ava" | "unknown";
 
 /** Test coverage index */
 export interface CoverageIndex {
@@ -103,11 +104,11 @@ export class CoverageIndexManager {
 
   constructor(config: CoverageMappingConfig = {}) {
     this.config = {
-      framework: config.framework ?? 'unknown',
-      coveragePath: config.coveragePath ?? 'coverage/vitest.xml',
+      framework: config.framework ?? "unknown",
+      coveragePath: config.coveragePath ?? "coverage/vitest.xml",
       precise: config.precise ?? false,
-      indexFilePath: config.indexFilePath ?? '.keystone/coverage_index.json',
-      stalenessThresholdMs: config.stalenessThresholdMs ?? 24 * 60 * 60 * 1000,
+      indexFilePath: config.indexFilePath ?? ".keystone/coverage_index.json",
+      stalenessThresholdMs: config.stalenessThresholdMs ?? 24 * 60 * 60 * 1000
     };
   }
 
@@ -140,10 +141,10 @@ export class CoverageIndexManager {
 
     this.index = {
       tests: coverageData,
-      builtAtCommit: 'current',
+      builtAtCommit: "current",
       builtAt: Date.now(),
       testCount: coverageData.length,
-      fileCount: fileSet.size,
+      fileCount: fileSet.size
     };
   }
 
@@ -165,9 +166,7 @@ export class CoverageIndexManager {
     if (!this.index) return [];
 
     return this.index.tests.filter((test) =>
-      test.coveredFiles.some(
-        (f) => f.filePath === filePath && f.lines.includes(line)
-      )
+      test.coveredFiles.some((f) => f.filePath === filePath && f.lines.includes(line))
     );
   }
 
@@ -226,7 +225,7 @@ export interface CoverageAdapter {
  * Vitest coverage adapter.
  */
 export class VitestAdapter implements CoverageAdapter {
-  framework = 'vitest' as const;
+  framework = "vitest" as const;
 
   parseCoverage(content: string): TestCoverage[] {
     // Parse vitest JSON coverage output (V8 format)
@@ -245,24 +244,30 @@ export class VitestAdapter implements CoverageAdapter {
 
         const coveredFile: CoveredFile = {
           filePath: fileCoverage.path || fileName,
-          lines: Object.keys(fileCoverage.s || {}).map(Number).filter((n) => n > 0),
+          lines: Object.keys(fileCoverage.s || {})
+            .map(Number)
+            .filter((n) => n > 0),
           functions: fileCoverage.f ? Object.keys(fileCoverage.f) : undefined,
-          statements: fileCoverage.s ? Object.keys(fileCoverage.s).map(Number).filter((n) => n > 0) : undefined,
+          statements: fileCoverage.s
+            ? Object.keys(fileCoverage.s)
+                .map(Number)
+                .filter((n) => n > 0)
+            : undefined,
           branches: fileCoverage.b
             ? Object.entries(fileCoverage.b).map(([line, branches]) => ({
                 line: Number(line),
-                branch: branches as number,
+                branch: branches as number
               }))
-            : undefined,
+            : undefined
         };
 
         coverage.push({
           testPath: `vitest`,
           testName: `${fileName} coverage`,
           coveredFiles: [coveredFile],
-          framework: 'vitest',
-          builtAtCommit: 'current',
-          builtAt: Date.now(),
+          framework: "vitest",
+          builtAtCommit: "current",
+          builtAt: Date.now()
         });
       }
 
@@ -274,10 +279,10 @@ export class VitestAdapter implements CoverageAdapter {
 
   async runTests(options?: { args?: string[]; env?: Record<string, string> }): Promise<void> {
     // Run vitest with coverage
-    const { execSync } = await import('node:child_process');
-    const args = ['test', '--coverage', ...(options?.args ?? [])];
+    const { execSync } = await import("node:child_process");
+    const args = ["test", "--coverage", ...(options?.args ?? [])];
     const env = { ...process.env, ...(options?.env ?? {}) };
-    execSync(`npx vitest ${args.join(' ')}`, { env, stdio: 'inherit' });
+    execSync(`npx vitest ${args.join(" ")}`, { env, stdio: "inherit" });
   }
 }
 
@@ -285,7 +290,7 @@ export class VitestAdapter implements CoverageAdapter {
  * Jest coverage adapter.
  */
 export class JestAdapter implements CoverageAdapter {
-  framework = 'jest' as const;
+  framework = "jest" as const;
 
   parseCoverage(content: string): TestCoverage[] {
     // Parse jest coverage output
@@ -307,18 +312,18 @@ export class JestAdapter implements CoverageAdapter {
           branches: file?.b
             ? Object.entries(file.b).map(([line, branches]) => ({
                 line: Number(line),
-                branch: branches as number,
+                branch: branches as number
               }))
-            : undefined,
+            : undefined
         };
 
         coverage.push({
           testPath: `jest`,
           testName: `${file.path} coverage`,
           coveredFiles: [coveredFile],
-          framework: 'jest',
-          builtAtCommit: 'current',
-          builtAt: Date.now(),
+          framework: "jest",
+          builtAtCommit: "current",
+          builtAt: Date.now()
         });
       }
 
@@ -329,10 +334,10 @@ export class JestAdapter implements CoverageAdapter {
   }
 
   async runTests(options?: { args?: string[]; env?: Record<string, string> }): Promise<void> {
-    const { execSync } = await import('node:child_process');
-    const args = ['test', '--coverage', ...(options?.args ?? [])];
+    const { execSync } = await import("node:child_process");
+    const args = ["test", "--coverage", ...(options?.args ?? [])];
     const env = { ...process.env, ...(options?.env ?? {}) };
-    execSync(`npx jest ${args.join(' ')}`, { env, stdio: 'inherit' });
+    execSync(`npx jest ${args.join(" ")}`, { env, stdio: "inherit" });
   }
 }
 
@@ -345,9 +350,9 @@ export class JestAdapter implements CoverageAdapter {
  */
 export function createCoverageAdapter(framework: TestFrameworkName): CoverageAdapter {
   switch (framework) {
-    case 'vitest':
+    case "vitest":
       return new VitestAdapter();
-    case 'jest':
+    case "jest":
       return new JestAdapter();
     default:
       throw new Error(`Unsupported test framework: ${framework}`);

@@ -1,4 +1,11 @@
-import type { ContextPack, ModernizationAssessment, PerformanceAnalysis, PrEvidence, QaAnalysis, SecurityAnalysis } from "../../domain/types";
+import type {
+  ContextPack,
+  ModernizationAssessment,
+  PerformanceAnalysis,
+  PrEvidence,
+  QaAnalysis,
+  SecurityAnalysis
+} from "../../domain/types";
 
 export class PrEvidenceAgent {
   generate(
@@ -10,7 +17,12 @@ export class PrEvidenceAgent {
   ): PrEvidence {
     const filesImpacted = pack.relevantFiles.map((file) => file.path);
     const testsImpacted = qa.impactedTests.map((test) => test.testFile);
-    const risks = [...pack.routeDecision.risks, `security=${security.riskLevel}`, `performance=${performance.riskLevel}`, `modernization=${modernization.riskLevel}`];
+    const risks = [
+      ...pack.routeDecision.risks,
+      `security=${security.riskLevel}`,
+      `performance=${performance.riskLevel}`,
+      `modernization=${modernization.riskLevel}`
+    ];
     const markdown = [
       "## Summary",
       pack.taskSummary,

@@ -3,21 +3,10 @@
   "compilerOptions": {
     "rootDir": ".",
     "outDir": "dist/test-runner",
-    "types": [
-      "node",
-      "vscode",
-      "vscode-test-electron"
-    ],
+    "types": ["node", "vscode", "vscode-test-electron"],
     "noEmit": false,
-    "typeRoots": [
-      "./node_modules/@types",
-      "./src/types"
-    ]
+    "typeRoots": ["./node_modules/@types", "./src/types"]
   },
-  "include": [
-    "tests/integration/**/*.ts"
-  ],
-  "exclude": [
-    "node_modules"
-  ]
+  "include": ["tests/integration/**/*.ts"],
+  "exclude": ["node_modules"]
 }

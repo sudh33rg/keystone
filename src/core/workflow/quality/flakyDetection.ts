@@ -44,11 +44,7 @@ export type FlakyTest = {
   recommendations: string[];
 };
 
-export type FlakyClassification =
-  | "BROKEN_LOCATOR"
-  | "REAL_BUG"
-  | "FLAKY"
-  | "ENV_ISSUE";
+export type FlakyClassification = "BROKEN_LOCATOR" | "REAL_BUG" | "FLAKY" | "ENV_ISSUE";
 
 export type FlakyDetectionResult = {
   flakyTests: FlakyTest[];
@@ -147,18 +143,14 @@ function buildRecommendations(
         `Check environment for \`${testPath}\` — timeouts, network issues, or resource constraints.`
       );
       if (lastError?.includes("timeout")) {
-        recs.push(
-          `Consider increasing timeout or optimizing the test execution path.`
-        );
+        recs.push(`Consider increasing timeout or optimizing the test execution path.`);
       }
       break;
     case "FLAKY":
       recs.push(
         `Investigate flakiness in \`${testPath}\` — ensure test isolation and avoid shared mutable state.`
       );
-      recs.push(
-        `Consider adding retries with backoff or quarantining if persistent.`
-      );
+      recs.push(`Consider adding retries with backoff or quarantining if persistent.`);
       break;
   }
 
@@ -175,14 +167,12 @@ function buildRecommendations(
  * Override this function to inject your own test runner (Jest, Vitest,
  * Playwright, etc.).
  */
-export async function runTest(
-  testPath: string,
-  config: FlakyConfig
-): Promise<TestRunResult[]> {
+export async function runTest(testPath: string, config: FlakyConfig): Promise<TestRunResult[]> {
   const results: TestRunResult[] = [];
 
   for (let attempt = 0; attempt < config.runs; attempt++) {
-    if (config.signal?.aborted) throw Object.assign(new Error("Flaky detection cancelled"), { name: "CancellationError" });
+    if (config.signal?.aborted)
+      throw Object.assign(new Error("Flaky detection cancelled"), { name: "CancellationError" });
     const start = Date.now();
     let passed = false;
     let error: string | undefined;
@@ -212,10 +202,7 @@ export async function runTest(
  *
  * Uses the testExecution module to run the test file.
  */
-export async function runSingleTest(
-  testPath: string,
-  config: FlakyConfig
-): Promise<void> {
+export async function runSingleTest(testPath: string, config: FlakyConfig): Promise<void> {
   const { executeTests } = await import("./testExecution");
 
   const result = await executeTests(
@@ -224,7 +211,7 @@ export async function runSingleTest(
       cwd: config.workspaceRoot ?? process.cwd(),
       testPathPattern: testPath,
       timeoutMs: config.timeoutMs,
-      signal: config.signal,
+      signal: config.signal
     },
     undefined
   );
@@ -263,7 +250,8 @@ export async function detectFlakyTests(
 
   // Run each test in isolation
   for (const testPath of candidates) {
-    if (merged.signal?.aborted) throw Object.assign(new Error("Flaky detection cancelled"), { name: "CancellationError" });
+    if (merged.signal?.aborted)
+      throw Object.assign(new Error("Flaky detection cancelled"), { name: "CancellationError" });
     const runResults = await runTest(testPath, merged);
     allResults.push(...runResults);
 
@@ -272,9 +260,7 @@ export async function detectFlakyTests(
 
     if (flakinessScore >= merged.threshold) {
       const lastError = runResults.find((r) => !r.passed)?.error;
-      const classification = lastError
-        ? classifyFailure(lastError)
-        : "FLAKY";
+      const classification = lastError ? classifyFailure(lastError) : "FLAKY";
 
       flakyTests.push({
         testPath,
@@ -283,11 +269,7 @@ export async function detectFlakyTests(
         flakinessScore,
         classification,
         lastError,
-        recommendations: buildRecommendations(
-          testPath,
-          classification,
-          lastError
-        )
+        recommendations: buildRecommendations(testPath, classification, lastError)
       });
     }
   }
@@ -344,9 +326,7 @@ function buildGlobalRecommendations(flakyTests: FlakyTest[]): string[] {
     );
   }
 
-  recs.push(
-    `Quarantine persistent flaky tests to prevent CI signal loss.`
-  );
+  recs.push(`Quarantine persistent flaky tests to prevent CI signal loss.`);
 
   return recs;
 }
@@ -379,9 +359,7 @@ export function formatFlakyDetection(result: FlakyDetectionResult): string {
     );
     lines.push(`- **Classification:** ${ft.classification}`);
     if (ft.lastError) {
-      lines.push(
-        `- **Last error:** \`${truncate(ft.lastError, 120)}\``
-      );
+      lines.push(`- **Last error:** \`${truncate(ft.lastError, 120)}\``);
     }
     for (const rec of ft.recommendations) {
       lines.push(`- ${rec}`);

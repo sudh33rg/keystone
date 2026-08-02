@@ -16,6 +16,7 @@ grant_type=client_credentials&client_id=YOUR_CLIENT_ID&client_secret=YOUR_CLIENT
 ```
 
 **Response**:
+
 ```json
 {
   "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
@@ -37,9 +38,11 @@ Authorization: Bearer {access_token}
 ```
 
 **Request Parameters**:
+
 - `featureId`: ID of the feature to retrieve (required)
 
 **Response**:
+
 ```json
 {
   "id": "feature:123",
@@ -49,17 +52,11 @@ Authorization: Bearer {access_token}
   "priority": "high",
   "created": "2026-08-01T12:34:56Z",
   "updated": "2026-08-01T12:34:56Z",
-  "tags": [
-    "authentication",
-    "security"
-  ],
+  "tags": ["authentication", "security"],
   "epic": "epic:456",
   "project": "project:789",
   "owner": "user:123",
-  "assignees": [
-    "user:456",
-    "user:789"
-  ],
+  "assignees": ["user:456", "user:789"],
   "milestone": "milestone:123",
   "dueDate": "2026-09-01T00:00:00Z",
   "customFields": {
@@ -71,6 +68,7 @@ Authorization: Bearer {access_token}
 ```
 
 **Response Fields**:
+
 - `id`: Unique identifier for the feature (required)
 - `title`: Title of the feature (required)
 - `description`: Detailed description of the feature (required)
@@ -97,9 +95,11 @@ Authorization: Bearer {access_token}
 ```
 
 **Request Parameters**:
+
 - `featureId`: ID of the feature to retrieve stories for (required)
 
 **Response**:
+
 ```json
 [
   {
@@ -115,9 +115,7 @@ Authorization: Bearer {access_token}
     "feature": "feature:123",
     "project": "project:789",
     "owner": "user:123",
-    "assignees": [
-      "user:456"
-    ],
+    "assignees": ["user:456"],
     "milestone": "milestone:123",
     "dueDate": "2026-08-15T00:00:00Z",
     "acceptanceCriteria": [
@@ -127,10 +125,7 @@ Authorization: Bearer {access_token}
       "Login page must validate username and password",
       "Login page must redirect to dashboard on success"
     ],
-    "tags": [
-      "ui",
-      "authentication"
-    ],
+    "tags": ["ui", "authentication"],
     "customFields": {
       "estimate": "8",
       "storyPoints": "5",
@@ -141,6 +136,7 @@ Authorization: Bearer {access_token}
 ```
 
 **Response Fields**:
+
 - `id`: Unique identifier for the story (required)
 - `title`: Title of the story (required)
 - `description`: Detailed description of the story (required)
@@ -195,9 +191,11 @@ Content-Type: application/json
 ```
 
 **Request Parameters**:
+
 - `featureId`: ID of the feature to create the story for (required)
 
 **Request Body**:
+
 - `title`: Title of the story (required)
 - `description`: Detailed description of the story (required)
 - `type`: Type of story (user-story, quality-story, research, specification, design, development, existing-test-analysis, test-impact-analysis, new-test-creation, failed-test-investigation, flaky-test-analysis, security-review, performance-review, modernization-review, code-review, pr-review, documentation, completion) (required)
@@ -207,6 +205,7 @@ Content-Type: application/json
 - `customFields`: Custom fields for the story (optional)
 
 **Response**:
+
 ```json
 {
   "id": "story:456",
@@ -232,10 +231,7 @@ Content-Type: application/json
     "Registration page must send verification email",
     "Registration page must redirect to login on success"
   ],
-  "tags": [
-    "ui",
-    "authentication"
-  ],
+  "tags": ["ui", "authentication"],
   "customFields": {
     "estimate": "12",
     "storyPoints": "8",
@@ -245,6 +241,7 @@ Content-Type: application/json
 ```
 
 **Response Fields**:
+
 - `id`: Unique identifier for the story (required)
 - `title`: Title of the story (required)
 - `description`: Detailed description of the story (required)
@@ -327,20 +324,20 @@ Keystone integrates with ValueEdge through:
 
 Keystone maps ValueEdge entities to Keystone entities:
 
-| ValueEdge | Keystone |
-|---|---|
-| Feature | Intent |
-| Story | Backlog Story |
-| Status | Story Status |
-| Priority | Story Priority |
-| Tags | Story Tags |
-| Custom Fields | Story Metadata |
-| Epic | Project |
-| Project | Project |
-| Owner | Story Owner |
-| Assignees | Story Assignees |
-| Milestone | Milestone |
-| Due Date | Story Due Date |
+| ValueEdge           | Keystone                  |
+| ------------------- | ------------------------- |
+| Feature             | Intent                    |
+| Story               | Backlog Story             |
+| Status              | Story Status              |
+| Priority            | Story Priority            |
+| Tags                | Story Tags                |
+| Custom Fields       | Story Metadata            |
+| Epic                | Project                   |
+| Project             | Project                   |
+| Owner               | Story Owner               |
+| Assignees           | Story Assignees           |
+| Milestone           | Milestone                 |
+| Due Date            | Story Due Date            |
 | Acceptance Criteria | Story Acceptance Criteria |
 
 ### Error Handling

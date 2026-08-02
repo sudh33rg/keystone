@@ -1,6 +1,10 @@
 import { MODERNIZATION_KEYWORDS } from "../../platform/config/defaults";
 
-export function detectModernizationCandidates(filePath: string, text: string, lineCount: number): string[] {
+export function detectModernizationCandidates(
+  filePath: string,
+  text: string,
+  lineCount: number
+): string[] {
   const candidates: string[] = [];
   const lower = `${filePath}\n${text}`.toLowerCase();
   if (lineCount > 500) {

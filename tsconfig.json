@@ -3,9 +3,7 @@
     "target": "ES2022",
     "module": "CommonJS",
     "moduleResolution": "Node",
-    "lib": [
-      "ES2022"
-    ],
+    "lib": ["ES2022"],
     "rootDir": ".",
     "strict": true,
     "noImplicitOverride": true,
@@ -15,34 +13,15 @@
     "esModuleInterop": true,
     "baseUrl": ".",
     "paths": {
-      "@core/*": [
-        "src/core/*"
-      ],
-      "@vscode/*": [
-        "src/extension/*"
-      ],
-      "@webview/*": [
-        "src/webview/*"
-      ]
+      "@core/*": ["src/core/*"],
+      "@vscode/*": ["src/extension/*"],
+      "@webview/*": ["src/webview/*"]
     },
     "skipLibCheck": true,
     "noEmit": true,
-    "types": [
-      "node",
-      "vscode"
-    ],
-    "typeRoots": [
-      "./node_modules/@types",
-      "./src/types"
-    ]
+    "types": ["node", "vscode"],
+    "typeRoots": ["./node_modules/@types", "./src/types"]
   },
-  "include": [
-    "src/extension/**/*.ts",
-    "src/core/**/*.ts"
-  ],
-  "exclude": [
-    "src/**/*.test.ts",
-    "node_modules",
-    "dist"
-  ]
+  "include": ["src/extension/**/*.ts", "src/core/**/*.ts"],
+  "exclude": ["src/**/*.test.ts", "node_modules", "dist"]
 }

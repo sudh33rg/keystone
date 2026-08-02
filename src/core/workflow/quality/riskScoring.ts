@@ -14,7 +14,7 @@
  * Inspired by Chisel's risk scoring formula and TDAD-TS's 5-strategy scoring.
  */
 
-import crypto from 'node:crypto';
+import crypto from "node:crypto";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -48,7 +48,7 @@ export interface FileRiskScore {
 }
 
 /** Risk tier classification */
-export type RiskTier = 'critical' | 'high' | 'medium' | 'low' | 'none';
+export type RiskTier = "critical" | "high" | "medium" | "low" | "none";
 
 /** Configuration for risk scoring */
 export interface RiskScoringConfig {
@@ -87,10 +87,10 @@ const DEFAULT_WEIGHTS: RiskWeights = {
   churn: 0.35,
   coupling: 0.25,
   coverageGap: 0.15,
-  coverageDepth: 0.10,
-  authorConcentration: 0.10,
+  coverageDepth: 0.1,
+  authorConcentration: 0.1,
   testInstability: 0.05,
-  newFileBoost: 0.05,
+  newFileBoost: 0.05
 };
 
 // ---------------------------------------------------------------------------
@@ -117,8 +117,14 @@ export function computeRiskScores(
     const couplingScore = computeCouplingScore(file.coupling, weights.coupling);
     const coverageGapScore = computeCoverageGapScore(file.coverage, coverageGapThreshold);
     const coverageDepthScore = computeCoverageDepthScore(file.coverage, weights.coverageDepth);
-    const authorConcentrationScore = computeAuthorConcentrationScore(file.authorConcentration, authorConcentrationThreshold);
-    const testInstabilityScore = computeTestInstabilityScore(file.testInstability, testInstabilityThreshold);
+    const authorConcentrationScore = computeAuthorConcentrationScore(
+      file.authorConcentration,
+      authorConcentrationThreshold
+    );
+    const testInstabilityScore = computeTestInstabilityScore(
+      file.testInstability,
+      testInstabilityThreshold
+    );
     const newFileBoost = computeNewFileBoost(file.ageDays, newFileAgeDays);
 
     // Compute overall score
@@ -136,12 +142,12 @@ export function computeRiskScores(
 
     // Collect risk factors
     const riskFactors: string[] = [];
-    if (churnScore > 0.7) riskFactors.push('high_churn');
-    if (couplingScore > 0.7) riskFactors.push('high_coupling');
-    if (coverageGapScore > 0.7) riskFactors.push('low_coverage');
-    if (authorConcentrationScore > 0.7) riskFactors.push('single_author');
-    if (testInstabilityScore > 0.7) riskFactors.push('flaky_tests');
-    if (newFileBoost > 0.7) riskFactors.push('new_file');
+    if (churnScore > 0.7) riskFactors.push("high_churn");
+    if (couplingScore > 0.7) riskFactors.push("high_coupling");
+    if (coverageGapScore > 0.7) riskFactors.push("low_coverage");
+    if (authorConcentrationScore > 0.7) riskFactors.push("single_author");
+    if (testInstabilityScore > 0.7) riskFactors.push("flaky_tests");
+    if (newFileBoost > 0.7) riskFactors.push("new_file");
 
     return {
       filePath: file.filePath,
@@ -155,7 +161,7 @@ export function computeRiskScores(
       testInstabilityScore,
       newFileBoost,
       riskFactors,
-      lastUpdated: Date.now(),
+      lastUpdated: Date.now()
     };
   });
 }
@@ -228,11 +234,11 @@ function computeNewFileBoost(ageDays: number, thresholdDays: number): number {
  * Classify risk tier based on overall score.
  */
 function classifyRiskTier(score: number): RiskTier {
-  if (score >= 0.8) return 'critical';
-  if (score >= 0.6) return 'high';
-  if (score >= 0.4) return 'medium';
-  if (score >= 0.2) return 'low';
-  return 'none';
+  if (score >= 0.8) return "critical";
+  if (score >= 0.6) return "high";
+  if (score >= 0.4) return "medium";
+  if (score >= 0.2) return "low";
+  return "none";
 }
 
 // ---------------------------------------------------------------------------
@@ -278,7 +284,7 @@ export function getFilesByTier(scores: FileRiskScore[], tier: RiskTier): FileRis
  * Get critical/high risk files.
  */
 export function getHighRiskFiles(scores: FileRiskScore[]): FileRiskScore[] {
-  return scores.filter((s) => s.tier === 'critical' || s.tier === 'high');
+  return scores.filter((s) => s.tier === "critical" || s.tier === "high");
 }
 
 /**

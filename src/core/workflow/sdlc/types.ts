@@ -2,12 +2,7 @@ import type { ContextPack } from "../../context/compression/types";
 import type { ImpactedTestSuggestion } from "../quality/impactedTests";
 
 export type SDLCIntent =
-  | "feature"
-  | "bug_fix"
-  | "test_planning"
-  | "review"
-  | "explanation"
-  | "implementation";
+  "feature" | "bug_fix" | "test_planning" | "review" | "explanation" | "implementation";
 
 export type SDLCTaskPacket = {
   id: string;

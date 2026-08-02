@@ -56,10 +56,7 @@ Knowledge units represent the fundamental entities in the repository. Each unit 
   "extractor": "typescript-compiler",
   "extractorVersion": "4.9.5",
   "runId": "run-123",
-  "evidence": [
-    "evidence:123",
-    "evidence:456"
-  ],
+  "evidence": ["evidence:123", "evidence:456"],
   "metadata": {
     "importedFrom": "github.com/user/repo",
     "author": "John Doe",
@@ -69,6 +66,7 @@ Knowledge units represent the fundamental entities in the repository. Each unit 
 ```
 
 **Knowledge Unit Fields**:
+
 - `id`: Unique identifier for the knowledge unit (required)
 - `type`: Type of knowledge unit (file, module, package, service, symbol, api, data-entity, configuration, test, documentation, call-flow, data-flow, architecture-boundary, risk-area, change-impact) (required)
 - `name`: Name of the unit (required for most types)
@@ -104,9 +102,7 @@ Relationships represent connections between knowledge units. Each relationship h
   "extractor": "typescript-compiler",
   "extractorVersion": "4.9.5",
   "runId": "run-123",
-  "evidence": [
-    "evidence:789"
-  ],
+  "evidence": ["evidence:789"],
   "metadata": {
     "line": 42,
     "column": 15,
@@ -116,6 +112,7 @@ Relationships represent connections between knowledge units. Each relationship h
 ```
 
 **Relationship Fields**:
+
 - `id`: Unique identifier for the relationship (required)
 - `type`: Type of relationship (contains, defines, imports, depends-on, calls, reads, writes, exposes, implements, extends, tests, covers, configured-by, documented-by, flows-to, may-impact) (required)
 - `source`: ID of the source knowledge unit (required)
@@ -143,9 +140,7 @@ Observations represent facts about knowledge units or relationships that are not
   "extractor": "security-analyzer",
   "extractorVersion": "1.2.0",
   "runId": "run-123",
-  "evidence": [
-    "evidence:101"
-  ],
+  "evidence": ["evidence:101"],
   "metadata": {
     "issue": "DEP001",
     "recommendation": "Use new API",
@@ -155,6 +150,7 @@ Observations represent facts about knowledge units or relationships that are not
 ```
 
 **Observation Fields**:
+
 - `id`: Unique identifier for the observation (required)
 - `type`: Type of observation (security-risk, performance-issue, modernization-opportunity, code-smell, test-coverage, documentation-missing, etc.) (required)
 - `subject`: ID of the subject unit or relationship (required)
@@ -200,6 +196,7 @@ Source evidence represents the original source data that was used to generate kn
 ```
 
 **Evidence Fields**:
+
 - `id`: Unique identifier for the evidence (required)
 - `type`: Type of evidence (source-code, comment, documentation, test, configuration, etc.) (required)
 - `source`: Source path (required)
@@ -255,6 +252,7 @@ The manifest contains metadata about the extraction run and the OKF snapshot.
 ```
 
 **Manifest Fields**:
+
 - `version`: OKF format version (required)
 - `profileId`: ID of the OKF profile (required)
 - `profileVersion`: Version of the OKF profile (required)
@@ -367,6 +365,7 @@ The OKF snapshot promotion process ensures data integrity:
 6. **Previous Snapshot Archiving**: The previous snapshot is archived for reference
 
 This process ensures that:
+
 - The system always has a valid, consistent state
 - No partial or invalid snapshots can be promoted
 - All projections are generated from a consistent snapshot
@@ -386,6 +385,7 @@ The OKF v0.2 bundle is generated from the promoted OKF snapshot:
 8. **Digest Generation**: A digest of the bundle is generated
 
 The bundle is stored in `.keystone/intelligence/okf-bundle/` and contains:
+
 - index.md: Main index file with all knowledge units
 - log.md: Date-ordered log of changes
 - <knowledge-kind>/*.md: Individual knowledge unit files

@@ -4,5 +4,9 @@ export interface CancellationToken {
 }
 
 export function cancellationFromAbortSignal(signal: AbortSignal): CancellationToken {
-  return { get isCancellationRequested() { return signal.aborted; } };
+  return {
+    get isCancellationRequested() {
+      return signal.aborted;
+    }
+  };
 }

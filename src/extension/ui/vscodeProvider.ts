@@ -3,11 +3,22 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { CockpitService } from "@core/integration/webview/cockpitService";
 import { getWebviewHtml } from "./vscodeHtml";
-import type { CopilotDelegationResult, ExtensionToWebviewMessage, WebviewToExtensionMessage } from "../types/messageRouter";
-import { TaskStatePackageBuilder, verifyTaskStatePackage, type TaskStatePackageInput } from "@core/workflow/handoff/taskStatePackage";
+import type {
+  CopilotDelegationResult,
+  ExtensionToWebviewMessage,
+  WebviewToExtensionMessage
+} from "../types/messageRouter";
+import {
+  TaskStatePackageBuilder,
+  verifyTaskStatePackage,
+  type TaskStatePackageInput
+} from "@core/workflow/handoff/taskStatePackage";
 import type { TaskStatePackage } from "@core/workflow/handoff/contracts";
 import { MANUAL_SYNC_CONFIRMATION } from "@core/workflow/handoff/contracts";
-import { decryptHandoffPackage, encryptHandoffPackage } from "@core/workflow/handoff/handoffSecurity";
+import {
+  decryptHandoffPackage,
+  encryptHandoffPackage
+} from "@core/workflow/handoff/handoffSecurity";
 import { TaskStateRestorer, WorkspaceStateTaskStore } from "../task-handoff/taskStateRestorer";
 import type { QaService, QaServiceEvent } from "../core/qaService";
 import type { BackgroundWorkerEvent } from "../core/backgroundWorkerCoordinator";
@@ -18,8 +29,12 @@ import { ApplicationStore } from "@core/application/applicationStore";
 import { startBrowserViewServer, type BrowserViewHandle } from "../browser-view/browserViewServer";
 import { SDLCEngine, type SDLCPlan } from "@core/workflow/sdlc/engine";
 import { SDLCPlanStore } from "@core/workflow/sdlc/store";
-import { VscodeLanguageServiceEnricher } from '../intelligence/vscodeLanguageServiceEnricher';
-import { ValueEdgeClient, type ValueEdgeConnection, type ValueEdgeFeature } from '@core/integration/valueedge';
+import { VscodeLanguageServiceEnricher } from "../intelligence/vscodeLanguageServiceEnricher";
+import {
+  ValueEdgeClient,
+  type ValueEdgeConnection,
+  type ValueEdgeFeature
+} from "@core/integration/valueedge";
 
 /**
  * Implements VS Code's WebviewViewProvider interface for the Keystone VSCode UI.
@@ -58,11 +73,17 @@ export class VscodeProvider {
       "keystone.application",
       "Keystone",
       vscode.ViewColumn.One,
-      { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, "dist", "media")] }
+      {
+        enableScripts: true,
+        retainContextWhenHidden: true,
+        localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, "dist", "media")]
+      }
     );
     this.panel = panel;
     this.configureWebview(panel.webview);
-    panel.onDidDispose(() => { this.panel = undefined; });
+    panel.onDidDispose(() => {
+      this.panel = undefined;
+    });
     this.post({ type: "APPLICATION_STATE", state: this.applicationStore.snapshot() });
     await this.loadIntelligence();
     await this.loadRestoredTaskHandoff();
@@ -74,7 +95,9 @@ export class VscodeProvider {
       this.latestQaEvent = event;
       this.post({ type: "QA_BACKGROUND_STATUS", ...event });
       if (event.status === "complete" && event.result) {
-        this.logInfo(`Background QA ${event.result.scanMode} scan complete; ${event.result.metrics.sourcesAnalyzed} sources, ${event.result.metrics.gapsFound} gap(s).`);
+        this.logInfo(
+          `Background QA ${event.result.scanMode} scan complete; ${event.result.metrics.sourcesAnalyzed} sources, ${event.result.metrics.gapsFound} gap(s).`
+        );
       }
     });
   }
@@ -83,17 +106,36 @@ export class VscodeProvider {
     if (event.root !== this.workspaceRoot()) return;
     if (event.kind === "qa") {
       const result = event.result as GapAnalysisResult | undefined;
-      this.post({ type: "QA_BACKGROUND_STATUS", status: event.status, result, message: event.error });
+      this.post({
+        type: "QA_BACKGROUND_STATUS",
+        status: event.status,
+        result,
+        message: event.error
+      });
       return;
     }
     if (event.kind === "modernization" && event.status === "complete" && event.result) {
       const proposal = event.result as ModernizationProposal;
       const root = this.workspaceRoot();
-      if (root) void this.getService(root).restoreModernizationProposal(proposal)
-        .catch(error => this.post({ type: 'ERROR', operation: 'analysis', message: error instanceof Error ? error.message : String(error) }));
+      if (root)
+        void this.getService(root)
+          .restoreModernizationProposal(proposal)
+          .catch((error) =>
+            this.post({
+              type: "ERROR",
+              operation: "analysis",
+              message: error instanceof Error ? error.message : String(error)
+            })
+          );
       this.post({ type: "MODERNIZATION_PROPOSAL", proposal });
     }
-    this.post({ type: "BACKGROUND_ANALYSIS_STATUS", worker: event.kind, status: event.status, result: event.result, error: event.error });
+    this.post({
+      type: "BACKGROUND_ANALYSIS_STATUS",
+      worker: event.kind,
+      status: event.status,
+      result: event.result,
+      error: event.error
+    });
   }
 
   private configureWebview(webview: vscode.Webview): void {
@@ -102,14 +144,20 @@ export class VscodeProvider {
       localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, "dist", "media")]
     };
     webview.html = getWebviewHtml(webview, this.extensionUri);
-    webview.onDidReceiveMessage((message: WebviewToExtensionMessage) => this.handleMessage(message));
+    webview.onDidReceiveMessage((message: WebviewToExtensionMessage) =>
+      this.handleMessage(message)
+    );
   }
 
   // Rest of the implementation unchanged (copied from original provider)
   async indexWorkspace(rootOverride?: string): Promise<void> {
     const requestedRoot = rootOverride ?? this.workspaceRoot();
     if (!requestedRoot) {
-      this.post({ type: "ERROR", operation: "intelligence", message: "Open a workspace to index repository intelligence." });
+      this.post({
+        type: "ERROR",
+        operation: "intelligence",
+        message: "Open a workspace to index repository intelligence."
+      });
       return;
     }
     if (this.indexing) {
@@ -122,8 +170,23 @@ export class VscodeProvider {
     const root = requestedRoot;
     const isVisibleRoot = (): boolean => root === this.workspaceRoot();
     const startedAt = Date.now();
-    this.logInfo(`Starting full ${generation === 1 ? "automatic" : "incremental"} intelligence pipeline for ${root}.`);
-    if (isVisibleRoot()) this.post({ type: "STATE_UPDATE", state: { status: "indexing", ingestion: { active: true, progress: 1, stage: "starting", message: "Preparing repository ingestion.", persistedPath: ".keystone/intelligence/summary.json" } } });
+    this.logInfo(
+      `Starting full ${generation === 1 ? "automatic" : "incremental"} intelligence pipeline for ${root}.`
+    );
+    if (isVisibleRoot())
+      this.post({
+        type: "STATE_UPDATE",
+        state: {
+          status: "indexing",
+          ingestion: {
+            active: true,
+            progress: 1,
+            stage: "starting",
+            message: "Preparing repository ingestion.",
+            persistedPath: ".keystone/intelligence/summary.json"
+          }
+        }
+      });
     try {
       const state = await this.getService(root).index((message, progress, stage) => {
         if (generation === this.indexGeneration && isVisibleRoot()) {
@@ -133,14 +196,17 @@ export class VscodeProvider {
       });
       if (generation !== this.indexGeneration) return;
       const indexed = state.intelligence?.fileCount ?? 0;
-      if (isVisibleRoot()) this.statusBar.text = `Keystone: Indexed | Files: ${indexed} | Graph: Ready`;
+      if (isVisibleRoot())
+        this.statusBar.text = `Keystone: Indexed | Files: ${indexed} | Graph: Ready`;
       const stages = state.intelligence?.stages ?? [];
       for (const stage of stages) {
         const detail = `${String(stage.order).padStart(2, "0")}/${stages.length} ${stage.label}: ${stage.status}; ${stage.itemCount} signals; ${stage.durationMs}ms${stage.error ? `; error=${stage.error}` : ""}`;
         if (stage.status === "failed") this.logError(detail);
         else this.logInfo(detail);
       }
-      this.logInfo(`Intelligence ${state.status} in ${Date.now() - startedAt}ms; ${indexed} files; persisted to ${state.ingestion?.persistedPath ?? ".keystone/intelligence"}.`);
+      this.logInfo(
+        `Intelligence ${state.status} in ${Date.now() - startedAt}ms; ${indexed} files; persisted to ${state.ingestion?.persistedPath ?? ".keystone/intelligence"}.`
+      );
       if (isVisibleRoot()) this.post({ type: "STATE_UPDATE", state });
     } catch (error) {
       if (generation !== this.indexGeneration) return;
@@ -148,15 +214,32 @@ export class VscodeProvider {
       if (isVisibleRoot()) this.statusBar.text = "Keystone: Intelligence failed";
       this.logError(`Intelligence pipeline failed after ${Date.now() - startedAt}ms: ${message}`);
       if (isVisibleRoot()) {
-        this.post({ type: "STATE_UPDATE", state: { status: "error", ingestion: { active: false, progress: 0, stage: "failed", message, persistedPath: ".keystone/intelligence/summary.json" } } });
+        this.post({
+          type: "STATE_UPDATE",
+          state: {
+            status: "error",
+            ingestion: {
+              active: false,
+              progress: 0,
+              stage: "failed",
+              message,
+              persistedPath: ".keystone/intelligence/summary.json"
+            }
+          }
+        });
         this.post({ type: "ERROR", operation: "intelligence", message });
       }
     } finally {
       this.indexing = false;
       this.pendingIndexRoots.delete(root);
       const next = this.pendingIndexRoots.values().next().value as string | undefined;
-      if (next) { this.pendingIndexRoots.delete(next); void this.indexWorkspace(next); }
-      else if (this.refreshQueued) { this.refreshQueued = false; void this.indexWorkspace(root); }
+      if (next) {
+        this.pendingIndexRoots.delete(next);
+        void this.indexWorkspace(next);
+      } else if (this.refreshQueued) {
+        this.refreshQueued = false;
+        void this.indexWorkspace(root);
+      }
     }
   }
 
@@ -164,39 +247,78 @@ export class VscodeProvider {
     const generation = ++this.analysisGeneration;
     const root = this.workspaceRoot();
     if (!root) {
-      this.post({ type: "ERROR", operation: "analysis", message: "Open a workspace before analyzing an intent." });
+      this.post({
+        type: "ERROR",
+        operation: "analysis",
+        message: "Open a workspace before analyzing an intent."
+      });
       return;
     }
     if (!text.trim()) {
-      this.post({ type: "ERROR", operation: "analysis", message: "Enter a task intent before running analysis." });
+      this.post({
+        type: "ERROR",
+        operation: "analysis",
+        message: "Enter a task intent before running analysis."
+      });
       return;
     }
     this.post({ type: "STATE_UPDATE", state: { status: "analyzing" } });
     const operationId = `intent-analysis-${generation}`;
-    this.applicationStore.mergeOperation({ id: operationId, kind: 'analysis', status: 'running', progress: 5, message: 'Resolving intent against persisted OKF, graph, CPG, tests and repository evidence.', updatedAt: new Date().toISOString() });
-    this.post({ type: 'APPLICATION_STATE', state: this.applicationStore.snapshot() });
+    this.applicationStore.mergeOperation({
+      id: operationId,
+      kind: "analysis",
+      status: "running",
+      progress: 5,
+      message: "Resolving intent against persisted OKF, graph, CPG, tests and repository evidence.",
+      updatedAt: new Date().toISOString()
+    });
+    this.post({ type: "APPLICATION_STATE", state: this.applicationStore.snapshot() });
     this.logInfo(`Analyzing task intent against persisted repository intelligence: ${text.trim()}`);
     try {
       const active = vscode.window.activeTextEditor?.document.uri;
-      const currentFile = active?.scheme === 'file' ? vscode.workspace.asRelativePath(active, false).replace(/\\/g, '/') : undefined;
+      const currentFile =
+        active?.scheme === "file"
+          ? vscode.workspace.asRelativePath(active, false).replace(/\\/g, "/")
+          : undefined;
       const result = await this.getService(root).analyze(text.trim(), { currentFile });
       if (generation !== this.analysisGeneration) {
-        if (result.taskWorkspace) await this.getService(root).discardTaskWorkspace(result.taskWorkspace);
+        if (result.taskWorkspace)
+          await this.getService(root).discardTaskWorkspace(result.taskWorkspace);
         return;
       }
       this.statusBar.text = `Keystone: Indexed | Route: ${result?.route ?? ""} | Tokens Saved: ${result?.tokenReduction ?? 0}% | QA: ${result?.relatedTests?.length ?? 0}`;
-      this.logInfo(`Task analysis complete; route=${result.route}; relevantFiles=${result.relevantFiles.length}; relatedTests=${result.relatedTests.length}; tokenReduction=${result.tokenReduction}%.`);
-      this.applicationStore.update({ taskAnalysis: result, activeTask: result.taskWorkspace, status: 'ready' });
-      this.applicationStore.mergeOperation({ id: operationId, kind: 'analysis', status: 'completed', progress: 100, message: `Repository R&D ready with ${result.researchDocument.evidenceMatrix.length} curated evidence item(s).`, updatedAt: new Date().toISOString() });
+      this.logInfo(
+        `Task analysis complete; route=${result.route}; relevantFiles=${result.relevantFiles.length}; relatedTests=${result.relatedTests.length}; tokenReduction=${result.tokenReduction}%.`
+      );
+      this.applicationStore.update({
+        taskAnalysis: result,
+        activeTask: result.taskWorkspace,
+        status: "ready"
+      });
+      this.applicationStore.mergeOperation({
+        id: operationId,
+        kind: "analysis",
+        status: "completed",
+        progress: 100,
+        message: `Repository R&D ready with ${result.researchDocument.evidenceMatrix.length} curated evidence item(s).`,
+        updatedAt: new Date().toISOString()
+      });
       this.post({ type: "TASK_RESULT", result });
-      this.post({ type: 'APPLICATION_STATE', state: this.applicationStore.snapshot() });
+      this.post({ type: "APPLICATION_STATE", state: this.applicationStore.snapshot() });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logError(`Task analysis failed: ${message}`);
-      this.applicationStore.update({ status: 'error' });
-      this.applicationStore.mergeOperation({ id: operationId, kind: 'analysis', status: 'failed', progress: 100, message, updatedAt: new Date().toISOString() });
+      this.applicationStore.update({ status: "error" });
+      this.applicationStore.mergeOperation({
+        id: operationId,
+        kind: "analysis",
+        status: "failed",
+        progress: 100,
+        message,
+        updatedAt: new Date().toISOString()
+      });
       this.post({ type: "ERROR", operation: "analysis", message });
-      this.post({ type: 'APPLICATION_STATE', state: this.applicationStore.snapshot() });
+      this.post({ type: "APPLICATION_STATE", state: this.applicationStore.snapshot() });
     }
   }
 
@@ -220,38 +342,86 @@ export class VscodeProvider {
     }
     if (message.type === "CLEAR_CONTEXT_CACHE") {
       const root = this.workspaceRoot();
-      if (root) void this.getService(root).clearContextCache().then(removed => this.post({ type: "NOTIFICATION", level: "info", message: `Cleared ${removed} cached context pack(s).` }));
+      if (root)
+        void this.getService(root)
+          .clearContextCache()
+          .then((removed) =>
+            this.post({
+              type: "NOTIFICATION",
+              level: "info",
+              message: `Cleared ${removed} cached context pack(s).`
+            })
+          );
       return;
     }
     if (message.type === "ENHANCE_INTENT") {
       const root = this.workspaceRoot();
       const active = vscode.window.activeTextEditor?.document.uri;
-      const currentFile = active?.scheme === 'file' ? vscode.workspace.asRelativePath(active, false).replace(/\\/g, '/') : undefined;
-      if (root) void this.getService(root).enhanceUserIntent(message.text, message.mode, message.sessionId, currentFile)
-        .then(session => this.post({ type: "INTENT_ENHANCED", session }))
-        .catch(error => this.post({ type: "ERROR", operation: "analysis", message: error instanceof Error ? error.message : String(error) }));
+      const currentFile =
+        active?.scheme === "file"
+          ? vscode.workspace.asRelativePath(active, false).replace(/\\/g, "/")
+          : undefined;
+      if (root)
+        void this.getService(root)
+          .enhanceUserIntent(message.text, message.mode, message.sessionId, currentFile)
+          .then((session) => this.post({ type: "INTENT_ENHANCED", session }))
+          .catch((error) =>
+            this.post({
+              type: "ERROR",
+              operation: "analysis",
+              message: error instanceof Error ? error.message : String(error)
+            })
+          );
       return;
     }
     if (message.type === "LOAD_ENHANCEMENT_SESSIONS") {
       const root = this.workspaceRoot();
-      if (root) void this.getService(root).enhancementSessions().then(sessions => this.post({ type: "ENHANCEMENT_SESSIONS_RESULT", sessions }));
+      if (root)
+        void this.getService(root)
+          .enhancementSessions()
+          .then((sessions) => this.post({ type: "ENHANCEMENT_SESSIONS_RESULT", sessions }));
       return;
     }
     if (message.type === "DELETE_ENHANCEMENT_SESSION") {
       const root = this.workspaceRoot();
-      if (root) void this.getService(root).deleteEnhancementSession(message.sessionId).then(async () => this.post({ type: "ENHANCEMENT_SESSIONS_RESULT", sessions: await this.getService(root).enhancementSessions() }));
+      if (root)
+        void this.getService(root)
+          .deleteEnhancementSession(message.sessionId)
+          .then(async () =>
+            this.post({
+              type: "ENHANCEMENT_SESSIONS_RESULT",
+              sessions: await this.getService(root).enhancementSessions()
+            })
+          );
       return;
     }
     if (message.type === "RETRIEVE_CONTEXT_ORIGINAL") {
       const root = this.workspaceRoot();
-      if (root) void this.getService(root).retrieveContextOriginal(message.path, message.expectedHash)
-        .then(result => this.post({ type: "CONTEXT_ORIGINAL_RESULT", ...result }))
-        .catch(error => this.post({ type: "ERROR", operation: "analysis", message: error instanceof Error ? error.message : String(error) }));
+      if (root)
+        void this.getService(root)
+          .retrieveContextOriginal(message.path, message.expectedHash)
+          .then((result) => this.post({ type: "CONTEXT_ORIGINAL_RESULT", ...result }))
+          .catch((error) =>
+            this.post({
+              type: "ERROR",
+              operation: "analysis",
+              message: error instanceof Error ? error.message : String(error)
+            })
+          );
       return;
     }
     if (message.type === "RECORD_CONTEXT_FEEDBACK") {
       const root = this.workspaceRoot();
-      if (root) void this.getService(root).recordContextFeedback(message.intent, message.path, message.rating).then(() => this.post({ type: "NOTIFICATION", level: "info", message: "Context feedback recorded for future retrieval." }));
+      if (root)
+        void this.getService(root)
+          .recordContextFeedback(message.intent, message.path, message.rating)
+          .then(() =>
+            this.post({
+              type: "NOTIFICATION",
+              level: "info",
+              message: "Context feedback recorded for future retrieval."
+            })
+          );
       return;
     }
     if (message.type === "CANCEL_INGESTION") {
@@ -272,13 +442,33 @@ export class VscodeProvider {
     if (message.type === "APPROVE_INTENT_RESEARCH") {
       const root = this.workspaceRoot();
       const task = this.applicationStore.snapshot().taskAnalysis as KeystoneTaskResult | undefined;
-      if (!root || !task || task.intentId !== message.intentId) { this.post({ type: "NOTIFICATION", level: "error", message: "The active research artifact is no longer current. Research the intent again." }); return; }
-      void this.getService(root).approveIntentResearch(message.intentId).then(() => {
-        const approved = { ...task, researchStatus: 'approved' as const };
-        this.applicationStore.update({ taskAnalysis: approved });
-        this.post({ type: "TASK_RESULT", result: approved });
-        this.post({ type: "NOTIFICATION", level: "info", message: "Repository R&D approved. Specification and story planning are now unlocked." });
-      }).catch(error => this.post({ type: "NOTIFICATION", level: "error", message: error instanceof Error ? error.message : String(error) }));
+      if (!root || !task || task.intentId !== message.intentId) {
+        this.post({
+          type: "NOTIFICATION",
+          level: "error",
+          message: "The active research artifact is no longer current. Research the intent again."
+        });
+        return;
+      }
+      void this.getService(root)
+        .approveIntentResearch(message.intentId)
+        .then(() => {
+          const approved = { ...task, researchStatus: "approved" as const };
+          this.applicationStore.update({ taskAnalysis: approved });
+          this.post({ type: "TASK_RESULT", result: approved });
+          this.post({
+            type: "NOTIFICATION",
+            level: "info",
+            message: "Repository R&D approved. Specification and story planning are now unlocked."
+          });
+        })
+        .catch((error) =>
+          this.post({
+            type: "NOTIFICATION",
+            level: "error",
+            message: error instanceof Error ? error.message : String(error)
+          })
+        );
       return;
     }
     if (message.type === "RUN_VALIDATION") {
@@ -287,71 +477,249 @@ export class VscodeProvider {
     }
     if (message.type === "COMPLETE_TASK") {
       const root = this.workspaceRoot();
-      if (root) void this.getService(root).completeActiveTask()
-        .then(() => this.post({ type: "TASK_COMPLETION_RESULT", success: true }))
-        .catch(error => this.post({ type: "TASK_COMPLETION_RESULT", success: false, error: error instanceof Error ? error.message : String(error) }));
+      if (root)
+        void this.getService(root)
+          .completeActiveTask()
+          .then(() => this.post({ type: "TASK_COMPLETION_RESULT", success: true }))
+          .catch((error) =>
+            this.post({
+              type: "TASK_COMPLETION_RESULT",
+              success: false,
+              error: error instanceof Error ? error.message : String(error)
+            })
+          );
       return;
     }
     if (message.type === "ANALYZE_MODERNIZATION") {
       const root = this.workspaceRoot();
-      if (root) void this.getService(root).analyzeModernization()
-        .then(proposal => this.post({ type: "MODERNIZATION_PROPOSAL", proposal }))
-        .catch(error => this.post({ type: "ERROR", operation: "analysis", message: error instanceof Error ? error.message : String(error) }));
+      if (root)
+        void this.getService(root)
+          .analyzeModernization()
+          .then((proposal) => this.post({ type: "MODERNIZATION_PROPOSAL", proposal }))
+          .catch((error) =>
+            this.post({
+              type: "ERROR",
+              operation: "analysis",
+              message: error instanceof Error ? error.message : String(error)
+            })
+          );
       return;
     }
     if (message.type === "ACCEPT_MODERNIZATION") {
       const root = this.workspaceRoot();
-      if (root) void this.getService(root).acceptModernization(message.proposalId, message.decision)
-        .then(plan => this.post({ type: "MODERNIZATION_PLAN", plan }))
-        .catch(error => this.post({ type: "ERROR", operation: "analysis", message: error instanceof Error ? error.message : String(error) }));
+      if (root)
+        void this.getService(root)
+          .acceptModernization(message.proposalId, message.decision)
+          .then((plan) => this.post({ type: "MODERNIZATION_PLAN", plan }))
+          .catch((error) =>
+            this.post({
+              type: "ERROR",
+              operation: "analysis",
+              message: error instanceof Error ? error.message : String(error)
+            })
+          );
       return;
     }
     if (message.type === "APPROVE_DELEGATION") {
       const root = this.workspaceRoot();
-      if (root) void this.approveAndDelegate(root, message)
-        .then(result => this.post({ type: "DELEGATION_RESULT", ...result }))
-        .catch(error => { const now = new Date().toISOString(); this.post({ type: "DELEGATION_RESULT", success: false, captured: false, mode: message.mode, storyId: message.storyId, startedAt: now, completedAt: now, error: error instanceof Error ? error.message : String(error) }); });
+      if (root)
+        void this.approveAndDelegate(root, message)
+          .then((result) => this.post({ type: "DELEGATION_RESULT", ...result }))
+          .catch((error) => {
+            const now = new Date().toISOString();
+            this.post({
+              type: "DELEGATION_RESULT",
+              success: false,
+              captured: false,
+              mode: message.mode,
+              storyId: message.storyId,
+              startedAt: now,
+              completedAt: now,
+              error: error instanceof Error ? error.message : String(error)
+            });
+          });
       return;
     }
     if (message.type === "COPY_COPILOT_PROMPT") {
-      void vscode.env.clipboard.writeText(message.prompt).then(() => this.post({ type: "NOTIFICATION", level: "info", message: "Copilot prompt copied." }));
+      void vscode.env.clipboard
+        .writeText(message.prompt)
+        .then(() =>
+          this.post({ type: "NOTIFICATION", level: "info", message: "Copilot prompt copied." })
+        );
       return;
     }
     if (message.type === "COPY_PR_MARKDOWN") {
-      void vscode.env.clipboard.writeText(message.markdown).then(() => this.post({ type: "NOTIFICATION", level: "info", message: "PR summary copied." }));
+      void vscode.env.clipboard
+        .writeText(message.markdown)
+        .then(() =>
+          this.post({ type: "NOTIFICATION", level: "info", message: "PR summary copied." })
+        );
       return;
     }
     if (message.type === "SAVE_SETTINGS") {
       const root = this.workspaceRoot();
-      if (root) void this.getService(root).saveSettings(message.settings).then(() => this.post({ type: "NOTIFICATION", level: "info", message: "Workspace settings saved." }));
+      if (root)
+        void this.getService(root)
+          .saveSettings(message.settings)
+          .then(() =>
+            this.post({ type: "NOTIFICATION", level: "info", message: "Workspace settings saved." })
+          );
       return;
     }
-    if (message.type === "OPEN_BROWSER_VIEW") { void this.openBrowserView(); return; }
-    if (message.type === "CONFIGURE_VALUEEDGE") { void this.configureValueEdge(); return; }
-    if (message.type === "IMPORT_VALUEEDGE_FEATURE") { void this.importValueEdgeFeature(message.featureId); return; }
-    if (message.type === "PUBLISH_VALUEEDGE_STORIES") { void this.publishValueEdgeStories(); return; }
-    if (message.type === "QUERY_INTELLIGENCE") { const root=this.workspaceRoot(); if(root) void this.getService(root).queryIntelligence(message.query).then(result=>this.post({type:"INTELLIGENCE_QUERY_RESULT",result})).catch(error=>this.post({type:"NOTIFICATION",level:"error",message:error instanceof Error?error.message:String(error)})); return; }
-    if (message.type === "EXPLORE_INTELLIGENCE") { const root=this.workspaceRoot(); if(root) void this.getService(root).exploreIntelligence(message.query ?? '', message.kind ?? 'all').then(result=>this.post({type:"INTELLIGENCE_EXPLORER_RESULT",result})).catch(error=>this.post({type:"NOTIFICATION",level:"error",message:error instanceof Error?error.message:String(error)})); return; }
-    if (message.type === "LOAD_INTELLIGENCE_GRAPH") { const root=this.workspaceRoot(); if(root) void this.getService(root).graphIntelligence(message.mode, message.query ?? '', message.seedIds ?? []).then(result=>this.post({type:"INTELLIGENCE_GRAPH_RESULT",result})).catch(error=>this.post({type:"NOTIFICATION",level:"error",message:error instanceof Error?error.message:String(error)})); return; }
-    if (message.type === "LOAD_CPG_VIEW") { const root=this.workspaceRoot(); if(root) void this.getService(root).cpgIntelligence(message.sourcePath, message.edgeKind ?? 'all', message.focusNodeId).then(result=>this.post({type:"CPG_VIEW_RESULT",result})).catch(error=>this.post({type:"NOTIFICATION",level:"error",message:error instanceof Error?error.message:String(error)})); return; }
-    if (message.type === "OPEN_SOURCE_LOCATION") { void this.openSourceLocation(message.path, message.line); return; }
+    if (message.type === "OPEN_BROWSER_VIEW") {
+      void this.openBrowserView();
+      return;
+    }
+    if (message.type === "CONFIGURE_VALUEEDGE") {
+      void this.configureValueEdge();
+      return;
+    }
+    if (message.type === "IMPORT_VALUEEDGE_FEATURE") {
+      void this.importValueEdgeFeature(message.featureId);
+      return;
+    }
+    if (message.type === "PUBLISH_VALUEEDGE_STORIES") {
+      void this.publishValueEdgeStories();
+      return;
+    }
+    if (message.type === "QUERY_INTELLIGENCE") {
+      const root = this.workspaceRoot();
+      if (root)
+        void this.getService(root)
+          .queryIntelligence(message.query)
+          .then((result) => this.post({ type: "INTELLIGENCE_QUERY_RESULT", result }))
+          .catch((error) =>
+            this.post({
+              type: "NOTIFICATION",
+              level: "error",
+              message: error instanceof Error ? error.message : String(error)
+            })
+          );
+      return;
+    }
+    if (message.type === "EXPLORE_INTELLIGENCE") {
+      const root = this.workspaceRoot();
+      if (root)
+        void this.getService(root)
+          .exploreIntelligence(message.query ?? "", message.kind ?? "all")
+          .then((result) => this.post({ type: "INTELLIGENCE_EXPLORER_RESULT", result }))
+          .catch((error) =>
+            this.post({
+              type: "NOTIFICATION",
+              level: "error",
+              message: error instanceof Error ? error.message : String(error)
+            })
+          );
+      return;
+    }
+    if (message.type === "LOAD_INTELLIGENCE_GRAPH") {
+      const root = this.workspaceRoot();
+      if (root)
+        void this.getService(root)
+          .graphIntelligence(message.mode, message.query ?? "", message.seedIds ?? [])
+          .then((result) => this.post({ type: "INTELLIGENCE_GRAPH_RESULT", result }))
+          .catch((error) =>
+            this.post({
+              type: "NOTIFICATION",
+              level: "error",
+              message: error instanceof Error ? error.message : String(error)
+            })
+          );
+      return;
+    }
+    if (message.type === "LOAD_CPG_VIEW") {
+      const root = this.workspaceRoot();
+      if (root)
+        void this.getService(root)
+          .cpgIntelligence(message.sourcePath, message.edgeKind ?? "all", message.focusNodeId)
+          .then((result) => this.post({ type: "CPG_VIEW_RESULT", result }))
+          .catch((error) =>
+            this.post({
+              type: "NOTIFICATION",
+              level: "error",
+              message: error instanceof Error ? error.message : String(error)
+            })
+          );
+      return;
+    }
+    if (message.type === "OPEN_SOURCE_LOCATION") {
+      void this.openSourceLocation(message.path, message.line);
+      return;
+    }
     if (message.type === "RESOLVE_SDLC_FINDING") {
-      if (!this.sdlcPlan) { this.post({ type: "NOTIFICATION", level: "error", message: "Create an SDLC plan first." }); return; }
-      try { this.sdlcPlan = this.sdlcEngine.resolveFinding(this.sdlcPlan, message.storyId, message.findingId, message.status); void this.persistSdlcPlan(this.sdlcPlan); this.applicationStore.update({ sdlc: this.sdlcPlan }); this.post({ type: "SDLC_PLAN_RESULT", plan: this.sdlcPlan }); }
-      catch (error) { this.post({ type: "NOTIFICATION", level: "error", message: error instanceof Error ? error.message : String(error) }); }
+      if (!this.sdlcPlan) {
+        this.post({ type: "NOTIFICATION", level: "error", message: "Create an SDLC plan first." });
+        return;
+      }
+      try {
+        this.sdlcPlan = this.sdlcEngine.resolveFinding(
+          this.sdlcPlan,
+          message.storyId,
+          message.findingId,
+          message.status
+        );
+        void this.persistSdlcPlan(this.sdlcPlan);
+        this.applicationStore.update({ sdlc: this.sdlcPlan });
+        this.post({ type: "SDLC_PLAN_RESULT", plan: this.sdlcPlan });
+      } catch (error) {
+        this.post({
+          type: "NOTIFICATION",
+          level: "error",
+          message: error instanceof Error ? error.message : String(error)
+        });
+      }
       return;
     }
-    if (message.type === "CREATE_SDLC_PLAN") { void this.createSdlcPlan(message.intent); return; }
+    if (message.type === "CREATE_SDLC_PLAN") {
+      void this.createSdlcPlan(message.intent);
+      return;
+    }
     if (message.type === "SDLC_TRANSITION") {
-      if (!this.sdlcPlan) { this.post({ type: "NOTIFICATION", level: "error", message: "Create an SDLC plan first." }); return; }
-      try { this.sdlcPlan = this.sdlcEngine.transition(this.sdlcPlan, message.storyId, message.status, { evidence: message.evidence, satisfiedCriteria: message.satisfiedCriteria, blockers: message.blockers }); void this.persistSdlcPlan(this.sdlcPlan); this.applicationStore.update({ sdlc: this.sdlcPlan }); this.post({ type: "SDLC_PLAN_RESULT", plan: this.sdlcPlan }); }
-      catch (error) { this.post({ type: "NOTIFICATION", level: "error", message: error instanceof Error ? error.message : String(error) }); }
+      if (!this.sdlcPlan) {
+        this.post({ type: "NOTIFICATION", level: "error", message: "Create an SDLC plan first." });
+        return;
+      }
+      try {
+        this.sdlcPlan = this.sdlcEngine.transition(this.sdlcPlan, message.storyId, message.status, {
+          evidence: message.evidence,
+          satisfiedCriteria: message.satisfiedCriteria,
+          blockers: message.blockers
+        });
+        void this.persistSdlcPlan(this.sdlcPlan);
+        this.applicationStore.update({ sdlc: this.sdlcPlan });
+        this.post({ type: "SDLC_PLAN_RESULT", plan: this.sdlcPlan });
+      } catch (error) {
+        this.post({
+          type: "NOTIFICATION",
+          level: "error",
+          message: error instanceof Error ? error.message : String(error)
+        });
+      }
       return;
     }
     if (message.type === "APPROVE_SPECIFICATION") {
-      if (!this.sdlcPlan) { this.post({ type: "NOTIFICATION", level: "error", message: "Create an SDLC plan first." }); return; }
-      try { this.sdlcPlan = this.sdlcEngine.approveSpecification(this.sdlcPlan); this.sdlcPlan = { ...this.sdlcPlan, backlogStories: this.sdlcPlan.backlogStories.map(story => story.status === 'draft' ? { ...story, status: 'approved' as const } : story) }; void this.persistSdlcPlan(this.sdlcPlan); this.applicationStore.update({ sdlc: this.sdlcPlan }); this.post({ type: "SDLC_PLAN_RESULT", plan: this.sdlcPlan }); }
-      catch (error) { this.post({ type: "NOTIFICATION", level: "error", message: error instanceof Error ? error.message : String(error) }); }
+      if (!this.sdlcPlan) {
+        this.post({ type: "NOTIFICATION", level: "error", message: "Create an SDLC plan first." });
+        return;
+      }
+      try {
+        this.sdlcPlan = this.sdlcEngine.approveSpecification(this.sdlcPlan);
+        this.sdlcPlan = {
+          ...this.sdlcPlan,
+          backlogStories: this.sdlcPlan.backlogStories.map((story) =>
+            story.status === "draft" ? { ...story, status: "approved" as const } : story
+          )
+        };
+        void this.persistSdlcPlan(this.sdlcPlan);
+        this.applicationStore.update({ sdlc: this.sdlcPlan });
+        this.post({ type: "SDLC_PLAN_RESULT", plan: this.sdlcPlan });
+      } catch (error) {
+        this.post({
+          type: "NOTIFICATION",
+          level: "error",
+          message: error instanceof Error ? error.message : String(error)
+        });
+      }
       return;
     }
     if (message.type === "CREATE_TASK_HANDOFF") {
@@ -359,23 +727,57 @@ export class VscodeProvider {
       return;
     }
     if (message.type === "RESTORE_TASK_HANDOFF") {
-      void this.restoreTaskHandoffPackage(message.packageText, message.passphrase, message.manualSyncConfirmed);
+      void this.restoreTaskHandoffPackage(
+        message.packageText,
+        message.passphrase,
+        message.manualSyncConfirmed
+      );
       return;
     }
     if (message.type === "RECORD_DECISION") {
       const root = this.workspaceRoot();
-      if (root) void this.getService(root).recordDecision(message.category, message.action, message.subject)
-        .then(() => message.category === 'task' ? this.post({ type: 'TASK_DECISION_RESULT', success: true, action: message.action }) : this.post({ type: "NOTIFICATION", level: "info", message: "Risk decision recorded." }))
-        .catch((error: unknown) => message.category === 'task' ? this.post({ type: 'TASK_DECISION_RESULT', success: false, action: message.action, error: error instanceof Error ? error.message : String(error) }) : this.post({ type: "NOTIFICATION", level: "error", message: error instanceof Error ? error.message : String(error) }));
+      if (root)
+        void this.getService(root)
+          .recordDecision(message.category, message.action, message.subject)
+          .then(() =>
+            message.category === "task"
+              ? this.post({ type: "TASK_DECISION_RESULT", success: true, action: message.action })
+              : this.post({
+                  type: "NOTIFICATION",
+                  level: "info",
+                  message: "Risk decision recorded."
+                })
+          )
+          .catch((error: unknown) =>
+            message.category === "task"
+              ? this.post({
+                  type: "TASK_DECISION_RESULT",
+                  success: false,
+                  action: message.action,
+                  error: error instanceof Error ? error.message : String(error)
+                })
+              : this.post({
+                  type: "NOTIFICATION",
+                  level: "error",
+                  message: error instanceof Error ? error.message : String(error)
+                })
+          );
     }
   }
 
-  private async createSdlcPlan(intent:string):Promise<void>{
+  private async createSdlcPlan(intent: string): Promise<void> {
     try {
       const task = this.applicationStore.snapshot().taskAnalysis as KeystoneTaskResult | undefined;
-      if (!task?.researchDocument?.markdown) throw new Error('Research the intent first. Keystone requires a reviewable R&D artifact before SDLC planning.');
-      if (task.researchStatus !== 'approved') throw new Error('Review and approve the repository R&D before creating the implementation specification and stories.');
-      const state = this.applicationStore.snapshot().intelligence as { architecture?: string } | undefined;
+      if (!task?.researchDocument?.markdown)
+        throw new Error(
+          "Research the intent first. Keystone requires a reviewable R&D artifact before SDLC planning."
+        );
+      if (task.researchStatus !== "approved")
+        throw new Error(
+          "Review and approve the repository R&D before creating the implementation specification and stories."
+        );
+      const state = this.applicationStore.snapshot().intelligence as
+        { architecture?: string } | undefined;
       let plan = this.sdlcEngine.createPlan(intent, {
         intentId: task.intentId,
         researchDocument: task.researchDocument,
@@ -390,72 +792,234 @@ export class VscodeProvider {
         modernizationNotes: task?.modernizationNotes,
         relevantApis: task?.relatedApis,
         relevantServices: task?.impactedServices,
-        affectedFlows: task?.contextSections?.flatMap(section => section.evidence?.filter(item => item.kind.includes('flow')).map(item => `${item.kind}: ${item.label}`) ?? []),
-        evidence: task?.evidence?.map((item, index) => ({ id: item.okfId ?? `task-evidence-${index + 1}`, kind: (['file','symbol','api','service','data','test','risk','flow','architecture'].includes(item.kind) ? item.kind : 'architecture') as import('@core/workflow/sdlc/engine').SDLCResearchEvidence['kind'], label: item.label, summary: item.label, path: item.path, okfId: item.okfId, confidence: item.confidence })),
+        affectedFlows: task?.contextSections?.flatMap(
+          (section) =>
+            section.evidence
+              ?.filter((item) => item.kind.includes("flow"))
+              .map((item) => `${item.kind}: ${item.label}`) ?? []
+        ),
+        evidence: task?.evidence?.map((item, index) => ({
+          id: item.okfId ?? `task-evidence-${index + 1}`,
+          kind: ([
+            "file",
+            "symbol",
+            "api",
+            "service",
+            "data",
+            "test",
+            "risk",
+            "flow",
+            "architecture"
+          ].includes(item.kind)
+            ? item.kind
+            : "architecture") as import("@core/workflow/sdlc/engine").SDLCResearchEvidence["kind"],
+          label: item.label,
+          summary: item.label,
+          path: item.path,
+          okfId: item.okfId,
+          confidence: item.confidence
+        })),
         functionalRequirements: task?.acceptanceCriteria,
-        nonFunctionalRequirements: [...(task?.securityConstraints ?? []), ...(task?.performanceConstraints ?? [])],
-        constraints: [...(task?.architectureConstraints ?? []), 'Keystone Git access remains strictly read-only.'],
+        nonFunctionalRequirements: [
+          ...(task?.securityConstraints ?? []),
+          ...(task?.performanceConstraints ?? [])
+        ],
+        constraints: [
+          ...(task?.architectureConstraints ?? []),
+          "Keystone Git access remains strictly read-only."
+        ],
         architecture: state?.architecture,
-        source: this.valueEdgeFeature ? { kind: 'valueedge', featureId: this.valueEdgeFeature.id, featureName: this.valueEdgeFeature.name, featureUrl: this.valueEdgeFeature.webUrl } : { kind: 'local' },
+        source: this.valueEdgeFeature
+          ? {
+              kind: "valueedge",
+              featureId: this.valueEdgeFeature.id,
+              featureName: this.valueEdgeFeature.name,
+              featureUrl: this.valueEdgeFeature.webUrl
+            }
+          : { kind: "local" }
       });
       if (task) plan = this.attachTaskEvidenceToPlan(plan, task);
-      this.sdlcPlan=plan; await this.persistSdlcPlan(plan);
-      const root=this.workspaceRoot(); if(root) await this.getService(root).attachActiveSdlcPlan(plan);
-      this.applicationStore.update({sdlc:plan}); this.post({type:'SDLC_PLAN_RESULT',plan});
-    } catch(error){this.post({type:'NOTIFICATION',level:'error',message:error instanceof Error?error.message:String(error)});}
+      this.sdlcPlan = plan;
+      await this.persistSdlcPlan(plan);
+      const root = this.workspaceRoot();
+      if (root) await this.getService(root).attachActiveSdlcPlan(plan);
+      this.applicationStore.update({ sdlc: plan });
+      this.post({ type: "SDLC_PLAN_RESULT", plan });
+    } catch (error) {
+      this.post({
+        type: "NOTIFICATION",
+        level: "error",
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
   }
 
   private attachTaskEvidenceToPlan(plan: SDLCPlan, task: KeystoneTaskResult): SDLCPlan {
     const analysis = task.analysisEvidence;
     if (!analysis) return plan;
-    const story = (type: SDLCPlan['stories'][number]['type']) => plan.stories.find(item => item.type === type);
-    const addEvidence = (type: SDLCPlan['stories'][number]['type'], evidence: string[]): void => {
-      const current = story(type); if (!current || !evidence.length) return;
+    const story = (type: SDLCPlan["stories"][number]["type"]) =>
+      plan.stories.find((item) => item.type === type);
+    const addEvidence = (type: SDLCPlan["stories"][number]["type"], evidence: string[]): void => {
+      const current = story(type);
+      if (!current || !evidence.length) return;
       plan = this.sdlcEngine.recordEvidence(plan, current.id, evidence);
     };
-    const severity = (value:string): 'info'|'low'|'medium'|'high'|'critical' => value === 'critical' ? 'critical' : value === 'high' ? 'high' : value === 'medium' ? 'medium' : value === 'low' ? 'low' : 'info';
+    const severity = (value: string): "info" | "low" | "medium" | "high" | "critical" =>
+      value === "critical"
+        ? "critical"
+        : value === "high"
+          ? "high"
+          : value === "medium"
+            ? "medium"
+            : value === "low"
+              ? "low"
+              : "info";
 
-    const qaEvidence = analysis.qa.gaps.map(item => `${item.type}: ${item.path} — ${item.reason} (severity ${Math.round(item.severity * 100)}%)`);
-    for (const type of ['existing-test-analysis','test-impact-analysis','new-test-creation'] as const) addEvidence(type, qaEvidence);
-    addEvidence('new-test-creation', (task.testGeneration?.scenarios ?? []).map(item => `${item.priority}: ${item.name} — ${item.description}`));
-    const qaStory = story('existing-test-analysis');
-    if (qaStory) for (const item of analysis.qa.gaps) plan = this.sdlcEngine.recordFinding(plan, qaStory.id, { kind:'qa', severity:item.severity >= .8 ? 'high' : item.severity >= .5 ? 'medium' : 'low', summary:`${item.type}: ${item.path} — ${item.reason}`, status:'open', evidence:[item.path, item.reason] });
+    const qaEvidence = analysis.qa.gaps.map(
+      (item) =>
+        `${item.type}: ${item.path} — ${item.reason} (severity ${Math.round(item.severity * 100)}%)`
+    );
+    for (const type of [
+      "existing-test-analysis",
+      "test-impact-analysis",
+      "new-test-creation"
+    ] as const)
+      addEvidence(type, qaEvidence);
+    addEvidence(
+      "new-test-creation",
+      (task.testGeneration?.scenarios ?? []).map(
+        (item) => `${item.priority}: ${item.name} — ${item.description}`
+      )
+    );
+    const qaStory = story("existing-test-analysis");
+    if (qaStory)
+      for (const item of analysis.qa.gaps)
+        plan = this.sdlcEngine.recordFinding(plan, qaStory.id, {
+          kind: "qa",
+          severity: item.severity >= 0.8 ? "high" : item.severity >= 0.5 ? "medium" : "low",
+          summary: `${item.type}: ${item.path} — ${item.reason}`,
+          status: "open",
+          evidence: [item.path, item.reason]
+        });
 
-    const securityStory = story('security-review');
-    if (securityStory) for (const item of analysis.security.findings) plan = this.sdlcEngine.recordFinding(plan, securityStory.id, { kind:'security', severity:severity(item.severity), summary:`${item.title} at ${item.path}:${item.line}`, status:'open', evidence:[item.explanation, item.remediation, `confidence=${Math.round(item.confidence*100)}%`] });
-    addEvidence('security-review', [...analysis.security.findings.map(item => `${item.path}:${item.line} ${item.title} — ${item.explanation}`), ...analysis.security.intelligenceSignals.map(item => `OKF ${item.kind}: ${item.summary}`)]);
+    const securityStory = story("security-review");
+    if (securityStory)
+      for (const item of analysis.security.findings)
+        plan = this.sdlcEngine.recordFinding(plan, securityStory.id, {
+          kind: "security",
+          severity: severity(item.severity),
+          summary: `${item.title} at ${item.path}:${item.line}`,
+          status: "open",
+          evidence: [
+            item.explanation,
+            item.remediation,
+            `confidence=${Math.round(item.confidence * 100)}%`
+          ]
+        });
+    addEvidence("security-review", [
+      ...analysis.security.findings.map(
+        (item) => `${item.path}:${item.line} ${item.title} — ${item.explanation}`
+      ),
+      ...analysis.security.intelligenceSignals.map((item) => `OKF ${item.kind}: ${item.summary}`)
+    ]);
 
-    const performanceStory = story('performance-review');
-    if (performanceStory) for (const item of analysis.performance.findings) plan = this.sdlcEngine.recordFinding(plan, performanceStory.id, { kind:'performance', severity:severity(item.severity), summary:`${item.title} at ${item.path}:${item.line}`, status:'open', evidence:[item.explanation, item.remediation, `confidence=${Math.round(item.confidence*100)}%`] });
-    addEvidence('performance-review', [...analysis.performance.findings.map(item => `${item.path}:${item.line} ${item.title} — ${item.explanation}`), ...analysis.performance.intelligenceSignals.map(item => `OKF ${item.kind}: ${item.summary}`)]);
+    const performanceStory = story("performance-review");
+    if (performanceStory)
+      for (const item of analysis.performance.findings)
+        plan = this.sdlcEngine.recordFinding(plan, performanceStory.id, {
+          kind: "performance",
+          severity: severity(item.severity),
+          summary: `${item.title} at ${item.path}:${item.line}`,
+          status: "open",
+          evidence: [
+            item.explanation,
+            item.remediation,
+            `confidence=${Math.round(item.confidence * 100)}%`
+          ]
+        });
+    addEvidence("performance-review", [
+      ...analysis.performance.findings.map(
+        (item) => `${item.path}:${item.line} ${item.title} — ${item.explanation}`
+      ),
+      ...analysis.performance.intelligenceSignals.map((item) => `OKF ${item.kind}: ${item.summary}`)
+    ]);
 
-    const modernizationStory = story('modernization-review');
-    if (modernizationStory) for (const item of analysis.modernization.gaps) plan = this.sdlcEngine.recordFinding(plan, modernizationStory.id, { kind:'architecture', severity:severity(item.priority), summary:`${item.area}: ${item.title}`, status:'open', evidence:item.evidence });
-    addEvidence('modernization-review', analysis.modernization.gaps.map(item => `${item.priority}: ${item.area} — ${item.title}`));
+    const modernizationStory = story("modernization-review");
+    if (modernizationStory)
+      for (const item of analysis.modernization.gaps)
+        plan = this.sdlcEngine.recordFinding(plan, modernizationStory.id, {
+          kind: "architecture",
+          severity: severity(item.priority),
+          summary: `${item.area}: ${item.title}`,
+          status: "open",
+          evidence: item.evidence
+        });
+    addEvidence(
+      "modernization-review",
+      analysis.modernization.gaps.map((item) => `${item.priority}: ${item.area} — ${item.title}`)
+    );
 
-    const diffEvidence = [`Read-only Git review: branch=${analysis.gitReview.branch ?? 'unknown'}; changedFiles=${analysis.gitReview.changedFiles.join(', ') || 'none'}; diffSha256=${analysis.gitReview.diffHash}; diffBytes=${analysis.gitReview.diffBytes}; artifact=${analysis.gitReview.diffArtifactPath ?? 'none'}`];
-    addEvidence('code-review', diffEvidence);
-    addEvidence('pr-review', diffEvidence);
+    const diffEvidence = [
+      `Read-only Git review: branch=${analysis.gitReview.branch ?? "unknown"}; changedFiles=${analysis.gitReview.changedFiles.join(", ") || "none"}; diffSha256=${analysis.gitReview.diffHash}; diffBytes=${analysis.gitReview.diffBytes}; artifact=${analysis.gitReview.diffArtifactPath ?? "none"}`
+    ];
+    addEvidence("code-review", diffEvidence);
+    addEvidence("pr-review", diffEvidence);
     return plan;
   }
 
   async configureValueEdge(): Promise<void> {
     try {
-      const config = vscode.workspace.getConfiguration('keystone.valueEdge');
-      const baseUrl = await vscode.window.showInputBox({ title: 'ValueEdge base URL', value: config.get('baseUrl', ''), ignoreFocusOut: true }); if (baseUrl === undefined) return;
-      const sharedSpaceId = await vscode.window.showInputBox({ title: 'ValueEdge shared space ID', value: config.get('sharedSpaceId', ''), ignoreFocusOut: true }); if (sharedSpaceId === undefined) return;
-      const workspaceId = await vscode.window.showInputBox({ title: 'ValueEdge workspace ID', value: config.get('workspaceId', ''), ignoreFocusOut: true }); if (workspaceId === undefined) return;
-      const clientId = await vscode.window.showInputBox({ title: 'ValueEdge client ID', value: config.get('clientId', ''), ignoreFocusOut: true }); if (clientId === undefined) return;
-      const clientSecret = await vscode.window.showInputBox({ title: 'ValueEdge client secret', password: true, ignoreFocusOut: true }); if (clientSecret === undefined) return;
+      const config = vscode.workspace.getConfiguration("keystone.valueEdge");
+      const baseUrl = await vscode.window.showInputBox({
+        title: "ValueEdge base URL",
+        value: config.get("baseUrl", ""),
+        ignoreFocusOut: true
+      });
+      if (baseUrl === undefined) return;
+      const sharedSpaceId = await vscode.window.showInputBox({
+        title: "ValueEdge shared space ID",
+        value: config.get("sharedSpaceId", ""),
+        ignoreFocusOut: true
+      });
+      if (sharedSpaceId === undefined) return;
+      const workspaceId = await vscode.window.showInputBox({
+        title: "ValueEdge workspace ID",
+        value: config.get("workspaceId", ""),
+        ignoreFocusOut: true
+      });
+      if (workspaceId === undefined) return;
+      const clientId = await vscode.window.showInputBox({
+        title: "ValueEdge client ID",
+        value: config.get("clientId", ""),
+        ignoreFocusOut: true
+      });
+      if (clientId === undefined) return;
+      const clientSecret = await vscode.window.showInputBox({
+        title: "ValueEdge client secret",
+        password: true,
+        ignoreFocusOut: true
+      });
+      if (clientSecret === undefined) return;
       await Promise.all([
-        config.update('baseUrl', baseUrl.trim(), vscode.ConfigurationTarget.Workspace),
-        config.update('sharedSpaceId', sharedSpaceId.trim(), vscode.ConfigurationTarget.Workspace),
-        config.update('workspaceId', workspaceId.trim(), vscode.ConfigurationTarget.Workspace),
-        config.update('clientId', clientId.trim(), vscode.ConfigurationTarget.Workspace),
-        this.extensionContext.secrets.store('keystone.valueEdge.clientSecret', clientSecret),
+        config.update("baseUrl", baseUrl.trim(), vscode.ConfigurationTarget.Workspace),
+        config.update("sharedSpaceId", sharedSpaceId.trim(), vscode.ConfigurationTarget.Workspace),
+        config.update("workspaceId", workspaceId.trim(), vscode.ConfigurationTarget.Workspace),
+        config.update("clientId", clientId.trim(), vscode.ConfigurationTarget.Workspace),
+        this.extensionContext.secrets.store("keystone.valueEdge.clientSecret", clientSecret)
       ]);
-      this.post({ type: 'NOTIFICATION', level: 'info', message: 'ValueEdge connection configured. The client secret is stored only in VS Code SecretStorage.' });
-    } catch (error) { this.post({ type: 'NOTIFICATION', level: 'error', message: error instanceof Error ? error.message : String(error) }); }
+      this.post({
+        type: "NOTIFICATION",
+        level: "info",
+        message:
+          "ValueEdge connection configured. The client secret is stored only in VS Code SecretStorage."
+      });
+    } catch (error) {
+      this.post({
+        type: "NOTIFICATION",
+        level: "error",
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
   }
 
   async importValueEdgeFeature(featureId: string): Promise<void> {
@@ -464,125 +1028,280 @@ export class VscodeProvider {
       const feature = await client.fetchFeature(featureId.trim());
       this.valueEdgeFeature = feature;
       this.applicationStore.update({ valueEdgeFeature: feature });
-      this.post({ type: 'VALUEEDGE_FEATURE_RESULT', feature });
-      await this.analyzeIntent([feature.name, feature.description].filter(Boolean).join('\n\n'));
-    } catch (error) { this.post({ type: 'NOTIFICATION', level: 'error', message: error instanceof Error ? error.message : String(error) }); }
+      this.post({ type: "VALUEEDGE_FEATURE_RESULT", feature });
+      await this.analyzeIntent([feature.name, feature.description].filter(Boolean).join("\n\n"));
+    } catch (error) {
+      this.post({
+        type: "NOTIFICATION",
+        level: "error",
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
   }
 
   async publishValueEdgeStories(): Promise<void> {
     try {
-      if (!this.sdlcPlan || this.sdlcPlan.source.kind !== 'valueedge' || !this.sdlcPlan.source.featureId) throw new Error('Create and approve an SDLC plan imported from a ValueEdge feature first.');
-      if (this.sdlcPlan.specificationStatus !== 'approved') throw new Error('Approve the specification before publishing ValueEdge stories.');
-      const approved = this.sdlcPlan.backlogStories.filter(story => story.status === 'approved');
-      if (!approved.length) throw new Error('There are no approved stories to publish.');
-      const confirmation = await vscode.window.showWarningMessage(`Publish ${approved.length} draft user/quality stories under ValueEdge feature ${this.sdlcPlan.source.featureId}?`, { modal: true }, 'Publish Draft Stories');
-      if (confirmation !== 'Publish Draft Stories') return;
-      const published = await (await this.valueEdgeClient()).publishBacklogStories(this.sdlcPlan.source.featureId, approved);
-      const byId = new Map(published.map(item => [item.localId, item.externalId]));
-      this.sdlcPlan = { ...this.sdlcPlan, backlogStories: this.sdlcPlan.backlogStories.map(story => byId.has(story.id) ? { ...story, status: 'published' as const, externalId: byId.get(story.id) } : story), updatedAt: new Date().toISOString() };
-      await this.persistSdlcPlan(this.sdlcPlan); this.applicationStore.update({ sdlc: this.sdlcPlan });
-      this.post({ type: 'VALUEEDGE_PUBLISH_RESULT', published }); this.post({ type: 'SDLC_PLAN_RESULT', plan: this.sdlcPlan });
-    } catch (error) { this.post({ type: 'NOTIFICATION', level: 'error', message: error instanceof Error ? error.message : String(error) }); }
+      if (
+        !this.sdlcPlan ||
+        this.sdlcPlan.source.kind !== "valueedge" ||
+        !this.sdlcPlan.source.featureId
+      )
+        throw new Error("Create and approve an SDLC plan imported from a ValueEdge feature first.");
+      if (this.sdlcPlan.specificationStatus !== "approved")
+        throw new Error("Approve the specification before publishing ValueEdge stories.");
+      const approved = this.sdlcPlan.backlogStories.filter((story) => story.status === "approved");
+      if (!approved.length) throw new Error("There are no approved stories to publish.");
+      const confirmation = await vscode.window.showWarningMessage(
+        `Publish ${approved.length} draft user/quality stories under ValueEdge feature ${this.sdlcPlan.source.featureId}?`,
+        { modal: true },
+        "Publish Draft Stories"
+      );
+      if (confirmation !== "Publish Draft Stories") return;
+      const published = await (
+        await this.valueEdgeClient()
+      ).publishBacklogStories(this.sdlcPlan.source.featureId, approved);
+      const byId = new Map(published.map((item) => [item.localId, item.externalId]));
+      this.sdlcPlan = {
+        ...this.sdlcPlan,
+        backlogStories: this.sdlcPlan.backlogStories.map((story) =>
+          byId.has(story.id)
+            ? { ...story, status: "published" as const, externalId: byId.get(story.id) }
+            : story
+        ),
+        updatedAt: new Date().toISOString()
+      };
+      await this.persistSdlcPlan(this.sdlcPlan);
+      this.applicationStore.update({ sdlc: this.sdlcPlan });
+      this.post({ type: "VALUEEDGE_PUBLISH_RESULT", published });
+      this.post({ type: "SDLC_PLAN_RESULT", plan: this.sdlcPlan });
+    } catch (error) {
+      this.post({
+        type: "NOTIFICATION",
+        level: "error",
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
   }
 
   private async valueEdgeClient(): Promise<ValueEdgeClient> {
-    const config = vscode.workspace.getConfiguration('keystone.valueEdge');
-    const connection: ValueEdgeConnection = { baseUrl: config.get('baseUrl', ''), sharedSpaceId: config.get('sharedSpaceId', ''), workspaceId: config.get('workspaceId', ''), clientId: config.get('clientId', '') };
-    const secret = await this.extensionContext.secrets.get('keystone.valueEdge.clientSecret');
-    return new ValueEdgeClient(connection, secret ?? '');
+    const config = vscode.workspace.getConfiguration("keystone.valueEdge");
+    const connection: ValueEdgeConnection = {
+      baseUrl: config.get("baseUrl", ""),
+      sharedSpaceId: config.get("sharedSpaceId", ""),
+      workspaceId: config.get("workspaceId", ""),
+      clientId: config.get("clientId", "")
+    };
+    const secret = await this.extensionContext.secrets.get("keystone.valueEdge.clientSecret");
+    return new ValueEdgeClient(connection, secret ?? "");
   }
 
-  private async persistSdlcPlan(plan:SDLCPlan):Promise<void>{const root=this.workspaceRoot();if(!root)throw new Error('Open a workspace before persisting an SDLC plan.');await new SDLCPlanStore(root).write(plan);}
+  private async persistSdlcPlan(plan: SDLCPlan): Promise<void> {
+    const root = this.workspaceRoot();
+    if (!root) throw new Error("Open a workspace before persisting an SDLC plan.");
+    await new SDLCPlanStore(root).write(plan);
+  }
 
   private async createTaskHandoffPackage(passphrase: string): Promise<void> {
     try {
-      if(passphrase.length<12) throw new Error("Task Handoff passphrase must be at least 12 characters.");
-      const root=this.workspaceRoot(); if(!root) throw new Error("Open a workspace before creating Task Handoff.");
-      const task=this.applicationStore.snapshot().taskAnalysis as KeystoneTaskResult|undefined; if(!task) throw new Error("Analyze an intent before creating Task Handoff.");
-      const input=authoritativeHandoffInput(task,root,this.sdlcPlan);
+      if (passphrase.length < 12)
+        throw new Error("Task Handoff passphrase must be at least 12 characters.");
+      const root = this.workspaceRoot();
+      if (!root) throw new Error("Open a workspace before creating Task Handoff.");
+      const task = this.applicationStore.snapshot().taskAnalysis as KeystoneTaskResult | undefined;
+      if (!task) throw new Error("Analyze an intent before creating Task Handoff.");
+      const input = authoritativeHandoffInput(task, root, this.sdlcPlan);
       const packageValue = new TaskStatePackageBuilder().build(input);
       const encrypted = await encryptHandoffPackage(JSON.stringify(packageValue), passphrase);
       await this.getService(root).exportActiveTaskForHandoff(root);
       await vscode.env.clipboard.writeText(encrypted);
-      await this.saveHandoffRecord({ packageValue, status: 'Shared', warnings: [], activity: [{ at: packageValue.createdAt, actor: 'you', action: 'Created encrypted handoff package' }, { at: packageValue.updatedAt, actor: 'Keystone', action: `Secret scan completed; ${packageValue.redactionReport.findings.length} finding(s) redacted` }] });
-      this.post({ type: "TASK_HANDOFF_CREATED", redactionCategories: packageValue.redactionReport.removedCategories, checksum: packageValue.checksum, encryptedPackage: encrypted });
+      await this.saveHandoffRecord({
+        packageValue,
+        status: "Shared",
+        warnings: [],
+        activity: [
+          { at: packageValue.createdAt, actor: "you", action: "Created encrypted handoff package" },
+          {
+            at: packageValue.updatedAt,
+            actor: "Keystone",
+            action: `Secret scan completed; ${packageValue.redactionReport.findings.length} finding(s) redacted`
+          }
+        ]
+      });
+      this.post({
+        type: "TASK_HANDOFF_CREATED",
+        redactionCategories: packageValue.redactionReport.removedCategories,
+        checksum: packageValue.checksum,
+        encryptedPackage: encrypted
+      });
     } catch (error) {
-      this.post({ type: "NOTIFICATION", level: "error", message: error instanceof Error ? error.message : "Could not create the task handoff package." });
+      this.post({
+        type: "NOTIFICATION",
+        level: "error",
+        message:
+          error instanceof Error ? error.message : "Could not create the task handoff package."
+      });
     }
   }
 
-  private async restoreTaskHandoffPackage(packageText: string, passphrase: string, manuallySynchronized: boolean): Promise<void> {
+  private async restoreTaskHandoffPackage(
+    packageText: string,
+    passphrase: string,
+    manuallySynchronized: boolean
+  ): Promise<void> {
     try {
       if (!manuallySynchronized) throw new Error("Manual Repository Sync Required.");
       const plaintext = await decryptHandoffPackage(packageText, passphrase);
       const packageValue = JSON.parse(plaintext) as TaskStatePackage;
       const restorer = new TaskStateRestorer(new WorkspaceStateTaskStore(this.extensionContext));
       const folder = vscode.workspace.workspaceFolders?.[0];
-      const preview = restorer.preview(packageValue, folder ? { name: folder.name, path: folder.uri.fsPath } : undefined);
+      const preview = restorer.preview(
+        packageValue,
+        folder ? { name: folder.name, path: folder.uri.fsPath } : undefined
+      );
       await restorer.restore(preview, MANUAL_SYNC_CONFIRMATION);
       const restored = preview.packageValue;
       const root = this.workspaceRoot();
       if (root) {
-        await this.getService(root).importTaskHandoff(restored as unknown as Record<string, unknown>);
-        if (restored.sdlcPlan) { this.sdlcPlan = restored.sdlcPlan; await this.persistSdlcPlan(restored.sdlcPlan); this.applicationStore.update({ sdlc: restored.sdlcPlan }); }
+        await this.getService(root).importTaskHandoff(
+          restored as unknown as Record<string, unknown>
+        );
+        if (restored.sdlcPlan) {
+          this.sdlcPlan = restored.sdlcPlan;
+          await this.persistSdlcPlan(restored.sdlcPlan);
+          this.applicationStore.update({ sdlc: restored.sdlcPlan });
+        }
         // A handoff transfers task continuity, never repository truth. Refresh local deterministic
         // intelligence against the recipient's manually synchronized workspace before continuing.
         void this.indexWorkspace(root);
       }
-      await this.saveHandoffRecord({ packageValue: restored, status: 'Restored', warnings: preview.warnings, activity: [{ at: new Date().toISOString(), actor: 'you', action: 'Restored task state and SDLC continuation after manual repository confirmation' }] });
-      this.post({ type: "TASK_HANDOFF_RESTORED", packageValue: restored, warnings: preview.warnings, continuationBriefing: preview.continuationBriefing, restoredNow: true });
+      await this.saveHandoffRecord({
+        packageValue: restored,
+        status: "Restored",
+        warnings: preview.warnings,
+        activity: [
+          {
+            at: new Date().toISOString(),
+            actor: "you",
+            action: "Restored task state and SDLC continuation after manual repository confirmation"
+          }
+        ]
+      });
+      this.post({
+        type: "TASK_HANDOFF_RESTORED",
+        packageValue: restored,
+        warnings: preview.warnings,
+        continuationBriefing: preview.continuationBriefing,
+        restoredNow: true
+      });
       if (restored.sdlcPlan) this.post({ type: "SDLC_PLAN_RESULT", plan: restored.sdlcPlan });
     } catch (error) {
-      this.post({ type: "NOTIFICATION", level: "error", message: error instanceof Error ? error.message : "The handoff package could not be restored." });
+      this.post({
+        type: "NOTIFICATION",
+        level: "error",
+        message:
+          error instanceof Error ? error.message : "The handoff package could not be restored."
+      });
     }
   }
 
-  private async approveAndDelegate(root: string, message: Extract<WebviewToExtensionMessage, { type: 'APPROVE_DELEGATION' }>): Promise<CopilotDelegationResult> {
+  private async approveAndDelegate(
+    root: string,
+    message: Extract<WebviewToExtensionMessage, { type: "APPROVE_DELEGATION" }>
+  ): Promise<CopilotDelegationResult> {
     let storyId = message.storyId;
     if (this.sdlcPlan) {
-      const story = storyId ? this.sdlcPlan.stories.find(item => item.id === storyId) : this.sdlcPlan.stories.find(item => item.status === 'in-progress');
+      const story = storyId
+        ? this.sdlcPlan.stories.find((item) => item.id === storyId)
+        : this.sdlcPlan.stories.find((item) => item.status === "in-progress");
       if (story) {
         storyId = story.id;
-        this.sdlcPlan = this.sdlcEngine.prepareDelegation(this.sdlcPlan, story.id, { agent: message.agent ?? 'GitHub Copilot', skills: message.skills, instructions: message.instructions, prompt: message.prompt, contextPackId: message.contextPackId });
+        this.sdlcPlan = this.sdlcEngine.prepareDelegation(this.sdlcPlan, story.id, {
+          agent: message.agent ?? "GitHub Copilot",
+          skills: message.skills,
+          instructions: message.instructions,
+          prompt: message.prompt,
+          contextPackId: message.contextPackId
+        });
         this.sdlcPlan = this.sdlcEngine.approveDelegation(this.sdlcPlan, story.id);
         await this.persistSdlcPlan(this.sdlcPlan);
         this.applicationStore.update({ sdlc: this.sdlcPlan });
-        this.post({ type: 'SDLC_PLAN_RESULT', plan: this.sdlcPlan });
+        this.post({ type: "SDLC_PLAN_RESULT", plan: this.sdlcPlan });
       }
     }
-    const result = await this.delegateApprovedPrompt(root, message.mode, message.prompt, { storyId, agent: message.agent, skills: message.skills, instructions: message.instructions });
+    const result = await this.delegateApprovedPrompt(root, message.mode, message.prompt, {
+      storyId,
+      agent: message.agent,
+      skills: message.skills,
+      instructions: message.instructions
+    });
     if (result.captured && result.success && this.sdlcPlan && storyId) {
-      const story = this.sdlcPlan.stories.find(item => item.id === storyId);
-      if (story?.status === 'delegated') {
+      const story = this.sdlcPlan.stories.find((item) => item.id === storyId);
+      if (story?.status === "delegated") {
         this.sdlcPlan = this.sdlcEngine.completeDelegation(this.sdlcPlan, storyId, [
-          `Copilot response captured by Keystone (${result.model?.name ?? result.model?.id ?? 'GitHub Copilot'}).`,
-          result.artifactPath ? `Captured result artifact: ${result.artifactPath}` : 'Captured result stored locally.',
+          `Copilot response captured by Keystone (${result.model?.name ?? result.model?.id ?? "GitHub Copilot"}).`,
+          result.artifactPath
+            ? `Captured result artifact: ${result.artifactPath}`
+            : "Captured result stored locally."
         ]);
         await this.persistSdlcPlan(this.sdlcPlan);
         this.applicationStore.update({ sdlc: this.sdlcPlan });
-        this.post({ type: 'SDLC_PLAN_RESULT', plan: this.sdlcPlan });
+        this.post({ type: "SDLC_PLAN_RESULT", plan: this.sdlcPlan });
       }
     }
     this.applicationStore.update({ delegationResult: result });
     return result;
   }
 
-  private async delegateApprovedPrompt(root: string, mode: string, prompt: string, options: { storyId?: string; agent?: string; skills?: readonly string[]; instructions?: readonly string[] } = {}): Promise<CopilotDelegationResult> {
+  private async delegateApprovedPrompt(
+    root: string,
+    mode: string,
+    prompt: string,
+    options: {
+      storyId?: string;
+      agent?: string;
+      skills?: readonly string[];
+      instructions?: readonly string[];
+    } = {}
+  ): Promise<CopilotDelegationResult> {
     const startedAt = new Date().toISOString();
     await this.getService(root).approveDelegation(mode, prompt);
     if (mode === "Manual Copy Prompt") {
       await vscode.env.clipboard.writeText(prompt);
-      const result: CopilotDelegationResult = { success: true, captured: false, mode, storyId: options.storyId, startedAt, completedAt: new Date().toISOString() };
+      const result: CopilotDelegationResult = {
+        success: true,
+        captured: false,
+        mode,
+        storyId: options.storyId,
+        startedAt,
+        completedAt: new Date().toISOString()
+      };
       result.artifactPath = await this.getService(root).recordDelegationResult(result);
-      this.post({ type: "NOTIFICATION", level: "info", message: "Delegation approved, recorded, and copied. The response remains external until evidence is attached." });
+      this.post({
+        type: "NOTIFICATION",
+        level: "info",
+        message:
+          "Delegation approved, recorded, and copied. The response remains external until evidence is attached."
+      });
       return result;
     }
     if (mode === "Copilot Inline Edit") {
       await vscode.env.clipboard.writeText(prompt);
       await vscode.commands.executeCommand("inlineChat.start");
-      const result: CopilotDelegationResult = { success: true, captured: false, mode, storyId: options.storyId, startedAt, completedAt: new Date().toISOString() };
+      const result: CopilotDelegationResult = {
+        success: true,
+        captured: false,
+        mode,
+        storyId: options.storyId,
+        startedAt,
+        completedAt: new Date().toISOString()
+      };
       result.artifactPath = await this.getService(root).recordDelegationResult(result);
-      this.post({ type: "NOTIFICATION", level: "info", message: "Inline Chat opened; the approved prompt is on the clipboard. Keystone will not claim a returned result until evidence is captured." });
+      this.post({
+        type: "NOTIFICATION",
+        level: "info",
+        message:
+          "Inline Chat opened; the approved prompt is on the clipboard. Keystone will not claim a returned result until evidence is captured."
+      });
       return result;
     }
 
@@ -591,44 +1310,83 @@ export class VscodeProvider {
     // unavailable or the user has not granted model access, fall back to Copilot Chat UI
     // without pretending that Keystone captured a result.
     try {
-      const models = await vscode.lm.selectChatModels({ vendor: 'copilot' });
+      const models = await vscode.lm.selectChatModels({ vendor: "copilot" });
       const model = models[0];
       if (model) {
-        const selectedAgent = options.agent?.trim() || 'GitHub Copilot';
+        const selectedAgent = options.agent?.trim() || "GitHub Copilot";
         const skills = (options.skills ?? []).filter(Boolean);
         const instructions = (options.instructions ?? []).filter(Boolean);
         const delegation = [
-          'You are executing a user-approved Keystone SDLC delegation inside VS Code.',
+          "You are executing a user-approved Keystone SDLC delegation inside VS Code.",
           `Selected agent/role: ${selectedAgent}`,
-          skills.length ? `Selected skills: ${skills.join(', ')}` : '',
-          instructions.length ? `Instructions:\n${instructions.map(item => `- ${item}`).join('\n')}` : '',
-          'Use the supplied context as evidence. Do not perform Git write or remote merge-request operations.',
-          '',
-          'Approved Keystone context packet:',
-          prompt,
-        ].filter(Boolean).join('\n');
+          skills.length ? `Selected skills: ${skills.join(", ")}` : "",
+          instructions.length
+            ? `Instructions:\n${instructions.map((item) => `- ${item}`).join("\n")}`
+            : "",
+          "Use the supplied context as evidence. Do not perform Git write or remote merge-request operations.",
+          "",
+          "Approved Keystone context packet:",
+          prompt
+        ]
+          .filter(Boolean)
+          .join("\n");
         const cancellation = new vscode.CancellationTokenSource();
         try {
-          const response = await model.sendRequest([vscode.LanguageModelChatMessage.User(delegation)], {}, cancellation.token);
-          let text = '';
+          const response = await model.sendRequest(
+            [vscode.LanguageModelChatMessage.User(delegation)],
+            {},
+            cancellation.token
+          );
+          let text = "";
           for await (const fragment of response.text) text += fragment;
           const result: CopilotDelegationResult = {
-            success: true, captured: true, mode, storyId: options.storyId, startedAt, completedAt: new Date().toISOString(), text,
-            model: { id: model.id, vendor: model.vendor, family: model.family, version: model.version, name: model.name },
+            success: true,
+            captured: true,
+            mode,
+            storyId: options.storyId,
+            startedAt,
+            completedAt: new Date().toISOString(),
+            text,
+            model: {
+              id: model.id,
+              vendor: model.vendor,
+              family: model.family,
+              version: model.version,
+              name: model.name
+            }
           };
           result.artifactPath = await this.getService(root).recordDelegationResult(result);
-          this.post({ type: "NOTIFICATION", level: "info", message: `Copilot response captured in Keystone${result.artifactPath ? ` (${result.artifactPath})` : ''}. Review the changes before validation.` });
+          this.post({
+            type: "NOTIFICATION",
+            level: "info",
+            message: `Copilot response captured in Keystone${result.artifactPath ? ` (${result.artifactPath})` : ""}. Review the changes before validation.`
+          });
           return result;
-        } finally { cancellation.dispose(); }
+        } finally {
+          cancellation.dispose();
+        }
       }
     } catch (error) {
-      this.logWarn(`Copilot Language Model API was unavailable; falling back to Copilot Chat UI: ${error instanceof Error ? error.message : String(error)}`);
+      this.logWarn(
+        `Copilot Language Model API was unavailable; falling back to Copilot Chat UI: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
 
     await vscode.commands.executeCommand("workbench.action.chat.open", { query: prompt });
-    const result: CopilotDelegationResult = { success: true, captured: false, mode, storyId: options.storyId, startedAt, completedAt: new Date().toISOString() };
+    const result: CopilotDelegationResult = {
+      success: true,
+      captured: false,
+      mode,
+      storyId: options.storyId,
+      startedAt,
+      completedAt: new Date().toISOString()
+    };
     result.artifactPath = await this.getService(root).recordDelegationResult(result);
-    this.post({ type: "NOTIFICATION", level: "info", message: `${mode} opened with the approved Keystone context. The result remains external; Keystone will not mark delegation complete until evidence is captured.` });
+    this.post({
+      type: "NOTIFICATION",
+      level: "info",
+      message: `${mode} opened with the approved Keystone context. The result remains external; Keystone will not mark delegation complete until evidence is captured.`
+    });
     return result;
   }
 
@@ -637,25 +1395,57 @@ export class VscodeProvider {
     if (!root) return;
     try {
       this.post({ type: "NOTIFICATION", level: "info", message: `Running ${scope} validation...` });
-      let activeStory = storyId ? this.sdlcPlan?.stories.find(story => story.id === storyId && ['delegated', 'in-progress', 'awaiting-validation', 'review-required'].includes(story.status)) : this.sdlcPlan?.stories.find(story => ['delegated', 'in-progress', 'awaiting-validation', 'review-required'].includes(story.status));
-      if (this.sdlcPlan && activeStory?.status === 'delegated') {
-        this.post({ type: "NOTIFICATION", level: "info", message: "Validating the workspace after an external Copilot delegation. Delegation itself remains uncompleted until a captured result/evidence is recorded." });
-      } else if (this.sdlcPlan && activeStory?.status === 'in-progress') {
-        this.sdlcPlan = this.sdlcEngine.transition(this.sdlcPlan, activeStory.id, 'awaiting-validation');
-        activeStory = this.sdlcPlan.stories.find(story => story.id === activeStory!.id);
+      let activeStory = storyId
+        ? this.sdlcPlan?.stories.find(
+            (story) =>
+              story.id === storyId &&
+              ["delegated", "in-progress", "awaiting-validation", "review-required"].includes(
+                story.status
+              )
+          )
+        : this.sdlcPlan?.stories.find((story) =>
+            ["delegated", "in-progress", "awaiting-validation", "review-required"].includes(
+              story.status
+            )
+          );
+      if (this.sdlcPlan && activeStory?.status === "delegated") {
+        this.post({
+          type: "NOTIFICATION",
+          level: "info",
+          message:
+            "Validating the workspace after an external Copilot delegation. Delegation itself remains uncompleted until a captured result/evidence is recorded."
+        });
+      } else if (this.sdlcPlan && activeStory?.status === "in-progress") {
+        this.sdlcPlan = this.sdlcEngine.transition(
+          this.sdlcPlan,
+          activeStory.id,
+          "awaiting-validation"
+        );
+        activeStory = this.sdlcPlan.stories.find((story) => story.id === activeStory!.id);
       }
       const results = await this.getService(root).runValidation(scope);
       if (this.sdlcPlan && activeStory) {
-        const passed = results.length > 0 && results.every(result => result.status === 'passed');
-        const evidence = results.flatMap(result => [`${result.command}: ${result.status}`, ...result.summary.errors.map(error => `${result.command}: ${error}`)]);
-        this.sdlcPlan = this.sdlcEngine.recordValidation(this.sdlcPlan, activeStory.id, { status: passed ? 'passed' : 'failed', commands: results.map(result => result.command), evidence });
+        const passed = results.length > 0 && results.every((result) => result.status === "passed");
+        const evidence = results.flatMap((result) => [
+          `${result.command}: ${result.status}`,
+          ...result.summary.errors.map((error) => `${result.command}: ${error}`)
+        ]);
+        this.sdlcPlan = this.sdlcEngine.recordValidation(this.sdlcPlan, activeStory.id, {
+          status: passed ? "passed" : "failed",
+          commands: results.map((result) => result.command),
+          evidence
+        });
         await this.persistSdlcPlan(this.sdlcPlan);
         this.applicationStore.update({ sdlc: this.sdlcPlan });
-        this.post({ type: 'SDLC_PLAN_RESULT', plan: this.sdlcPlan });
+        this.post({ type: "SDLC_PLAN_RESULT", plan: this.sdlcPlan });
       }
       this.post({ type: "VALIDATION_RESULT", results });
     } catch (error) {
-      this.post({ type: "NOTIFICATION", level: "error", message: error instanceof Error ? error.message : String(error) });
+      this.post({
+        type: "NOTIFICATION",
+        level: "error",
+        message: error instanceof Error ? error.message : String(error)
+      });
     }
   }
 
@@ -673,74 +1463,156 @@ export class VscodeProvider {
   }
 
   private async loadRestoredTaskHandoff(): Promise<void> {
-    const sessions = (await this.readHandoffRecords()).filter(record => {
-      try { verifyTaskStatePackage(record.packageValue); return record.status === 'Shared' || record.status === 'Restored'; }
-      catch { return false; }
+    const sessions = (await this.readHandoffRecords()).filter((record) => {
+      try {
+        verifyTaskStatePackage(record.packageValue);
+        return record.status === "Shared" || record.status === "Restored";
+      } catch {
+        return false;
+      }
     });
-    this.post({ type: 'TASK_HANDOFFS_RESULT', sessions });
+    this.post({ type: "TASK_HANDOFFS_RESULT", sessions });
     const taskId = this.extensionContext.workspaceState.get<string>("task-handoff.active-task-id");
     if (!taskId) return;
-    const packageValue = this.extensionContext.workspaceState.get<TaskStatePackage>(`task-handoff.task.${taskId}`);
+    const packageValue = this.extensionContext.workspaceState.get<TaskStatePackage>(
+      `task-handoff.task.${taskId}`
+    );
     if (!packageValue) return;
     try {
       const folder = vscode.workspace.workspaceFolders?.[0];
-      const preview = new TaskStateRestorer(new WorkspaceStateTaskStore(this.extensionContext)).preview(packageValue, folder ? { name: folder.name, path: folder.uri.fsPath } : undefined);
-      this.post({ type: "TASK_HANDOFF_RESTORED", packageValue, warnings: preview.warnings, continuationBriefing: preview.continuationBriefing, restoredNow: false });
+      const preview = new TaskStateRestorer(
+        new WorkspaceStateTaskStore(this.extensionContext)
+      ).preview(packageValue, folder ? { name: folder.name, path: folder.uri.fsPath } : undefined);
+      this.post({
+        type: "TASK_HANDOFF_RESTORED",
+        packageValue,
+        warnings: preview.warnings,
+        continuationBriefing: preview.continuationBriefing,
+        restoredNow: false
+      });
     } catch (error) {
-      this.post({ type: "NOTIFICATION", level: "error", message: error instanceof Error ? `Stored handoff could not be loaded: ${error.message}` : "Stored handoff could not be loaded." });
+      this.post({
+        type: "NOTIFICATION",
+        level: "error",
+        message:
+          error instanceof Error
+            ? `Stored handoff could not be loaded: ${error.message}`
+            : "Stored handoff could not be loaded."
+      });
     }
   }
 
   private async saveHandoffRecord(record: PersistedHandoffRecord): Promise<void> {
     verifyTaskStatePackage(record.packageValue);
     const records = await this.readHandoffRecords();
-    const previous = records.find(item => item.packageValue.handoffId === record.packageValue.handoffId);
-    const merged = previous ? { ...record, activity: [...previous.activity, ...record.activity] } : record;
-    const complete = [merged, ...records.filter(item => item.packageValue.handoffId !== record.packageValue.handoffId)];
-    const root = this.workspaceRoot(); if (!root) throw new Error('Open a workspace before persisting Task Handoff history.');
-    const target = path.join(root, '.keystone', 'state', 'handoffs', 'records.json');
+    const previous = records.find(
+      (item) => item.packageValue.handoffId === record.packageValue.handoffId
+    );
+    const merged = previous
+      ? { ...record, activity: [...previous.activity, ...record.activity] }
+      : record;
+    const complete = [
+      merged,
+      ...records.filter((item) => item.packageValue.handoffId !== record.packageValue.handoffId)
+    ];
+    const root = this.workspaceRoot();
+    if (!root) throw new Error("Open a workspace before persisting Task Handoff history.");
+    const target = path.join(root, ".keystone", "state", "handoffs", "records.json");
     const temporary = `${target}.${process.pid}.${Date.now()}.tmp`;
     await fs.mkdir(path.dirname(target), { recursive: true });
-    await fs.writeFile(temporary, `${JSON.stringify(complete, null, 2)}\n`, 'utf8');
+    await fs.writeFile(temporary, `${JSON.stringify(complete, null, 2)}\n`, "utf8");
     await fs.rename(temporary, target);
   }
 
   private async readHandoffRecords(): Promise<PersistedHandoffRecord[]> {
-    const root = this.workspaceRoot(); if (!root) return [];
-    try { const parsed = JSON.parse(await fs.readFile(path.join(root, '.keystone', 'state', 'handoffs', 'records.json'), 'utf8')) as unknown; return Array.isArray(parsed) ? parsed as PersistedHandoffRecord[] : []; }
-    catch { return []; }
+    const root = this.workspaceRoot();
+    if (!root) return [];
+    try {
+      const parsed = JSON.parse(
+        await fs.readFile(path.join(root, ".keystone", "state", "handoffs", "records.json"), "utf8")
+      ) as unknown;
+      return Array.isArray(parsed) ? (parsed as PersistedHandoffRecord[]) : [];
+    } catch {
+      return [];
+    }
   }
 
   private async openSourceLocation(relativePath: string, line?: number): Promise<void> {
     const root = this.workspaceRoot();
-    if (!root) { this.post({ type: 'NOTIFICATION', level: 'error', message: 'Open a workspace first.' }); return; }
+    if (!root) {
+      this.post({ type: "NOTIFICATION", level: "error", message: "Open a workspace first." });
+      return;
+    }
     const workspace = path.resolve(root);
     const target = path.resolve(workspace, relativePath);
-    if (target !== workspace && !target.startsWith(`${workspace}${path.sep}`)) { this.post({ type: 'NOTIFICATION', level: 'error', message: 'Evidence path is outside the active workspace.' }); return; }
+    if (target !== workspace && !target.startsWith(`${workspace}${path.sep}`)) {
+      this.post({
+        type: "NOTIFICATION",
+        level: "error",
+        message: "Evidence path is outside the active workspace."
+      });
+      return;
+    }
     try {
       const uri = vscode.Uri.file(target);
       const zeroBased = Math.max(0, (line ?? 1) - 1);
       const document = await vscode.workspace.openTextDocument(uri);
-      await vscode.window.showTextDocument(document, { preview: true, selection: new vscode.Range(zeroBased, 0, zeroBased, 0) });
-    } catch (error) { this.post({ type: 'NOTIFICATION', level: 'error', message: `Could not open ${relativePath}: ${error instanceof Error ? error.message : String(error)}` }); }
+      await vscode.window.showTextDocument(document, {
+        preview: true,
+        selection: new vscode.Range(zeroBased, 0, zeroBased, 0)
+      });
+    } catch (error) {
+      this.post({
+        type: "NOTIFICATION",
+        level: "error",
+        message: `Could not open ${relativePath}: ${error instanceof Error ? error.message : String(error)}`
+      });
+    }
   }
 
   private getService(root: string): CockpitService {
     const existing = this.services.get(root);
     if (existing) return existing;
-    const service = new CockpitService(root, { semanticEnricher: new VscodeLanguageServiceEnricher() });
+    const service = new CockpitService(root, {
+      semanticEnricher: new VscodeLanguageServiceEnricher()
+    });
     this.services.set(root, service);
     return service;
   }
 
   private post(message: ExtensionToWebviewMessage): void {
     if (message.type === "STATE_UPDATE") this.applicationStore.update(message.state);
-    if (message.type === "INDEX_PROGRESS") this.applicationStore.mergeOperation({ id: 'repository-index', kind: 'intelligence', status: message.progress === 100 ? 'completed' : 'running', progress: message.progress ?? 0, message: message.message, updatedAt: new Date().toISOString() });
-    if (message.type === "TASK_RESULT") this.applicationStore.update({ taskAnalysis: message.result, activeTask: message.result.taskWorkspace });
-    if (message.type === "DELEGATION_RESULT") this.applicationStore.update({ delegationResult: message });
-    if (message.type === "VALIDATION_RESULT") this.applicationStore.mergeOperation({ id: 'validation', kind: 'validation', status: 'completed', progress: 100, message: `${message.results.length} validation command(s) completed.`, updatedAt: new Date().toISOString() });
-    if (message.type === "NOTIFICATION") this.applicationStore.update({ notification: { level: message.level, message: message.message } });
-    if (message.type === "TASK_HANDOFFS_RESULT") this.applicationStore.update({ handoffs: message.sessions });
+    if (message.type === "INDEX_PROGRESS")
+      this.applicationStore.mergeOperation({
+        id: "repository-index",
+        kind: "intelligence",
+        status: message.progress === 100 ? "completed" : "running",
+        progress: message.progress ?? 0,
+        message: message.message,
+        updatedAt: new Date().toISOString()
+      });
+    if (message.type === "TASK_RESULT")
+      this.applicationStore.update({
+        taskAnalysis: message.result,
+        activeTask: message.result.taskWorkspace
+      });
+    if (message.type === "DELEGATION_RESULT")
+      this.applicationStore.update({ delegationResult: message });
+    if (message.type === "VALIDATION_RESULT")
+      this.applicationStore.mergeOperation({
+        id: "validation",
+        kind: "validation",
+        status: "completed",
+        progress: 100,
+        message: `${message.results.length} validation command(s) completed.`,
+        updatedAt: new Date().toISOString()
+      });
+    if (message.type === "NOTIFICATION")
+      this.applicationStore.update({
+        notification: { level: message.level, message: message.message }
+      });
+    if (message.type === "TASK_HANDOFFS_RESULT")
+      this.applicationStore.update({ handoffs: message.sessions });
     void this.panel?.webview.postMessage(message);
     this.browserView?.broadcast(message);
   }
@@ -748,10 +1620,21 @@ export class VscodeProvider {
   async openBrowserView(): Promise<void> {
     if (!this.browserView) {
       const mediaRoot = vscode.Uri.joinPath(this.extensionUri, "dist", "media").fsPath;
-      this.browserView = await startBrowserViewServer({ mediaRoot, store: this.applicationStore, dispatch: async message => this.handleMessage(message) });
-      this.extensionContext.subscriptions.push({ dispose: () => { void this.browserView?.dispose(); this.browserView = undefined; } });
+      this.browserView = await startBrowserViewServer({
+        mediaRoot,
+        store: this.applicationStore,
+        dispatch: async (message) => this.handleMessage(message)
+      });
+      this.extensionContext.subscriptions.push({
+        dispose: () => {
+          void this.browserView?.dispose();
+          this.browserView = undefined;
+        }
+      });
     }
-    const external = await vscode.env.asExternalUri(vscode.Uri.parse(this.browserView.createBootstrapUrl()));
+    const external = await vscode.env.asExternalUri(
+      vscode.Uri.parse(this.browserView.createBootstrapUrl())
+    );
     await vscode.env.openExternal(external);
     this.post({ type: "BROWSER_VIEW_OPENED", url: external.toString(true) });
   }
@@ -773,91 +1656,246 @@ export class VscodeProvider {
 
   private workspaceRoot(): string | undefined {
     const active = vscode.window.activeTextEditor?.document.uri;
-    return (active ? vscode.workspace.getWorkspaceFolder(active) : undefined)?.uri.fsPath ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    return (
+      (active ? vscode.workspace.getWorkspaceFolder(active) : undefined)?.uri.fsPath ??
+      vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+    );
   }
 }
 
-type PersistedHandoffRecord = { packageValue: TaskStatePackage; status: 'Shared' | 'Restored'; warnings: string[]; activity: Array<{ at: string; actor: string; action: string }> };
+type PersistedHandoffRecord = {
+  packageValue: TaskStatePackage;
+  status: "Shared" | "Restored";
+  warnings: string[];
+  activity: Array<{ at: string; actor: string; action: string }>;
+};
 
-function authoritativeHandoffInput(result:KeystoneTaskResult,root:string,plan?:SDLCPlan):TaskStatePackageInput{
-  const stories=plan?.stories??[];
-  const completed=stories.filter(s=>s.status==='completed');
-  const pending=stories.filter(s=>!['completed','cancelled','superseded'].includes(s.status));
-  const blocked=stories.filter(s=>s.status==='blocked');
-  const current=pending.find(s=>['in-progress','awaiting-validation','review-required','delegated','awaiting-delegation-approval'].includes(s.status))??pending[0];
-  const spec=plan?.specificationDocument;
-  const acceptance=[...new Set(spec?.acceptanceCriteria?.length?spec.acceptanceCriteria:stories.flatMap(s=>s.acceptanceCriteria))];
-  const relevantFiles=result.relevantFiles.filter(handoffImplementationPath);
-  const relevantSymbols=result.relevantSymbols.filter(value=>{const match=value.match(/—\s*([^:]+):\d+$/);return !match||handoffImplementationPath(match[1].trim());});
-  const research=result.researchDocument;
-  const qa=result.analysisEvidence?.qa;
-  const security=result.analysisEvidence?.security;
-  const performance=result.analysisEvidence?.performance;
-  return{
-    handoffId:`handoff-${Date.now()}`,
-    taskId:plan?.id??result.taskWorkspace?.id??`task-${Date.now()}`,
-    createdBy:'keystone-user',
-    repositoryReference:{repositoryName:path.basename(root),expectedBranch:'manual-sync',workspaceFingerprint:result.taskWorkspace?.id},
-    task:{
-      originalUserRequest:plan?.intent??research.problemStatement,
-      normalizedProblemStatement:research.problemStatement,
-      businessGoal:research.problemStatement,
-      technicalGoal:research.recommendedApproach?.[0]??'Implement the approved repository-specific behavior safely.',
-      scope:relevantFiles,
-      nonGoals:['Automatic Git mutation','Credential or token sharing','Unapproved repository-wide refactoring'],
-      constraints:[...new Set(['Git and merge-request access remain read-only',...(research.constraints??[])])],
-      assumptions:research.unknowns.length?[]:['Repository R&D has no unresolved blocking question.'],
-      acceptanceCriteria:acceptance.length?acceptance:result.acceptanceCriteria??result.qaChecklist,
+function authoritativeHandoffInput(
+  result: KeystoneTaskResult,
+  root: string,
+  plan?: SDLCPlan
+): TaskStatePackageInput {
+  const stories = plan?.stories ?? [];
+  const completed = stories.filter((s) => s.status === "completed");
+  const pending = stories.filter(
+    (s) => !["completed", "cancelled", "superseded"].includes(s.status)
+  );
+  const blocked = stories.filter((s) => s.status === "blocked");
+  const current =
+    pending.find((s) =>
+      [
+        "in-progress",
+        "awaiting-validation",
+        "review-required",
+        "delegated",
+        "awaiting-delegation-approval"
+      ].includes(s.status)
+    ) ?? pending[0];
+  const spec = plan?.specificationDocument;
+  const acceptance = [
+    ...new Set(
+      spec?.acceptanceCriteria?.length
+        ? spec.acceptanceCriteria
+        : stories.flatMap((s) => s.acceptanceCriteria)
+    )
+  ];
+  const relevantFiles = result.relevantFiles.filter(handoffImplementationPath);
+  const relevantSymbols = result.relevantSymbols.filter((value) => {
+    const match = value.match(/—\s*([^:]+):\d+$/);
+    return !match || handoffImplementationPath(match[1].trim());
+  });
+  const research = result.researchDocument;
+  const qa = result.analysisEvidence?.qa;
+  const security = result.analysisEvidence?.security;
+  const performance = result.analysisEvidence?.performance;
+  return {
+    handoffId: `handoff-${Date.now()}`,
+    taskId: plan?.id ?? result.taskWorkspace?.id ?? `task-${Date.now()}`,
+    createdBy: "keystone-user",
+    repositoryReference: {
+      repositoryName: path.basename(root),
+      expectedBranch: "manual-sync",
+      workspaceFingerprint: result.taskWorkspace?.id
     },
-    specification:{
-      approvedBehavior:plan?.specificationStatus==='approved'?(spec?.functionalRequirements??[]):[],
-      functionalRequirements:spec?.functionalRequirements??result.acceptanceCriteria??[],
-      nonFunctionalRequirements:spec?.nonFunctionalRequirements??[],
-      uiRequirements:[],
-      apiRequirements:spec?.affectedInterfaces??[],
-      dataRequirements:spec?.dataChanges??[],
-      securityRequirements:[...(result.securityConstraints??[]),...(security?.findings.map(item=>`${item.severity}: ${item.title}`)??[])],
-      performanceRequirements:[...(result.performanceConstraints??[]),...(performance?.findings.map(item=>`${item.severity}: ${item.title}`)??[])],
-      compatibilityRequirements:spec?.constraints??research.constraints,
+    task: {
+      originalUserRequest: plan?.intent ?? research.problemStatement,
+      normalizedProblemStatement: research.problemStatement,
+      businessGoal: research.problemStatement,
+      technicalGoal:
+        research.recommendedApproach?.[0] ??
+        "Implement the approved repository-specific behavior safely.",
+      scope: relevantFiles,
+      nonGoals: [
+        "Automatic Git mutation",
+        "Credential or token sharing",
+        "Unapproved repository-wide refactoring"
+      ],
+      constraints: [
+        ...new Set([
+          "Git and merge-request access remain read-only",
+          ...(research.constraints ?? [])
+        ])
+      ],
+      assumptions: research.unknowns.length
+        ? []
+        : ["Repository R&D has no unresolved blocking question."],
+      acceptanceCriteria: acceptance.length
+        ? acceptance
+        : (result.acceptanceCriteria ?? result.qaChecklist)
     },
-    plan:{
-      phases:stories.map(s=>({id:s.id,title:s.title,tasks:[{id:s.id,title:s.title,status:s.status==='completed'?'COMPLETED':s.status==='blocked'?'BLOCKED':s.status==='in-progress'?'ACTIVE':'PENDING',dependencies:s.dependencies,subtasks:s.acceptanceCriteria}]})),
-      currentPhase:current?.title,currentTask:current?.id,
-      completedTasks:completed.map(s=>s.title),pendingTasks:pending.map(s=>s.title),blockedTasks:blocked.map(s=>s.title),
-      deferredTasks:stories.filter(s=>s.status==='superseded'||s.status==='cancelled').map(s=>s.title)
+    specification: {
+      approvedBehavior:
+        plan?.specificationStatus === "approved" ? (spec?.functionalRequirements ?? []) : [],
+      functionalRequirements: spec?.functionalRequirements ?? result.acceptanceCriteria ?? [],
+      nonFunctionalRequirements: spec?.nonFunctionalRequirements ?? [],
+      uiRequirements: [],
+      apiRequirements: spec?.affectedInterfaces ?? [],
+      dataRequirements: spec?.dataChanges ?? [],
+      securityRequirements: [
+        ...(result.securityConstraints ?? []),
+        ...(security?.findings.map((item) => `${item.severity}: ${item.title}`) ?? [])
+      ],
+      performanceRequirements: [
+        ...(result.performanceConstraints ?? []),
+        ...(performance?.findings.map((item) => `${item.severity}: ${item.title}`) ?? [])
+      ],
+      compatibilityRequirements: spec?.constraints ?? research.constraints
     },
-    sdlcPlan:plan,
-    progress:{progressPercentage:stories.length?Math.round(completed.length/stories.length*100):0,completedWorkSummary:completed.map(s=>s.title),currentActivity:current?.title,pendingAction:current?.objective,blockers:blocked.flatMap(s=>s.blockers.length?s.blockers:[s.title]),openQuestions:research.unknowns,lastUpdateTime:new Date().toISOString()},
-    context:{
-      architectureSummary:research.affectedArchitecture.join(' · ')||'Authoritative OKF-backed Keystone repository intelligence',
-      relevantModules:[...new Set((result.impactedServices??[]).map(item=>item.split(' — ')[0]))],
-      relevantFiles,relevantSymbols,
-      dependencyRelationships:research.affectedFlows,
-      impactedComponents:[...new Set([...(result.impactedServices??[]),...(result.relatedApis??[])])],
-      repositoryIntelligenceSnapshotReference:'.keystone/intelligence/current.json',
-      compressedTaskContext:result.copilotPrompt,
-      importantCodeExcerpts:[],
-      conventionsToFollow:result.copilotCustomizations?.instructions.map(item=>`${item.path}: ${item.description}`)??[],
-      thingsToAvoid:['Git write operations','Unapproved autonomous changes','Credential or token sharing'],
-      knownArchitecturalConstraints:[...(result.architectureConstraints??[]),...research.constraints]
+    plan: {
+      phases: stories.map((s) => ({
+        id: s.id,
+        title: s.title,
+        tasks: [
+          {
+            id: s.id,
+            title: s.title,
+            status:
+              s.status === "completed"
+                ? "COMPLETED"
+                : s.status === "blocked"
+                  ? "BLOCKED"
+                  : s.status === "in-progress"
+                    ? "ACTIVE"
+                    : "PENDING",
+            dependencies: s.dependencies,
+            subtasks: s.acceptanceCriteria
+          }
+        ]
+      })),
+      currentPhase: current?.title,
+      currentTask: current?.id,
+      completedTasks: completed.map((s) => s.title),
+      pendingTasks: pending.map((s) => s.title),
+      blockedTasks: blocked.map((s) => s.title),
+      deferredTasks: stories
+        .filter((s) => s.status === "superseded" || s.status === "cancelled")
+        .map((s) => s.title)
     },
-    changes:{filesExpectedToChange:relevantFiles,filesReportedChanged:result.analysisEvidence?.gitReview.changedFiles??[],filesAdded:[],filesRemoved:[],majorImplementationChanges:completed.map(s=>s.title),knownUnfinishedAreas:pending.map(s=>s.title)},
-    quality:{
-      testsPlanned:result.relatedTests,testsAdded:[],testsReportedPassing:[],testsReportedFailing:[],testsPending:result.missingTests,
-      staticAnalysisFindings:qa?.gaps.map(item=>`${item.type}: ${item.path} — ${item.reason}`)??[],
-      securityFindings:security?.findings.map(item=>`${item.severity}: ${item.path}:${item.line} ${item.title}`)??[],
-      performanceFindings:performance?.findings.map(item=>`${item.severity}: ${item.path}:${item.line} ${item.title}`)??[],
-      accessibilityFindings:[],knownRegressions:[],
-      qualityChecksStillRequired:pending.flatMap(s=>s.acceptanceCriteria.filter(c=>!s.satisfiedCriteria.includes(c)))
+    sdlcPlan: plan,
+    progress: {
+      progressPercentage: stories.length
+        ? Math.round((completed.length / stories.length) * 100)
+        : 0,
+      completedWorkSummary: completed.map((s) => s.title),
+      currentActivity: current?.title,
+      pendingAction: current?.objective,
+      blockers: blocked.flatMap((s) => (s.blockers.length ? s.blockers : [s.title])),
+      openQuestions: research.unknowns,
+      lastUpdateTime: new Date().toISOString()
     },
-    decisions:{acceptedDecisions:stories.flatMap(s=>s.decisions),rejectedAlternatives:[],decisionReasons:[],assumptions:[],unresolvedQuestions:research.unknowns,risks:[...research.risks],reviewerComments:[]},
-    continuation:{exactNextRecommendedAction:current?.objective??'Review completion evidence',suggestedFirstPrompt:result.copilotPrompt,expectedFilesToInspect:relevantFiles,expectedTestsToRun:result.relatedTests,environmentRequirements:[],setupReminders:[],restoreWarnings:[],manualRepositorySyncReminder:'Synchronize the repository manually before restoring.',definitionOfCompletion:current?.acceptanceCriteria??acceptance}
+    context: {
+      architectureSummary:
+        research.affectedArchitecture.join(" · ") ||
+        "Authoritative OKF-backed Keystone repository intelligence",
+      relevantModules: [
+        ...new Set((result.impactedServices ?? []).map((item) => item.split(" — ")[0]))
+      ],
+      relevantFiles,
+      relevantSymbols,
+      dependencyRelationships: research.affectedFlows,
+      impactedComponents: [
+        ...new Set([...(result.impactedServices ?? []), ...(result.relatedApis ?? [])])
+      ],
+      repositoryIntelligenceSnapshotReference: ".keystone/intelligence/current.json",
+      compressedTaskContext: result.copilotPrompt,
+      importantCodeExcerpts: [],
+      conventionsToFollow:
+        result.copilotCustomizations?.instructions.map(
+          (item) => `${item.path}: ${item.description}`
+        ) ?? [],
+      thingsToAvoid: [
+        "Git write operations",
+        "Unapproved autonomous changes",
+        "Credential or token sharing"
+      ],
+      knownArchitecturalConstraints: [
+        ...(result.architectureConstraints ?? []),
+        ...research.constraints
+      ]
+    },
+    changes: {
+      filesExpectedToChange: relevantFiles,
+      filesReportedChanged: result.analysisEvidence?.gitReview.changedFiles ?? [],
+      filesAdded: [],
+      filesRemoved: [],
+      majorImplementationChanges: completed.map((s) => s.title),
+      knownUnfinishedAreas: pending.map((s) => s.title)
+    },
+    quality: {
+      testsPlanned: result.relatedTests,
+      testsAdded: [],
+      testsReportedPassing: [],
+      testsReportedFailing: [],
+      testsPending: result.missingTests,
+      staticAnalysisFindings:
+        qa?.gaps.map((item) => `${item.type}: ${item.path} — ${item.reason}`) ?? [],
+      securityFindings:
+        security?.findings.map(
+          (item) => `${item.severity}: ${item.path}:${item.line} ${item.title}`
+        ) ?? [],
+      performanceFindings:
+        performance?.findings.map(
+          (item) => `${item.severity}: ${item.path}:${item.line} ${item.title}`
+        ) ?? [],
+      accessibilityFindings: [],
+      knownRegressions: [],
+      qualityChecksStillRequired: pending.flatMap((s) =>
+        s.acceptanceCriteria.filter((c) => !s.satisfiedCriteria.includes(c))
+      )
+    },
+    decisions: {
+      acceptedDecisions: stories.flatMap((s) => s.decisions),
+      rejectedAlternatives: [],
+      decisionReasons: [],
+      assumptions: [],
+      unresolvedQuestions: research.unknowns,
+      risks: [...research.risks],
+      reviewerComments: []
+    },
+    continuation: {
+      exactNextRecommendedAction: current?.objective ?? "Review completion evidence",
+      suggestedFirstPrompt: result.copilotPrompt,
+      expectedFilesToInspect: relevantFiles,
+      expectedTestsToRun: result.relatedTests,
+      environmentRequirements: [],
+      setupReminders: [],
+      restoreWarnings: [],
+      manualRepositorySyncReminder: "Synchronize the repository manually before restoring.",
+      definitionOfCompletion: current?.acceptanceCriteria ?? acceptance
+    }
   };
 }
-function handoffImplementationPath(value:string):boolean {
-  const normalized=value.replace(/\\/g,'/').toLowerCase();
-  if(/(?:^|\/)(?:tests?|__tests__|spec)(?:\/|$)|\.(?:test|spec)\.[^.]+$/.test(normalized))return true;
-  if(/(?:^|\/)(?:node_modules|dist|build|coverage|docs?|scripts?|\.github|vendor|generated)(?:\/|$)/.test(normalized))return false;
-  if(/^(?:package(?:-lock)?\.json|tsconfig|eslint|prettier|vite|webpack|rollup)/.test(normalized))return false;
+function handoffImplementationPath(value: string): boolean {
+  const normalized = value.replace(/\\/g, "/").toLowerCase();
+  if (/(?:^|\/)(?:tests?|__tests__|spec)(?:\/|$)|\.(?:test|spec)\.[^.]+$/.test(normalized))
+    return true;
+  if (
+    /(?:^|\/)(?:node_modules|dist|build|coverage|docs?|scripts?|\.github|vendor|generated)(?:\/|$)/.test(
+      normalized
+    )
+  )
+    return false;
+  if (/^(?:package(?:-lock)?\.json|tsconfig|eslint|prettier|vite|webpack|rollup)/.test(normalized))
+    return false;
   return true;
 }

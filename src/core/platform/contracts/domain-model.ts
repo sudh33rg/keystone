@@ -6,38 +6,32 @@
  */
 
 export type KeystonePlatform =
-  | 'platform-services'
-  | 'repository'
-  | 'knowledge'
-  | 'context'
-  | 'reasoning'
-  | 'workflow'
-  | 'modernization'
-  | 'documentation'
-  | 'ai'
-  | 'observability'
-  | 'security'
-  | 'data'
-  | 'storage'
-  | 'execution'
-  | 'enterprise'
-  | 'analytics'
-  | 'testing-quality'
-  | 'deployment-operations'
-  | 'plugin-marketplace'
-  | 'engineering-standards'
-  | 'engineering'
-  | 'experience'
-  | 'plugin';
+  | "platform-services"
+  | "repository"
+  | "knowledge"
+  | "context"
+  | "reasoning"
+  | "workflow"
+  | "modernization"
+  | "documentation"
+  | "ai"
+  | "observability"
+  | "security"
+  | "data"
+  | "storage"
+  | "execution"
+  | "enterprise"
+  | "analytics"
+  | "testing-quality"
+  | "deployment-operations"
+  | "plugin-marketplace"
+  | "engineering-standards"
+  | "engineering"
+  | "experience"
+  | "plugin";
 
 export type LifecycleState =
-  | 'discovered'
-  | 'validated'
-  | 'active'
-  | 'updated'
-  | 'modified'
-  | 'deprecated'
-  | 'archived';
+  "discovered" | "validated" | "active" | "updated" | "modified" | "deprecated" | "archived";
 
 export type ConfidenceScore = number;
 
@@ -88,16 +82,16 @@ export interface CanonicalEntity {
 }
 
 export type EvidenceSource =
-  | 'source-code'
-  | 'git-history'
-  | 'documentation'
-  | 'configuration'
-  | 'runtime-analysis'
-  | 'generated-artifact'
-  | 'user-validation'
-  | 'manual-annotation'
-  | 'repository'
-  | 'architecture-decision';
+  | "source-code"
+  | "git-history"
+  | "documentation"
+  | "configuration"
+  | "runtime-analysis"
+  | "generated-artifact"
+  | "user-validation"
+  | "manual-annotation"
+  | "repository"
+  | "architecture-decision";
 
 export interface DomainEvidence extends CanonicalEntity {
   readonly evidenceType: EvidenceSource;
@@ -109,30 +103,30 @@ export interface DomainEvidence extends CanonicalEntity {
 }
 
 export type RelationKind =
-  | 'DEPENDS_ON'
-  | 'USES'
-  | 'IMPLEMENTS'
-  | 'EXTENDS'
-  | 'OWNS'
-  | 'CALLS'
-  | 'CONTAINS'
-  | 'GENERATES'
-  | 'READS'
-  | 'WRITES'
-  | 'PUBLISHES'
-  | 'SUBSCRIBES'
-  | 'DEPLOYS_TO'
-  | 'CONFIGURES'
-  | 'VALIDATES'
-  | 'DOCUMENTS'
-  | 'TESTS'
-  | 'REPLACES'
-  | 'SUPERSEDES'
-  | 'RELATED_TO'
-  | 'CONFLICTS_WITH'
-  | 'SUPPORTS'
-  | 'CONSUMES'
-  | 'PRODUCES';
+  | "DEPENDS_ON"
+  | "USES"
+  | "IMPLEMENTS"
+  | "EXTENDS"
+  | "OWNS"
+  | "CALLS"
+  | "CONTAINS"
+  | "GENERATES"
+  | "READS"
+  | "WRITES"
+  | "PUBLISHES"
+  | "SUBSCRIBES"
+  | "DEPLOYS_TO"
+  | "CONFIGURES"
+  | "VALIDATES"
+  | "DOCUMENTS"
+  | "TESTS"
+  | "REPLACES"
+  | "SUPERSEDES"
+  | "RELATED_TO"
+  | "CONFLICTS_WITH"
+  | "SUPPORTS"
+  | "CONSUMES"
+  | "PRODUCES";
 
 export interface RelationshipReference {
   readonly id: string;
@@ -150,78 +144,68 @@ export interface EngineeringRelationship extends CanonicalEntity {
 }
 
 export type EngineeringAssetCategory =
-  | 'repository'
-  | 'architecture'
-  | 'application'
-  | 'infrastructure'
-  | 'engineering'
-  | 'knowledge';
+  "repository" | "architecture" | "application" | "infrastructure" | "engineering" | "knowledge";
 
 export type EngineeringAssetStatus =
-  | 'discovered'
-  | 'validated'
-  | 'active'
-  | 'modified'
-  | 'deprecated'
-  | 'archived';
+  "discovered" | "validated" | "active" | "modified" | "deprecated" | "archived";
 
 export type EngineeringAssetType =
-  | 'Repository'
-  | 'Workspace'
-  | 'Solution'
-  | 'Package'
-  | 'Module'
-  | 'Project'
-  | 'SourceFolder'
-  | 'ResourceFolder'
-  | 'Architecture'
-  | 'Layer'
-  | 'Boundary'
-  | 'Component'
-  | 'Service'
-  | 'Gateway'
-  | 'Adapter'
-  | 'Port'
-  | 'Aggregate'
-  | 'Domain'
-  | 'Context'
-  | 'Feature'
-  | 'Capability'
-  | 'Workflow'
-  | 'BusinessProcess'
-  | 'API'
-  | 'Event'
-  | 'Message'
-  | 'Command'
-  | 'Query'
-  | 'Database'
-  | 'Queue'
-  | 'Cache'
-  | 'Storage'
-  | 'Container'
-  | 'KubernetesDeployment'
-  | 'ServiceMesh'
-  | 'Network'
-  | 'Secret'
-  | 'Configuration'
-  | 'Specification'
-  | 'ADR'
-  | 'Plan'
-  | 'Task'
-  | 'Review'
-  | 'TestStrategy'
-  | 'MigrationPlan'
-  | 'ArchitectureReport'
-  | 'Documentation'
-  | 'RepositorySummary'
-  | 'ArchitectureSummary'
-  | 'TechnologySummary'
-  | 'DependencyAnalysis'
-  | 'HistoricalAnalysis'
-  | 'TechnicalDebtAssessment'
-  | 'RiskAssessment';
+  | "Repository"
+  | "Workspace"
+  | "Solution"
+  | "Package"
+  | "Module"
+  | "Project"
+  | "SourceFolder"
+  | "ResourceFolder"
+  | "Architecture"
+  | "Layer"
+  | "Boundary"
+  | "Component"
+  | "Service"
+  | "Gateway"
+  | "Adapter"
+  | "Port"
+  | "Aggregate"
+  | "Domain"
+  | "Context"
+  | "Feature"
+  | "Capability"
+  | "Workflow"
+  | "BusinessProcess"
+  | "API"
+  | "Event"
+  | "Message"
+  | "Command"
+  | "Query"
+  | "Database"
+  | "Queue"
+  | "Cache"
+  | "Storage"
+  | "Container"
+  | "KubernetesDeployment"
+  | "ServiceMesh"
+  | "Network"
+  | "Secret"
+  | "Configuration"
+  | "Specification"
+  | "ADR"
+  | "Plan"
+  | "Task"
+  | "Review"
+  | "TestStrategy"
+  | "MigrationPlan"
+  | "ArchitectureReport"
+  | "Documentation"
+  | "RepositorySummary"
+  | "ArchitectureSummary"
+  | "TechnologySummary"
+  | "DependencyAnalysis"
+  | "HistoricalAnalysis"
+  | "TechnicalDebtAssessment"
+  | "RiskAssessment";
 
-export interface EngineeringAsset extends Omit<CanonicalEntity, 'lifecycle'> {
+export interface EngineeringAsset extends Omit<CanonicalEntity, "lifecycle"> {
   readonly schemaVersion: string;
   readonly type: EngineeringAssetType | string;
   readonly category: EngineeringAssetCategory;
@@ -276,16 +260,16 @@ export interface EngineeringIntelligence extends CanonicalEntity {
 }
 
 export type ArtifactType =
-  | 'ImplementationPlan'
-  | 'ArchitectureReport'
-  | 'ADR'
-  | 'Documentation'
-  | 'MigrationStrategy'
-  | 'Review'
-  | 'TestStrategy'
-  | 'ModernizationPlan'
-  | 'RiskAssessment'
-  | 'Specification';
+  | "ImplementationPlan"
+  | "ArchitectureReport"
+  | "ADR"
+  | "Documentation"
+  | "MigrationStrategy"
+  | "Review"
+  | "TestStrategy"
+  | "ModernizationPlan"
+  | "RiskAssessment"
+  | "Specification";
 
 export interface EngineeringArtifact extends CanonicalEntity {
   readonly artifactType: ArtifactType | string;
@@ -298,31 +282,31 @@ export interface EngineeringArtifact extends CanonicalEntity {
     readonly commands: readonly string[];
     readonly generatedAt: string;
   };
-  readonly approvalState: 'draft' | 'pending' | 'approved' | 'rejected' | 'superseded';
+  readonly approvalState: "draft" | "pending" | "approved" | "rejected" | "superseded";
   readonly schemaVersion: string;
 }
 
 export type RecommendationType =
-  | 'architecture'
-  | 'planning'
-  | 'performance'
-  | 'security'
-  | 'testing'
-  | 'maintainability'
-  | 'documentation'
-  | 'modernization'
-  | 'reliability'
-  | 'developer-experience';
+  | "architecture"
+  | "planning"
+  | "performance"
+  | "security"
+  | "testing"
+  | "maintainability"
+  | "documentation"
+  | "modernization"
+  | "reliability"
+  | "developer-experience";
 
 export interface Recommendation extends CanonicalEntity {
   readonly recommendationType: RecommendationType | string;
   readonly title: string;
   readonly description: string;
-  readonly priority: 'low' | 'medium' | 'high' | 'critical';
+  readonly priority: "low" | "medium" | "high" | "critical";
   readonly confidence: ConfidenceScore;
-  readonly risk: 'low' | 'medium' | 'high' | 'critical';
+  readonly risk: "low" | "medium" | "high" | "critical";
   readonly impact: string;
-  readonly estimatedEffort: 'low' | 'medium' | 'high';
+  readonly estimatedEffort: "low" | "medium" | "high";
   readonly expectedBenefit: string;
   readonly dependencies: readonly string[];
   readonly validationStrategy: readonly string[];
@@ -342,7 +326,7 @@ export interface CanonicalDecision extends CanonicalEntity {
   readonly alternatives: readonly Alternative[];
   readonly tradeoffs: readonly string[];
   readonly confidence: ConfidenceScore;
-  readonly approvalState: 'draft' | 'proposed' | 'approved' | 'rejected' | 'superseded';
+  readonly approvalState: "draft" | "proposed" | "approved" | "rejected" | "superseded";
   readonly author: string;
   readonly decidedAt: string;
   readonly schemaVersion: string;
@@ -350,41 +334,41 @@ export interface CanonicalDecision extends CanonicalEntity {
 
 export interface Constraint extends CanonicalEntity {
   readonly constraintType:
-    | 'business'
-    | 'technology'
-    | 'repository'
-    | 'architecture'
-    | 'security'
-    | 'compliance'
-    | 'performance'
+    | "business"
+    | "technology"
+    | "repository"
+    | "architecture"
+    | "security"
+    | "compliance"
+    | "performance"
     | string;
   readonly description: string;
-  readonly severity: 'low' | 'medium' | 'high' | 'critical';
+  readonly severity: "low" | "medium" | "high" | "critical";
   readonly evidence: readonly DomainEvidence[];
   readonly schemaVersion: string;
 }
 
 export interface Risk extends CanonicalEntity {
   readonly riskType:
-    | 'migration'
-    | 'architecture'
-    | 'dependency'
-    | 'performance'
-    | 'operational'
-    | 'security'
+    | "migration"
+    | "architecture"
+    | "dependency"
+    | "performance"
+    | "operational"
+    | "security"
     | string;
   readonly description: string;
   readonly probability: ConfidenceScore;
-  readonly impact: 'low' | 'medium' | 'high' | 'critical';
-  readonly severity: 'low' | 'medium' | 'high' | 'critical';
+  readonly impact: "low" | "medium" | "high" | "critical";
+  readonly severity: "low" | "medium" | "high" | "critical";
   readonly mitigation: readonly string[];
   readonly evidence: readonly DomainEvidence[];
-  readonly status: 'open' | 'mitigated' | 'accepted' | 'closed';
+  readonly status: "open" | "mitigated" | "accepted" | "closed";
   readonly schemaVersion: string;
 }
 
 export interface Workflow extends CanonicalEntity {
-  readonly status: 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
+  readonly status: "pending" | "running" | "paused" | "completed" | "failed" | "cancelled";
   readonly currentStep?: string;
   readonly inputs: Metadata;
   readonly outputs: Metadata;

@@ -92,13 +92,7 @@ export const PERFORMANCE_KEYWORDS = [
   "throttle"
 ];
 
-export const MODERNIZATION_KEYWORDS = [
-  "todo",
-  "fixme",
-  "hack",
-  "legacy",
-  "deprecated"
-];
+export const MODERNIZATION_KEYWORDS = ["todo", "fixme", "hack", "legacy", "deprecated"];
 
 export const DEFAULT_QA_CHECKLIST = [
   "functional path covered",

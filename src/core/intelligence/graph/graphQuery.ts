@@ -69,7 +69,13 @@ export function findConfigUsages(
 
 export function findRuntimeBehaviors(
   graph: KnowledgeGraph,
-  input: { behaviorType?: string; signal?: string; sourcePath?: string; routePath?: string; configName?: string } = {}
+  input: {
+    behaviorType?: string;
+    signal?: string;
+    sourcePath?: string;
+    routePath?: string;
+    configName?: string;
+  } = {}
 ): GraphNode[] {
   const signal = input.signal?.toLowerCase();
   const routePath = input.routePath ? normalizeRoutePath(input.routePath) : undefined;
@@ -91,7 +97,9 @@ export function findRuntimeBehaviors(
 export function findNodeByPath(graph: KnowledgeGraph, path: string): GraphNode | undefined {
   return (
     graph.nodes.find((node) => node.kind === "file" && node.metadata.path === path) ??
-    graph.nodes.find((node) => typeof node.metadata.path === "string" && node.metadata.path === path)
+    graph.nodes.find(
+      (node) => typeof node.metadata.path === "string" && node.metadata.path === path
+    )
   );
 }
 
@@ -112,9 +120,13 @@ export function findImportedFilePaths(graph: KnowledgeGraph, sourcePath: string)
 }
 
 export function findCalledSymbolNames(graph: KnowledgeGraph, symbolName: string): string[] {
-  const sourceNodes = graph.nodes.filter((node) => node.kind === "symbol" && node.name === symbolName);
+  const sourceNodes = graph.nodes.filter(
+    (node) => node.kind === "symbol" && node.name === symbolName
+  );
   const calledNodeIds = graph.edges
-    .filter((edge) => edge.kind === "calls" && sourceNodes.some((node) => node.id === edge.fromNodeId))
+    .filter(
+      (edge) => edge.kind === "calls" && sourceNodes.some((node) => node.id === edge.fromNodeId)
+    )
     .map((edge) => edge.toNodeId);
 
   return graph.nodes
@@ -149,7 +161,10 @@ export function findTestsCoveringPath(graph: KnowledgeGraph, path: string): Grap
     .map((edge) => edge.fromNodeId);
 
   return graph.nodes
-    .filter((node) => node.kind === "file" && node.metadata.role === "test" && testFileNodeIds.includes(node.id))
+    .filter(
+      (node) =>
+        node.kind === "file" && node.metadata.role === "test" && testFileNodeIds.includes(node.id)
+    )
     .sort(compareNodes);
 }
 
@@ -223,9 +238,7 @@ export function findCallersOfSymbol(graph: KnowledgeGraph, symbolName: string): 
     .filter((edge) => edge.kind === "calls" && edge.toNodeId === calleeNode.id)
     .map((edge) => edge.fromNodeId);
 
-  return graph.nodes
-    .filter((node) => callerNodeIds.includes(node.id))
-    .sort(compareNodes);
+  return graph.nodes.filter((node) => callerNodeIds.includes(node.id)).sort(compareNodes);
 }
 
 export function findCalleesOfSymbol(graph: KnowledgeGraph, symbolName: string): GraphNode[] {
@@ -238,9 +251,7 @@ export function findCalleesOfSymbol(graph: KnowledgeGraph, symbolName: string): 
     .filter((edge) => edge.kind === "calls" && edge.fromNodeId === callerNode.id)
     .map((edge) => edge.toNodeId);
 
-  return graph.nodes
-    .filter((node) => calleeNodeIds.includes(node.id))
-    .sort(compareNodes);
+  return graph.nodes.filter((node) => calleeNodeIds.includes(node.id)).sort(compareNodes);
 }
 
 export function findOwnersOfFile(graph: KnowledgeGraph, filePath: string): GraphNode[] {
@@ -273,18 +284,25 @@ export function findRecentChangesForFile(graph: KnowledgeGraph, filePath: string
     .sort(compareNodes);
 }
 
-export function findFilesWithMatchingSymbol(graph: KnowledgeGraph, symbolName: string): GraphNode[] {
+export function findFilesWithMatchingSymbol(
+  graph: KnowledgeGraph,
+  symbolName: string
+): GraphNode[] {
   const matchingSymbolNodes = graph.nodes.filter(
     (node) => node.kind === "symbol" && node.name === symbolName
   );
   const symbolFileIds = new Set(
     matchingSymbolNodes
-      .map((node) => typeof node.metadata.path === "string" ? node.metadata.path : undefined)
+      .map((node) => (typeof node.metadata.path === "string" ? node.metadata.path : undefined))
       .filter((path): path is string => Boolean(path))
   );
 
   return graph.nodes
-    .filter((node) => node.kind === "file" && symbolFileIds.has(typeof node.metadata.path === "string" ? node.metadata.path : ""))
+    .filter(
+      (node) =>
+        node.kind === "file" &&
+        symbolFileIds.has(typeof node.metadata.path === "string" ? node.metadata.path : "")
+    )
     .sort(compareNodes);
 }
 
@@ -299,7 +317,10 @@ function findSymbolNode(graph: KnowledgeGraph, symbolName: string): GraphNode | 
 /**
  * Get edges that are valid at a specific time.
  */
-export function getValidEdgesAt(graph: KnowledgeGraph, time?: number): {
+export function getValidEdgesAt(
+  graph: KnowledgeGraph,
+  time?: number
+): {
   edges: typeof graph.edges;
   temporalInfo: TemporalEdge[];
 } {
@@ -326,8 +347,8 @@ export function getValidEdgesAt(graph: KnowledgeGraph, time?: number): {
       validAt: edge.validAt,
       invalidAt: edge.invalidAt,
       isValid: () => validTemporal.some((e) => e.id === edge.id),
-      getBounds: () => ({ validAt: edge.validAt, invalidAt: edge.invalidAt }),
-    })),
+      getBounds: () => ({ validAt: edge.validAt, invalidAt: edge.invalidAt })
+    }))
   };
 }
 
@@ -355,9 +376,7 @@ export function findContradictions(graph: KnowledgeGraph): {
   const contradictionGroups = [];
 
   for (const [, edges] of Object.entries(edgeGroups) as [string, typeof graph.edges][]) {
-    const temporal = edges.filter(
-      (e) => e.validAt !== undefined || e.invalidAt !== undefined
-    );
+    const temporal = edges.filter((e) => e.validAt !== undefined || e.invalidAt !== undefined);
 
     if (temporal.length < 2) continue;
 
@@ -380,7 +399,7 @@ export function findContradictions(graph: KnowledgeGraph): {
         edges: temporal,
         validAt: newest.validAt ?? 0,
         invalidAt: newest.invalidAt ?? 0,
-        invalidatedIds,
+        invalidatedIds
       });
     }
   }
@@ -406,7 +425,8 @@ export function getEdgeTemporalContext(
     return { edge: undefined, isValid: false };
   }
 
-  const isValid = !edge.invalidated &&
+  const isValid =
+    !edge.invalidated &&
     (edge.invalidAt === undefined || Date.now() < edge.invalidAt) &&
     (edge.validAt === undefined || Date.now() >= edge.validAt);
 
@@ -415,6 +435,6 @@ export function getEdgeTemporalContext(
     validAt: edge.validAt,
     invalidAt: edge.invalidAt,
     isValid,
-    episodeId: edge.episodeId,
+    episodeId: edge.episodeId
   };
 }

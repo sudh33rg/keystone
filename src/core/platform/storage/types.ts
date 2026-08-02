@@ -1,5 +1,9 @@
 import type { KnowledgeGraph } from "../../intelligence/graph/types";
-import type { SDLCTaskPacket, WorkflowExecutionState, WorkflowStepStatus } from "../../workflow/sdlc/types";
+import type {
+  SDLCTaskPacket,
+  WorkflowExecutionState,
+  WorkflowStepStatus
+} from "../../workflow/sdlc/types";
 import type { ParsedValidationSummary } from "../../workflow/validation/validationParser";
 
 export type WorkspaceSummary = {
@@ -68,7 +72,8 @@ export type DelegationRecord = {
   readinessResults?: ReadinessResult[];
 };
 
-export type TaskProgressStatus = "created" | "in_progress" | "validation_passed" | "validation_failed" | "blocked" | "done";
+export type TaskProgressStatus =
+  "created" | "in_progress" | "validation_passed" | "validation_failed" | "blocked" | "done";
 
 export type ValidationResult = {
   command: string;
@@ -93,9 +98,21 @@ export type DelegationHistory = {
 
 export type DelegationHistoryStorage = {
   append(record: DelegationRecord): Promise<DelegationHistory>;
-  appendValidationResult(workspaceId: string, taskId: string, result: ValidationResult): Promise<DelegationHistory>;
-  appendReadinessResult(workspaceId: string, taskId: string, result: ReadinessResult): Promise<DelegationHistory>;
-  updateStatus(workspaceId: string, taskId: string, status: TaskProgressStatus): Promise<DelegationHistory>;
+  appendValidationResult(
+    workspaceId: string,
+    taskId: string,
+    result: ValidationResult
+  ): Promise<DelegationHistory>;
+  appendReadinessResult(
+    workspaceId: string,
+    taskId: string,
+    result: ReadinessResult
+  ): Promise<DelegationHistory>;
+  updateStatus(
+    workspaceId: string,
+    taskId: string,
+    status: TaskProgressStatus
+  ): Promise<DelegationHistory>;
   updateWorkflowStep(
     workspaceId: string,
     taskId: string,

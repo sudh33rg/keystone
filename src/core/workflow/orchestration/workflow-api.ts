@@ -1,4 +1,4 @@
-import type { ExecutionHandle, WorkflowDefinition, WorkflowRequest, WorkflowRun } from './model';
+import type { ExecutionHandle, WorkflowDefinition, WorkflowRequest, WorkflowRun } from "./model";
 
 export class WorkflowApi {
   private readonly definitions = new Map<string, WorkflowDefinition>();
@@ -17,7 +17,7 @@ export class WorkflowApi {
     const run: WorkflowRun = {
       id: `workflow-run-${Date.now()}`,
       workflowId,
-      status: 'running',
+      status: "running",
       startedAt: new Date().toISOString()
     };
     this.runs.set(run.id, run);
@@ -29,16 +29,17 @@ export class WorkflowApi {
   }
 
   execute(request: WorkflowRequest | string): ExecutionHandle {
-    const workflowId = typeof request === 'string'
-      ? request
-      : request.workflowId ?? request.id ?? request.name ?? 'workflow';
+    const workflowId =
+      typeof request === "string"
+        ? request
+        : (request.workflowId ?? request.id ?? request.name ?? "workflow");
     return {
       id: `execution-${workflowId}-${Date.now()}`,
       workflowId,
-      state: 'running',
-      status: 'running',
+      state: "running",
+      status: "running",
       startedAt: new Date().toISOString(),
-      metadata: typeof request === 'string' ? undefined : request.metadata
+      metadata: typeof request === "string" ? undefined : request.metadata
     };
   }
 

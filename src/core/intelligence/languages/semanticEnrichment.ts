@@ -1,4 +1,12 @@
-import type { ApiEndpoint, CodeSymbol, ControlFlowFact, DataFlowFact, DependencyEdge, SemanticCall, TypeRelationshipFact } from '../../domain/types';
+import type {
+  ApiEndpoint,
+  CodeSymbol,
+  ControlFlowFact,
+  DataFlowFact,
+  DependencyEdge,
+  SemanticCall,
+  TypeRelationshipFact
+} from "../../domain/types";
 
 export interface SemanticEnrichmentRequest {
   readonly workspaceRoot: string;
@@ -40,8 +48,9 @@ export interface LanguageSupportSummary {
   readonly id: string;
   readonly label: string;
   readonly files: number;
-  readonly baseline: 'compiler' | 'deterministic-structural' | 'structural-artifact' | 'universal-text';
-  readonly semanticProvider: 'typescript-compiler' | 'vscode-language-service' | 'none';
+  readonly baseline:
+    "compiler" | "deterministic-structural" | "structural-artifact" | "universal-text";
+  readonly semanticProvider: "typescript-compiler" | "vscode-language-service" | "none";
   readonly semanticFiles: number;
   readonly deterministicFiles: number;
   readonly failedSemanticFiles: number;

@@ -1,4 +1,4 @@
-export type InsightSeverity = 'low' | 'medium' | 'high' | 'critical';
+export type InsightSeverity = "low" | "medium" | "high" | "critical";
 
 export interface RepositoryInsight {
   id: string;
@@ -14,10 +14,10 @@ export interface RepositoryInsight {
 }
 
 export interface RepositoryInsightReport {
-  kind: 'security' | 'performance';
+  kind: "security" | "performance";
   generatedAt: string;
   analyzedFiles: number;
-  discoveryMode: 'unbounded-incremental';
+  discoveryMode: "unbounded-incremental";
   completedWithoutFileCap: boolean;
   riskScore: number;
   riskLevel: InsightSeverity;

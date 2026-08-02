@@ -41,13 +41,13 @@ export const DEFAULT_QA_CONFIG: QAConfig = {
   discovery: { includeHidden: false, extraPatterns: [] },
   flakyDetection: { runs: 5, threshold: 0.2, timeoutMs: 30_000, skipQuarantined: false },
   quarantine: { threshold: 0.5, ttlMs: 7 * 24 * 60 * 60 * 1000 },
-  execution: { testCommand: undefined, maxWorkers: 4, timeoutMs: 300_000, excludeQuarantined: true },
+  execution: { testCommand: undefined, maxWorkers: 4, timeoutMs: 300_000, excludeQuarantined: true }
 };
 
 export function loadConfig(filePath: string): QAConfig {
   try {
-    const fs = require('node:fs');
-    const content = fs.readFileSync(filePath, 'utf-8');
+    const fs = require("node:fs");
+    const content = fs.readFileSync(filePath, "utf-8");
     return merge(DEFAULT_QA_CONFIG, JSON.parse(content) as Partial<QAConfig>);
   } catch {
     return structuredClone(DEFAULT_QA_CONFIG);
@@ -59,6 +59,6 @@ function merge(defaults: QAConfig, overrides: Partial<QAConfig>): QAConfig {
     discovery: { ...defaults.discovery, ...(overrides.discovery ?? {}) },
     flakyDetection: { ...defaults.flakyDetection, ...(overrides.flakyDetection ?? {}) },
     quarantine: { ...defaults.quarantine, ...(overrides.quarantine ?? {}) },
-    execution: { ...defaults.execution, ...(overrides.execution ?? {}) },
+    execution: { ...defaults.execution, ...(overrides.execution ?? {}) }
   };
 }

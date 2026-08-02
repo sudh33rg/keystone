@@ -10,8 +10,21 @@ export function mapService(filePath: string): ServiceNode | undefined {
     return undefined;
   }
   const name = path.posix.basename(filePath).replace(/\.[^.]+$/, "");
-  const hints = lower.split(/[\/._-]/).filter((part) =>
-    ["service", "controller", "handler", "repository", "client", "adapter", "payment", "audit", "user", "auth"].includes(part)
-  );
+  const hints = lower
+    .split(/[\/._-]/)
+    .filter((part) =>
+      [
+        "service",
+        "controller",
+        "handler",
+        "repository",
+        "client",
+        "adapter",
+        "payment",
+        "audit",
+        "user",
+        "auth"
+      ].includes(part)
+    );
   return { name, filePath, hints };
 }

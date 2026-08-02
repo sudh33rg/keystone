@@ -1,28 +1,48 @@
-import type { RepoIntelligence } from '../../domain/types';
-import type { IntelligenceHealthReport } from './health';
-import type { IncrementalUpdatePlan } from './incremental';
-import type { IntelligenceFinding } from './findings';
-import type { RuntimeVerification } from './runtime';
-import type { TypeScriptSemanticResult } from '../cpg';
-import type { RepositoryEvolution } from './evolution';
-import type { DeadCodeCandidate } from './deadCode';
-import type { SemanticEnrichmentProvider } from '../languages/semanticEnrichment';
+import type { RepoIntelligence } from "../../domain/types";
+import type { IntelligenceHealthReport } from "./health";
+import type { IncrementalUpdatePlan } from "./incremental";
+import type { IntelligenceFinding } from "./findings";
+import type { RuntimeVerification } from "./runtime";
+import type { TypeScriptSemanticResult } from "../cpg";
+import type { RepositoryEvolution } from "./evolution";
+import type { DeadCodeCandidate } from "./deadCode";
+import type { SemanticEnrichmentProvider } from "../languages/semanticEnrichment";
 
 export const INTELLIGENCE_FAMILIES = [
-  'repository-structure', 'code-graph', 'build-test-qa', 'architecture-sdlc',
-  'context-token', 'runtime-analysis'
+  "repository-structure",
+  "code-graph",
+  "build-test-qa",
+  "architecture-sdlc",
+  "context-token",
+  "runtime-analysis"
 ] as const;
-export type IntelligenceFamily = typeof INTELLIGENCE_FAMILIES[number];
+export type IntelligenceFamily = (typeof INTELLIGENCE_FAMILIES)[number];
 
 export const INTELLIGENCE_STAGES = [
-  'structural', 'language-framework', 'build-script', 'configuration', 'symbol',
-  'dependency', 'api-route', 'data-persistence', 'test', 'call-graph',
-  'code-property-graph',
-  'architecture', 'git-change', 'impact', 'context', 'sdlc-workflow', 'risk',
-  'security', 'performance', 'documentation', 'runtime-observability'
+  "structural",
+  "language-framework",
+  "build-script",
+  "configuration",
+  "symbol",
+  "dependency",
+  "api-route",
+  "data-persistence",
+  "test",
+  "call-graph",
+  "code-property-graph",
+  "architecture",
+  "git-change",
+  "impact",
+  "context",
+  "sdlc-workflow",
+  "risk",
+  "security",
+  "performance",
+  "documentation",
+  "runtime-observability"
 ] as const;
-export type IntelligenceStageId = typeof INTELLIGENCE_STAGES[number];
-export type IntelligenceStageStatus = 'pending' | 'running' | 'complete' | 'cancelled' | 'failed';
+export type IntelligenceStageId = (typeof INTELLIGENCE_STAGES)[number];
+export type IntelligenceStageStatus = "pending" | "running" | "complete" | "cancelled" | "failed";
 
 export interface IntelligenceStageResult {
   id: IntelligenceStageId;
@@ -52,7 +72,7 @@ export interface IntelligenceFamilySummary {
 
 export interface RepositoryIntelligenceSnapshot {
   version: 1;
-  status: 'ready' | 'degraded';
+  status: "ready" | "degraded";
   workspaceRoot: string;
   runId: string;
   startedAt: string;

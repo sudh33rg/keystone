@@ -7,8 +7,8 @@ import type {
   EventReplayOptions,
   EventSubscriptionFilter,
   PublishEventInput
-} from '../contracts/event-model';
-import { randomUUID } from 'crypto';
+} from "../contracts/event-model";
+import { randomUUID } from "crypto";
 
 export type EventHandler = (...args: unknown[]) => void | Promise<void>;
 export type CanonicalEventHandler = (event: CanonicalEvent) => void | Promise<void>;
@@ -44,9 +44,9 @@ interface MutableMetrics {
   latestPublishedAt?: string;
 }
 
-const DEFAULT_SCHEMA_VERSION = '1.0';
-const DEFAULT_EVENT_VERSION = '1.0';
-const DEFAULT_PLATFORM_VERSION = '0.1.0';
+const DEFAULT_SCHEMA_VERSION = "1.0";
+const DEFAULT_EVENT_VERSION = "1.0";
+const DEFAULT_PLATFORM_VERSION = "0.1.0";
 
 export class EventBus {
   private readonly legacySubscriptions = new Map<string, LegacySubscription[]>();
@@ -81,7 +81,7 @@ export class EventBus {
 
   on(eventType: string, handler: EventHandler): EventBusSubscription {
     const subscription: LegacySubscription = {
-      id: this.nextSubscriptionId('legacy'),
+      id: this.nextSubscriptionId("legacy"),
       eventType,
       handler
     };
@@ -98,12 +98,12 @@ export class EventBus {
   emit(eventType: string, ...args: unknown[]): CanonicalEvent {
     const event = this.createEvent({
       eventType,
-      platform: 'platform-services',
-      source: 'legacy-event-bus',
+      platform: "platform-services",
+      source: "legacy-event-bus",
       payload: { args },
       metadata: {
         attributes: {
-          compatibility: 'legacy'
+          compatibility: "legacy"
         }
       }
     });
@@ -126,7 +126,7 @@ export class EventBus {
 
   subscribe(filter: EventSubscriptionFilter, handler: CanonicalEventHandler): EventBusSubscription {
     const subscription: CanonicalSubscription = {
-      id: this.nextSubscriptionId('canonical'),
+      id: this.nextSubscriptionId("canonical"),
       filter,
       handler
     };
@@ -145,7 +145,7 @@ export class EventBus {
     options: EventReplayOptions = {},
     handler?: CanonicalEventHandler
   ): Promise<CanonicalEvent[]> {
-    const events = this.eventHistory.filter(event => {
+    const events = this.eventHistory.filter((event) => {
       if (!this.matchesFilter(event, filter)) return false;
       if (options.fromTimestamp && event.timestamp < options.fromTimestamp) return false;
       if (options.untilTimestamp && event.timestamp > options.untilTimestamp) return false;
@@ -164,7 +164,7 @@ export class EventBus {
   }
 
   getHistory(filter: EventSubscriptionFilter = {}): CanonicalEvent[] {
-    return this.eventHistory.filter(event => this.matchesFilter(event, filter));
+    return this.eventHistory.filter((event) => this.matchesFilter(event, filter));
   }
 
   getDeliveryRecords(): EventDeliveryRecord[] {
@@ -183,9 +183,8 @@ export class EventBus {
       failedDeliveryCount: this.metrics.failedDeliveryCount,
       deadLetterCount: this.metrics.deadLetterCount,
       replayedCount: this.metrics.replayedCount,
-      averageDeliveryDurationMs: completedDeliveries === 0
-        ? 0
-        : this.metrics.totalDeliveryDurationMs / completedDeliveries,
+      averageDeliveryDurationMs:
+        completedDeliveries === 0 ? 0 : this.metrics.totalDeliveryDurationMs / completedDeliveries,
       latestPublishedAt: this.metrics.latestPublishedAt
     };
   }
@@ -194,8 +193,10 @@ export class EventBus {
     input: PublishEventInput<TPayload>
   ): CanonicalEvent<TPayload> {
     const timestamp = this.clock().toISOString();
-    const schemaVersion = input.schemaVersion ?? input.metadata?.schemaVersion ?? DEFAULT_SCHEMA_VERSION;
-    const eventVersion = input.eventVersion ?? input.metadata?.eventVersion ?? DEFAULT_EVENT_VERSION;
+    const schemaVersion =
+      input.schemaVersion ?? input.metadata?.schemaVersion ?? DEFAULT_SCHEMA_VERSION;
+    const eventVersion =
+      input.eventVersion ?? input.metadata?.eventVersion ?? DEFAULT_EVENT_VERSION;
     const traceId = input.metadata?.traceId ?? this.idGenerator();
     const correlationId = input.correlationId ?? this.idGenerator();
 
@@ -221,7 +222,7 @@ export class EventBus {
         schemaVersion,
         platformVersion: input.metadata?.platformVersion ?? this.platformVersion,
         eventVersion,
-        payloadClassification: input.metadata?.payloadClassification ?? 'internal',
+        payloadClassification: input.metadata?.payloadClassification ?? "internal",
         attributes: input.metadata?.attributes ?? {}
       },
       schemaVersion
@@ -250,7 +251,7 @@ export class EventBus {
         if (isPromiseLike(result)) {
           result
             .then(() => this.recordSuccess(event, subscription.id, startedAt, 0))
-            .catch(error => this.recordFailure(event, subscription.id, startedAt, error));
+            .catch((error) => this.recordFailure(event, subscription.id, startedAt, error));
           continue;
         }
         this.recordSuccess(event, subscription.id, startedAt, 0);
@@ -261,8 +262,9 @@ export class EventBus {
   }
 
   private async deliverCanonicalEvent(event: CanonicalEvent): Promise<void> {
-    const subscriptions = Array.from(this.canonicalSubscriptions.values())
-      .filter(subscription => this.matchesFilter(event, subscription.filter));
+    const subscriptions = Array.from(this.canonicalSubscriptions.values()).filter((subscription) =>
+      this.matchesFilter(event, subscription.filter)
+    );
 
     for (const subscription of subscriptions) {
       await this.deliverToCanonicalSubscription(event, subscription);
@@ -305,7 +307,7 @@ export class EventBus {
       deliveredAt: deliveredAt.toISOString(),
       durationMs,
       retryCount,
-      status: 'acknowledged',
+      status: "acknowledged",
       correlationId: event.correlationId,
       traceId: event.metadata.traceId
     });
@@ -332,7 +334,7 @@ export class EventBus {
       deliveredAt: deliveredAt.toISOString(),
       durationMs,
       retryCount: Math.max(0, attempts - 1),
-      status: 'failed',
+      status: "failed",
       failureReason: reason,
       correlationId: event.correlationId,
       traceId: event.metadata.traceId
@@ -362,7 +364,7 @@ export class EventBus {
 
   private removeLegacySubscription(subscription: LegacySubscription): void {
     const subscriptions = this.legacySubscriptions.get(subscription.eventType) ?? [];
-    const remaining = subscriptions.filter(item => item.id !== subscription.id);
+    const remaining = subscriptions.filter((item) => item.id !== subscription.id);
     if (remaining.length === 0) {
       this.legacySubscriptions.delete(subscription.eventType);
       return;
@@ -372,27 +374,27 @@ export class EventBus {
 
   private assertCanonicalMetadata(event: CanonicalEvent): void {
     const missing: string[] = [];
-    if (!event.eventId) missing.push('eventId');
-    if (!event.eventType) missing.push('eventType');
-    if (!event.eventVersion) missing.push('eventVersion');
-    if (!event.platform) missing.push('platform');
-    if (!event.source) missing.push('source');
-    if (!event.timestamp) missing.push('timestamp');
-    if (!event.correlationId) missing.push('correlationId');
-    if (!event.metadata?.traceId) missing.push('metadata.traceId');
-    if (!event.metadata?.schemaVersion) missing.push('metadata.schemaVersion');
-    if (!event.metadata?.platformVersion) missing.push('metadata.platformVersion');
-    if (!event.schemaVersion) missing.push('schemaVersion');
+    if (!event.eventId) missing.push("eventId");
+    if (!event.eventType) missing.push("eventType");
+    if (!event.eventVersion) missing.push("eventVersion");
+    if (!event.platform) missing.push("platform");
+    if (!event.source) missing.push("source");
+    if (!event.timestamp) missing.push("timestamp");
+    if (!event.correlationId) missing.push("correlationId");
+    if (!event.metadata?.traceId) missing.push("metadata.traceId");
+    if (!event.metadata?.schemaVersion) missing.push("metadata.schemaVersion");
+    if (!event.metadata?.platformVersion) missing.push("metadata.platformVersion");
+    if (!event.schemaVersion) missing.push("schemaVersion");
 
     if (missing.length > 0) {
-      throw new Error(`Invalid canonical event. Missing: ${missing.join(', ')}`);
+      throw new Error(`Invalid canonical event. Missing: ${missing.join(", ")}`);
     }
   }
 
   private isCanonicalEvent<TPayload extends Record<string, unknown>>(
     input: PublishEventInput<TPayload> | CanonicalEvent<TPayload>
   ): input is CanonicalEvent<TPayload> {
-    return 'eventId' in input && 'timestamp' in input && 'metadata' in input;
+    return "eventId" in input && "timestamp" in input && "metadata" in input;
   }
 
   private nextSubscriptionId(prefix: string): string {
@@ -402,11 +404,11 @@ export class EventBus {
 }
 
 function isPromiseLike(value: void | Promise<void>): value is Promise<void> {
-  return typeof value === 'object' && value !== null && 'catch' in value;
+  return typeof value === "object" && value !== null && "catch" in value;
 }
 
 function deepFreeze<T>(value: T, seen: WeakSet<object> = new WeakSet()): T {
-  if (typeof value !== 'object' || value === null || seen.has(value)) {
+  if (typeof value !== "object" || value === null || seen.has(value)) {
     return value;
   }
 

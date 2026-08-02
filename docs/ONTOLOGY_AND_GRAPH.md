@@ -41,6 +41,7 @@ The knowledge graph consists of:
 - **Attributes**: Each node and edge has metadata including confidence scores, provenance, and extraction information
 
 The graph is designed to be:
+
 - **Rich**: Contains semantic relationships and metadata
 - **Scalable**: Can handle repositories of any size
 - **Persistent**: Graph data is stored and reused between sessions
@@ -134,6 +135,7 @@ To support fast querying, Keystone employs a sophisticated graph indexing system
    - Supports queries like "find services that handle authentication"
 
 The indexing system is designed to be:
+
 - **Efficient**: Minimizes storage and query time
 - **Scalable**: Can handle large graphs
 - **Consistent**: Indexes are updated when the graph changes
@@ -154,10 +156,7 @@ Every active knowledge unit produces a search document containing its OKF ID, ki
   "language": "typescript",
   "content": "export interface Profile {\n  id: string;\n  version: string;\n  ...\n}",
   "normalizedContent": "export interface profile { id string version string ... }",
-  "evidence": [
-    "evidence:123",
-    "evidence:456"
-  ],
+  "evidence": ["evidence:123", "evidence:456"],
   "metadata": {
     "lineCount": 45,
     "wordCount": 123,
@@ -200,6 +199,7 @@ Search results are ranked using a combination of factors:
 5. **Provenance Score**: Based on the quality of the evidence
 
 The ranking algorithm ensures that:
+
 - The most relevant results appear first
 - High-confidence results are prioritized
 - Recently modified results are prioritized
@@ -243,7 +243,7 @@ flowchart TD
     U -->|has| W[Name]
     U -->|has| X[Path]
     U -->|has| Y[Language]
-    
+
     A -->|has edge| Z[CPG Edge]
     Z -->|has| AA[Edge Type]
     Z -->|has| AB[Source Node]
@@ -349,6 +349,7 @@ When a knowledge unit is deleted:
 5. The tombstone is referenced in all related relationships and observations
 
 Tombstones ensure that:
+
 - Historical information is preserved
 - Provenance is maintained
 - Previous analyses remain valid
@@ -367,6 +368,7 @@ Each extraction run produces a candidate snapshot. The snapshot management proce
 7. **Pruning**: Old snapshots are pruned based on retention policy
 
 The system maintains a history of snapshots to enable:
+
 - Audit trails
 - Rollback capabilities
 - Historical analysis
@@ -384,6 +386,7 @@ Projections (graph, search, CPG) are regenerated from the promoted snapshot:
 6. **UI Update**: UI surfaces are updated with the new projections
 
 This ensures that:
+
 - Projections are always consistent with the authoritative snapshot
 - Projections are updated atomically
 - Projections are generated efficiently
@@ -399,6 +402,7 @@ The system generates lifecycle events for:
 4. **UI Events**: UI updates, user interactions
 
 These events are used for:
+
 - Audit trails
 - Debugging
 - Monitoring

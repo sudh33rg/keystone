@@ -6,81 +6,136 @@ import type { DeveloperIntent, IntentAnalysis } from "../domain/types";
 // ─── Types ──────────────────────────────────────────────────────
 
 export type Intent =
-  | 'search'
-  | 'refactor'
-  | 'migrate'
-  | 'analyze'
-  | 'debug'
-  | 'document'
-  | 'review'
-  | 'test'
-  | 'explain'
-  | 'implement'
-  | 'unknown';
+  | "search"
+  | "refactor"
+  | "migrate"
+  | "analyze"
+  | "debug"
+  | "document"
+  | "review"
+  | "test"
+  | "explain"
+  | "implement"
+  | "unknown";
 
 export interface IntentResult {
   intent: Intent;
   confidence: number;
   subIntents: string[];
   entities: string[];
-  complexity: 'low' | 'medium' | 'high';
+  complexity: "low" | "medium" | "high";
 }
 
 export interface IntentClassifierConfig {
   /** Root of the repository (for entity resolution) */
   root: string;
   /** LLM provider function for LLM-enhanced classification. When absent, heuristic-only. */
-  llmClassify?: (query: string) => Promise<{intent: string; confidence: number}>;
+  llmClassify?: (query: string) => Promise<{ intent: string; confidence: number }>;
   /** Entities to extract from the query (file names, class names, function names) */
   entityPatterns?: RegExp[];
 }
 
 interface ResolvedIntentClassifierConfig {
   root: string;
-  llmClassify?: (query: string) => Promise<{intent: string; confidence: number}>;
+  llmClassify?: (query: string) => Promise<{ intent: string; confidence: number }>;
   entityPatterns: RegExp[];
 }
 
 // ─── Intent classification ──────────────────────────────────────
 
 const INTENT_KEYWORDS = {
-  search: ['find', 'search', 'lookup', 'retrieve', 'where is', 'locate', 'find file', 'find function', 'find class'],
-  refactor: ['refactor', 'clean', 'restructure', 'reorganize', 'modernize code', 'simplify', 'extract', 'rename'],
-  migrate: ['migrate', 'upgrade', 'modernize', 'convert', 'port', 'migrate to', 'upgrade to'],
-  analyze: ['analyze', 'inspect', 'explain', 'understand', 'how does', 'what does', 'review code', 'assess'],
-  debug: ['debug', 'fix', 'error', 'bug', 'crash', 'throw', 'fail', 'issue', 'problem', 'trace'],
-  document: ['document', 'doc', 'comment', 'readme', 'docs', 'write docs', 'generate docs'],
-  review: ['review', 'code review', 'pr', 'pull request', 'check', 'audit', 'security scan'],
-  test: ['test', 'unit test', 'integration test', 'e2e', 'spec', 'jest', 'vitest', 'write test'],
-  explain: ['explain', 'what is', 'how to', 'why does', 'describe', 'summarize', 'clarify'],
-  implement: ['implement', 'add feature', 'create', 'build', 'implement', 'write code', 'develop'],
-  unknown: [],
+  search: [
+    "find",
+    "search",
+    "lookup",
+    "retrieve",
+    "where is",
+    "locate",
+    "find file",
+    "find function",
+    "find class"
+  ],
+  refactor: [
+    "refactor",
+    "clean",
+    "restructure",
+    "reorganize",
+    "modernize code",
+    "simplify",
+    "extract",
+    "rename"
+  ],
+  migrate: ["migrate", "upgrade", "modernize", "convert", "port", "migrate to", "upgrade to"],
+  analyze: [
+    "analyze",
+    "inspect",
+    "explain",
+    "understand",
+    "how does",
+    "what does",
+    "review code",
+    "assess"
+  ],
+  debug: ["debug", "fix", "error", "bug", "crash", "throw", "fail", "issue", "problem", "trace"],
+  document: ["document", "doc", "comment", "readme", "docs", "write docs", "generate docs"],
+  review: ["review", "code review", "pr", "pull request", "check", "audit", "security scan"],
+  test: ["test", "unit test", "integration test", "e2e", "spec", "jest", "vitest", "write test"],
+  explain: ["explain", "what is", "how to", "why does", "describe", "summarize", "clarify"],
+  implement: ["implement", "add feature", "create", "build", "implement", "write code", "develop"],
+  unknown: []
 };
 
 const INTENT_PHRASES = {
-  search: ['where is', 'find file', 'find function', 'find class', 'locate', 'which file', 'what file'],
-  refactor: ['refactor', 'restructure', 'reorganize', 'clean up', 'simplify', 'extract method', 'rename'],
-  migrate: ['migrate to', 'upgrade to', 'convert to', 'port to', 'upgrade from'],
-  analyze: ['how does', 'what does', 'review code', 'assess', 'inspect', 'understand'],
-  debug: ['fix', 'error', 'bug', 'crash', 'throw', 'fail', 'issue', 'trace', 'investigate', 'root cause'],
-  document: ['document', 'write docs', 'generate docs', 'add comments', 'readme'],
-  review: ['code review', 'pr', 'pull request', 'audit', 'security scan'],
-  test: ['unit test', 'integration test', 'write test', 'e2e', 'spec'],
-  explain: ['what is', 'how to', 'why does', 'describe', 'summarize'],
-  implement: ['add feature', 'create', 'build', 'write code', 'develop'],
-  unknown: [],
+  search: [
+    "where is",
+    "find file",
+    "find function",
+    "find class",
+    "locate",
+    "which file",
+    "what file"
+  ],
+  refactor: [
+    "refactor",
+    "restructure",
+    "reorganize",
+    "clean up",
+    "simplify",
+    "extract method",
+    "rename"
+  ],
+  migrate: ["migrate to", "upgrade to", "convert to", "port to", "upgrade from"],
+  analyze: ["how does", "what does", "review code", "assess", "inspect", "understand"],
+  debug: [
+    "fix",
+    "error",
+    "bug",
+    "crash",
+    "throw",
+    "fail",
+    "issue",
+    "trace",
+    "investigate",
+    "root cause"
+  ],
+  document: ["document", "write docs", "generate docs", "add comments", "readme"],
+  review: ["code review", "pr", "pull request", "audit", "security scan"],
+  test: ["unit test", "integration test", "write test", "e2e", "spec"],
+  explain: ["what is", "how to", "why does", "describe", "summarize"],
+  implement: ["add feature", "create", "build", "write code", "develop"],
+  unknown: []
 };
 
 const ENTITY_PATTERNS = [
   /(?:class|interface|type|function|const|let|var)\s+([A-Z]\w+)/,
   /(?:import)\s+(?:.*from\s+)?['"]([^'"]+)['"]/,
   /(?:file|path)\s+['"]([^'"]+)['"]/,
-  /(?:class|module|function|file)\s+['"]([^'"]+)['"]/,
+  /(?:class|module|function|file)\s+['"]([^'"]+)['"]/
 ];
 
 const COMPLEXITY_PATTERNS = {
   long: 1000,
-  medium: 200,
+  medium: 200
 };
 
 /**
@@ -94,7 +149,7 @@ export class IntentClassifier {
     this.config = {
       root: config.root,
       llmClassify: config.llmClassify,
-      entityPatterns: config.entityPatterns ?? ENTITY_PATTERNS,
+      entityPatterns: config.entityPatterns ?? ENTITY_PATTERNS
     };
   }
 
@@ -105,7 +160,7 @@ export class IntentClassifier {
   async classify(query: string): Promise<IntentResult> {
     const trimmed = query.trim();
     if (!trimmed) {
-      return this._result('unknown', 0, [], [], 'low');
+      return this._result("unknown", 0, [], [], "low");
     }
 
     // Layer 1: Phrase-based classification (higher precision)
@@ -126,7 +181,7 @@ export class IntentClassifier {
           finalResult = {
             ...combined,
             intent: llmResult.intent as Intent,
-            confidence: llmResult.confidence,
+            confidence: llmResult.confidence
           };
         }
       } catch {
@@ -145,20 +200,24 @@ export class IntentClassifier {
       finalResult.confidence,
       finalResult.subIntents,
       entities,
-      complexity,
+      complexity
     );
   }
 
   // ─── Phrase classification (higher precision) ───────────────
 
-  private _classifyByPhrases(query: string): { intent: Intent; confidence: number; subIntents: string[] } {
+  private _classifyByPhrases(query: string): {
+    intent: Intent;
+    confidence: number;
+    subIntents: string[];
+  } {
     const lower = query.toLowerCase();
-    let bestIntent: Intent = 'unknown';
+    let bestIntent: Intent = "unknown";
     let bestScore = 0;
     const subIntents: string[] = [];
 
     for (const [intent, phrases] of Object.entries(INTENT_PHRASES) as [Intent, string[]][]) {
-      if (intent === 'unknown') continue;
+      if (intent === "unknown") continue;
       for (const phrase of phrases) {
         if (lower.includes(phrase)) {
           const score = 3;
@@ -177,13 +236,17 @@ export class IntentClassifier {
 
   // ─── Keyword classification (broader coverage) ──────────────
 
-  private _classifyKeywords(query: string): { intent: Intent; confidence: number; subIntents: string[] } {
+  private _classifyKeywords(query: string): {
+    intent: Intent;
+    confidence: number;
+    subIntents: string[];
+  } {
     const lower = query.toLowerCase();
     const scores = new Map<Intent, number>();
     const subIntents: string[] = [];
 
     for (const [intent, keywords] of Object.entries(INTENT_KEYWORDS) as [Intent, string[]][]) {
-      if (intent === 'unknown') continue;
+      if (intent === "unknown") continue;
       let score = 0;
       for (const keyword of keywords) {
         if (lower.includes(keyword)) {
@@ -196,7 +259,7 @@ export class IntentClassifier {
       }
     }
 
-    let bestIntent: Intent = 'unknown';
+    let bestIntent: Intent = "unknown";
     let bestScore = 0;
     for (const [intent, score] of Array.from(scores)) {
       if (score > bestScore) {
@@ -211,9 +274,10 @@ export class IntentClassifier {
 
   // ─── Combine phrase and keyword results ─────────────────────
 
-  private _combineResults(phrase: { intent: Intent; confidence: number; subIntents: string[] },
-                          keyword: { intent: Intent; confidence: number; subIntents: string[] }):
-    { intent: Intent; confidence: number; subIntents: string[] } {
+  private _combineResults(
+    phrase: { intent: Intent; confidence: number; subIntents: string[] },
+    keyword: { intent: Intent; confidence: number; subIntents: string[] }
+  ): { intent: Intent; confidence: number; subIntents: string[] } {
     // If phrase classifier found a strong signal, prefer it
     if (phrase.confidence >= 0.6) {
       return { ...phrase, confidence: Math.min(phrase.confidence + keyword.confidence * 0.2, 1) };
@@ -237,12 +301,12 @@ export class IntentClassifier {
 
   // ─── Complexity classification ──────────────────────────────
 
-  private _classifyComplexity(query: string, entities: string[]): 'low' | 'medium' | 'high' {
-    if (query.length > COMPLEXITY_PATTERNS.long) return 'high';
-    if (query.length > COMPLEXITY_PATTERNS.medium) return 'medium';
-    if (entities.length > 3) return 'high';
-    if (entities.length > 0) return 'medium';
-    return 'low';
+  private _classifyComplexity(query: string, entities: string[]): "low" | "medium" | "high" {
+    if (query.length > COMPLEXITY_PATTERNS.long) return "high";
+    if (query.length > COMPLEXITY_PATTERNS.medium) return "medium";
+    if (entities.length > 3) return "high";
+    if (entities.length > 0) return "medium";
+    return "low";
   }
 
   // ─── Helpers ────────────────────────────────────────────────
@@ -252,7 +316,7 @@ export class IntentClassifier {
     confidence: number,
     subIntents: string[],
     entities: string[],
-    complexity: 'low' | 'medium' | 'high',
+    complexity: "low" | "medium" | "high"
   ): IntentResult {
     return { intent, confidence, subIntents, entities, complexity };
   }
@@ -263,19 +327,38 @@ export async function classifyIntent(intent: DeveloperIntent): Promise<IntentAna
   const classifier = new IntentClassifier({ root: intent.workspaceRoot });
   const result = await classifier.classify(intent.text);
   const requestedChange = /^(?:add|create|build|implement|develop)\b/i.test(intent.text.trim());
-  const intentType: IntentAnalysis["intentType"] = requestedChange || result.intent === 'implement' ? 'feature'
-    : result.intent === 'debug' ? 'bugfix'
-      : result.intent === 'migrate' ? 'modernization'
-        : result.intent === 'review' ? 'security-review'
-          : result.intent === 'analyze' ? 'qa-analysis'
-            : result.intent === 'document' || result.intent === 'search' ? 'explain'
-              : result.intent as IntentAnalysis["intentType"];
+  const intentType: IntentAnalysis["intentType"] =
+    requestedChange || result.intent === "implement"
+      ? "feature"
+      : result.intent === "debug"
+        ? "bugfix"
+        : result.intent === "migrate"
+          ? "modernization"
+          : result.intent === "review"
+            ? "security-review"
+            : result.intent === "analyze"
+              ? "qa-analysis"
+              : result.intent === "document" || result.intent === "search"
+                ? "explain"
+                : (result.intent as IntentAnalysis["intentType"]);
   return {
     intentType,
     confidence: result.confidence,
-    summary: result.subIntents.length > 0 ? `Task: ${result.intent}, sub-tasks: ${result.subIntents.join(", ")}` : `Task: ${result.intent}`,
+    summary:
+      result.subIntents.length > 0
+        ? `Task: ${result.intent}, sub-tasks: ${result.subIntents.join(", ")}`
+        : `Task: ${result.intent}`,
     keywords: result.entities,
-    needsCodeChange: requestedChange || result.intent === "implement" || result.intent === "refactor" || result.intent === "migrate",
-    riskHints: result.intent === "migrate" ? ["modernization"] : result.intent === "refactor" ? ["code change"] : [],
+    needsCodeChange:
+      requestedChange ||
+      result.intent === "implement" ||
+      result.intent === "refactor" ||
+      result.intent === "migrate",
+    riskHints:
+      result.intent === "migrate"
+        ? ["modernization"]
+        : result.intent === "refactor"
+          ? ["code change"]
+          : []
   };
 }

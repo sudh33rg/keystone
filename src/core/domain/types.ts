@@ -133,11 +133,34 @@ export interface ServiceNode {
   evidence?: EvidenceMetadata;
 }
 
-export interface SemanticCall { filePath: string; caller?: string; callee: string; line: number; evidence?: EvidenceMetadata; }
-export interface ControlFlowFact { filePath: string; kind: string; line: number; evidence?: EvidenceMetadata; }
-export interface DataFlowFact { filePath: string; source: string; target: string; line: number; evidence?: EvidenceMetadata; }
-export interface TypeRelationshipFact { filePath: string; source: string; target: string; kind: "extends" | "implements"; line: number; evidence?: EvidenceMetadata; }
-
+export interface SemanticCall {
+  filePath: string;
+  caller?: string;
+  callee: string;
+  line: number;
+  evidence?: EvidenceMetadata;
+}
+export interface ControlFlowFact {
+  filePath: string;
+  kind: string;
+  line: number;
+  evidence?: EvidenceMetadata;
+}
+export interface DataFlowFact {
+  filePath: string;
+  source: string;
+  target: string;
+  line: number;
+  evidence?: EvidenceMetadata;
+}
+export interface TypeRelationshipFact {
+  filePath: string;
+  source: string;
+  target: string;
+  kind: "extends" | "implements";
+  line: number;
+  evidence?: EvidenceMetadata;
+}
 
 export interface RepositoryLanguageSupport {
   id: string;
@@ -148,7 +171,16 @@ export interface RepositoryLanguageSupport {
   semanticFiles: number;
   deterministicFiles: number;
   failedSemanticFiles: number;
-  capabilities: { symbols: boolean; definitions: boolean; references: boolean; implementations: boolean; calls: boolean; controlFlow: boolean; dataFlow: boolean; cpg: boolean };
+  capabilities: {
+    symbols: boolean;
+    definitions: boolean;
+    references: boolean;
+    implementations: boolean;
+    calls: boolean;
+    controlFlow: boolean;
+    dataFlow: boolean;
+    cpg: boolean;
+  };
   warnings: string[];
 }
 
@@ -218,7 +250,13 @@ export interface ContextPack {
     estimatedTokens: number;
     sourceHash?: string;
     score?: number;
-    evidence?: Array<{ okfId?: string; kind: string; label: string; startLine?: number; endLine?: number }>;
+    evidence?: Array<{
+      okfId?: string;
+      kind: string;
+      label: string;
+      startLine?: number;
+      endLine?: number;
+    }>;
   }>;
   omittedContext?: Array<{ path: string; reason: string; estimatedTokens: number }>;
   contextManifest?: {

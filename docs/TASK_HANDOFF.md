@@ -35,10 +35,7 @@ Task Handoff is an action on the active SDLC task. It transfers portable task st
       "title": "Implement User Authentication",
       "description": "Implement user authentication with OAuth2 and JWT",
       "status": "approved",
-      "evidence": [
-        "evidence:123",
-        "evidence:456"
-      ],
+      "evidence": ["evidence:123", "evidence:456"],
       "decisions": [
         {
           "id": "decision:123",
@@ -63,10 +60,7 @@ Task Handoff is an action on the active SDLC task. It transfers portable task st
       "title": "User Authentication Implementation",
       "description": "Implement user authentication with OAuth2 and JWT",
       "status": "approved",
-      "evidence": [
-        "evidence:123",
-        "evidence:456"
-      ],
+      "evidence": ["evidence:123", "evidence:456"],
       "decisions": [
         {
           "id": "decision:123",
@@ -97,10 +91,7 @@ Task Handoff is an action on the active SDLC task. It transfers portable task st
         "objective": "Implement the API behavior for Browser View to support state and command operations",
         "description": "The Browser View needs to support state synchronization and command execution through a secure API endpoint",
         "status": "in-progress",
-        "dependencies": [
-          "story:456",
-          "story:789"
-        ],
+        "dependencies": ["story:456", "story:789"],
         "acceptanceCriteria": [
           "Browser View must expose /state endpoint",
           "Browser View must expose /command endpoint",
@@ -117,11 +108,7 @@ Task Handoff is an action on the active SDLC task. It transfers portable task st
           "/state endpoint must return current state in JSON format",
           "/command endpoint must accept JSON commands"
         ],
-        "evidence": [
-          "evidence:123",
-          "evidence:456",
-          "evidence:789"
-        ],
+        "evidence": ["evidence:123", "evidence:456", "evidence:789"],
         "blockers": [
           {
             "id": "blocker:123",
@@ -145,10 +132,7 @@ Task Handoff is an action on the active SDLC task. It transfers portable task st
         "copilotDelegation": {
           "agent": "code-reviewer",
           "instructions": "Review the implementation of the Browser View API endpoints",
-          "skills": [
-            "code-review",
-            "security-review"
-          ],
+          "skills": ["code-review", "security-review"],
           "status": "pending",
           "result": null
         },
@@ -191,10 +175,7 @@ Task Handoff is an action on the active SDLC task. It transfers portable task st
     ],
     "status": "in-progress",
     "nextAction": "Implement API authentication system",
-    "evidence": [
-      "evidence:123",
-      "evidence:456"
-    ],
+    "evidence": ["evidence:123", "evidence:456"],
     "decisions": [
       {
         "id": "decision:123",
@@ -298,17 +279,11 @@ Task Handoff is an action on the active SDLC task. It transfers portable task st
             "extractor": "typescript-compiler",
             "extractorVersion": "4.9.5",
             "runId": "run-123",
-            "evidence": [
-              "evidence:123",
-              "evidence:456"
-            ],
+            "evidence": ["evidence:123", "evidence:456"],
             "metadata": {
               "importedFrom": "github.com/user/repo",
               "author": "John Doe",
-              "tags": [
-                "core",
-                "intelligence"
-              ]
+              "tags": ["core", "intelligence"]
             }
           }
         ],
@@ -323,9 +298,7 @@ Task Handoff is an action on the active SDLC task. It transfers portable task st
             "extractor": "typescript-compiler",
             "extractorVersion": "4.9.5",
             "runId": "run-123",
-            "evidence": [
-              "evidence:789"
-            ],
+            "evidence": ["evidence:789"],
             "metadata": {
               "line": 42,
               "column": 15,
@@ -343,10 +316,7 @@ Task Handoff is an action on the active SDLC task. It transfers portable task st
           "language": "typescript",
           "content": "export interface Profile {\n  id: string;\n  version: string;\n  ...\n}",
           "normalizedContent": "export interface profile { id string version string ... }",
-          "evidence": [
-            "evidence:123",
-            "evidence:456"
-          ],
+          "evidence": ["evidence:123", "evidence:456"],
           "metadata": {
             "lineCount": 45,
             "wordCount": 123,
@@ -396,10 +366,7 @@ Task Handoff is an action on the active SDLC task. It transfers portable task st
     "id": "context:123",
     "type": "intent",
     "intent": "Implement user authentication with OAuth2 and JWT",
-    "evidence": [
-      "evidence:123",
-      "evidence:456"
-    ],
+    "evidence": ["evidence:123", "evidence:456"],
     "compression": {
       "method": "adapative",
       "ratio": 0.75,
@@ -410,10 +377,7 @@ Task Handoff is an action on the active SDLC task. It transfers portable task st
   "copilot": {
     "agent": "code-reviewer",
     "instructions": "Review the implementation of the Browser View API endpoints",
-    "skills": [
-      "code-review",
-      "security-review"
-    ],
+    "skills": ["code-review", "security-review"],
     "status": "pending",
     "result": null
   },
@@ -833,6 +797,7 @@ Keystone employs AES-256-GCM encryption with scrypt key derivation:
   - dkLen: 32
 
 The encryption ensures that:
+
 - The package is secure
 - The data cannot be read without the passphrase
 - The data cannot be tampered with

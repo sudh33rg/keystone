@@ -6,7 +6,8 @@ async function main(): Promise<void> {
   const extensionDevelopmentPath = path.resolve(__dirname, "..", "..", "..", "..");
   const extensionTestsPath = path.resolve(__dirname, "suite", "index");
 
-  const workspacePath = process.env.KEYSTONE_TEST_LAUNCH_PATH ?? process.env.KEYSTONE_TEST_WORKSPACE;
+  const workspacePath =
+    process.env.KEYSTONE_TEST_LAUNCH_PATH ?? process.env.KEYSTONE_TEST_WORKSPACE;
   await runTests({
     extensionDevelopmentPath,
     extensionTestsPath,

@@ -1,4 +1,4 @@
-declare module '@vscode/test-electron' {
+declare module "@vscode/test-electron" {
   export interface RunTestsOptions {
     extensionDevelopmentPath: string;
     extensionTestsPath: string;

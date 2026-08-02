@@ -1,1 +1,1 @@
-export * from './intelligenceExplorer';
+export * from "./intelligenceExplorer";

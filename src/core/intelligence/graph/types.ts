@@ -15,105 +15,105 @@ import type { KnowledgeGraphStats } from "../../platform/storage/types";
  */
 
 export type NodeKind =
-  | 'file'
-  | 'module'
-  | 'class'
-  | 'struct'
-  | 'interface'
-  | 'trait'
-  | 'function'
-  | 'method'
-  | 'property'
-  | 'field'
-  | 'variable'
-  | 'constant'
-  | 'enum'
-  | 'enum_member'
-  | 'type_alias'
-  | 'namespace'
-  | 'parameter'
-  | 'import'
-  | 'export'
-  | 'route'
-  | 'component'
+  | "file"
+  | "module"
+  | "class"
+  | "struct"
+  | "interface"
+  | "trait"
+  | "function"
+  | "method"
+  | "property"
+  | "field"
+  | "variable"
+  | "constant"
+  | "enum"
+  | "enum_member"
+  | "type_alias"
+  | "namespace"
+  | "parameter"
+  | "import"
+  | "export"
+  | "route"
+  | "component"
   // Extended node kinds used by graph builder and query engine
-  | 'symbol'
-  | 'owner'
-  | 'change'
-  | 'test'
-  | 'package_script'
-  | 'package_dependency'
-  | 'config_usage'
-  | 'runtime_behavior'
-  | 'repository'
-  | 'directory'
-  | 'package_manifest'
+  | "symbol"
+  | "owner"
+  | "change"
+  | "test"
+  | "package_script"
+  | "package_dependency"
+  | "config_usage"
+  | "runtime_behavior"
+  | "repository"
+  | "directory"
+  | "package_manifest"
   // Schema evolution (from GitNexus) — additional node kinds
-  | 'macro'
-  | 'typedef'
-  | 'union'
-  | 'annotation'
-  | 'constructor'
-  | 'template'
-  | 'section'
-  | 'tool'
-  | 'code_element'
-  | 'const'
-  | 'static'
-  | 'record'
-  | 'delegate';
+  | "macro"
+  | "typedef"
+  | "union"
+  | "annotation"
+  | "constructor"
+  | "template"
+  | "section"
+  | "tool"
+  | "code_element"
+  | "const"
+  | "static"
+  | "record"
+  | "delegate";
 
 export type EdgeKind =
-  | 'contains'      // Parent contains child (file→class, class→method)
-  | 'calls'         // Function/method calls another
-  | 'imports'       // File imports from another
-  | 'exports'       // File exports a symbol
-  | 'extends'       // Class/interface extends another
-  | 'implements'    // Class implements interface
-  | 'references'    // Generic reference to another symbol
-  | 'type_of'       // Variable/parameter has type
-  | 'returns'       // Function returns type
-  | 'instantiates'  // Creates instance of class
-  | 'overrides'     // Method overrides parent method
-  | 'decorates'
+  | "contains" // Parent contains child (file→class, class→method)
+  | "calls" // Function/method calls another
+  | "imports" // File imports from another
+  | "exports" // File exports a symbol
+  | "extends" // Class/interface extends another
+  | "implements" // Class implements interface
+  | "references" // Generic reference to another symbol
+  | "type_of" // Variable/parameter has type
+  | "returns" // Function returns type
+  | "instantiates" // Creates instance of class
+  | "overrides" // Method overrides parent method
+  | "decorates"
   // Extended edge kinds used by graph builder and query engine
-  | 'declares'     // File declares symbols/routes/config
-  | 'covers'       // Test covers a file
-  | 'observes'     // Runtime observes a file
-  | 'owns'         // Owner owns a file
-  | 'changes'      // Change affects a file
+  | "declares" // File declares symbols/routes/config
+  | "covers" // Test covers a file
+  | "observes" // Runtime observes a file
+  | "owns" // Owner owns a file
+  | "changes" // Change affects a file
   // Schema evolution (from GitNexus) — additional edge kinds
-  | 'inherits'          // Inherits from parent type
-  | 'method_overrides'  // Method overrides parent implementation
-  | 'method_implements' // Method implements interface contract
-  | 'uses'              // Uses another resource (config, env var)
-  | 'defines'           // Defines a symbol from a resource
-  | 'has_method'        // Class/module contains a method
-  | 'has_property'      // Class/struct contains a property
-  | 'accesses'          // Accesses a resource or variable
-  | 'member_of'         // Belongs to a containing entity
-  | 'step_in_process'   // Step in a workflow or pipeline
-  | 'handles_route'     // Handles a specific route
-  | 'fetches'           // Fetches data from a source
-  | 'handles_tool'      // Handles invocation of a tool
-  | 'entry_point_of'    // Entry point of an execution flow
-  | 'wraps'             // Wraps another symbol
-  | 'queries';          // Queries a data source
+  | "inherits" // Inherits from parent type
+  | "method_overrides" // Method overrides parent implementation
+  | "method_implements" // Method implements interface contract
+  | "uses" // Uses another resource (config, env var)
+  | "defines" // Defines a symbol from a resource
+  | "has_method" // Class/module contains a method
+  | "has_property" // Class/struct contains a property
+  | "accesses" // Accesses a resource or variable
+  | "member_of" // Belongs to a containing entity
+  | "step_in_process" // Step in a workflow or pipeline
+  | "handles_route" // Handles a specific route
+  | "fetches" // Fetches data from a source
+  | "handles_tool" // Handles invocation of a tool
+  | "entry_point_of" // Entry point of an execution flow
+  | "wraps" // Wraps another symbol
+  | "queries"; // Queries a data source
 
 // ---------------------------------------------------------------------------
 // Co-change coupling (from axoniq / code-review-graph)
 // ---------------------------------------------------------------------------
 
 /** Edge kind for files that frequently change together (git co-change analysis) */
-export type CouplingEdgeKind = 'coupled_with';
+export type CouplingEdgeKind = "coupled_with";
 
 /** A relationship edge representing git co-change coupling between files */
 export interface CouplingEdge {
   fileA: string;
   fileB: string;
   coChangeCount: number;
-  lastCoChange: number;        // Unix timestamp
-  couplingStrength: number;    // 0.0 – 1.0
+  lastCoChange: number; // Unix timestamp
+  couplingStrength: number; // 0.0 – 1.0
 }
 
 // ---------------------------------------------------------------------------
@@ -207,17 +207,17 @@ export interface CommunityEdgeWeights {
 
 /** Default edge weights for community detection (from code-review-graph) */
 export const DEFAULT_COMMUNITY_EDGE_WEIGHTS: CommunityEdgeWeights = {
-  'calls': 1.0,
-  'imports': 0.5,
-  'extends': 0.8,
-  'implements': 0.7,
-  'contains': 0.3,
-  'covers': 0.4,
-  'changes': 0.6,
-  'references': 0.2,
-  'returns': 0.6,
-  'instantiates': 0.6,
-  'overrides': 0.6,
+  calls: 1.0,
+  imports: 0.5,
+  extends: 0.8,
+  implements: 0.7,
+  contains: 0.3,
+  covers: 0.4,
+  changes: 0.6,
+  references: 0.2,
+  returns: 0.6,
+  instantiates: 0.6,
+  overrides: 0.6
 };
 
 // ---------------------------------------------------------------------------
@@ -226,7 +226,7 @@ export const DEFAULT_COMMUNITY_EDGE_WEIGHTS: CommunityEdgeWeights = {
 
 /** Skip directories by category */
 export type SkipPatternCategory =
-  | 'vcs' | 'ide' | 'python' | 'js' | 'build' | 'language_cache' | 'deploy';
+  "vcs" | "ide" | "python" | "js" | "build" | "language_cache" | "deploy";
 
 /** A single skip pattern */
 export interface SkipPattern {
@@ -235,7 +235,7 @@ export interface SkipPattern {
   /** Category */
   category: SkipPatternCategory;
   /** Whether this is a directory name or file extension */
-  type: 'dir' | 'ext';
+  type: "dir" | "ext";
 }
 
 // ---------------------------------------------------------------------------
@@ -244,10 +244,10 @@ export interface SkipPattern {
 
 /** Resolution strategy priority */
 export type ResolutionStrategy =
-  | 'module_path'     // Module-path resolution
-  | 'namespace_map'   // Namespace-to-file mapping
-  | 'symbol_name'     // Symbol-name fallback
-  | 'lsp';            // LSP cross-reference (external)
+  | "module_path" // Module-path resolution
+  | "namespace_map" // Namespace-to-file mapping
+  | "symbol_name" // Symbol-name fallback
+  | "lsp"; // LSP cross-reference (external)
 
 /** Confidence floor for LSP cross-reference resolution */
 export const LSP_CONFIDENCE_FLOOR = 0.6;
@@ -272,8 +272,7 @@ export interface ResolvedCall {
 export interface LSPDefinition {
   qualifiedName: string;
   shortName: string;
-  label: 'class' | 'interface' | 'trait' | 'enum' | 'type' | 'protocol'
-    | 'function' | 'method';
+  label: "class" | "interface" | "trait" | "enum" | "type" | "protocol" | "function" | "method";
   receiverType?: string;
   returnTypes?: string[];
   embeddedTypes?: string[];
@@ -286,12 +285,7 @@ export interface LSPDefinition {
 
 /** Content type detected for compression routing */
 export type CompressedContentType =
-  | 'json_array'
-  | 'source_code'
-  | 'log_output'
-  | 'grep_output'
-  | 'unified_diff'
-  | 'plain_text';
+  "json_array" | "source_code" | "log_output" | "grep_output" | "unified_diff" | "plain_text";
 
 /** Configuration for context compression pipeline */
 export interface CompressConfig {
@@ -342,10 +336,10 @@ export interface CcrStore {
 // ---------------------------------------------------------------------------
 
 /** Memory status */
-export type MemoryStatus = 'active' | 'proposed' | 'archived';
+export type MemoryStatus = "active" | "proposed" | "archived";
 
 /** Memory confidence level */
-export type MemoryConfidence = 'high' | 'medium' | 'low';
+export type MemoryConfidence = "high" | "medium" | "low";
 
 /** A memory document (from the-librarian's vault pattern) */
 export interface MemoryDocument {
@@ -430,7 +424,7 @@ export interface TemporalKGEdge extends KGEdge {
  * An episodic ingestion unit that flows through extraction → resolution → save.
  * Inspired by Graphiti's EpisodeType (message, json, text).
  */
-export type EpisodeType = 'message' | 'json' | 'text';
+export type EpisodeType = "message" | "json" | "text";
 
 /**
  * An episode (raw ingestion) that produces nodes and edges.
@@ -459,26 +453,105 @@ export interface Episode {
 }
 
 export type GraphConfidence =
-  | 'deterministic'  // Extracted from AST with certainty
-  | 'inferred'       // Inferred from patterns (imports, naming)
-  | 'heuristic';     // Heuristic matching (bare names, type inference)
+  | "deterministic" // Extracted from AST with certainty
+  | "inferred" // Inferred from patterns (imports, naming)
+  | "heuristic"; // Heuristic matching (bare names, type inference)
 
 export type Language =
-  | 'typescript' | 'javascript' | 'tsx' | 'jsx' | 'python' | 'go' | 'rust'
-  | 'java' | 'c' | 'cpp' | 'csharp' | 'php' | 'ruby' | 'swift' | 'kotlin'
-  | 'dart' | 'svelte' | 'vue' | 'yaml' | 'scala' | 'lua' | 'luau' | 'objc'
-  | 'perl' | 'elixir' | 'bash' | 'solidity' | 'verilog' | 'rescript'
-  | 'notebook' | 'sql' | 'jsx' | 'vue' | 'svelte' | 'zig' | 'powershell'
-  | 'r' | 'lua' | 'luau' | 'ocaml' | 'scheme' | 'racket' | 'nim' | 'crystal'
-  | 'ada' | 'fortran' | 'julia' | 'haskell' | 'erlang' | 'clojure'
-  | 'hcl' | 'terraform' | 'docker' | 'kubernetes' | 'makefile' | 'cmake'
-  | 'graphql' | 'protobuf' | 'thrift' | 'wire' | 'asn1' | 'opa' | 'rego'
-  | 'json' | 'aj' | 'clojure' | 'erlang' | 'haskell' | 'nim' | 'crystal'
-  | 'ada' | 'fortran' | 'julia' | 'ocaml' | 'racket' | 'scheme'
-  | 'solidity' | 'verilog' | 'rescript' | 'notebook' | 'sql'
-  | 'powershell' | 'zig' | 'perl' | 'elixir' | 'bash' | 'rescript'
-  | 'pascal' | 'd' | 'fortran' | 'julia' | 'lua' | 'luau'
-  | 'unknown';
+  | "typescript"
+  | "javascript"
+  | "tsx"
+  | "jsx"
+  | "python"
+  | "go"
+  | "rust"
+  | "java"
+  | "c"
+  | "cpp"
+  | "csharp"
+  | "php"
+  | "ruby"
+  | "swift"
+  | "kotlin"
+  | "dart"
+  | "svelte"
+  | "vue"
+  | "yaml"
+  | "scala"
+  | "lua"
+  | "luau"
+  | "objc"
+  | "perl"
+  | "elixir"
+  | "bash"
+  | "solidity"
+  | "verilog"
+  | "rescript"
+  | "notebook"
+  | "sql"
+  | "jsx"
+  | "vue"
+  | "svelte"
+  | "zig"
+  | "powershell"
+  | "r"
+  | "lua"
+  | "luau"
+  | "ocaml"
+  | "scheme"
+  | "racket"
+  | "nim"
+  | "crystal"
+  | "ada"
+  | "fortran"
+  | "julia"
+  | "haskell"
+  | "erlang"
+  | "clojure"
+  | "hcl"
+  | "terraform"
+  | "docker"
+  | "kubernetes"
+  | "makefile"
+  | "cmake"
+  | "graphql"
+  | "protobuf"
+  | "thrift"
+  | "wire"
+  | "asn1"
+  | "opa"
+  | "rego"
+  | "json"
+  | "aj"
+  | "clojure"
+  | "erlang"
+  | "haskell"
+  | "nim"
+  | "crystal"
+  | "ada"
+  | "fortran"
+  | "julia"
+  | "ocaml"
+  | "racket"
+  | "scheme"
+  | "solidity"
+  | "verilog"
+  | "rescript"
+  | "notebook"
+  | "sql"
+  | "powershell"
+  | "zig"
+  | "perl"
+  | "elixir"
+  | "bash"
+  | "rescript"
+  | "pascal"
+  | "d"
+  | "fortran"
+  | "julia"
+  | "lua"
+  | "luau"
+  | "unknown";
 
 /**
  * A node in the knowledge graph representing a code symbol.
@@ -521,7 +594,7 @@ export interface KGNode {
   signature?: string;
 
   /** Visibility modifier */
-  visibility?: 'public' | 'private' | 'protected' | 'internal';
+  visibility?: "public" | "private" | "protected" | "internal";
 
   /** Whether symbol is exported */
   isExported?: boolean;
@@ -591,7 +664,7 @@ export interface KGEdge {
   column?: number;
 
   /** How this edge was created */
-  provenance?: 'tree-sitter' | 'heuristic' | 'semantic';
+  provenance?: "tree-sitter" | "heuristic" | "semantic";
 
   /** Confidence level (0.0 - 1.0 or string label like "deterministic") */
   confidence: number | string;
@@ -819,7 +892,7 @@ export interface BuildContextOptions {
   includeCode?: boolean;
 
   /** Output format (default: 'markdown') */
-  format?: 'markdown' | 'json';
+  format?: "markdown" | "json";
 
   /** Number of semantic search results (default: 5) */
   searchLimit?: number;
@@ -845,7 +918,7 @@ export interface TraversalOptions {
   nodeKinds?: NodeKind[];
 
   /** Direction of traversal */
-  direction?: 'outgoing' | 'incoming' | 'both';
+  direction?: "outgoing" | "incoming" | "both";
 
   /** Maximum nodes to return */
   limit?: number;
@@ -871,21 +944,22 @@ export type GraphNodeKind = NodeKind;
 
 // Add old node/edge kinds for backward compatibility
 export type OldNodeKind =
-  | 'repository'
-  | 'directory'
-  | 'file'
-  | 'package_manifest'
-  | 'package_script'
-  | 'package_dependency'
-  | 'test'
-  | 'route'
-  | 'config_usage'
-  | 'runtime_behavior'
-  | 'owner'
-  | 'change'
-  | 'symbol';
+  | "repository"
+  | "directory"
+  | "file"
+  | "package_manifest"
+  | "package_script"
+  | "package_dependency"
+  | "test"
+  | "route"
+  | "config_usage"
+  | "runtime_behavior"
+  | "owner"
+  | "change"
+  | "symbol";
 
-export type OldEdgeKind = 'contains' | 'declares' | 'imports' | 'calls' | 'covers' | 'observes' | 'owns' | 'changes';
+export type OldEdgeKind =
+  "contains" | "declares" | "imports" | "calls" | "covers" | "observes" | "owns" | "changes";
 
 /**
  * Options for searching the graph.
@@ -950,39 +1024,39 @@ export interface EvidenceTrace {
  * Maps to EdgeKind values but provides a stable API for MCP tools.
  */
 export const RELATIONSHIP_TYPES = {
-  CONTAINS: 'contains',
-  CALLS: 'calls',
-  IMPORTS: 'imports',
-  EXPORTS: 'exports',
-  EXTENDS: 'extends',
-  IMPLEMENTS: 'implements',
-  REFERENCES: 'references',
-  TYPE_OF: 'type_of',
-  RETURNS: 'returns',
-  INSTANTIATES: 'instantiates',
-  OVERRIDES: 'overrides',
-  DECORATES: 'decorates',
-  DECLARES: 'declares',
-  COVERS: 'covers',
-  OBSERVES: 'observes',
-  OWNS: 'owns',
-  CHANGES: 'changes',
-  INHERITS: 'inherits',
-  METHOD_OVERRIDES: 'method_overrides',
-  METHOD_IMPLEMENTS: 'method_implements',
-  USES: 'uses',
-  DEFINES: 'defines',
-  HAS_METHOD: 'has_method',
-  HAS_PROPERTY: 'has_property',
-  ACCESSES: 'accesses',
-  MEMBER_OF: 'member_of',
-  STEP_IN_PROCESS: 'step_in_process',
-  HANDLES_ROUTE: 'handles_route',
-  FETCHES: 'fetches',
-  HANDLES_TOOL: 'handles_tool',
-  ENTRY_POINT_OF: 'entry_point_of',
-  WRAPS: 'wraps',
-  QUERIES: 'queries',
+  CONTAINS: "contains",
+  CALLS: "calls",
+  IMPORTS: "imports",
+  EXPORTS: "exports",
+  EXTENDS: "extends",
+  IMPLEMENTS: "implements",
+  REFERENCES: "references",
+  TYPE_OF: "type_of",
+  RETURNS: "returns",
+  INSTANTIATES: "instantiates",
+  OVERRIDES: "overrides",
+  DECORATES: "decorates",
+  DECLARES: "declares",
+  COVERS: "covers",
+  OBSERVES: "observes",
+  OWNS: "owns",
+  CHANGES: "changes",
+  INHERITS: "inherits",
+  METHOD_OVERRIDES: "method_overrides",
+  METHOD_IMPLEMENTS: "method_implements",
+  USES: "uses",
+  DEFINES: "defines",
+  HAS_METHOD: "has_method",
+  HAS_PROPERTY: "has_property",
+  ACCESSES: "accesses",
+  MEMBER_OF: "member_of",
+  STEP_IN_PROCESS: "step_in_process",
+  HANDLES_ROUTE: "handles_route",
+  FETCHES: "fetches",
+  HANDLES_TOOL: "handles_tool",
+  ENTRY_POINT_OF: "entry_point_of",
+  WRAPS: "wraps",
+  QUERIES: "queries"
 } as const;
 
 export type RelationshipType = (typeof RELATIONSHIP_TYPES)[keyof typeof RELATIONSHIP_TYPES];
@@ -992,12 +1066,12 @@ export type RelationshipType = (typeof RELATIONSHIP_TYPES)[keyof typeof RELATION
  * From GitNexus pipeline.ts.
  */
 export const PIPELINE_PHASES = {
-  DISCOVERY: 'discovery',
-  EXTRACTION: 'extraction',
-  STORAGE: 'storage',
-  INDEXING: 'indexing',
-  ANALYSIS: 'analysis',
-  QUERY: 'query',
+  DISCOVERY: "discovery",
+  EXTRACTION: "extraction",
+  STORAGE: "storage",
+  INDEXING: "indexing",
+  ANALYSIS: "analysis",
+  QUERY: "query"
 } as const;
 
 export type PipelinePhase = (typeof PIPELINE_PHASES)[keyof typeof PIPELINE_PHASES];
