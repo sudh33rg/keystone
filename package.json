@@ -101,11 +101,20 @@
     "build:webview": "node scripts/build.mjs --webview-only",
     "compile": "npm run build",
     "watch": "node scripts/build.mjs --watch",
-    "typecheck": "node scripts/typecheck.mjs",
-    "typecheck:extension": "node scripts/typecheck.mjs --extension-only",
-    "typecheck:webview": "node scripts/typecheck.mjs --webview-only",
+    "typecheck": "npm run typecheck:extension && npm run typecheck:webview",
+    "typecheck:extension": "tsc -p tsconfig.json --noEmit",
+    "typecheck:webview": "tsc -p tsconfig.webview.json --noEmit",
     "lint": "node scripts/lint.mjs",
-    "format": "node scripts/format.mjs"
+    "format": "prettier --write \"src/**/*.{ts,tsx}\" \"tests/**/*.{ts,tsx}\" \"scripts/**/*.mjs\" \"*.config.{js,ts,mjs}\" package.json tsconfig*.json",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx}\" \"tests/**/*.{ts,tsx}\" \"scripts/**/*.mjs\" \"*.config.{js,ts,mjs}\" package.json tsconfig*.json",
+    "test": "node scripts/test.mjs",
+    "verify:source": "npm run clean && npm run typecheck && npm run lint && npm test && node scripts/check-active-boundary.mjs",
+    "verify:cross-feature": "npm run build && node scripts/verify-final.mjs",
+    "verify:production": "npm run build && node scripts/verify-production-acceptance.mjs",
+    "evidence:browser": "npm run build && node scripts/evidence-browser.mjs",
+    "package:vsix": "npm run build && node scripts/package-vsix.mjs",
+    "verify:vsix": "node scripts/verify-vsix.mjs",
+    "package:project": "node scripts/package-project.mjs"
   },
   "dependencies": {
     "typescript": "5.8.3",
@@ -116,7 +125,8 @@
     "@types/node": "25.1.0",
     "undici-types": "7.16.0",
     "@types/react": "16.0.0",
-    "@types/react-dom": "16.0.0"
+    "@types/react-dom": "16.0.0",
+    "prettier": "3.9.6"
   },
   "keywords": [
     "vscode",
