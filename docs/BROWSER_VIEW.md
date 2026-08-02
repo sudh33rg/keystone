@@ -323,31 +323,6 @@ app.use((req, res, next) => {
   next();
 });
 ```
-
-## Testing
-
-Keystone tests the Browser View functionality:
-
-1. **Unit Tests**: Test the Browser View code
-2. **Integration Tests**: Test the end-to-end Browser View process
-3. **Security Tests**: Test the security of the Browser View process
-4. **Performance Tests**: Test the performance of the Browser View process
-5. **Error Handling Tests**: Test the error handling of the Browser View process
-
-### Security Tests
-
-1. **Unauthorized Access**: Verify that unauthorized access is rejected
-2. **Bootstrap Replay**: Verify that bootstrap token replay is rejected
-3. **Cross-Origin Rejection**: Verify that cross-origin commands are rejected
-4. **Stale State Rejection**: Verify that stale state commands are rejected
-5. **CSP Validation**: Verify that Content Security Policy is enforced
-6. **X-Frame-Options Validation**: Verify that X-Frame-Options is enforced
-7. **X-Content-Type-Options Validation**: Verify that X-Content-Type-Options is enforced
-8. **Strict-Transport-Security Validation**: Verify that Strict-Transport-Security is enforced
-9. **HttpOnly Cookie Validation**: Verify that HttpOnly cookie is used
-10. **SameSite=Strict Validation**: Verify that SameSite=Strict is used
-11. **Secure Cookie Validation**: Verify that Secure cookie is used
-12. **Session Expiration**: Verify that session expires after inactivity
 13. **Token Expiration**: Verify that bootstrap token expires
 14. **Command Validation**: Verify that commands are validated
 15. **State Version Validation**: Verify that state version is validated

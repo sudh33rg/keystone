@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { IGNORED_DIRECTORIES } from "../../platform/config/defaults";
 import { LANGUAGE_DEFINITIONS, LanguageCapabilityRegistry } from "../languages/languageRegistry";
+import { loadGitignore } from "./gitignore";
 
 export interface ScannedFile {
   path: string;
@@ -32,6 +33,9 @@ const SPECIAL_SOURCE_FILES = new Set([
   "justfile"
 ]);
 const registry = new LanguageCapabilityRegistry();
+const IGNORED_DIRECTORY_NAMES = new Set(
+  [...IGNORED_DIRECTORIES].map((directory) => directory.toLowerCase())
+);
 const YIELD_INTERVAL = 250;
 const INSPECTION_CONCURRENCY = 64;
 const BINARY_EXTENSIONS = new Set([
@@ -68,13 +72,40 @@ const BINARY_EXTENSIONS = new Set([
   ".lockb"
 ]);
 
+// These artifacts can be text and therefore pass the binary/text check, but do
+// not provide useful repository structure. Keep this policy at discovery time
+// so they never reach language analysis, semantic enrichment, or persistence.
+const IGNORED_FILE_NAMES = new Set([
+  ".ds_store",
+  "package-lock.json",
+  "npm-shrinkwrap.json",
+  "yarn.lock",
+  "pnpm-lock.yaml",
+  "bun.lock",
+  "bun.lockb",
+  "composer.lock",
+  "gemfile.lock",
+  "podfile.lock",
+  "cartfile.resolved",
+  "cargo.lock",
+  "go.sum"
+]);
+
+const IGNORED_FILE_PATTERNS = [
+  // Bundler output is often very large, opaque, and duplicated by its source.
+  /\.min\.(?:css|scss|sass|less|js|jsx|mjs|cjs)$/i,
+  /(?:^|[._~-])vendors?(?:[._~-]|$)/i,
+  // Source maps contain generated mappings rather than source structure.
+  /\.map$/i
+];
+
 /**
  * Discover every supported source artifact in the workspace.
  *
  * There is deliberately no file-count or file-size cap. Discovery yields to the
- * event loop in bounded batches, honours cancellation, skips only explicitly
- * ignored/generated/vendor directories, and tolerates files that disappear or
- * become unreadable while the repository is changing.
+ * event loop in bounded batches, honours cancellation, skips explicitly ignored
+ * directories and generated/dependency artifacts, and tolerates files that
+ * disappear or become unreadable while the repository is changing.
  */
 export async function scanFiles(
   workspaceRoot: string,
@@ -82,6 +113,7 @@ export async function scanFiles(
   onProgress?: (progress: FileScanProgress) => void
 ): Promise<ScannedFile[]> {
   const files: ScannedFile[] = [];
+  const gitignore = await loadGitignore(workspaceRoot);
   const pending = [workspaceRoot];
   let visitedEntries = 0;
 
@@ -98,10 +130,16 @@ export async function scanFiles(
     for (const entry of entries) {
       signal?.throwIfAborted();
       visitedEntries += 1;
+      const absolutePath = path.join(directory, entry.name);
+      const relativePath = path.relative(workspaceRoot, absolutePath).split(path.sep).join("/");
       if (entry.isDirectory()) {
-        if (!IGNORED_DIRECTORIES.has(entry.name)) pending.push(path.join(directory, entry.name));
+        if (
+          !IGNORED_DIRECTORY_NAMES.has(entry.name.toLowerCase()) &&
+          !gitignore.isIgnored(relativePath, true)
+        )
+          pending.push(absolutePath);
       } else if (entry.isFile()) {
-        fileEntries.push(entry);
+        if (!gitignore.isIgnored(relativePath, false)) fileEntries.push(entry);
       }
     }
 
@@ -133,6 +171,7 @@ async function inspectFile(
 ): Promise<ScannedFile | undefined> {
   signal?.throwIfAborted();
   const absolutePath = path.join(directory, name);
+  if (isIgnoredFile(name)) return undefined;
   const extension = path.extname(name).toLowerCase();
   if (BINARY_EXTENSIONS.has(extension)) return undefined;
   const registered =
@@ -149,6 +188,14 @@ async function inspectFile(
   if (!stat || !text) return undefined;
   const relativePath = path.relative(workspaceRoot, absolutePath).split(path.sep).join("/");
   return { path: relativePath, absolutePath, sizeBytes: stat.size, modifiedTimeMs: stat.mtimeMs };
+}
+
+/** Return whether a text-looking file is an ingestion artifact rather than source. */
+export function isIgnoredFile(fileName: string): boolean {
+  const name = path.basename(fileName).toLowerCase();
+  return (
+    IGNORED_FILE_NAMES.has(name) || IGNORED_FILE_PATTERNS.some((pattern) => pattern.test(name))
+  );
 }
 
 export function languageForPath(filePath: string): string {

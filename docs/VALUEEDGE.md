@@ -362,14 +362,4 @@ Keystone ensures security in the integration:
 6. **Token Expiration**: Access tokens expire and are refreshed
 7. **Scope Limitation**: API access is limited to required scopes
 
-### Testing
-
-Keystone tests the integration:
-
-1. **Unit Tests**: Test API integration code
-2. **Integration Tests**: Test end-to-end integration
-3. **Error Handling Tests**: Test error handling
-4. **Security Tests**: Test security measures
-5. **Performance Tests**: Test performance
-
 The ValueEdge integration allows Keystone to seamlessly integrate with existing workflow systems while maintaining its local-first, intelligence-driven approach.

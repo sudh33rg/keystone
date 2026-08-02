@@ -876,14 +876,4 @@ Keystone ensures security in Task Handoff:
 9. **PGP Signature**: The package can be signed with PGP
 10. **No Persistent Storage**: The package is not stored persistently
 
-## Testing
-
-Keystone tests the Task Handoff functionality:
-
-1. **Unit Tests**: Test the Task Handoff code
-2. **Integration Tests**: Test the end-to-end Task Handoff process
-3. **Security Tests**: Test the security of the Task Handoff process
-4. **Performance Tests**: Test the performance of the Task Handoff process
-5. **Error Handling Tests**: Test the error handling of the Task Handoff process
-
 The Task Handoff system allows users to securely and reliably transfer SDLC state between systems while maintaining security, integrity, and usability.

@@ -6,6 +6,10 @@ Keystone does not impose a repository file-count ceiling, source-file-size ceili
 
 - Probable text artifacts are discovered regardless of extension.
 - Explicit generated, dependency, cache, binary, and VCS paths are excluded.
+- The target repository's root `.gitignore` rules are applied during discovery,
+  including ordered negated rules for files under traversable directories.
+- Dependency lockfiles, vendor-named files, source maps, and minified CSS/JS
+  assets are excluded before text inspection and language analysis.
 - Directory traversal and analysis yield to the event loop in batches.
 - Work is cancellable through `AbortSignal`.
 - Unchanged files reuse persisted hashes and extracted intelligence without semantic re-analysis.

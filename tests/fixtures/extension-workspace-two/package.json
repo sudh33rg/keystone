@@ -1,7 +1,0 @@
-{
-  "name": "keystone-extension-fixture-two",
-  "private": true,
-  "scripts": {
-    "test": "node --test"
-  }
-}
