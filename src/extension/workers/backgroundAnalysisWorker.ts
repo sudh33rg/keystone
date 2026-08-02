@@ -18,6 +18,8 @@ const input = workerData as BackgroundWorkerInput & {
   kind: WorkerKind;
   workerId: string;
   startedAt: string;
+  attempt: number;
+  maxAttempts: number;
 };
 
 async function persist(name: string, value: unknown): Promise<void> {
@@ -107,6 +109,9 @@ void run()
       snapshotDigest: input.snapshotDigest,
       extractionRunId: input.extractionRunId,
       scopePaths: input.canonicalEvidence[input.kind].paths,
+      attempt: input.attempt,
+      maxAttempts: input.maxAttempts,
+      retryCount: input.attempt - 1,
       startedAt: input.startedAt,
       completedAt,
       durationMs,
@@ -133,6 +138,9 @@ void run()
       snapshotDigest: input.snapshotDigest,
       extractionRunId: input.extractionRunId,
       scopePaths: input.canonicalEvidence[input.kind].paths,
+      attempt: input.attempt,
+      maxAttempts: input.maxAttempts,
+      retryCount: input.attempt - 1,
       startedAt: input.startedAt,
       completedAt,
       durationMs,

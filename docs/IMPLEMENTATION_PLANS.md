@@ -107,7 +107,7 @@
 
 - Persistent hash/extraction and digest-keyed query/graph/context caches (initial slice landed).
 - Age/count retention and removal metrics for extraction/query/graph caches (initial slice landed); persistent semantic-provider projection invalidation and richer provider-version policy remain. Snapshot locking, stale-run detection, and deletion recovery are implemented for the current ingestion/worker boundary.
-- Clear worker thread/process semantics, automatic retry policy, and richer cross-run worker health reporting. Worker run coalescing, cancellation/staleness, late-write protection, and promoted-snapshot freshness reporting are implemented; the current slice reports worker identity, promoted snapshot identity, canonical scope size, duration, and independent timeout/failure state.
+- Clear worker thread/process semantics and richer cross-run worker health reporting. Last-promoted-snapshot fallback recovery after a failed refresh, matching in-flight retry-attempt resume across a host restart, worker run coalescing, cancellation/staleness, late-write protection, promoted-snapshot freshness reporting, and bounded per-role retries are implemented; the current slice reports worker identity, promoted snapshot identity, canonical scope size, attempt/max-attempts, retry timing, duration, and independent timeout/failure state.
 - Freshness and degraded-state indicators across VS Code and Browser View.
 
 ### Exit criteria

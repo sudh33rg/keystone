@@ -87,7 +87,9 @@ async function main() {
   assert.ok(cleared.freedBytes > 0);
   await assert.rejects(() => fs.stat(target), "intelligence dir removed");
   await fs.rm(repo3, { recursive: true, force: true });
-  console.log(`PASS clearIntelligenceCache: removed ${(cleared.freedBytes / 1024 / 1024).toFixed(1)} MB`);
+  console.log(
+    `PASS clearIntelligenceCache: removed ${(cleared.freedBytes / 1024 / 1024).toFixed(1)} MB`
+  );
 
   console.log("\nALL CORE VERIFICATION PASSED");
 }

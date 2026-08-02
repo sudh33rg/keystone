@@ -12,6 +12,7 @@ The most common change, and the one with the most steps. Example: a button that
 shows "orphan modules".
 
 **1. Core logic** — `src/core/integration/webview/cockpitService.ts`
+
 ```ts
 async findOrphanModules(): Promise<OrphanModuleResult> {
   const snapshot = await this.okfStore.read();
@@ -20,6 +21,7 @@ async findOrphanModules(): Promise<OrphanModuleResult> {
 ```
 
 **2. Protocol** — `src/core/integration/webview/messageRouter.ts`
+
 ```ts
 // WebviewToExtensionMessage
 | { type: "FIND_ORPHAN_MODULES" }
@@ -31,6 +33,7 @@ async findOrphanModules(): Promise<OrphanModuleResult> {
 **3. Host handler** — `src/extension/ui/vscodeProvider.ts`, in the
 `handleMessage` chain (starts ~line 461; it is an `if/else if` chain, **not** a
 `switch` — grep an existing message name to find the spot):
+
 ```ts
 } else if (message.type === "FIND_ORPHAN_MODULES") {
   const service = this.serviceFor(root);
@@ -40,13 +43,19 @@ async findOrphanModules(): Promise<OrphanModuleResult> {
 ```
 
 **4. Mirror the view-model type** — `src/webview/model.ts`
+
 ```ts
-export interface OrphanModule { id: string; path: string; }
+export interface OrphanModule {
+  id: string;
+  path: string;
+}
 ```
+
 ⚠️ Required: `webview/` cannot import `@core/*`.
 
 **5. UI** — `src/webview/App.tsx`: add state, a sender, a handler branch, a render
 method.
+
 ```ts
 // send
 vscode.postMessage({ type: "FIND_ORPHAN_MODULES" });
@@ -57,9 +66,11 @@ vscode.postMessage({ type: "FIND_ORPHAN_MODULES" });
 ```
 
 **6. Verify**
+
 ```bash
 npm run format && npm run verify:source && npm run build
 ```
+
 Then **F5 and click it**. Steps 3↔5 are not type-checked
 ([KI-01](14-known-issues.md#ki-01)) — a typo compiles fine and does nothing.
 
@@ -68,6 +79,7 @@ Then **F5 and click it**. Steps 3↔5 are not type-checked
 ## Recipe 2 — Add a pipeline stage
 
 **1.** Add the ID to `src/core/intelligence/pipeline/types.ts`:
+
 ```ts
 export const INTELLIGENCE_STAGES = [
   …,
@@ -75,10 +87,12 @@ export const INTELLIGENCE_STAGES = [
   "license-compliance"        // ← new, at the end to keep existing order stable
 ] as const;
 ```
+
 The `IntelligenceStageId` union derives from this array, so `tsc` will now point
 at every place needing an update.
 
 **2.** Add the implementation to `STAGES[]` in `pipeline.ts` (~line 981):
+
 ```ts
 stage("license-compliance", "License Compliance Intelligence", "architecture-sdlc",
   ({ intelligence }) => {
@@ -93,6 +107,7 @@ stage("license-compliance", "License Compliance Intelligence", "architecture-sdl
   }
 ),
 ```
+
 Return shape is always `{ summary, items, metrics }`. The stage may be `async`.
 Pick a family from `INTELLIGENCE_FAMILIES` (6 options: `repository-structure`,
 `code-graph`, `build-test-qa`, `architecture-sdlc`, `context-token`,
@@ -102,9 +117,11 @@ Pick a family from `INTELLIGENCE_FAMILIES` (6 options: `repository-structure`,
 should affect the health report or emit findings.
 
 **4.** Verify
+
 ```bash
 npm run verify:source && npm run build && npm run verify:okf
 ```
+
 Then F5, index a repo, and check
 `.keystone/intelligence/stages/22-license-compliance.json`.
 
@@ -136,9 +153,11 @@ This is the only place OKF records are created.
 `pluralize()` handles yours), `explorer/intelligenceExplorer.ts`.
 
 **5.** Verify
+
 ```bash
 npm run verify:okf && npm run verify:cross-feature
 ```
+
 `verify-final.mjs` exercises `validateOkfSnapshot` and
 `validatePortableOkfBundle`.
 
@@ -150,9 +169,11 @@ npm run verify:okf && npm run verify:cross-feature
 
 **1.** `src/core/intelligence/languages/languageRegistry.ts`, in
 `LANGUAGE_DEFINITIONS` (line 120):
+
 ```ts
 def("zig", "Zig", [".zig"], deterministic, "deterministic-adapter", ["source", "native"]),
 ```
+
 Tiers: `deep` (TS compiler only), `deterministic` (structural + VS Code
 enrichment), `structural` (artifact).
 
@@ -175,17 +196,23 @@ dockerfile/make/cmake/maven/gradle/kubernetes pattern — empty `extensions: []`
 **Four places** — miss any one and it silently doesn't work.
 
 **1.** `package.json` → `contributes.commands`:
+
 ```jsonc
 { "command": "keystone.exportBundle", "title": "Keystone: Export OKF Bundle" }
 ```
+
 **2.** `package.json` → `activationEvents`:
+
 ```jsonc
 "onCommand:keystone.exportBundle"
 ```
+
 **3.** `src/extension/commands/indexCommands.ts`:
+
 ```ts
 vscode.commands.registerCommand("keystone.exportBundle", () => provider.exportBundle()),
 ```
+
 **4.** `src/extension/ui/vscodeProvider.ts` — implement `exportBundle()`.
 
 Skipping 1–2 is exactly [KI-04](14-known-issues.md#ki-04): the command works in
@@ -198,6 +225,7 @@ code but is invisible to users.
 **1.** Path constant in `src/core/platform/config/defaults.ts` if it's global.
 
 **2.** Use the atomic write pattern — always:
+
 ```ts
 const target = path.join(root, ".keystone", "myfeature", "data.json");
 const temporary = `${target}.${process.pid}.${Date.now()}.tmp`;
@@ -215,7 +243,7 @@ apply the same discipline everywhere. Use `okf/identity.ts` for IDs.
 
 **4.** Decide the lifecycle — should `snapshotPrune.ts` clean it up?
 
-**5.** **Is it OKF-derived?** If so make it a *projection*
+**5.** **Is it OKF-derived?** If so make it a _projection_
 (`okf/projections.ts`), not a new store. A parallel graph store was built once
 and deleted ([`05-data-model-okf.md`](05-data-model-okf.md)).
 
@@ -256,6 +284,7 @@ main().catch((error) => {
 ```
 
 Then in `package.json`:
+
 ```jsonc
 "verify:myfeature": "npm run build && node scripts/verify-myfeature.mjs"
 ```
@@ -272,6 +301,7 @@ Symptom: `npm run typecheck` says a real VS Code API doesn't exist.
 Cause: `src/types/vscode/index.d.ts` is a hand-written 227-LOC partial stub.
 
 Fix — extend the stub:
+
 ```ts
 // src/types/vscode/index.d.ts
 export namespace window {
@@ -303,12 +333,12 @@ cat <repo>/.keystone/intelligence/summary.json | jq .ingestion
 
 Read the `ingestion` block:
 
-| Symptom | Cause |
-|---|---|
-| `indexedFiles` far too low | an ignore rule is too broad — check `IGNORED_DIRECTORIES` and the repo's own `.gitignore` |
-| `reusedFiles` high after a real change | bump `STRUCTURAL_EXTRACTION_CACHE_VERSION` in `extractionCache.ts` |
-| `cpgEligibleFiles` ≫ `cpgIndexedFiles` | CPG construction skipping — see `warnings[]` |
-| `completedWithoutFileCap: false` | should never happen; a cap was introduced |
+| Symptom                                | Cause                                                                                     |
+| -------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `indexedFiles` far too low             | an ignore rule is too broad — check `IGNORED_DIRECTORIES` and the repo's own `.gitignore` |
+| `reusedFiles` high after a real change | bump `STRUCTURAL_EXTRACTION_CACHE_VERSION` in `extractionCache.ts`                        |
+| `cpgEligibleFiles` ≫ `cpgIndexedFiles` | CPG construction skipping — see `warnings[]`                                              |
+| `completedWithoutFileCap: false`       | should never happen; a cap was introduced                                                 |
 
 ```bash
 # 4. per-stage detail
@@ -326,15 +356,17 @@ to delete.
 ## Recipe 10 — Debug a blank/broken webview
 
 1. **Check the build output exists:**
+
    ```bash
    ls dist/media/
    # index.html webview.js App.js GraphCanvas.js model.js vscodeApi.js
    # webview.css react.production.min.js react-dom.production.min.js
    ```
+
    Missing files → you ran a partial build. Run full `npm run build`.
 
-2. **Open webview DevTools:** Command Palette → *Developer: Open Webview
-   Developer Tools*. CSP violations and JS errors appear here.
+2. **Open webview DevTools:** Command Palette → _Developer: Open Webview
+   Developer Tools_. CSP violations and JS errors appear here.
 
 3. **CSP:** the VS Code webview uses a nonce (`extension/ui/vscodeHtml.ts`); the
    Browser View uses strict `'self'`. No inline scripts, no external CDNs.
@@ -351,21 +383,26 @@ to delete.
 ## Recipe 11 — Worker not starting
 
 Workers are loaded by **built path** at runtime:
+
 ```ts
-new Worker(path.join(__dirname, "../workers/backgroundAnalysisWorker.js"))
+new Worker(path.join(__dirname, "../workers/backgroundAnalysisWorker.js"));
 ```
 
 Checklist:
+
 1. Did you run a **full** `npm run build`? A `build:extension`-only run can leave
    the emitted tree inconsistent.
 2. Does `dist/app/extension/workers/backgroundAnalysisWorker.js` exist?
 3. Did you move/rename a worker source file? The `dist/app/` layout must keep
    mirroring `src/`.
-4. Background workers only start **after a new promoted OKF snapshot**
-   (`extension.ts` `startWorkspace`). No new snapshot ⇒ no workers, by design.
-5. 120-second timeout per worker — a slow analysis on a huge repo shows up as
-   `workerStatus: "failed"` with a timeout message in
-   `.keystone/background/<kind>.json`.
+4. Background workers start after ingestion settles on a promoted OKF snapshot.
+   If a refresh fails, `extension.ts` attempts recovery from the last validated
+   promoted snapshot; with no valid snapshot, no workers start.
+5. Each worker has a 120-second timeout and two retries by default. A transient
+   failure is emitted with `retrying: true`; an exhausted analysis shows up as
+   `workerStatus: "failed"` with attempt metadata in
+   `.keystone/background/<kind>.json` and the Keystone output channel.
+   A matching non-exhausted record resumes at its next attempt after host restart.
 
 ---
 
@@ -391,6 +428,7 @@ grep -rn "myModule" scripts/
 loaded by path string. Never delete a `*Worker.ts` on reachability grounds alone.
 
 After deleting:
+
 ```bash
 npm run verify:source   # boundary check will report the new reachable count
 npm run build && npm run verify:core && npm run verify:okf

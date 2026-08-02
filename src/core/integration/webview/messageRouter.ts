@@ -189,6 +189,11 @@ export type ExtensionToWebviewMessage =
       startedAt?: string;
       completedAt?: string;
       durationMs?: number;
+      attempt?: number;
+      maxAttempts?: number;
+      retryCount?: number;
+      retryAt?: string;
+      retrying?: boolean;
     }
   | {
       type: "BACKGROUND_ANALYSIS_STATUS";
@@ -204,6 +209,11 @@ export type ExtensionToWebviewMessage =
       startedAt?: string;
       completedAt?: string;
       durationMs?: number;
+      attempt?: number;
+      maxAttempts?: number;
+      retryCount?: number;
+      retryAt?: string;
+      retrying?: boolean;
     }
   | { type: "MODERNIZATION_PROPOSAL"; proposal: ModernizationProposal }
   | { type: "MODERNIZATION_PLAN"; plan: ModernizationPlan }

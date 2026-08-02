@@ -22,6 +22,7 @@ import {
 import { TaskStateRestorer, WorkspaceStateTaskStore } from "../task-handoff/taskStateRestorer";
 import type { QaService, QaServiceEvent } from "../core/qaService";
 import type {
+  BackgroundWorkerRecovery,
   BackgroundWorkerEvent,
   BackgroundWorkerInput
 } from "../core/backgroundWorkerCoordinator";
@@ -141,7 +142,12 @@ export class VscodeProvider {
         scopePaths: event.scopePaths,
         startedAt: event.startedAt,
         completedAt: event.completedAt,
-        durationMs: event.durationMs
+        durationMs: event.durationMs,
+        attempt: event.attempt,
+        maxAttempts: event.maxAttempts,
+        retryCount: event.retryCount,
+        retryAt: event.retryAt,
+        retrying: event.retrying
       });
       return;
     }
@@ -173,7 +179,12 @@ export class VscodeProvider {
       scopePaths: event.scopePaths,
       startedAt: event.startedAt,
       completedAt: event.completedAt,
-      durationMs: event.durationMs
+      durationMs: event.durationMs,
+      attempt: event.attempt,
+      maxAttempts: event.maxAttempts,
+      retryCount: event.retryCount,
+      retryAt: event.retryAt,
+      retrying: event.retrying
     });
   }
 
@@ -1807,6 +1818,52 @@ export class VscodeProvider {
     if (!okf || !snapshot.intelligence) return undefined;
     const snapshotDigest =
       okf.manifest.digests.snapshot ?? okf.manifest.digests.okf ?? okf.manifest.extractionRunId;
+    const recovery = Object.fromEntries(
+      await Promise.all(
+        (["qa", "security", "performance", "modernization"] as const).map(async (kind) => {
+          try {
+            const record = JSON.parse(
+              await fs.readFile(path.join(root, ".keystone", "background", `${kind}.json`), "utf8")
+            ) as {
+              workerStatus?: string;
+              snapshotDigest?: string;
+              extractionRunId?: string;
+              attempt?: number;
+              maxAttempts?: number;
+              retryAt?: string;
+              workerId?: string;
+              startedAt?: string;
+            };
+            const attempt = Number(record.attempt ?? 1);
+            const maxAttempts = Number(record.maxAttempts ?? 3);
+            const retryAt =
+              typeof record.retryAt === "string" && Number.isFinite(Date.parse(record.retryAt))
+                ? record.retryAt
+                : undefined;
+            if (
+              record.workerStatus !== "failed" ||
+              record.snapshotDigest !== snapshotDigest ||
+              record.extractionRunId !== okf.manifest.extractionRunId ||
+              !Number.isSafeInteger(attempt) ||
+              !Number.isSafeInteger(maxAttempts) ||
+              attempt >= maxAttempts
+            )
+              return [kind, undefined] as const;
+            return [
+              kind,
+              {
+                nextAttempt: attempt + 1,
+                retryAt,
+                previousWorkerId: record.workerId,
+                previousStartedAt: record.startedAt
+              } satisfies BackgroundWorkerRecovery
+            ] as const;
+          } catch {
+            return [kind, undefined] as const;
+          }
+        })
+      )
+    ) as BackgroundWorkerInput["recovery"];
     const canonicalEvidence = Object.fromEntries(
       (["qa", "security", "performance", "modernization"] as const).map((kind) => {
         const selection = selectCanonicalContext(okf, `${kind} repository evidence`, {
@@ -1822,7 +1879,8 @@ export class VscodeProvider {
       intelligencePath,
       snapshotDigest,
       extractionRunId: okf.manifest.extractionRunId,
-      canonicalEvidence
+      canonicalEvidence,
+      recovery
     };
   }
 
@@ -2012,6 +2070,10 @@ export class VscodeProvider {
             startedAt: message.startedAt,
             completedAt: message.completedAt,
             durationMs: message.durationMs,
+            attempt: message.attempt,
+            maxAttempts: message.maxAttempts,
+            retryCount: message.retryCount,
+            retryAt: message.retryAt,
             updatedAt: new Date().toISOString()
           }
         }
@@ -2038,6 +2100,10 @@ export class VscodeProvider {
             startedAt: message.startedAt,
             completedAt: message.completedAt,
             durationMs: message.durationMs,
+            attempt: message.attempt,
+            maxAttempts: message.maxAttempts,
+            retryCount: message.retryCount,
+            retryAt: message.retryAt,
             updatedAt: new Date().toISOString()
           }
         }

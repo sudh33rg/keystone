@@ -13,6 +13,7 @@
   "categories": [
     "Other"
   ],
+  "icon": "media/keystone.png",
   "main": "./dist/app/extension/core/extension.js",
   "activationEvents": [
     "onStartupFinished",
@@ -76,6 +77,13 @@
           "minimum": 1,
           "maximum": 16,
           "description": "Maximum number of simultaneous intelligence stage workers."
+        },
+        "keystone.intelligence.workerRetries": {
+          "type": "number",
+          "default": 2,
+          "minimum": 0,
+          "maximum": 5,
+          "description": "Maximum retries per background analysis worker after a failure."
         },
         "keystone.valueEdge.baseUrl": {
           "type": "string",

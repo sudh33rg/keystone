@@ -239,6 +239,10 @@ export class CockpitService {
             startedAt?: string;
             completedAt?: string;
             durationMs?: number;
+            attempt?: number;
+            maxAttempts?: number;
+            retryCount?: number;
+            retryAt?: string;
             reason?: string;
           };
           const storedStatus =
@@ -275,6 +279,10 @@ export class CockpitService {
               startedAt: record.startedAt,
               completedAt: record.completedAt,
               durationMs: record.durationMs,
+              attempt: record.attempt,
+              maxAttempts: record.maxAttempts,
+              retryCount: record.retryCount,
+              retryAt: record.retryAt,
               updatedAt: record.generatedAt ?? new Date().toISOString()
             }
           ];

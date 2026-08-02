@@ -7,11 +7,11 @@ minutes.
 
 ## Prerequisites
 
-| Requirement | Declared | Verified on this machine |
-|---|---|---|
-| Node.js | `>=20` (`package.json` `engines.node`) | v22.23.1 ✅ |
-| npm | `npm@11.12.1` (`packageManager`) | 10.9.8 — works fine |
-| VS Code | `^1.92.0` (`engines.vscode`) | needed to run the extension |
+| Requirement | Declared                               | Verified on this machine    |
+| ----------- | -------------------------------------- | --------------------------- |
+| Node.js     | `>=20` (`package.json` `engines.node`) | v22.23.1 ✅                 |
+| npm         | `npm@11.12.1` (`packageManager`)       | 10.9.8 — works fine         |
+| VS Code     | `^1.92.0` (`engines.vscode`)           | needed to run the extension |
 
 There is no Python, Docker, or database dependency.
 
@@ -37,6 +37,7 @@ Dev deps:      @types/node, @types/react, @types/react-dom,
 > ```bash
 > npm install --offline --ignore-scripts
 > ```
+>
 > The npm toolchain required to build the extension is vendored under `vendor/`
 
 There is **no `vendor/` directory** in this repo. Use a plain `npm install`.
@@ -92,11 +93,12 @@ normal esbuild/vite setup.
 Open this folder in VS Code and press **F5**.
 
 `.vscode/launch.json` runs the `Keystone Extension` configuration, which:
+
 - runs `preLaunchTask: npm: compile` (which is `npm run build`),
 - launches a new VS Code window with `--extensionDevelopmentPath=${workspaceFolder}`,
 - opens `${workspaceFolder}` (this repo) as the target workspace.
 
-**Recommendation:** change the last `args` entry to point at a *different, small*
+**Recommendation:** change the last `args` entry to point at a _different, small_
 repository. Keystone will index whatever workspace is open, and indexing this
 repo means the extension is analysing itself — confusing when you are learning,
 and it will create a `.keystone/` folder here.
@@ -117,7 +119,7 @@ In the Extension Development Host window:
 
 ### What you should see on disk
 
-Inside the *target* workspace (not this repo):
+Inside the _target_ workspace (not this repo):
 
 ```
 .keystone/
@@ -194,14 +196,14 @@ Full catalogue in [`12-verification.md`](12-verification.md).
 
 Declared in `package.json` → `contributes.commands`:
 
-| Command ID | Palette title |
-|---|---|
-| `keystone.focusVscode` | Keystone: Open Application |
-| `keystone.indexRepo` | Keystone: Index Repository |
-| `keystone.analyzeTask` | Keystone: Analyze Intent |
-| `keystone.openBrowserView` | Keystone: Open Browser View |
-| `keystone.configureValueEdge` | Keystone: Configure ValueEdge |
-| `keystone.importValueEdgeFeature` | Keystone: Import ValueEdge Feature |
+| Command ID                         | Palette title                                   |
+| ---------------------------------- | ----------------------------------------------- |
+| `keystone.focusVscode`             | Keystone: Open Application                      |
+| `keystone.indexRepo`               | Keystone: Index Repository                      |
+| `keystone.analyzeTask`             | Keystone: Analyze Intent                        |
+| `keystone.openBrowserView`         | Keystone: Open Browser View                     |
+| `keystone.configureValueEdge`      | Keystone: Configure ValueEdge                   |
+| `keystone.importValueEdgeFeature`  | Keystone: Import ValueEdge Feature              |
 | `keystone.publishValueEdgeStories` | Keystone: Publish Approved Stories to ValueEdge |
 
 **🔴 BROKEN — two commands are registered but undeclared.**
@@ -214,16 +216,17 @@ effectively unreachable by users. See [`14-known-issues.md`](14-known-issues.md#
 
 ## Settings
 
-`contributes.configuration` (`package.json:65-101`):
+`contributes.configuration` (`package.json:65-108`):
 
-| Setting | Type | Default | Meaning |
-|---|---|---|---|
-| `keystone.enabled` | boolean | `true` | Enable Keystone commands |
-| `keystone.intelligence.maxWorkers` | number (1–16) | `5` | Concurrent stage workers |
-| `keystone.valueEdge.baseUrl` | string | `""` | ValueEdge tenant URL |
-| `keystone.valueEdge.sharedSpaceId` | string | `""` | |
-| `keystone.valueEdge.workspaceId` | string | `""` | |
-| `keystone.valueEdge.clientId` | string | `""` | Secret goes in `SecretStorage`, not here |
+| Setting                               | Type          | Default | Meaning                                                  |
+| ------------------------------------- | ------------- | ------- | -------------------------------------------------------- |
+| `keystone.enabled`                    | boolean       | `true`  | Enable Keystone commands                                 |
+| `keystone.intelligence.maxWorkers`    | number (1–16) | `5`     | Concurrent ingestion stage workers                       |
+| `keystone.intelligence.workerRetries` | number (0–5)  | `2`     | Retries per background analysis role after timeout/error |
+| `keystone.valueEdge.baseUrl`          | string        | `""`    | ValueEdge tenant URL                                     |
+| `keystone.valueEdge.sharedSpaceId`    | string        | `""`    |                                                          |
+| `keystone.valueEdge.workspaceId`      | string        | `""`    |                                                          |
+| `keystone.valueEdge.clientId`         | string        | `""`    | Secret goes in `SecretStorage`, not here                 |
 
 ---
 

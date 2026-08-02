@@ -41,6 +41,10 @@ export interface KeystoneBackgroundWorkerState {
   startedAt?: string;
   completedAt?: string;
   durationMs?: number;
+  attempt?: number;
+  maxAttempts?: number;
+  retryCount?: number;
+  retryAt?: string;
   updatedAt: string;
 }
 

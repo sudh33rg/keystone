@@ -14,6 +14,8 @@ for (const file of [`dist/keystone-${pkg.version}.vsix`, "dist/keystone.vsix"]) 
     "extension/dist/app/extension/core/extension.js",
     "extension/dist/media/index.html",
     "extension/dist/media/webview.js",
+    "extension/dist/media/keystone.svg",
+    "extension/dist/media/keystone.png",
     "extension/dist/media/react.production.min.js",
     "extension/dist/media/react-dom.production.min.js",
     "extension/node_modules/typescript/lib/typescript.js"

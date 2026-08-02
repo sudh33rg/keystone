@@ -19,8 +19,12 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const root = process.cwd();
 const built = (...segments) => path.join(root, "dist", "app", ...segments);
-const { repoIntelligenceToOkf } = require(built("core", "intelligence", "okf", "fromRepoIntelligence.js"));
-const { buildOkfGraphView } = require(built("core", "intelligence", "explorer", "intelligenceExplorer.js"));
+const { repoIntelligenceToOkf } = require(
+  built("core", "intelligence", "okf", "fromRepoIntelligence.js")
+);
+const { buildOkfGraphView } = require(
+  built("core", "intelligence", "explorer", "intelligenceExplorer.js")
+);
 
 function minimalIntelligence() {
   const workspaceRoot = path.join(os.tmpdir(), "keystone-graphstack");
@@ -28,18 +32,67 @@ function minimalIntelligence() {
     workspaceRoot,
     indexedAt: new Date().toISOString(),
     files: [
-      { path: "a.ts", language: "typescript", sizeBytes: 10, lineCount: 10, contentHash: "h1", structuralHash: "s1", isTest: false, isGenerated: false, evidence: { source: "repo-intelligence", evidencePath: "a.ts" } },
-      { path: "b.ts", language: "typescript", sizeBytes: 10, lineCount: 10, contentHash: "h2", structuralHash: "s2", isTest: false, isGenerated: false, evidence: { source: "repo-intelligence", evidencePath: "b.ts" } }
+      {
+        path: "a.ts",
+        language: "typescript",
+        sizeBytes: 10,
+        lineCount: 10,
+        contentHash: "h1",
+        structuralHash: "s1",
+        isTest: false,
+        isGenerated: false,
+        evidence: { source: "repo-intelligence", evidencePath: "a.ts" }
+      },
+      {
+        path: "b.ts",
+        language: "typescript",
+        sizeBytes: 10,
+        lineCount: 10,
+        contentHash: "h2",
+        structuralHash: "s2",
+        isTest: false,
+        isGenerated: false,
+        evidence: { source: "repo-intelligence", evidencePath: "b.ts" }
+      }
     ],
     symbols: [
-      { name: "run", kind: "function", filePath: "a.ts", line: 1, exportStatus: "local", evidence: { source: "repo-intelligence", evidencePath: "a.ts" } },
-      { name: "doWork", kind: "function", filePath: "b.ts", line: 2, exportStatus: "exported", evidence: { source: "repo-intelligence", evidencePath: "b.ts" } }
+      {
+        name: "run",
+        kind: "function",
+        filePath: "a.ts",
+        line: 1,
+        exportStatus: "local",
+        evidence: { source: "repo-intelligence", evidencePath: "a.ts" }
+      },
+      {
+        name: "doWork",
+        kind: "function",
+        filePath: "b.ts",
+        line: 2,
+        exportStatus: "exported",
+        evidence: { source: "repo-intelligence", evidencePath: "b.ts" }
+      }
     ],
-    dependencies: [{ from: "a.ts", to: "b.ts", kind: "import", evidence: { source: "repo-intelligence", evidencePath: "a.ts" } }],
+    dependencies: [
+      {
+        from: "a.ts",
+        to: "b.ts",
+        kind: "import",
+        evidence: { source: "repo-intelligence", evidencePath: "a.ts" }
+      }
+    ],
     tests: [],
     apis: [],
     services: [],
-    calls: [{ filePath: "a.ts", caller: "run", callee: "helper.doWork", line: 3, evidence: { source: "repo-intelligence", evidencePath: "a.ts" } }],
+    calls: [
+      {
+        filePath: "a.ts",
+        caller: "run",
+        callee: "helper.doWork",
+        line: 3,
+        evidence: { source: "repo-intelligence", evidencePath: "a.ts" }
+      }
+    ],
     ownershipHints: [],
     frameworkHints: [],
     securitySensitiveAreas: [],
@@ -61,8 +114,12 @@ function main() {
   assert.ok(Array.isArray(result.edges), "explorer must return graph edges");
   assert.ok(result.edges.length >= 1, "explorer must project edges from OKF relationships");
 
-  console.log(`PASS graph-stack: OKF emitted ${calls.length} calls edge(s); explorer projected ${result.nodes.length} node(s), ${result.edges.length} edge(s)`);
-  console.log("PASS graph-stack: canonical graph is OKF-derived (intelligenceExplorer -> GraphCanvas), independent of deleted intelligence/graph/*");
+  console.log(
+    `PASS graph-stack: OKF emitted ${calls.length} calls edge(s); explorer projected ${result.nodes.length} node(s), ${result.edges.length} edge(s)`
+  );
+  console.log(
+    "PASS graph-stack: canonical graph is OKF-derived (intelligenceExplorer -> GraphCanvas), independent of deleted intelligence/graph/*"
+  );
 }
 
 main();

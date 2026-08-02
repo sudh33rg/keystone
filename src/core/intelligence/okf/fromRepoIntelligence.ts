@@ -449,7 +449,12 @@ export function repoIntelligenceToOkf(
   const exportedSymbols = new Map<string, string[]>();
   for (const symbol of intelligence.symbols)
     if (symbol.exportStatus === "exported")
-      exportedSymbols.set(symbol.name, (exportedSymbols.get(symbol.name) ?? []).concat(symbolByFileAndName.get(`${symbol.filePath}#${symbol.name}`) ?? []));
+      exportedSymbols.set(
+        symbol.name,
+        (exportedSymbols.get(symbol.name) ?? []).concat(
+          symbolByFileAndName.get(`${symbol.filePath}#${symbol.name}`) ?? []
+        )
+      );
   for (const edge of intelligence.dependencies) {
     if (edge.kind !== "import" && edge.kind !== "require" && edge.kind !== "local") continue;
     const modulePath = edge.to;
@@ -457,11 +462,20 @@ export function repoIntelligenceToOkf(
     for (const symbol of intelligence.symbols) {
       if (symbol.filePath !== modulePath) continue;
       if (symbol.exportStatus === "exported")
-        specifierExports.set(`${edge.from}#${modulePath}#${symbol.name}`, symbolByFileAndName.get(`${symbol.filePath}#${symbol.name}`) ?? "");
+        specifierExports.set(
+          `${edge.from}#${modulePath}#${symbol.name}`,
+          symbolByFileAndName.get(`${symbol.filePath}#${symbol.name}`) ?? ""
+        );
       if (symbol.exportStatus === "local")
-        specifierExports.set(`${edge.from}#${modulePath}#default`, symbolByFileAndName.get(`${symbol.filePath}#${symbol.name}`) ?? "");
+        specifierExports.set(
+          `${edge.from}#${modulePath}#default`,
+          symbolByFileAndName.get(`${symbol.filePath}#${symbol.name}`) ?? ""
+        );
     }
-    importedNames.set(`${edge.from}#${path.basename(modulePath).replace(/\.[^.]+$/, "")}`, modulePath);
+    importedNames.set(
+      `${edge.from}#${path.basename(modulePath).replace(/\.[^.]+$/, "")}`,
+      modulePath
+    );
   }
   const resolveBaseMethod = (callerPath: string, callee: string): string | undefined => {
     const dot = callee.lastIndexOf(".");

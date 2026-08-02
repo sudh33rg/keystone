@@ -74,16 +74,13 @@ textarea {
   letter-spacing: 1.2px;
 }
 .mark {
-  display: grid !important;
-  place-items: center;
-  width: 34px;
+  display: block;
+  width: 42px;
   height: 34px;
-  border-radius: 9px;
-  color: white !important;
-  font-size: 18px !important;
-  font-weight: 800;
   background: linear-gradient(135deg, #66b9db, #246986);
   box-shadow: 0 8px 24px #2f86a54a;
+  -webkit-mask: url("./keystone.svg") center / contain no-repeat;
+  mask: url("./keystone.svg") center / contain no-repeat;
 }
 .header-actions,
 .actions,

@@ -19,6 +19,9 @@ export function getWebviewHtml(webview: vscode.Webview, extensionUri: vscode.Uri
   const reactDomUri = webview.asWebviewUri(
     vscode.Uri.joinPath(extensionUri, "dist", "media", "react-dom.production.min.js")
   );
+  const iconUri = webview.asWebviewUri(
+    vscode.Uri.joinPath(extensionUri, "dist", "media", "keystone.svg")
+  );
 
   return `<!doctype html>
 <html lang="en">
@@ -27,6 +30,7 @@ export function getWebviewHtml(webview: vscode.Webview, extensionUri: vscode.Uri
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} https: data:; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link href="${styleUri}" rel="stylesheet" />
+  <link rel="icon" type="image/svg+xml" href="${iconUri}" />
   <title>Keystone</title>
 </head>
 <body>

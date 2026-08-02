@@ -120,6 +120,9 @@ async function buildWebview() {
     path.join(nodeModules, "react-dom/umd/react-dom.production.min.js"),
     path.join(root, "dist/media/react-dom.production.min.js")
   );
+  for (const asset of ["keystone.svg", "keystone.png"]) {
+    fs.copyFileSync(path.join(root, "media", asset), path.join(root, "dist/media", asset));
+  }
   let html = fs
     .readFileSync(path.join(root, "src/webview/index.html"), "utf8")
     .replace("/main.tsx", "./webview.js")

@@ -17,6 +17,46 @@ export function activate(context: vscode.ExtensionContext): void {
   const provider = new VscodeProvider(context.extensionUri, statusBar, output, context);
   const qaService = new QaService();
   const backgroundWorkers = new Map<string, BackgroundWorkerCoordinator>();
+  const createBackgroundWorkerCoordinator = (): BackgroundWorkerCoordinator =>
+    new BackgroundWorkerCoordinator({
+      maxRetries: vscode.workspace
+        .getConfiguration("keystone.intelligence")
+        .get<number>("workerRetries", 2)
+    });
+  const reportBackgroundWorker = (
+    event: Parameters<VscodeProvider["reportBackgroundWorker"]>[0]
+  ): void => {
+    provider.reportBackgroundWorker(event);
+    if (event.status === "failed") {
+      const message = `${event.kind} worker ${event.workerId ?? ""} failed: ${event.error ?? "unknown error"}`;
+      if (event.retrying) output.warn(`${message} A bounded retry is scheduled.`);
+      else output.error(message);
+    } else if (event.status === "stale" || event.status === "cancelled") {
+      output.warn(
+        `${event.kind} worker ${event.workerId ?? ""} ${event.status}: ${event.reason ?? ""}`
+      );
+    }
+  };
+  const launchBackgroundWorkers = async (
+    root: string,
+    coordinator: BackgroundWorkerCoordinator,
+    indexed?: boolean
+  ): Promise<void> => {
+    const indexedSuccessfully = indexed ?? (await provider.indexWorkspace(root));
+    if (!indexedSuccessfully) {
+      output.warn(
+        `Intelligence refresh did not promote a new snapshot for ${root}; attempting worker recovery from the last validated OKF snapshot.`
+      );
+    }
+    const input = await provider.getBackgroundWorkerInput(root);
+    if (!input) {
+      output.warn(
+        `Background workers were not started because ${root} has no validated OKF input.`
+      );
+      return;
+    }
+    coordinator.start(root, reportBackgroundWorker, input);
+  };
 
   context.subscriptions.push(statusBar, output, qaService, provider.attachQaService(qaService), {
     dispose: () => {
@@ -32,24 +72,10 @@ export function activate(context: vscode.ExtensionContext): void {
   const startWorkspace = (folder: vscode.WorkspaceFolder): void => {
     const root = folder.uri.fsPath;
     output.info(`Workspace opened; starting automatic intelligence for ${root}.`);
-    const coordinator = backgroundWorkers.get(root) ?? new BackgroundWorkerCoordinator();
+    const coordinator = backgroundWorkers.get(root) ?? createBackgroundWorkerCoordinator();
     backgroundWorkers.set(root, coordinator);
     const startBackgroundWorkers = async (): Promise<void> => {
-      const indexed = await provider.indexWorkspace(root);
-      if (!indexed) {
-        output.warn(
-          `Background workers were not started because ${root} has no new promoted OKF snapshot.`
-        );
-        return;
-      }
-      const input = await provider.getBackgroundWorkerInput(root);
-      if (!input) {
-        output.warn(
-          `Background workers were not started because ${root} has no validated OKF input.`
-        );
-        return;
-      }
-      coordinator.start(root, (event) => provider.reportBackgroundWorker(event), input);
+      await launchBackgroundWorkers(root, coordinator);
     };
     void startBackgroundWorkers().catch((error) =>
       output.error(
@@ -90,17 +116,12 @@ export function activate(context: vscode.ExtensionContext): void {
       root,
       setTimeout(() => {
         refreshTimers.delete(root);
-        const coordinator = backgroundWorkers.get(root) ?? new BackgroundWorkerCoordinator();
+        const coordinator = backgroundWorkers.get(root) ?? createBackgroundWorkerCoordinator();
         backgroundWorkers.set(root, coordinator);
         coordinator.dispose("superseded");
         void provider
           .indexWorkspace(root)
-          .then(async (indexed) => {
-            if (!indexed) return;
-            const input = await provider.getBackgroundWorkerInput(root);
-            if (input)
-              coordinator.start(root, (event) => provider.reportBackgroundWorker(event), input);
-          })
+          .then((indexed) => launchBackgroundWorkers(root, coordinator, indexed))
           .catch((error) =>
             output.error(
               `Background workers could not restart for ${root}: ${error instanceof Error ? error.message : String(error)}`

@@ -41,7 +41,7 @@ The UI never owns authoritative product state. Both surfaces send typed commands
 
 ## Background execution
 
-Repository discovery and analysis are cancellable and yield to the event loop in batches. Unchanged files reuse persisted intelligence. Candidate snapshots are validated before atomic promotion, so cancellation or failure cannot replace the last known-good intelligence. Background worker runs are keyed by the promoted snapshot digest and extraction run: identical active runs are coalesced, superseded runs are marked stale, explicit disposal is marked cancelled, and persisted state rejects older worker records instead of presenting them as current.
+Repository discovery and analysis are cancellable and yield to the event loop in batches. Unchanged files reuse persisted intelligence. Candidate snapshots are validated before atomic promotion, so cancellation or failure cannot replace the last known-good intelligence. If a refresh fails, worker recovery can continue from that last validated promoted OKF snapshot; no worker starts without validated OKF input. Background worker runs are keyed by the promoted snapshot digest and extraction run: identical active runs are coalesced, superseded runs are marked stale, explicit disposal is marked cancelled, and persisted state rejects older worker records instead of presenting them as current. Each role has a bounded configurable retry policy (default two retries), retries independently after timeout/error, persists attempt and retry timing, and logs exhausted failures without stopping sibling roles.
 
 ## Read-only Git boundary
 

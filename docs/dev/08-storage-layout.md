@@ -58,7 +58,7 @@ grep -rnoE '"\.keystone[^"]*"|\.keystone/[a-zA-Z0-9/_.-]*' src --include=*.ts | 
 │   └── snapshots/<extractionRunId>/     archived full copies of past runs
 │                                        (reclaim keeps the newest 1)
 │
-├── background/                       ← the 4 analysis workers
+├── background/                       ← the 4 analysis workers and retry health
 │   ├── qa.json
 │   ├── security.json
 │   ├── performance.json
@@ -107,10 +107,10 @@ grep -rnoE '"\.keystone[^"]*"|\.keystone/[a-zA-Z0-9/_.-]*' src --include=*.ts | 
 
 Almost everything is an output. **Two exceptions:**
 
-| File | Direction | Notes |
-|---|---|---|
-| `telemetry-map.json` | **input** | Read by `pipeline/runtime.ts:78`. If absent, the runtime-observability stage degrades gracefully. A user hand-authors this to map code paths to production telemetry. |
-| `settings.json` | input/output | Written by `cockpitService.ts:833`, read on load |
+| File                 | Direction    | Notes                                                                                                                                                                 |
+| -------------------- | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `telemetry-map.json` | **input**    | Read by `pipeline/runtime.ts:78`. If absent, the runtime-observability stage degrades gracefully. A user hand-authors this to map code paths to production telemetry. |
+| `settings.json`      | input/output | Written by `cockpitService.ts:833`, read on load                                                                                                                      |
 
 ---
 
@@ -120,7 +120,7 @@ Almost everything is an output. **Two exceptions:**
 
 - `snapshots/` keeps a **complete copy per run** until pruned — this dominates.
 - `cpg/` holds one gzipped shard per eligible file.
-- `okf-bundle/` writes one Markdown file per knowledge unit — file *count* can be
+- `okf-bundle/` writes one Markdown file per knowledge unit — file _count_ can be
   very high even when bytes are modest.
 
 A repository in the low thousands of files can produce **multiple GB** if
@@ -132,10 +132,10 @@ explicitly rejects any VSIX containing a `/.keystone/` path.
 
 ### Reclaiming
 
-| Action | Function | Effect |
-|---|---|---|
-| Prune archives | `reclaimSnapshotArchives(root)` | keep newest 1 snapshot + prune `cache/` |
-| Nuke | `clearIntelligenceCache(root)` | delete `intelligence/` entirely → full re-index |
+| Action         | Function                        | Effect                                          |
+| -------------- | ------------------------------- | ----------------------------------------------- |
+| Prune archives | `reclaimSnapshotArchives(root)` | keep newest 1 snapshot + prune `cache/`         |
+| Nuke           | `clearIntelligenceCache(root)`  | delete `intelligence/` entirely → full re-index |
 
 Both live in `core/intelligence/ingestion/snapshotPrune.ts` and are exposed as
 commands `keystone.reclaimCache` / `keystone.clearCache` — **which are currently
@@ -155,7 +155,7 @@ Two patterns, used consistently.
 const temporary = `${target}.${process.pid}.${Date.now()}.tmp`;
 await fs.mkdir(path.dirname(target), { recursive: true });
 await fs.writeFile(temporary, JSON.stringify(value, null, 2) + "\n", "utf8");
-await fs.rename(temporary, target);          // atomic on POSIX
+await fs.rename(temporary, target); // atomic on POSIX
 ```
 
 Seen at `backgroundAnalysisWorker.ts:23-29` and
@@ -203,22 +203,22 @@ Don't reintroduce that path.
 `TaskWorkspaceManager` (`core/workflow/tasks/taskWorkspaceManager.ts:65`) creates
 `.keystone/tasks/NNNN_slug/` with **13 files**:
 
-| File | Content |
-|---|---|
-| `task.json` | task record |
-| `research.md` | research document |
-| `research-status.json` | research state |
-| `specification.md` | the spec |
-| `plan.json` | implementation plan |
-| `SKILL.md` | a Copilot skill file for the task |
-| `instructions.md` | Copilot instructions |
-| `agents.json` | agent assignments |
-| `progress.json` | progress tracking |
-| `context.json` | the context snapshot |
-| `context-packets.json` | context packets |
-| `correction-packets.json` | corrections fed back |
-| `delegation.md` | the actual Copilot prompt |
-| `status.json` | status + updatedAt |
+| File                      | Content                           |
+| ------------------------- | --------------------------------- |
+| `task.json`               | task record                       |
+| `research.md`             | research document                 |
+| `research-status.json`    | research state                    |
+| `specification.md`        | the spec                          |
+| `plan.json`               | implementation plan               |
+| `SKILL.md`                | a Copilot skill file for the task |
+| `instructions.md`         | Copilot instructions              |
+| `agents.json`             | agent assignments                 |
+| `progress.json`           | progress tracking                 |
+| `context.json`            | the context snapshot              |
+| `context-packets.json`    | context packets                   |
+| `correction-packets.json` | corrections fed back              |
+| `delegation.md`           | the actual Copilot prompt         |
+| `status.json`             | status + updatedAt                |
 
 Completed tasks are appended to `.keystone/tasks/completed.jsonl`.
 

@@ -940,11 +940,11 @@
     "files": 159,
     "persisted": true,
     "okfValid": true,
-    "indexElapsedMs": 10588,
-    "queryElapsedMs": 240,
-    "intentElapsedMs": 1137,
+    "indexElapsedMs": 10480,
+    "queryElapsedMs": 247,
+    "intentElapsedMs": 1114,
     "queryResults": 50,
-    "queryTraversals": 30,
+    "queryTraversals": 3304,
     "okfIntentRetrieval": "okf-compound+canonical-okf",
     "readOnlyGitEvidence": true,
     "copilotCustomizations": {
@@ -1065,5 +1065,34 @@
   "browserAuthenticationAndOriginChecks": true,
   "browserStaleVersionAndReconnectChecks": true,
   "gitPolicy": "read-only",
-  "productionAcceptanceVerifiedAt": "2026-08-02T18:52:47.461Z"
+  "workerLifecycle": {
+    "verifiedAt": "2026-08-03T00:36:06+05:30",
+    "ingestionStageWorkerDefaultConcurrency": 5,
+    "backgroundRoleWorkers": 4,
+    "defaultRetriesPerRole": 2,
+    "failedRefreshFallsBackToLastPromotedOkf": true,
+    "workersNeverStartWithoutValidatedOkf": true,
+    "matchingRetryAttemptResumesAfterHostRestart": true,
+    "identicalActiveRunsCoalesced": true,
+    "supersededRunsPersistedStale": true,
+    "cancelledRunsPersistedCancelled": true,
+    "lateWritesRejected": true,
+    "retrySmoke": {
+      "roles": 4,
+      "attemptsPerRole": 2,
+      "retryingFailureEvents": 4,
+      "exhaustedFailureEvents": 4,
+      "finalPersistedStatus": "failed"
+    },
+    "recoveryVisualCheck": {
+      "activityWorkerCards": 4,
+      "lastPromotedOkfMessageVisible": true
+    },
+    "resumeSmoke": {
+      "roles": 4,
+      "initialResumedAttempt": 2,
+      "noAttemptOneWorkers": true
+    }
+  },
+  "productionAcceptanceVerifiedAt": "2026-08-02T19:18:59.873Z"
 }

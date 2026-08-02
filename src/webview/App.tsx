@@ -224,6 +224,31 @@ export class App extends React.Component<Record<string, never>, AppState> {
               status,
               progress: Number(message.progress ?? (status === "complete" ? 100 : 0)),
               message: String(message.message ?? `QA background worker is ${status}.`),
+              error:
+                status === "failed" || status === "cancelled" || status === "stale"
+                  ? String(message.message ?? "")
+                  : undefined,
+              result: message.result,
+              canonicalEvidence: (
+                message.result as
+                  | {
+                      canonicalEvidence?: BackgroundWorkerState["canonicalEvidence"];
+                    }
+                  | undefined
+              )?.canonicalEvidence,
+              workerId: message.workerId as string | undefined,
+              snapshotDigest: message.snapshotDigest as string | undefined,
+              extractionRunId: message.extractionRunId as string | undefined,
+              scopePaths: message.scopePaths
+                ? [...(message.scopePaths as readonly string[])]
+                : undefined,
+              startedAt: message.startedAt as string | undefined,
+              completedAt: message.completedAt as string | undefined,
+              durationMs: message.durationMs as number | undefined,
+              attempt: message.attempt as number | undefined,
+              maxAttempts: message.maxAttempts as number | undefined,
+              retryCount: message.retryCount as number | undefined,
+              retryAt: message.retryAt as string | undefined,
               updatedAt: new Date().toISOString()
             }
           },
@@ -244,6 +269,27 @@ export class App extends React.Component<Record<string, never>, AppState> {
               progress: status === "complete" ? 100 : 0,
               message: String(message.error ?? `${worker} background worker is ${status}.`),
               error: message.error ? String(message.error) : undefined,
+              result: message.result,
+              canonicalEvidence: (
+                message.result as
+                  | {
+                      canonicalEvidence?: BackgroundWorkerState["canonicalEvidence"];
+                    }
+                  | undefined
+              )?.canonicalEvidence,
+              workerId: message.workerId as string | undefined,
+              snapshotDigest: message.snapshotDigest as string | undefined,
+              extractionRunId: message.extractionRunId as string | undefined,
+              scopePaths: message.scopePaths
+                ? [...(message.scopePaths as readonly string[])]
+                : undefined,
+              startedAt: message.startedAt as string | undefined,
+              completedAt: message.completedAt as string | undefined,
+              durationMs: message.durationMs as number | undefined,
+              attempt: message.attempt as number | undefined,
+              maxAttempts: message.maxAttempts as number | undefined,
+              retryCount: message.retryCount as number | undefined,
+              retryAt: message.retryAt as string | undefined,
               updatedAt: new Date().toISOString()
             }
           },
@@ -533,7 +579,15 @@ export class App extends React.Component<Record<string, never>, AppState> {
                 {state?.workerId && (
                   <small className="worker-meta">
                     {state.workerId} · {state.scopePaths?.length ?? 0} canonical path(s)
+                    {state.attempt && state.maxAttempts
+                      ? ` · attempt ${state.attempt}/${state.maxAttempts}`
+                      : ""}
                     {state.durationMs !== undefined ? ` · ${state.durationMs}ms` : ""}
+                  </small>
+                )}
+                {state?.retryAt && state.status === "failed" && (
+                  <small className="worker-meta">
+                    Retry scheduled for {new Date(state.retryAt).toLocaleTimeString()}.
                   </small>
                 )}
                 {progress !== undefined && (
@@ -587,7 +641,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
       <div className="shell">
         <header className="topbar">
           <div className="brand">
-            <span className="mark">K</span>
+            <span className="mark" role="img" aria-label="Keystone" />
             <div>
               <strong>Keystone</strong>
               <span>Deterministic engineering intelligence</span>

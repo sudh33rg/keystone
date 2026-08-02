@@ -44,12 +44,12 @@
 
 I checked every import in all 132 source files:
 
-| Rule | Result |
-|---|---|
-| `core/` never imports `vscode` | ✅ **0 violations** |
-| `core/` never imports `@vscode/*` or `@webview/*` | ✅ **0 violations** |
+| Rule                                                         | Result              |
+| ------------------------------------------------------------ | ------------------- |
+| `core/` never imports `vscode`                               | ✅ **0 violations** |
+| `core/` never imports `@vscode/*` or `@webview/*`            | ✅ **0 violations** |
 | `webview/` never imports `@core/*`, `@vscode/*`, or `node:*` | ✅ **0 violations** |
-| Only `extension/` imports the VS Code API | ✅ exactly 9 files |
+| Only `extension/` imports the VS Code API                    | ✅ exactly 9 files  |
 
 The nine files that import `vscode`:
 
@@ -97,24 +97,24 @@ Top edges by import count (module-to-module, cross-directory only):
 ```
 
 **⚠️ TRAP — one back-edge exists.** `core/intelligence → core/workflow` (1 import).
-Intelligence is conceptually *below* workflow, so this inverts the intended
+Intelligence is conceptually _below_ workflow, so this inverts the intended
 direction. Not currently harmful, but do not add more.
 
 ### Most-depended-upon modules
 
 Change these carefully; the blast radius is large.
 
-| Importers | Module |
-|---|---|
-| 36 | `core/domain/types.ts` — the shared vocabulary (613 LOC, 50+ exported types) |
-| 21 | `core/intelligence/okf/types.ts` |
-| 10 | `core/intelligence/okf/canonicalContext.ts` |
-| 10 | `core/platform/config/defaults.ts` |
-|  8 | `core/intelligence/pipeline/derivedGraph.ts` |
-|  8 | `core/workflow/sdlc/engine.ts` |
-|  7 | `core/intelligence/pipeline/findings.ts` |
-|  7 | `core/intelligence/cpg/types.ts` |
-|  7 | `core/workflow/handoff/contracts.ts` |
+| Importers | Module                                                                       |
+| --------- | ---------------------------------------------------------------------------- |
+| 36        | `core/domain/types.ts` — the shared vocabulary (613 LOC, 50+ exported types) |
+| 21        | `core/intelligence/okf/types.ts`                                             |
+| 10        | `core/intelligence/okf/canonicalContext.ts`                                  |
+| 10        | `core/platform/config/defaults.ts`                                           |
+| 8         | `core/intelligence/pipeline/derivedGraph.ts`                                 |
+| 8         | `core/workflow/sdlc/engine.ts`                                               |
+| 7         | `core/intelligence/pipeline/findings.ts`                                     |
+| 7         | `core/intelligence/cpg/types.ts`                                             |
+| 7         | `core/workflow/handoff/contracts.ts`                                         |
 
 ---
 
@@ -140,7 +140,9 @@ VS Code Extension Host process (Node)
 └── worker_threads × 4: background analysis
     └── extension/workers/backgroundAnalysisWorker.ts
         kinds: qa | security | performance | modernization
-        120,000 ms hard timeout each (backgroundWorkerCoordinator.ts:74)
+        120,000 ms hard timeout each, two retries by default, with persisted
+        attempt/retry metadata and digest/run-matched restart resume
+        (backgroundWorkerCoordinator.ts)
         each writes .keystone/background/<kind>.json atomically (tmp + rename)
 ```
 
@@ -169,16 +171,17 @@ VS Code Extension Host process (Node)
 6. Status bar → `"Keystone: Ready | Intelligence cached in .keystone"`.
 7. **For every open workspace folder**, `startWorkspace(folder)`:
    - `provider.indexWorkspace(root)` — full pipeline run.
-   - if that promoted a new OKF snapshot → `provider.getBackgroundWorkerInput(root)`
+   - if that promoted a new OKF snapshot, or failed while preserving one →
+     `provider.getBackgroundWorkerInput(root)`
    - → `coordinator.start(root, cb, input)` — spawn the 4 background workers.
-   - **Background workers only start if a *new promoted* OKF snapshot exists.**
+   - **Background workers start only when a validated promoted OKF snapshot exists.**
 8. Subscribe to `onDidChangeWorkspaceFolders` → start/dispose per folder.
 9. Create `vscode.workspace.createFileSystemWatcher("**/*")` with two handlers:
 
-   | Handler | Debounce | Trigger | Action |
-   |---|---|---|---|
-   | `queueIntelligenceRefresh` | 2,000 ms | any create/change/delete | re-index + restart workers |
-   | `queueIntelligenceRecovery` | 750 ms | delete under `.keystone/` | `ensureWorkspaceIntelligence` |
+   | Handler                     | Debounce | Trigger                   | Action                        |
+   | --------------------------- | -------- | ------------------------- | ----------------------------- |
+   | `queueIntelligenceRefresh`  | 2,000 ms | any create/change/delete  | re-index + restart workers    |
+   | `queueIntelligenceRecovery` | 750 ms   | delete under `.keystone/` | `ensureWorkspaceIntelligence` |
 
 10. `onDidChangeActiveTextEditor` → `provider.activeWorkspaceChanged()`.
 
@@ -197,7 +200,7 @@ plus extensions `.log .tmp .swp .class .jar .png .jpe?g .gif .ico .woff2?`
 
 **⚠️ TRAP — two ignore lists that can drift.** `IGNORED_DIRECTORIES` in
 `defaults.ts` has ~50 entries; this watcher regex has ~20. A directory ignored by
-ingestion but *not* by the watcher will trigger pointless re-index cycles. If you
+ingestion but _not_ by the watcher will trigger pointless re-index cycles. If you
 add an ignore rule, consider both places.
 
 ---
@@ -209,6 +212,7 @@ Two files hold most of the wiring. You will end up in both.
 ### `src/extension/ui/vscodeProvider.ts` — 2,366 LOC
 
 The host-side controller. Responsibilities:
+
 - webview panel lifecycle + HTML injection
 - `handleMessage()` — a long `if (message.type === …)` chain starting at line 461
   (**not** a `switch`; grep for the literal message name to find a handler)

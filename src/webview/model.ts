@@ -548,6 +548,10 @@ export interface BackgroundWorkerState {
   startedAt?: string;
   completedAt?: string;
   durationMs?: number;
+  attempt?: number;
+  maxAttempts?: number;
+  retryCount?: number;
+  retryAt?: string;
   updatedAt: string;
 }
 export interface ApplicationState {

@@ -50,14 +50,20 @@ Verified Task Handoff packages carry the active task’s bounded `correctionPack
 Background worker records are stored as `.keystone/background/<worker>.json`. A
 completed, failed, cancelled, or stale record includes the worker status, worker
 ID, promoted OKF snapshot digest, extraction run ID, canonical scope paths,
-start/completion timestamps, duration, and (when successful) the worker result
-plus its `OkfCanonicalEvidenceEnvelope`. Workers never promote intelligence or
+start/completion timestamps, duration, attempt number, maximum attempts, retry
+count, and (when scheduled) the next retry time. A successful record includes
+the worker result plus its `OkfCanonicalEvidenceEnvelope`. Workers never promote intelligence or
 replace the authoritative snapshot. Superseded runs are marked stale, explicit
 disposal is marked cancelled, and a late old run cannot overwrite a newer
 record with a different snapshot digest or newer start time. Both the coordinator
 and worker-thread writers apply this guard, so a late completion or failure cannot
-overwrite a newer record. A timeout or analysis error is persisted for that worker
-and does not stop the other workers.
+overwrite a newer record. A timeout or analysis error is persisted for that worker,
+logged in the extension output, and retried independently up to the configured
+limit (`keystone.intelligence.workerRetries`, default `2`); exhausted failures do
+not stop the other workers. On startup, a non-exhausted failed record with the
+same promoted snapshot digest and extraction run supplies the next attempt number
+and retry timing, so recovery resumes the recorded retry rather than silently
+resetting to attempt one. Records from another digest/run are ignored as stale.
 
 The internal OKF snapshot is the authoritative local machine knowledge store. The sibling `okf-bundle/` directory is its validated portable OKF v0.2 projection. There is no second `.keystone/knowledge` database. Graph, search, and CPG are derived projections and shards linked through OKF identity.
 
