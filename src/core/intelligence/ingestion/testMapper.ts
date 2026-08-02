@@ -9,9 +9,12 @@ export function isTestPath(filePath: string): boolean {
 }
 
 export function mapTests(files: RepoFile[]): TestMapping[] {
-  const sourceFiles = files.filter((file) => !file.isTest);
+  // Markdown is indexed as documentation, but it is not a valid target for the
+  // OKF `tests`/`covers` relationships. Keep filename matching scoped to files
+  // that can actually be exercised by a test.
+  const sourceFiles = files.filter((file) => !file.isTest && file.language !== "markdown");
   return files
-    .filter((file) => file.isTest)
+    .filter((file) => file.isTest && file.language !== "markdown")
     .map((testFile) => {
       const stem = path.posix
         .basename(testFile.path)

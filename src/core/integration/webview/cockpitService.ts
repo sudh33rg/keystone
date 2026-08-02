@@ -151,8 +151,9 @@ export class CockpitService {
       ? await this.taskWorkspaces.snapshot(this.activeTaskWorkspace)
       : undefined;
     if (modernizationProposal) this.modernization.restoreProposal(modernizationProposal);
+    const degraded = snapshot?.status === "degraded";
     return {
-      status: intelligence ? "ready" : "idle",
+      status: degraded ? "error" : intelligence ? "ready" : "idle",
       intelligence: intelligence
         ? toWorkspaceSummary(intelligence, snapshot, okf, portableOkf)
         : undefined,
@@ -161,9 +162,11 @@ export class CockpitService {
       ingestion: {
         active: false,
         progress: intelligence ? 100 : 0,
-        stage: intelligence ? "complete" : "not-started",
+        stage: degraded ? "degraded" : intelligence ? "complete" : "not-started",
         message: intelligence
-          ? "Persisted repository intelligence loaded."
+          ? degraded
+            ? "Persisted repository intelligence loaded with warnings; inspect ingestion activity."
+            : "Persisted repository intelligence loaded."
           : "No repository intelligence has been created yet.",
         persistedPath: SUMMARY_PATH
       },
@@ -196,8 +199,14 @@ export class CockpitService {
       },
       { once: true }
     );
-    await fs.mkdir(path.join(this.workspaceRoot, INTELLIGENCE_DIR), { recursive: true });
-    await this.record("indexing", "Repository ingestion started.", 5);
+    try {
+      await fs.mkdir(path.join(this.workspaceRoot, INTELLIGENCE_DIR), { recursive: true });
+    } catch (error) {
+      const warning = `Could not prepare the intelligence directory; ingestion will continue in memory: ${error instanceof Error ? error.message : String(error)}.`;
+      onProgress(warning, 4.8, "structural");
+      await this.recordBestEffort("warning", warning, 4.8);
+    }
+    await this.recordBestEffort("indexing", "Repository ingestion started.", 5);
     onProgress("Scanning repository files without LLM calls...", 12, "scanning");
     // Ensure no cancellation race: before the expensive work, re-check.
     if (this.cancelled) return this.cancelledState();
@@ -208,6 +217,10 @@ export class CockpitService {
         cognitive: true,
         semanticEnricher: this.runtime.semanticEnricher,
         maxWorkers: this.runtime.maxWorkers,
+        onWarning: (warning) => {
+          onProgress(`Warning: ${warning}`, 4.8, "structural");
+          void this.recordBestEffort("warning", warning, 4.8);
+        },
         onProgress: (event) => {
           if (generation === this.runGeneration)
             onProgress(event.message, event.progress, event.stage, event.workerPool);
@@ -216,7 +229,32 @@ export class CockpitService {
     } catch (error) {
       if (error instanceof IntelligencePipelineCancelledError)
         return generation === this.runGeneration ? this.cancelledState() : this.loadState();
-      throw error;
+      const warning = `Repository ingestion encountered an unexpected error and continued with the previous state: ${error instanceof Error ? error.message : String(error)}.`;
+      onProgress(`Warning: ${warning}`, 100, "degraded");
+      await this.recordBestEffort("warning", warning, 100);
+      if (generation !== this.runGeneration) return this.loadState();
+      const previousState = await this.loadState();
+      const previousManifest = previousState.intelligenceManifest ?? emptyManifest();
+      const manifest: IntelligenceManifest = {
+        ...previousManifest,
+        status: "error",
+        updatedAt: new Date().toISOString(),
+        reason: warning,
+        error: warning
+      };
+      return {
+        ...previousState,
+        status: "error",
+        intelligenceManifest: manifest,
+        intelligenceActivity: await this.activity(),
+        ingestion: {
+          active: false,
+          progress: 100,
+          stage: "degraded",
+          message: warning,
+          persistedPath: SUMMARY_PATH
+        }
+      };
     } finally {
       if (generation === this.runGeneration) this.abortController = undefined;
     }
@@ -231,7 +269,7 @@ export class CockpitService {
     const readinessReason =
       snapshot.status === "ready"
         ? `All ${snapshot.stages.length} repository intelligence stages completed; intelligence health is ${snapshot.health.status} (${snapshot.health.score}/100).${snapshot.ingestion.warnings.length ? ` ${snapshot.ingestion.warnings.join(" ")}` : ""}`
-        : `${snapshot.stages.length - completedStages} intelligence stage(s) failed.`;
+        : `${snapshot.stages.length - completedStages} intelligence stage(s) failed; ${snapshot.ingestion.warnings.length} non-fatal warning(s) were recorded and processing continued.`;
     const manifest: IntelligenceManifest = {
       status: snapshot.status === "ready" ? "ready" : "error",
       indexedAt: snapshot.intelligence.indexedAt,
@@ -244,8 +282,14 @@ export class CockpitService {
       completedStages,
       totalStages: snapshot.stages.length
     };
-    await this.writeJson(MANIFEST_PATH, manifest);
-    await this.record(
+    try {
+      await this.writeJson(MANIFEST_PATH, manifest);
+    } catch (error) {
+      const warning = `Could not persist the intelligence manifest; the completed result remains available in memory: ${error instanceof Error ? error.message : String(error)}.`;
+      onProgress(`Warning: ${warning}`, 100, "complete");
+      await this.recordBestEffort("warning", warning, 100);
+    }
+    await this.recordBestEffort(
       snapshot.status === "ready" ? "complete" : "degraded",
       `Indexed ${summary.fileCount} files; ${completedStages}/${snapshot.stages.length} stages completed.`,
       100
@@ -253,7 +297,7 @@ export class CockpitService {
     onProgress(
       snapshot.status === "ready"
         ? "Repository intelligence is ready."
-        : "Repository intelligence completed with failures.",
+        : "Repository intelligence completed with warnings; inspect ingestion activity.",
       100,
       snapshot.status === "ready" ? "complete" : "degraded"
     );

@@ -22,6 +22,7 @@ export interface RepoIntelligenceOkfOptions {
   readonly repositoryRevision?: string;
   readonly observedAt?: string;
   readonly previousSnapshot?: KeystoneOkfSnapshot;
+  readonly onWarning?: (message: string) => void;
 }
 export function workspaceIdForRoot(workspaceRoot: string): string {
   return createHash("sha256").update(path.resolve(workspaceRoot)).digest("hex").slice(0, 24);
@@ -39,6 +40,16 @@ export function repoIntelligenceToOkf(
   const extractionRunId = options.extractionRunId ?? randomUUID();
   const observedAt = options.observedAt ?? intelligence.indexedAt;
   const previous = options.previousSnapshot;
+  const warn = (message: string): void => {
+    try {
+      options.onWarning?.(message);
+    } catch (error) {
+      console.warn(
+        `[Keystone OKF] Warning reporter failed: ${error instanceof Error ? error.message : String(error)}. Original warning: ${message}`
+      );
+    }
+    if (!options.onWarning) console.warn(`[Keystone OKF] ${message}`);
+  };
   const fileByPath = new Map(intelligence.files.map((file) => [file.path, file]));
   const previousUnits = new Map((previous?.units ?? []).map((record) => [record.id, record]));
   const previousRelationships = new Map(
@@ -159,14 +170,15 @@ export function repoIntelligenceToOkf(
     targetId: string,
     source?: EvidenceMetadata,
     properties: Record<string, unknown> = {}
-  ): string => {
+  ): string | undefined => {
     const sourceKind = unitById.get(sourceId)?.kind;
     const targetKind = unitById.get(targetId)?.kind;
     let relationshipKind = kind;
     let constraint = KEYSTONE_OKF_PROFILE.relationshipConstraints[relationshipKind];
     if (!sourceKind || !targetKind)
-      throw new Error(
-        `Cannot create ${kind}: unknown OKF unit ${!sourceKind ? sourceId : targetId}.`
+      return (
+        warn(`Skipped ${kind}: unknown OKF unit ${!sourceKind ? sourceId : targetId}.`),
+        undefined
       );
     if (
       constraint &&
@@ -180,9 +192,8 @@ export function repoIntelligenceToOkf(
         relationshipKind = "depends-on";
         constraint = KEYSTONE_OKF_PROFILE.relationshipConstraints[relationshipKind];
       } else {
-        throw new Error(
-          `Cannot create invalid OKF relationship ${kind}: ${sourceKind} -> ${targetKind}.`
-        );
+        warn(`Skipped invalid OKF relationship ${kind}: ${sourceKind} -> ${targetKind}.`);
+        return undefined;
       }
     }
     const key = canonicalRelationshipKey(relationshipKind, sourceId, targetId);
@@ -279,13 +290,14 @@ export function repoIntelligenceToOkf(
   addObservation(repositoryUnit, "keystone:fileCount", intelligence.files.length);
 
   for (const file of intelligence.files) {
-    const kind: KeystoneKnowledgeKind = file.isTest
-      ? "test"
-      : file.language === "markdown"
+    const kind: KeystoneKnowledgeKind =
+      file.language === "markdown"
         ? "documentation"
-        : isConfiguration(file.path, file.language)
-          ? "configuration"
-          : "file";
+        : file.isTest
+          ? "test"
+          : isConfiguration(file.path, file.language)
+            ? "configuration"
+            : "file";
     const id = addUnit(
       kind,
       file.path,
@@ -524,12 +536,28 @@ export function repoIntelligenceToOkf(
   for (const test of intelligence.tests) {
     const tid = fileId(test.testFile);
     const target = test.targetFile ? fileId(test.targetFile) : undefined;
-    if (tid && target) {
+    const sourceKind = tid ? unitById.get(tid)?.kind : undefined;
+    const targetKind = target ? unitById.get(target)?.kind : undefined;
+    const validTestTarget = [
+      "file",
+      "symbol",
+      "api",
+      "service",
+      "configuration",
+      "data-entity",
+      "module"
+    ].includes(targetKind ?? "");
+    if (tid && sourceKind === "test" && target && validTestTarget) {
       addRelationship("tests", tid, target, test.evidence, {
         reason: test.reason,
         mappingConfidence: test.confidence
       });
       addRelationship("covers", tid, target, test.evidence, { mappingConfidence: test.confidence });
+    } else if (tid && sourceKind === "test" && test.targetFile && targetKind) {
+      // Preserve the mapping as provenance without emitting an invalid
+      // relationship when older structural intelligence points at documentation.
+      warn(`Skipped invalid OKF relationship tests: ${sourceKind} -> ${targetKind}.`);
+      addObservation(tid, "keystone:ignoredTestTarget", test.targetFile, test.evidence);
     }
   }
   for (const file of intelligence.files.filter(
@@ -548,7 +576,8 @@ export function repoIntelligenceToOkf(
   }
   for (const file of intelligence.files.filter((item) => item.language === "markdown")) {
     const doc = fileId(file.path);
-    if (doc) addRelationship("documented-by", repositoryUnit, doc, file.evidence);
+    if (doc && unitById.get(doc)?.kind === "documentation")
+      addRelationship("documented-by", repositoryUnit, doc, file.evidence);
   }
   for (const file of intelligence.files.filter((item) =>
     isConfiguration(item.path, item.language)
@@ -605,8 +634,22 @@ export function repoIntelligenceToOkf(
       });
   }
   const currentRelationshipIds = new Set(relationships.map((item) => item.id));
+  const previousUnitKinds = new Map((previous?.units ?? []).map((item) => [item.id, item.kind]));
   for (const old of previous?.relationships ?? []) {
-    if (old.lifecycle !== "deleted" && !currentRelationshipIds.has(old.id))
+    const sourceKind = unitById.get(old.sourceId)?.kind ?? previousUnitKinds.get(old.sourceId);
+    const targetKind = unitById.get(old.targetId)?.kind ?? previousUnitKinds.get(old.targetId);
+    const constraint = KEYSTONE_OKF_PROFILE.relationshipConstraints[old.kind];
+    const validPreviousRelationship =
+      Boolean(constraint) &&
+      Boolean(sourceKind) &&
+      Boolean(targetKind) &&
+      constraint!.sources.includes(sourceKind!) &&
+      constraint!.targets.includes(targetKind!);
+    if (
+      old.lifecycle !== "deleted" &&
+      !currentRelationshipIds.has(old.id) &&
+      validPreviousRelationship
+    )
       relationships.push({
         ...old,
         lifecycle: "deleted",

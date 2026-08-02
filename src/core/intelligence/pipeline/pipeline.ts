@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 
-import { indexRepository } from "../ingestion/repoIndexer";
+import { emptyRepoIntelligence, indexRepository } from "../ingestion/repoIndexer";
 import type { RepoIntelligence } from "../../domain/types";
 import {
   INTELLIGENCE_FAMILIES,
@@ -30,7 +30,9 @@ import {
 } from "./derivedGraph";
 import { evaluateIntelligenceHealth } from "./health";
 import { planIncrementalUpdate } from "./incremental";
+import type { IncrementalUpdatePlan } from "./incremental";
 import { buildIntelligenceFindings } from "./findings";
+import type { IntelligenceFinding } from "./findings";
 import { buildRuntimeVerification, type RuntimeVerification } from "./runtime";
 import { buildRepositoryEvolution, type RepositoryEvolution } from "./evolution";
 import { analyzeDeadCode, type DeadCodeCandidate } from "./deadCode";
@@ -108,10 +110,42 @@ export async function buildRepositoryIntelligence(
 ): Promise<RepositoryIntelligenceSnapshot> {
   const startedAt = new Date().toISOString();
   const runId = `intelligence-${Date.now().toString(36)}`;
+  const warnings: string[] = [];
+  const reportNotice = (message: string): void => {
+    try {
+      options.onWarning?.(message);
+    } catch (error) {
+      console.warn(
+        `[Keystone intelligence] Warning reporter failed: ${errorMessage(error)}. Original warning: ${message}`
+      );
+    }
+    if (!options.onWarning) console.warn(`[Keystone intelligence] ${message}`);
+    try {
+      options.onProgress?.({
+        stage: "structural",
+        order: 1,
+        total: INTELLIGENCE_STAGES.length,
+        progress: 4.8,
+        message: `Warning: ${message}`
+      });
+    } catch (error) {
+      console.warn(`[Keystone intelligence] Progress reporter failed: ${errorMessage(error)}.`);
+    }
+  };
+  const reportWarning = (message: string): void => {
+    warnings.push(message);
+    reportNotice(message);
+  };
   if (options.signal?.aborted) throw new IntelligencePipelineCancelledError("structural");
-  const previousSnapshot = await readSnapshot(root);
-  if (options.persist !== false)
-    await fs.rm(path.join(root, STORE, "stages"), { recursive: true, force: true });
+  const previousSnapshot = await readSnapshot(root, reportWarning);
+  if (options.persist !== false) {
+    try {
+      await fs.rm(path.join(root, STORE, "stages"), { recursive: true, force: true });
+    } catch (error) {
+      if (isAbortError(error, options.signal)) throw error;
+      reportWarning(`Could not clear previous stage records: ${errorMessage(error)}.`);
+    }
+  }
   let intelligence: RepoIntelligence;
   try {
     intelligence = await indexRepository(root, {
@@ -133,6 +167,7 @@ export async function buildRepositoryIntelligence(
           progress: Math.min(4, Math.round((indexed / Math.max(total, 1)) * 4)),
           message: `Indexing ${file} (${indexed}/${total})`
         }),
+      onWarning: reportWarning,
       onPersistence: (event) =>
         options.onProgress?.({
           stage: "structural",
@@ -150,10 +185,12 @@ export async function buildRepositoryIntelligence(
       semanticEnricher: options.semanticEnricher
     });
   } catch (error) {
-    if (options.signal?.aborted || (error instanceof Error && error.name === "AbortError"))
+    if (isAbortError(error, options.signal))
       throw new IntelligencePipelineCancelledError("structural");
-    if (options.signal?.aborted) throw new IntelligencePipelineCancelledError("structural");
-    throw error;
+    reportWarning(
+      `Structural ingestion failed; continuing with an empty structural index: ${errorMessage(error)}.`
+    );
+    intelligence = emptyRepoIntelligence(root);
   }
   options.onProgress?.({
     stage: "structural",
@@ -163,7 +200,17 @@ export async function buildRepositoryIntelligence(
     message: "Building repository dependency graph..."
   });
   const graphStartedAt = Date.now();
-  const graph = analyzeRepositoryGraph(intelligence);
+  let graph: RepositoryGraphAnalysis;
+  try {
+    graph = analyzeRepositoryGraph(intelligence);
+  } catch (error) {
+    if (isAbortError(error, options.signal))
+      throw new IntelligencePipelineCancelledError("structural");
+    reportWarning(
+      `Repository dependency graph failed; continuing with an empty graph: ${errorMessage(error)}.`
+    );
+    graph = emptyRepositoryGraph(intelligence);
+  }
   options.onProgress?.({
     stage: "structural",
     order: 1,
@@ -182,19 +229,29 @@ export async function buildRepositoryIntelligence(
     message: `Resolving compiler semantics for ${semanticPaths.length} TypeScript/JavaScript files...`
   });
   const semanticStartedAt = Date.now();
-  const semantic = await analyzeTypeScriptProjectIsolated(
-    root,
-    semanticPaths,
-    options.signal,
-    (message) =>
-      options.onProgress?.({
-        stage: "structural",
-        order: 1,
-        total: STAGES.length,
-        progress: message.includes("complete") ? 8 : 7,
-        message
-      })
-  );
+  let semantic: TypeScriptSemanticResult;
+  try {
+    semantic = await analyzeTypeScriptProjectIsolated(
+      root,
+      semanticPaths,
+      options.signal,
+      (message) =>
+        options.onProgress?.({
+          stage: "structural",
+          order: 1,
+          total: STAGES.length,
+          progress: message.includes("complete") ? 8 : 7,
+          message
+        })
+    );
+  } catch (error) {
+    if (isAbortError(error, options.signal))
+      throw new IntelligencePipelineCancelledError("structural");
+    reportWarning(
+      `Compiler semantics failed; continuing with deterministic intelligence: ${errorMessage(error)}.`
+    );
+    semantic = emptyTypeScriptSemanticResult();
+  }
   options.onProgress?.({
     stage: "structural",
     order: 1,
@@ -209,8 +266,29 @@ export async function buildRepositoryIntelligence(
     progress: 8,
     message: "Planning incremental, evolution, dead-code, finding, and runtime projections..."
   });
-  const incremental = planIncrementalUpdate(previousSnapshot?.intelligence, intelligence);
-  const evolution = await buildRepositoryEvolution(root, incremental);
+  let incremental: IncrementalUpdatePlan;
+  try {
+    incremental = planIncrementalUpdate(previousSnapshot?.intelligence, intelligence);
+  } catch (error) {
+    if (isAbortError(error, options.signal))
+      throw new IntelligencePipelineCancelledError("structural");
+    reportWarning(
+      `Incremental planning failed; continuing with a full rebuild plan: ${errorMessage(error)}.`
+    );
+    incremental = fullIncrementalPlan(intelligence);
+  }
+  let evolution: RepositoryEvolution;
+  try {
+    evolution = await buildRepositoryEvolution(root, incremental);
+  } catch (error) {
+    if (isAbortError(error, options.signal))
+      throw new IntelligencePipelineCancelledError("structural");
+    reportWarning(
+      `Repository evolution analysis failed; continuing without Git coupling: ${errorMessage(error)}.`
+    );
+    evolution = emptyRepositoryEvolution(incremental);
+  }
+  for (const warning of evolution.warnings) reportWarning(warning);
   options.onProgress?.({
     stage: "structural",
     order: 1,
@@ -218,9 +296,47 @@ export async function buildRepositoryIntelligence(
     progress: 9,
     message: "Repository projection planning complete; preparing intelligence stages..."
   });
-  const deadCode = analyzeDeadCode(intelligence, graph, semantic);
-  const findings = buildIntelligenceFindings(intelligence, graph, evolution, deadCode);
-  const runtime = await buildRuntimeVerification(root, findings);
+  let deadCode: DeadCodeCandidate[];
+  try {
+    deadCode = analyzeDeadCode(intelligence, graph, semantic);
+  } catch (error) {
+    if (isAbortError(error, options.signal))
+      throw new IntelligencePipelineCancelledError("structural");
+    reportWarning(
+      `Dead-code analysis failed; continuing without dead-code findings: ${errorMessage(error)}.`
+    );
+    deadCode = [];
+  }
+  let findings: IntelligenceFinding[];
+  try {
+    findings = buildIntelligenceFindings(intelligence, graph, evolution, deadCode);
+  } catch (error) {
+    if (isAbortError(error, options.signal))
+      throw new IntelligencePipelineCancelledError("structural");
+    reportWarning(
+      `Intelligence finding generation failed; continuing without derived findings: ${errorMessage(error)}.`
+    );
+    findings = [];
+  }
+  let runtime: RuntimeVerification;
+  try {
+    runtime = await buildRuntimeVerification(root, findings);
+  } catch (error) {
+    if (isAbortError(error, options.signal))
+      throw new IntelligencePipelineCancelledError("structural");
+    reportWarning(
+      `Runtime verification failed; continuing without runtime evidence: ${errorMessage(error)}.`
+    );
+    runtime = emptyRuntimeVerification();
+  }
+  for (const warning of runtime.warnings) {
+    if (
+      warning === "No runtime telemetry mapping is available; conclusions are static-only." ||
+      warning === "No supported validation commands were found."
+    )
+      reportNotice(warning);
+    else reportWarning(warning);
+  }
   const context: StageContext = {
     root,
     persist: options.persist !== false,
@@ -276,7 +392,15 @@ export async function buildRepositoryIntelligence(
     }
     const results = await Promise.all(
       batch.map((definition) =>
-        executeStage(definition, context, previous, workerPath, options, completedStages)
+        executeStage(
+          definition,
+          context,
+          previous,
+          workerPath,
+          options,
+          completedStages,
+          reportWarning
+        )
       )
     );
     for (const result of results) {
@@ -303,21 +427,29 @@ export async function buildRepositoryIntelligence(
       });
     }
     context.previous = new Map(stageResults);
-    if (options.persist !== false)
+    if (options.persist !== false) {
       await Promise.all(
-        results.map((result) =>
-          writeJson(
-            root,
-            `${STORE}/stages/${String(result.order).padStart(2, "0")}-${result.id}.json`,
-            result
-          )
-        )
+        results.map(async (result) => {
+          try {
+            await writeJson(
+              root,
+              `${STORE}/stages/${String(result.order).padStart(2, "0")}-${result.id}.json`,
+              result
+            );
+          } catch (error) {
+            reportWarning(
+              `Could not persist ${result.label}; continuing with its in-memory result: ${errorMessage(error)}.`
+            );
+          }
+        })
       );
+    }
   }
 
   const stages = STAGES.map((stage) => stageResults.get(stage.id)!);
 
-  const status = stages.some((stage) => stage.status === "failed") ? "degraded" : "ready";
+  const status =
+    stages.some((stage) => stage.status === "failed") || warnings.length > 0 ? "degraded" : "ready";
   const cpgMetrics = context.previous.get("code-property-graph")?.metrics ?? {};
   const ingestion = {
     inputFingerprint: fingerprint(intelligence),
@@ -332,7 +464,7 @@ export async function buildRepositoryIntelligence(
     cpgShardsWritten: Number(cpgMetrics.shardsWritten ?? 0),
     cpgShardsReused: Number(cpgMetrics.shardsReused ?? 0),
     cpgShardsDeleted: Number(cpgMetrics.shardsDeleted ?? 0),
-    warnings: []
+    warnings
   };
   const snapshot: RepositoryIntelligenceSnapshot = {
     version: 1,
@@ -353,16 +485,25 @@ export async function buildRepositoryIntelligence(
     evolution,
     deadCode
   };
-  if (options.persist !== false) await writeJson(root, `${STORE}/snapshot.json`, snapshot);
+  if (options.persist !== false) {
+    try {
+      await writeJson(root, `${STORE}/snapshot.json`, snapshot);
+    } catch (error) {
+      reportWarning(
+        `Could not persist the intelligence snapshot; returning the completed in-memory result: ${errorMessage(error)}.`
+      );
+      snapshot.status = "degraded";
+    }
+  }
   options.onProgress?.({
     stage: "runtime-observability",
     order: STAGES.length,
     total: STAGES.length,
     progress: 100,
     message:
-      status === "ready"
+      snapshot.status === "ready"
         ? "All repository intelligence families are ready."
-        : "Repository intelligence completed with failed stages."
+        : "Repository intelligence completed with warnings; inspect ingestion activity."
   });
   return snapshot;
 }
@@ -441,12 +582,96 @@ async function readJsonFile(
     return undefined;
   }
 }
-async function readSnapshot(root: string): Promise<RepositoryIntelligenceSnapshot | undefined> {
+
+function emptyRepositoryGraph(intelligence: RepoIntelligence): RepositoryGraphAnalysis {
+  return {
+    localEdges: [],
+    hubs: [],
+    entryPoints: [],
+    orphanSourceFiles: [],
+    cycles: [],
+    communities: [],
+    flows: [],
+    impactedBy: createGraphImpactAnalyzer(
+      intelligence.files.map((file) => file.path),
+      [],
+      intelligence.tests
+    )
+  };
+}
+
+function emptyTypeScriptSemanticResult(): TypeScriptSemanticResult {
+  return {
+    projectConfigs: [],
+    files: 0,
+    calls: [],
+    relationships: [],
+    callbacks: [],
+    unresolvedCalls: 0,
+    diagnostics: 0,
+    configuredDiagnostics: 0,
+    fallbackDiagnostics: 0,
+    configuredFiles: 0,
+    fallbackFiles: 0,
+    diagnosticCodes: {},
+    diagnosticExamples: []
+  };
+}
+
+function fullIncrementalPlan(intelligence: RepoIntelligence): IncrementalUpdatePlan {
+  const changes = intelligence.files.map((file) => ({ path: file.path, kind: "added" as const }));
+  return {
+    action: "full",
+    changes,
+    filesToAnalyze: changes.map((change) => change.path),
+    rerunGraph: true,
+    rerunArchitecture: true,
+    reason: "Incremental planning failed; a full rebuild plan was used."
+  };
+}
+
+function emptyRepositoryEvolution(incremental: IncrementalUpdatePlan): RepositoryEvolution {
+  return {
+    changes: incremental.changes.reduce(
+      (counts, change) => ({ ...counts, [change.kind]: counts[change.kind] + 1 }),
+      { unchanged: 0, implementation: 0, structural: 0, added: 0, deleted: 0 }
+    ),
+    coupling: [],
+    commitsAnalyzed: 0,
+    degraded: true,
+    warnings: ["Repository evolution analysis was unavailable."]
+  };
+}
+
+function emptyRuntimeVerification(): RuntimeVerification {
+  return {
+    evidence: [],
+    correlations: [],
+    validationCommands: [],
+    degraded: true,
+    warnings: ["Runtime verification was unavailable."]
+  };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isAbortError(error: unknown, signal?: AbortSignal): boolean {
+  return signal?.aborted === true || (error instanceof Error && error.name === "AbortError");
+}
+
+async function readSnapshot(
+  root: string,
+  onWarning?: (message: string) => void
+): Promise<RepositoryIntelligenceSnapshot | undefined> {
   try {
     return JSON.parse(
       await fs.readFile(path.join(root, STORE, "snapshot.json"), "utf8")
     ) as RepositoryIntelligenceSnapshot;
-  } catch {
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT")
+      onWarning?.(`Could not read the previous intelligence snapshot: ${errorMessage(error)}.`);
     return undefined;
   }
 }
@@ -464,7 +689,8 @@ async function executeStage(
   previous: Map<IntelligenceStageId, IntelligenceStageResult>,
   workerPath: string,
   options: IntelligencePipelineOptions,
-  completedStages: number
+  completedStages: number,
+  onWarning: (message: string) => void
 ): Promise<IntelligenceStageResult> {
   const stageStarted = new Date();
   const order = STAGES.indexOf(definition) + 1;
@@ -498,6 +724,8 @@ async function executeStage(
   } catch (error) {
     if (options.signal?.aborted) throw new IntelligencePipelineCancelledError(definition.id);
     const completedAt = new Date();
+    const message = `${definition.label} failed; continuing with remaining intelligence stages: ${errorMessage(error)}.`;
+    onWarning(message);
     return {
       id: definition.id,
       order,
@@ -512,7 +740,7 @@ async function executeStage(
       items: [],
       metrics: { workerPoolCompletedBeforeFailure: completedStages },
       cognitivelyEnriched: false,
-      error: error instanceof Error ? error.message : String(error)
+      error: errorMessage(error)
     };
   }
 }

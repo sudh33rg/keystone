@@ -31,7 +31,7 @@ export async function buildRepositoryEvolution(
     if (inside !== "true") throw new Error("Workspace is not a Git repository.");
     const stdout = await git.run("log", [
       `-n${maxCommits}`,
-      "--format=__KEYSTONE_COMMIT__",
+      "--pretty=format:__KEYSTONE_COMMIT__",
       "--name-only",
       "--no-renames"
     ]);

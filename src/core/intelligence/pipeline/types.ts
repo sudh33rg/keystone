@@ -127,6 +127,7 @@ export interface IntelligenceWorkerPoolProgress {
 export interface IntelligencePipelineOptions {
   signal?: AbortSignal;
   onProgress?: (event: IntelligenceProgressEvent) => void;
+  onWarning?: (message: string) => void;
   persist?: boolean;
   cognitive?: boolean;
   semanticEnricher?: SemanticEnrichmentProvider;

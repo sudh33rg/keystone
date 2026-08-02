@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import { createHash } from "node:crypto";
 
-import { languageForPath, scanFiles } from "./fileScanner";
+import { languageForPath, scanFiles, type ScannedFile } from "./fileScanner";
 import { IntelligenceStore } from "./intelligenceStore";
 import { detectModernizationCandidates } from "./modernizationCandidateDetector";
 import { detectPerformanceSensitivePath } from "./performancePathDetector";
@@ -37,6 +37,7 @@ export interface RepoIndexOptions {
   signal?: AbortSignal;
   onDiscovery?: (discovered: number, path: string) => void;
   onFile?: (indexed: number, total: number, path: string) => void;
+  onWarning?: (message: string) => void;
   onPersistence?: (event: RepoIndexPersistenceEvent) => void;
   semanticEnricher?: SemanticEnrichmentProvider;
 }
@@ -51,11 +52,35 @@ export async function indexRepository(
   options: RepoIndexOptions = {}
 ): Promise<RepoIntelligence> {
   const store = new IntelligenceStore(workspaceRoot);
-  const previous = await store.read();
+  const warn = (message: string): void => {
+    try {
+      options.onWarning?.(message);
+    } catch (error) {
+      console.warn(
+        `[Keystone ingestion] Warning reporter failed: ${errorMessage(error)}. Original warning: ${message}`
+      );
+    }
+    if (!options.onWarning) console.warn(`[Keystone ingestion] ${message}`);
+  };
+  let previous: RepoIntelligence;
+  try {
+    previous = await store.read();
+  } catch (error) {
+    warn(`Could not read the previous structural index: ${errorMessage(error)}.`);
+    previous = emptyRepoIntelligence(workspaceRoot);
+  }
   const previousFiles = new Map(previous.files.map((file) => [file.path, file]));
-  const scanned = await scanFiles(workspaceRoot, options.signal, (progress) =>
-    options.onDiscovery?.(progress.discoveredFiles, progress.currentPath)
-  );
+  let scanned: ScannedFile[] = [];
+  try {
+    scanned = await scanFiles(workspaceRoot, options.signal, (progress) =>
+      options.onDiscovery?.(progress.discoveredFiles, progress.currentPath)
+    );
+  } catch (error) {
+    if (isAbortError(error, options.signal)) throw error;
+    warn(
+      `Repository discovery failed; continuing with the files already available: ${errorMessage(error)}.`
+    );
+  }
   const files: RepoFile[] = [];
   const symbols = [];
   const dependencies = [];
@@ -74,205 +99,233 @@ export async function indexRepository(
   const languageSupport = new Map<string, MutableLanguageSupport>();
 
   for (const [fileIndex, file] of scanned.entries()) {
-    options.signal?.throwIfAborted();
-    if (fileIndex > 0 && fileIndex % 100 === 0)
-      await new Promise<void>((resolve) => setImmediate(resolve));
-
-    const previousFile = previousFiles.get(file.path);
-    const metadataReusable = Boolean(
-      previousFile?.contentHash &&
-      previousFile.structuralHash &&
-      previousFile.sizeBytes === file.sizeBytes &&
-      previousFile.modifiedTimeMs === file.modifiedTimeMs &&
-      previousFile.frameworkHints &&
-      previousFile.ownershipHints &&
-      previousFile.securitySensitiveAreas &&
-      previousFile.performanceSensitivePaths &&
-      previousFile.modernizationCandidates
-    );
-    const text = metadataReusable ? undefined : await fs.readFile(file.absolutePath, "utf8");
-    const lineCount = metadataReusable
-      ? previousFile!.lineCount
-      : text!.length === 0
-        ? 0
-        : text!.split(/\r?\n/).length;
     const language = languageForPath(file.path);
-    const contentHash = metadataReusable ? previousFile!.contentHash! : hash(text!);
-    const reusable =
-      metadataReusable ||
-      Boolean(previousFile?.contentHash === contentHash && previousFile.structuralHash);
-    const languageAnalysis = analyzeLanguageFile(file.path, reusable ? "" : text!);
-    const support = supportFor(languageSupport, languageAnalysis);
-    let semantic: SemanticEnrichmentResult | undefined;
+    try {
+      options.signal?.throwIfAborted();
+      if (fileIndex > 0 && fileIndex % 100 === 0)
+        await new Promise<void>((resolve) => setImmediate(resolve));
 
-    if (
-      !reusable &&
-      options.semanticEnricher &&
-      languageAnalysis.language.semanticEnrichment === "vscode-language-service"
-    ) {
-      try {
-        semantic = await options.semanticEnricher.enrich({
-          workspaceRoot,
-          absolutePath: file.absolutePath,
-          relativePath: file.path,
-          languageId: languageAnalysis.language.id,
-          text: text!,
-          signal: options.signal
-        });
-        if (semantic?.capabilities.documentSymbols) support.semanticFiles += 1;
-        else support.deterministicFiles += 1;
-        if (semantic) mergeSupportCapabilities(support, semantic);
-      } catch (error) {
-        if (options.signal?.aborted || (error instanceof Error && error.name === "AbortError"))
-          throw error;
-        support.failedSemanticFiles += 1;
+      const previousFile = previousFiles.get(file.path);
+      const metadataReusable = Boolean(
+        previousFile?.contentHash &&
+        previousFile.structuralHash &&
+        previousFile.sizeBytes === file.sizeBytes &&
+        previousFile.modifiedTimeMs === file.modifiedTimeMs &&
+        previousFile.frameworkHints &&
+        previousFile.ownershipHints &&
+        previousFile.securitySensitiveAreas &&
+        previousFile.performanceSensitivePaths &&
+        previousFile.modernizationCandidates
+      );
+      const text = metadataReusable ? undefined : await fs.readFile(file.absolutePath, "utf8");
+      const lineCount = metadataReusable
+        ? previousFile!.lineCount
+        : text!.length === 0
+          ? 0
+          : text!.split(/\r?\n/).length;
+      const contentHash = metadataReusable ? previousFile!.contentHash! : hash(text!);
+      const reusable =
+        metadataReusable ||
+        Boolean(previousFile?.contentHash === contentHash && previousFile.structuralHash);
+      const languageAnalysis = analyzeLanguageFile(file.path, reusable ? "" : text!);
+      const support = supportFor(languageSupport, languageAnalysis);
+      let semantic: SemanticEnrichmentResult | undefined;
+
+      if (
+        !reusable &&
+        options.semanticEnricher &&
+        languageAnalysis.language.semanticEnrichment === "vscode-language-service"
+      ) {
+        try {
+          semantic = await options.semanticEnricher.enrich({
+            workspaceRoot,
+            absolutePath: file.absolutePath,
+            relativePath: file.path,
+            languageId: languageAnalysis.language.id,
+            text: text!,
+            signal: options.signal
+          });
+          if (semantic?.capabilities.documentSymbols) support.semanticFiles += 1;
+          else support.deterministicFiles += 1;
+          if (semantic) mergeSupportCapabilities(support, semantic);
+        } catch (error) {
+          if (options.signal?.aborted || (error instanceof Error && error.name === "AbortError"))
+            throw error;
+          support.failedSemanticFiles += 1;
+          support.deterministicFiles += 1;
+          const warning = `Semantic enrichment failed for ${file.path}: ${errorMessage(error)}.`;
+          support.warnings.add(warning);
+          warn(warning);
+        }
+      } else if (languageAnalysis.language.parser === "typescript") {
+        support.semanticFiles += 1;
+        support.capabilities.symbols = true;
+        support.capabilities.definitions = true;
+        support.capabilities.references = true;
+        support.capabilities.implementations = true;
+        support.capabilities.calls = true;
+        support.capabilities.controlFlow = true;
+        support.capabilities.dataFlow = true;
+        support.capabilities.cpg = true;
+      } else {
         support.deterministicFiles += 1;
-        support.warnings.add(
-          `Semantic enrichment failed for ${file.path}: ${error instanceof Error ? error.message : String(error)}`
-        );
       }
-    } else if (languageAnalysis.language.parser === "typescript") {
-      support.semanticFiles += 1;
-      support.capabilities.symbols = true;
-      support.capabilities.definitions = true;
-      support.capabilities.references = true;
-      support.capabilities.implementations = true;
-      support.capabilities.calls = true;
-      support.capabilities.controlFlow = true;
-      support.capabilities.dataFlow = true;
-      support.capabilities.cpg = true;
-    } else {
-      support.deterministicFiles += 1;
+
+      const fileSymbols = (
+        reusable
+          ? previous.symbols.filter((symbol) => symbol.filePath === file.path)
+          : mergeSymbols(languageAnalysis.symbols, semantic?.symbols ?? [])
+      ).map((symbol) => withSymbolEvidence(symbol, file.path, languageAnalysis.language.id));
+      const fileDependencies = (
+        reusable
+          ? previous.dependencies.filter((edge) => edge.from === file.path)
+          : mergeDependencies(languageAnalysis.dependencies, semantic?.dependencies ?? [])
+      ).map((edge) => withDependencyEvidence(edge, file.path, languageAnalysis.language.id));
+      const fileApis = (
+        reusable
+          ? previous.apis.filter((api) => api.filePath === file.path)
+          : mergeApis(languageAnalysis.apis, semantic?.apis ?? [])
+      ).map((api) => withApiEvidence(api, file.path, languageAnalysis.language.id));
+      const fileCalls = reusable
+        ? (previous.calls ?? []).filter((call) => call.filePath === file.path)
+        : mergeCalls(
+            languageAnalysis.calls.map((call) => ({
+              ...call,
+              filePath: file.path,
+              evidence: evidence("heuristic", 0.72, file.path, call.line, [
+                "Deterministic call-site extraction; dynamic dispatch may remain unresolved."
+              ])
+            })),
+            semantic?.calls ?? []
+          );
+      const fileControlFlows = reusable
+        ? (previous.controlFlows ?? []).filter((flow) => flow.filePath === file.path)
+        : mergeControlFlows(
+            languageAnalysis.controlFlow.map((flow) => ({
+              ...flow,
+              filePath: file.path,
+              evidence: evidence("heuristic", 0.78, file.path, flow.line)
+            })),
+            semantic?.controlFlows ?? []
+          );
+      const fileDataFlows = reusable
+        ? (previous.dataFlows ?? []).filter((flow) => flow.filePath === file.path)
+        : mergeDataFlows(
+            languageAnalysis.dataFlow.map((flow) => ({
+              ...flow,
+              filePath: file.path,
+              evidence: evidence("heuristic", 0.68, file.path, flow.line, [
+                "Lexical data-flow extraction; interprocedural flow uses available language-service enrichment."
+              ])
+            })),
+            semantic?.dataFlows ?? []
+          );
+      const fileTypeRelationships = reusable
+        ? (previous.typeRelationships ?? []).filter(
+            (relationship) => relationship.filePath === file.path
+          )
+        : mergeTypeRelationships(
+            languageAnalysis.typeRelationships.map((relationship) => ({
+              ...relationship,
+              filePath: file.path,
+              evidence: evidence("heuristic", 0.82, file.path, relationship.line, [
+                "Deterministic inheritance extraction; installed language services can add semantic implementation evidence."
+              ])
+            })),
+            semantic?.typeRelationships ?? []
+          );
+
+      const fileFrameworks = reusable
+        ? (previousFile!.frameworkHints ?? [])
+        : detectFrameworks(file.path, text!);
+      const fileOwnership = reusable
+        ? (previousFile!.ownershipHints ?? [])
+        : detectOwnership(file.path, text!);
+      const fileSecurity = reusable
+        ? (previousFile!.securitySensitiveAreas ?? [])
+        : detectSecuritySensitiveArea(file.path, text!).map(
+            (keyword) => `${file.path}: ${keyword}`
+          );
+      const filePerformance = reusable
+        ? (previousFile!.performanceSensitivePaths ?? [])
+        : detectPerformanceSensitivePath(file.path, text!).map(
+            (keyword) => `${file.path}: ${keyword}`
+          );
+      const fileModernization = reusable
+        ? (previousFile!.modernizationCandidates ?? [])
+        : detectModernizationCandidates(file.path, text!, lineCount);
+
+      if (reusable) reusedFiles += 1;
+      const repoFile: RepoFile = {
+        path: file.path,
+        language,
+        sizeBytes: file.sizeBytes,
+        modifiedTimeMs: file.modifiedTimeMs,
+        lineCount,
+        isTest: isTestPath(file.path) && language !== "markdown",
+        isGenerated: /generated|\.gen\.|\.generated\./i.test(file.path),
+        summary: reusable ? previousFile!.summary : summarizeFile(file.path, text!),
+        contentHash,
+        evidence: evidence("filesystem", 1, file.path),
+        structuralHash: reusable
+          ? previousFile!.structuralHash
+          : hash(
+              JSON.stringify({
+                symbols: fileSymbols
+                  .map((symbol) => [symbol.name, symbol.kind, symbol.exportStatus])
+                  .sort(),
+                dependencies: fileDependencies.map((edge) => [edge.to, edge.kind]).sort(),
+                apis: fileApis.map((api) => [api.method, api.path]).sort()
+              })
+            ),
+        frameworkHints: fileFrameworks,
+        ownershipHints: fileOwnership,
+        securitySensitiveAreas: fileSecurity,
+        performanceSensitivePaths: filePerformance,
+        modernizationCandidates: fileModernization
+      };
+      files.push(repoFile);
+      symbols.push(...fileSymbols);
+      dependencies.push(...fileDependencies);
+      apis.push(...fileApis);
+      calls.push(...fileCalls);
+      controlFlows.push(...fileControlFlows);
+      dataFlows.push(...fileDataFlows);
+      typeRelationships.push(...fileTypeRelationships);
+
+      const service = mapService(file.path);
+      if (service) services.push(withServiceEvidence(service, file.path));
+      fileSecurity.forEach((item) => securitySensitiveAreas.add(item));
+      filePerformance.forEach((item) => performanceSensitivePaths.add(item));
+      fileModernization.forEach((item) => modernizationCandidates.add(item));
+      fileFrameworks.forEach((item) => frameworkHints.add(item));
+      fileOwnership.forEach((item) => ownershipHints.add(item));
+      options.onFile?.(files.length, scanned.length, file.path);
+    } catch (error) {
+      if (isAbortError(error, options.signal)) throw error;
+      const warning = `File ingestion failed for ${file.path}; continuing with a fallback record: ${errorMessage(error)}.`;
+      warn(warning);
+      const previousFile = previousFiles.get(file.path);
+      files.push({
+        path: file.path,
+        language,
+        sizeBytes: file.sizeBytes,
+        modifiedTimeMs: file.modifiedTimeMs,
+        lineCount: previousFile?.lineCount ?? 0,
+        isTest: isTestPath(file.path) && language !== "markdown",
+        isGenerated: /generated|\.gen\.|\.generated\./i.test(file.path),
+        summary: previousFile?.summary ?? "File could not be analyzed; see ingestion warnings.",
+        contentHash: previousFile?.contentHash,
+        structuralHash: previousFile?.structuralHash,
+        evidence: evidence("filesystem", 0.1, file.path, undefined, [warning]),
+        frameworkHints: previousFile?.frameworkHints ?? [],
+        ownershipHints: previousFile?.ownershipHints ?? [],
+        securitySensitiveAreas: previousFile?.securitySensitiveAreas ?? [],
+        performanceSensitivePaths: previousFile?.performanceSensitivePaths ?? [],
+        modernizationCandidates: previousFile?.modernizationCandidates ?? []
+      });
+      options.onFile?.(files.length, scanned.length, file.path);
     }
-
-    const fileSymbols = (
-      reusable
-        ? previous.symbols.filter((symbol) => symbol.filePath === file.path)
-        : mergeSymbols(languageAnalysis.symbols, semantic?.symbols ?? [])
-    ).map((symbol) => withSymbolEvidence(symbol, file.path, languageAnalysis.language.id));
-    const fileDependencies = (
-      reusable
-        ? previous.dependencies.filter((edge) => edge.from === file.path)
-        : mergeDependencies(languageAnalysis.dependencies, semantic?.dependencies ?? [])
-    ).map((edge) => withDependencyEvidence(edge, file.path, languageAnalysis.language.id));
-    const fileApis = (
-      reusable
-        ? previous.apis.filter((api) => api.filePath === file.path)
-        : mergeApis(languageAnalysis.apis, semantic?.apis ?? [])
-    ).map((api) => withApiEvidence(api, file.path, languageAnalysis.language.id));
-    const fileCalls = reusable
-      ? (previous.calls ?? []).filter((call) => call.filePath === file.path)
-      : mergeCalls(
-          languageAnalysis.calls.map((call) => ({
-            ...call,
-            filePath: file.path,
-            evidence: evidence("heuristic", 0.72, file.path, call.line, [
-              "Deterministic call-site extraction; dynamic dispatch may remain unresolved."
-            ])
-          })),
-          semantic?.calls ?? []
-        );
-    const fileControlFlows = reusable
-      ? (previous.controlFlows ?? []).filter((flow) => flow.filePath === file.path)
-      : mergeControlFlows(
-          languageAnalysis.controlFlow.map((flow) => ({
-            ...flow,
-            filePath: file.path,
-            evidence: evidence("heuristic", 0.78, file.path, flow.line)
-          })),
-          semantic?.controlFlows ?? []
-        );
-    const fileDataFlows = reusable
-      ? (previous.dataFlows ?? []).filter((flow) => flow.filePath === file.path)
-      : mergeDataFlows(
-          languageAnalysis.dataFlow.map((flow) => ({
-            ...flow,
-            filePath: file.path,
-            evidence: evidence("heuristic", 0.68, file.path, flow.line, [
-              "Lexical data-flow extraction; interprocedural flow uses available language-service enrichment."
-            ])
-          })),
-          semantic?.dataFlows ?? []
-        );
-    const fileTypeRelationships = reusable
-      ? (previous.typeRelationships ?? []).filter(
-          (relationship) => relationship.filePath === file.path
-        )
-      : mergeTypeRelationships(
-          languageAnalysis.typeRelationships.map((relationship) => ({
-            ...relationship,
-            filePath: file.path,
-            evidence: evidence("heuristic", 0.82, file.path, relationship.line, [
-              "Deterministic inheritance extraction; installed language services can add semantic implementation evidence."
-            ])
-          })),
-          semantic?.typeRelationships ?? []
-        );
-
-    const fileFrameworks = reusable
-      ? (previousFile!.frameworkHints ?? [])
-      : detectFrameworks(file.path, text!);
-    const fileOwnership = reusable
-      ? (previousFile!.ownershipHints ?? [])
-      : detectOwnership(file.path, text!);
-    const fileSecurity = reusable
-      ? (previousFile!.securitySensitiveAreas ?? [])
-      : detectSecuritySensitiveArea(file.path, text!).map((keyword) => `${file.path}: ${keyword}`);
-    const filePerformance = reusable
-      ? (previousFile!.performanceSensitivePaths ?? [])
-      : detectPerformanceSensitivePath(file.path, text!).map(
-          (keyword) => `${file.path}: ${keyword}`
-        );
-    const fileModernization = reusable
-      ? (previousFile!.modernizationCandidates ?? [])
-      : detectModernizationCandidates(file.path, text!, lineCount);
-
-    if (reusable) reusedFiles += 1;
-    const repoFile: RepoFile = {
-      path: file.path,
-      language,
-      sizeBytes: file.sizeBytes,
-      modifiedTimeMs: file.modifiedTimeMs,
-      lineCount,
-      isTest: isTestPath(file.path),
-      isGenerated: /generated|\.gen\.|\.generated\./i.test(file.path),
-      summary: reusable ? previousFile!.summary : summarizeFile(file.path, text!),
-      contentHash,
-      evidence: evidence("filesystem", 1, file.path),
-      structuralHash: reusable
-        ? previousFile!.structuralHash
-        : hash(
-            JSON.stringify({
-              symbols: fileSymbols
-                .map((symbol) => [symbol.name, symbol.kind, symbol.exportStatus])
-                .sort(),
-              dependencies: fileDependencies.map((edge) => [edge.to, edge.kind]).sort(),
-              apis: fileApis.map((api) => [api.method, api.path]).sort()
-            })
-          ),
-      frameworkHints: fileFrameworks,
-      ownershipHints: fileOwnership,
-      securitySensitiveAreas: fileSecurity,
-      performanceSensitivePaths: filePerformance,
-      modernizationCandidates: fileModernization
-    };
-    files.push(repoFile);
-    symbols.push(...fileSymbols);
-    dependencies.push(...fileDependencies);
-    apis.push(...fileApis);
-    calls.push(...fileCalls);
-    controlFlows.push(...fileControlFlows);
-    dataFlows.push(...fileDataFlows);
-    typeRelationships.push(...fileTypeRelationships);
-
-    const service = mapService(file.path);
-    if (service) services.push(withServiceEvidence(service, file.path));
-    fileSecurity.forEach((item) => securitySensitiveAreas.add(item));
-    filePerformance.forEach((item) => performanceSensitivePaths.add(item));
-    fileModernization.forEach((item) => modernizationCandidates.add(item));
-    fileFrameworks.forEach((item) => frameworkHints.add(item));
-    fileOwnership.forEach((item) => ownershipHints.add(item));
-    options.onFile?.(files.length, scanned.length, file.path);
   }
 
   const resolvedDependencies = resolveLocalDependencies(dependencies, files);
@@ -282,7 +335,7 @@ export async function indexRepository(
     files,
     symbols,
     dependencies: resolvedDependencies,
-    tests: improveTestMappings(mapTests(files), resolvedDependencies).map(withTestEvidence),
+    tests: improveTestMappings(mapTests(files), resolvedDependencies, files).map(withTestEvidence),
     apis,
     services,
     calls,
@@ -305,31 +358,91 @@ export async function indexRepository(
       phase: "structural-store",
       message: "Persisting the structural repository index..."
     });
-    await store.write(intelligence);
+    try {
+      await store.write(intelligence);
+    } catch (error) {
+      warn(
+        `Could not persist the structural repository index; continuing with in-memory data: ${errorMessage(error)}.`
+      );
+    }
     const okfStore = new OkfSnapshotStore(workspaceRoot);
     options.onPersistence?.({
       phase: "okf-read",
       message: "Loading the previous OKF snapshot for incremental reconciliation..."
     });
-    const previousOkf = await okfStore.read();
+    let previousOkf;
+    try {
+      previousOkf = await okfStore.read();
+    } catch (error) {
+      warn(
+        `Could not read the previous OKF snapshot; continuing without it: ${errorMessage(error)}.`
+      );
+    }
     options.onPersistence?.({
       phase: "okf-build",
       message: "Building the canonical OKF knowledge snapshot..."
     });
-    const okfSnapshot = repoIntelligenceToOkf(intelligence, { previousSnapshot: previousOkf });
-    options.onPersistence?.({
-      phase: "okf-store",
-      message: `Writing OKF units, relationships, evidence, and projections (${okfSnapshot.units.length} units)...`
-    });
-    await okfStore.write(okfSnapshot, {
-      onProgress: (message) => options.onPersistence?.({ phase: "okf-store", message })
-    });
-    options.onPersistence?.({
-      phase: "okf-complete",
-      message: "Canonical OKF snapshot and portable bundle promoted successfully."
-    });
+    try {
+      const okfSnapshot = repoIntelligenceToOkf(intelligence, {
+        previousSnapshot: previousOkf,
+        onWarning: warn
+      });
+      options.onPersistence?.({
+        phase: "okf-store",
+        message: `Writing OKF units, relationships, evidence, and projections (${okfSnapshot.units.length} units)...`
+      });
+      try {
+        await okfStore.write(okfSnapshot, {
+          onProgress: (message) => options.onPersistence?.({ phase: "okf-store", message })
+        });
+        options.onPersistence?.({
+          phase: "okf-complete",
+          message: "Canonical OKF snapshot and portable bundle promoted successfully."
+        });
+      } catch (error) {
+        warn(
+          `OKF persistence failed; continuing with structural and stage intelligence: ${errorMessage(error)}.`
+        );
+      }
+    } catch (error) {
+      warn(
+        `OKF construction failed; continuing with structural and stage intelligence: ${errorMessage(error)}.`
+      );
+    }
   }
   return intelligence;
+}
+
+export function emptyRepoIntelligence(workspaceRoot: string): RepoIntelligence {
+  return {
+    workspaceRoot,
+    indexedAt: new Date().toISOString(),
+    files: [],
+    symbols: [],
+    dependencies: [],
+    tests: [],
+    apis: [],
+    services: [],
+    calls: [],
+    controlFlows: [],
+    dataFlows: [],
+    typeRelationships: [],
+    ownershipHints: [],
+    frameworkHints: [],
+    securitySensitiveAreas: [],
+    performanceSensitivePaths: [],
+    modernizationCandidates: [],
+    languageSupport: [],
+    incrementalStats: { reusedFiles: 0, analyzedFiles: 0 }
+  };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isAbortError(error: unknown, signal?: AbortSignal): boolean {
+  return signal?.aborted === true || (error instanceof Error && error.name === "AbortError");
 }
 
 function evidence(
@@ -574,13 +687,18 @@ function resolveLocalDependencies(edges: DependencyEdge[], files: RepoFile[]): D
 
 function improveTestMappings(
   mappings: TestMapping[],
-  dependencies: DependencyEdge[]
+  dependencies: DependencyEdge[],
+  files: RepoFile[]
 ): TestMapping[] {
+  const fileByPath = new Map(files.map((file) => [file.path, file]));
   return mappings.map((mapping) => {
     const importedTargets = dependencies
       .filter((edge) => edge.from === mapping.testFile && edge.kind === "local")
       .map((edge) => edge.to)
-      .filter((target) => !isTestPath(target));
+      .filter((target) => {
+        const file = fileByPath.get(target);
+        return Boolean(file && !file.isTest && file.language !== "markdown");
+      });
     if (importedTargets.length === 1) {
       return {
         ...mapping,
