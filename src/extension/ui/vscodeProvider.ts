@@ -50,6 +50,8 @@ export class VscodeProvider {
   private readonly pendingIndexRoots = new Set<string>();
   private latestQaEvent?: QaServiceEvent;
   private webviewReady = false;
+  private activeIndexPromise?: Promise<void>;
+  private activeIndexRoot?: string;
   private readonly applicationStore = new ApplicationStore();
   private readonly sdlcEngine = new SDLCEngine();
   private sdlcPlan?: SDLCPlan;
@@ -85,8 +87,11 @@ export class VscodeProvider {
       this.panel = undefined;
     });
     this.post({ type: "APPLICATION_STATE", state: this.applicationStore.snapshot() });
-    await this.loadIntelligence();
-    await this.loadRestoredTaskHandoff();
+    // Render the panel immediately. A large repository may still be ingesting;
+    // loading persisted state must not hold the command open or overwrite the
+    // live indexing state shown by the progress callbacks.
+    void this.loadIntelligence();
+    void this.loadRestoredTaskHandoff();
     if (this.latestQaEvent) this.post({ type: "QA_BACKGROUND_STATUS", ...this.latestQaEvent });
   }
 
@@ -165,9 +170,15 @@ export class VscodeProvider {
       this.logInfo(`Intelligence is already running; queued a refresh for ${requestedRoot}.`);
       return;
     }
+    const run = this.runIndexWorkspace(requestedRoot);
+    this.activeIndexPromise = run;
+    this.activeIndexRoot = requestedRoot;
+    await run;
+  }
+
+  private async runIndexWorkspace(root: string): Promise<void> {
     this.indexing = true;
     const generation = ++this.indexGeneration;
-    const root = requestedRoot;
     const isVisibleRoot = (): boolean => root === this.workspaceRoot();
     const startedAt = Date.now();
     this.logInfo(
@@ -231,6 +242,10 @@ export class VscodeProvider {
       }
     } finally {
       this.indexing = false;
+      if (this.activeIndexRoot === root) {
+        this.activeIndexPromise = undefined;
+        this.activeIndexRoot = undefined;
+      }
       this.pendingIndexRoots.delete(root);
       const next = this.pendingIndexRoots.values().next().value as string | undefined;
       if (next) {
@@ -585,8 +600,7 @@ export class VscodeProvider {
     if (message.type === "QUERY_INTELLIGENCE") {
       const root = this.workspaceRoot();
       if (root)
-        void this.getService(root)
-          .queryIntelligence(message.query)
+        void this.whenIndexReady(root, () => this.getService(root).queryIntelligence(message.query))
           .then((result) => this.post({ type: "INTELLIGENCE_QUERY_RESULT", result }))
           .catch((error) =>
             this.post({
@@ -600,8 +614,9 @@ export class VscodeProvider {
     if (message.type === "EXPLORE_INTELLIGENCE") {
       const root = this.workspaceRoot();
       if (root)
-        void this.getService(root)
-          .exploreIntelligence(message.query ?? "", message.kind ?? "all")
+        void this.whenIndexReady(root, () =>
+          this.getService(root).exploreIntelligence(message.query ?? "", message.kind ?? "all")
+        )
           .then((result) => this.post({ type: "INTELLIGENCE_EXPLORER_RESULT", result }))
           .catch((error) =>
             this.post({
@@ -615,8 +630,13 @@ export class VscodeProvider {
     if (message.type === "LOAD_INTELLIGENCE_GRAPH") {
       const root = this.workspaceRoot();
       if (root)
-        void this.getService(root)
-          .graphIntelligence(message.mode, message.query ?? "", message.seedIds ?? [])
+        void this.whenIndexReady(root, () =>
+          this.getService(root).graphIntelligence(
+            message.mode,
+            message.query ?? "",
+            message.seedIds ?? []
+          )
+        )
           .then((result) => this.post({ type: "INTELLIGENCE_GRAPH_RESULT", result }))
           .catch((error) =>
             this.post({
@@ -630,8 +650,13 @@ export class VscodeProvider {
     if (message.type === "LOAD_CPG_VIEW") {
       const root = this.workspaceRoot();
       if (root)
-        void this.getService(root)
-          .cpgIntelligence(message.sourcePath, message.edgeKind ?? "all", message.focusNodeId)
+        void this.whenIndexReady(root, () =>
+          this.getService(root).cpgIntelligence(
+            message.sourcePath,
+            message.edgeKind ?? "all",
+            message.focusNodeId
+          )
+        )
           .then((result) => this.post({ type: "CPG_VIEW_RESULT", result }))
           .catch((error) =>
             this.post({
@@ -1452,10 +1477,19 @@ export class VscodeProvider {
   private async loadIntelligence(): Promise<void> {
     const root = this.workspaceRoot();
     if (!root) return;
+    if (this.indexing && this.activeIndexRoot === root) {
+      this.post({ type: "APPLICATION_STATE", state: this.applicationStore.snapshot() });
+      return;
+    }
     this.sdlcPlan = await new SDLCPlanStore(root).read();
     if (this.sdlcPlan) this.applicationStore.update({ sdlc: this.sdlcPlan });
     this.post({ type: "STATE_UPDATE", state: await this.getService(root).loadState() });
     if (this.sdlcPlan) this.post({ type: "SDLC_PLAN_RESULT", plan: this.sdlcPlan });
+  }
+
+  private async whenIndexReady<T>(root: string, action: () => Promise<T>): Promise<T> {
+    if (this.activeIndexRoot === root) await this.activeIndexPromise;
+    return action();
   }
 
   async activeWorkspaceChanged(): Promise<void> {

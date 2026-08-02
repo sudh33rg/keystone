@@ -162,7 +162,8 @@ export function repoIntelligenceToOkf(
   ): string => {
     const sourceKind = units.find((item) => item.id === sourceId)?.kind;
     const targetKind = units.find((item) => item.id === targetId)?.kind;
-    const constraint = KEYSTONE_OKF_PROFILE.relationshipConstraints[kind];
+    let relationshipKind = kind;
+    let constraint = KEYSTONE_OKF_PROFILE.relationshipConstraints[relationshipKind];
     if (!sourceKind || !targetKind)
       throw new Error(
         `Cannot create ${kind}: unknown OKF unit ${!sourceKind ? sourceId : targetId}.`
@@ -171,11 +172,20 @@ export function repoIntelligenceToOkf(
       constraint &&
       (!constraint.sources.includes(sourceKind) || !constraint.targets.includes(targetKind))
     ) {
-      throw new Error(
-        `Cannot create invalid OKF relationship ${kind}: ${sourceKind} -> ${targetKind}.`
-      );
+      // Dependency extraction can see documentation and other text artifacts
+      // mentioning modules/packages. Those are dependencies, but they are not
+      // source-level imports under the OKF profile. Preserve the edge while
+      // normalizing it to the profile-compatible relationship kind.
+      if (kind === "imports") {
+        relationshipKind = "depends-on";
+        constraint = KEYSTONE_OKF_PROFILE.relationshipConstraints[relationshipKind];
+      } else {
+        throw new Error(
+          `Cannot create invalid OKF relationship ${kind}: ${sourceKind} -> ${targetKind}.`
+        );
+      }
     }
-    const key = canonicalRelationshipKey(kind, sourceId, targetId);
+    const key = canonicalRelationshipKey(relationshipKind, sourceId, targetId);
     const id = createOkfId(workspaceId, "relationship", key);
     if (relationshipIds.has(id)) return id;
     const prior = previousRelationships.get(id);
@@ -189,7 +199,7 @@ export function repoIntelligenceToOkf(
       id,
       profile: KEYSTONE_OKF_PROFILE_ID,
       profileVersion: KEYSTONE_OKF_PROFILE_VERSION,
-      kind,
+      kind: relationshipKind,
       sourceId,
       targetId,
       properties,
