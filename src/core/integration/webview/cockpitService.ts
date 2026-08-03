@@ -124,6 +124,7 @@ export class CockpitService {
     private readonly runtime: {
       semanticEnricher?: SemanticEnrichmentProvider;
       maxWorkers?: number;
+      maxFileSizeBytes?: number;
     } = {}
   ) {
     this.taskWorkspaces = new TaskWorkspaceManager(workspaceRoot);
@@ -302,6 +303,7 @@ export class CockpitService {
         : undefined;
     if (modernizationProposal) this.modernization.restoreProposal(modernizationProposal);
     const degraded = snapshot?.status === "degraded";
+    const warningCount = snapshot?.ingestion.warnings.length ?? 0;
     return {
       status: degraded ? "error" : intelligence ? "ready" : "idle",
       intelligence: intelligence
@@ -315,8 +317,10 @@ export class CockpitService {
         stage: degraded ? "degraded" : intelligence ? "complete" : "not-started",
         message: intelligence
           ? degraded
-            ? "Persisted repository intelligence loaded with warnings; inspect ingestion activity."
-            : "Persisted repository intelligence loaded."
+            ? "Persisted repository intelligence loaded with blocking failures; inspect ingestion activity."
+            : warningCount
+              ? `Persisted repository intelligence loaded; ${warningCount} non-blocking warning(s) recorded.`
+              : "Persisted repository intelligence loaded."
           : "No repository intelligence has been created yet.",
         persistedPath: SUMMARY_PATH
       },
@@ -376,6 +380,7 @@ export class CockpitService {
         cognitive: true,
         semanticEnricher: this.runtime.semanticEnricher,
         maxWorkers: this.runtime.maxWorkers,
+        maxFileSizeBytes: this.runtime.maxFileSizeBytes,
         affectedPaths,
         onWarning: (warning) => {
           onProgress(`Warning: ${warning}`, 4.8, "structural");
@@ -429,7 +434,7 @@ export class CockpitService {
     const completedStages = snapshot.stages.filter((stage) => stage.status === "complete").length;
     const readinessReason =
       snapshot.status === "ready"
-        ? `All ${snapshot.stages.length} repository intelligence stages completed; intelligence health is ${snapshot.health.status} (${snapshot.health.score}/100).${snapshot.ingestion.warnings.length ? ` ${snapshot.ingestion.warnings.join(" ")}` : ""}`
+        ? `All ${snapshot.stages.length} repository intelligence stages completed; intelligence health is ${snapshot.health.status} (${snapshot.health.score}/100).${snapshot.ingestion.warnings.length ? ` ${snapshot.ingestion.warnings.length} non-blocking warning(s) were recorded.` : ""}`
         : `${snapshot.stages.length - completedStages} intelligence stage(s) failed; ${snapshot.ingestion.warnings.length} non-fatal warning(s) were recorded and processing continued.`;
     const manifest: IntelligenceManifest = {
       status: snapshot.status === "ready" ? "ready" : "error",
@@ -458,7 +463,7 @@ export class CockpitService {
     onProgress(
       snapshot.status === "ready"
         ? "Repository intelligence is ready."
-        : "Repository intelligence completed with warnings; inspect ingestion activity.",
+        : "Repository intelligence completed with blocking failures; inspect ingestion activity.",
       100,
       snapshot.status === "ready" ? "complete" : "degraded"
     );
@@ -473,7 +478,9 @@ export class CockpitService {
         stage: snapshot.status === "ready" ? "complete" : "degraded",
         message:
           snapshot.status === "ready"
-            ? "Repository intelligence is ready and persisted."
+            ? snapshot.ingestion.warnings.length
+              ? `Repository intelligence is ready and persisted; ${snapshot.ingestion.warnings.length} non-blocking warning(s) were recorded.`
+              : "Repository intelligence is ready and persisted."
             : "Repository intelligence is degraded because one or more stages failed; inspect stage evidence.",
         persistedPath: SUMMARY_PATH
       }
@@ -921,7 +928,10 @@ export class CockpitService {
           remediation: item.remediation,
           confidence: item.confidence
         })),
-        intelligenceSignals: securitySignals
+        intelligenceSignals: securitySignals,
+        recommendations: securityIsCurrent
+          ? [...securityCached!.recommendations]
+          : [...run.security.checklist]
       },
       performance: {
         riskLevel: riskLevelForFindings(
@@ -938,7 +948,10 @@ export class CockpitService {
           remediation: item.remediation,
           confidence: item.confidence
         })),
-        intelligenceSignals: performanceSignals
+        intelligenceSignals: performanceSignals,
+        recommendations: performanceIsCurrent
+          ? [...performanceCached!.recommendations]
+          : [...run.performance.checklist]
       },
       modernization: {
         proposalId: modernizationIsCurrent ? modernizationCached!.id : undefined,
@@ -951,7 +964,10 @@ export class CockpitService {
           title: gap.title,
           priority: gap.priority,
           evidence: [...gap.evidence]
-        }))
+        })),
+        recommendations: modernizationIsCurrent
+          ? [...modernizationCached!.assessment.recommendations]
+          : [...run.modernization.candidates]
       },
       gitReview: {
         readOnly: true,
@@ -2222,7 +2238,19 @@ function toWorkspaceSummary(
   return {
     fileCount: value.files.length,
     files: value.files,
+    querySuggestions: buildQuerySuggestions(value),
     projectTypes: value.frameworkHints,
+    projectFingerprints: value.projectFingerprints?.map((fingerprint) => ({
+      projectPath: fingerprint.projectPath,
+      name: fingerprint.name,
+      languages: fingerprint.languages,
+      frameworks: fingerprint.frameworks,
+      persistence: fingerprint.persistence,
+      databases: fingerprint.databases,
+      messaging: fingerprint.messaging,
+      contracts: fingerprint.contracts,
+      confidence: fingerprint.confidence
+    })),
     architecture:
       value.services.length > 1
         ? "service-oriented"
@@ -2293,6 +2321,53 @@ function toWorkspaceSummary(
         }
       : undefined
   };
+}
+
+function buildQuerySuggestions(value: RepoIntelligence): string[] {
+  const candidates = new Map<string, number>();
+  const add = (query: string, score: number): void => {
+    const normalized = query.trim();
+    if (normalized) candidates.set(normalized, Math.max(candidates.get(normalized) ?? 0, score));
+  };
+  const useful = (valueToCheck: string): boolean => {
+    const normalized = valueToCheck.trim();
+    return normalized.length > 2 && !/^(?:index|main|app|test|utils?)$/i.test(normalized);
+  };
+
+  for (const service of value.services) {
+    if (!useful(service.name)) continue;
+    add(`What calls ${service.name}?`, 100);
+    add(`What tests cover ${service.name}?`, 96);
+    add(`Show ${service.name} flow`, 92);
+  }
+  for (const api of value.apis) {
+    const target = `${api.method.toUpperCase()} ${api.path}`.trim();
+    if (!useful(api.path)) continue;
+    add(`Where is ${target} implemented?`, 88);
+    add(`What tests cover ${target}?`, 84);
+  }
+  for (const symbol of value.symbols) {
+    if (!useful(symbol.name)) continue;
+    const score = symbol.exportStatus === "exported" ? 82 : 72;
+    add(`Where is ${symbol.name} implemented?`, score);
+    add(`What calls ${symbol.name}?`, score - 2);
+  }
+  for (const file of value.files) {
+    if (!useful(file.path)) continue;
+    add(`What depends on ${file.path}?`, file.isTest ? 55 : 64);
+  }
+  for (const pathValue of value.securitySensitiveAreas.slice(0, 5))
+    if (useful(pathValue)) add(`What security risks are in ${pathValue}?`, 78);
+  for (const pathValue of value.performanceSensitivePaths.slice(0, 5))
+    if (useful(pathValue)) add(`What performance risks are in ${pathValue}?`, 76);
+
+  return [...candidates.entries()]
+    .sort(
+      ([left, leftScore], [right, rightScore]) =>
+        rightScore - leftScore || left.localeCompare(right)
+    )
+    .slice(0, 20)
+    .map(([query]) => query);
 }
 
 function normalizeWorkspacePath(value: string): string {

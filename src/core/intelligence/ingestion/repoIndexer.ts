@@ -26,7 +26,7 @@ import type {
   TypeRelationshipFact
 } from "../../domain/types";
 import { repoIntelligenceToOkf } from "../okf/fromRepoIntelligence";
-import { analyzeLanguageFile, type LanguageAnalysisResult } from "../languages/languageAnalysis";
+import type { LanguageAnalysisResult } from "../languages/languageAnalysis";
 import { LANGUAGE_DEFINITIONS } from "../languages/languageRegistry";
 import type {
   SemanticEnrichmentProvider,
@@ -34,11 +34,19 @@ import type {
 } from "../languages/semanticEnrichment";
 import { OkfSnapshotStore } from "../okf/store";
 import { ExtractionCache } from "./extractionCache";
+import {
+  analyzeArtifact,
+  buildTechnologyFingerprints,
+  extractBuildAndPackageFacts,
+  enrichEcosystem
+  ,resolveCrossLanguageRelationships
+} from "../ecosystem/registries";
 
 export interface RepoIndexOptions {
   persist?: boolean;
   signal?: AbortSignal;
-  onDiscovery?: (discovered: number, path: string) => void;
+  maxFileSizeBytes?: number;
+  onDiscovery?: (discovered: number, path: string, skippedFiles: number) => void;
   onFile?: (indexed: number, total: number, path: string) => void;
   onWarning?: (message: string) => void;
   onPersistence?: (event: RepoIndexPersistenceEvent) => void;
@@ -78,8 +86,16 @@ export async function indexRepository(
   const previousFiles = new Map(previous.files.map((file) => [file.path, file]));
   let scanned: ScannedFile[] = [];
   try {
-    scanned = await scanFiles(workspaceRoot, options.signal, (progress) =>
-      options.onDiscovery?.(progress.discoveredFiles, progress.currentPath)
+    scanned = await scanFiles(
+      workspaceRoot,
+      options.signal,
+      (progress) =>
+        options.onDiscovery?.(
+          progress.discoveredFiles,
+          progress.currentPath,
+          progress.skippedFiles
+        ),
+      options.maxFileSizeBytes
     );
   } catch (error) {
     if (isAbortError(error, options.signal)) throw error;
@@ -95,6 +111,7 @@ export async function indexRepository(
           Number(priority.has(normalizePath(left.path))) || left.path.localeCompare(right.path)
     );
   }
+  const affectedPathSet = new Set(options.affectedPaths?.map(normalizePath) ?? []);
   const files: RepoFile[] = [];
   const symbols = [];
   const dependencies = [];
@@ -105,6 +122,7 @@ export async function indexRepository(
   const dataFlows = [];
   const typeRelationships = [];
   const engineeringEntities: EngineeringEntityFact[] = [];
+  const semanticRelationships: NonNullable<RepoIntelligence["semanticRelationships"]> = [];
   const securitySensitiveAreas = new Set<string>();
   const performanceSensitivePaths = new Set<string>();
   const modernizationCandidates = new Set<string>();
@@ -121,19 +139,40 @@ export async function indexRepository(
         await new Promise<void>((resolve) => setImmediate(resolve));
 
       const previousFile = previousFiles.get(file.path);
-      // Content is always read and hashed. Filesystem metadata (size + mtime)
-      // is never trusted to prove a file is unchanged: Git restores mtimes on
-      // checkout, so a branch switch can present modified content under an
-      // identical size and timestamp. Hashing is the only invalidation gate.
-      const text = await fs.readFile(file.absolutePath, "utf8");
-      const lineCount = text.length === 0 ? 0 : text.split(/\r?\n/).length;
-      const contentHash = hash(text);
+      // Watcher-driven refreshes always re-read the affected paths. For every
+      // other path, matching size + mtime lets us reuse the persisted content
+      // hash and derived facts without reading the file again. Git revision
+      // changes are handled by RevisionGuard before this function is called.
+      const metadataReusable = Boolean(
+        previousFile?.contentHash &&
+        previousFile.structuralHash &&
+        previousFile.frameworkHints &&
+        previousFile.technologyHints &&
+        previousFile.ownershipHints &&
+        previousFile.securitySensitiveAreas &&
+        previousFile.performanceSensitivePaths &&
+        previousFile.modernizationCandidates &&
+        Array.isArray(previous.engineeringEntities) &&
+        previousFile.sizeBytes === file.sizeBytes &&
+        previousFile.modifiedTimeMs === file.modifiedTimeMs &&
+        !affectedPathSet.has(normalizePath(file.path))
+      );
+      let text = "";
+      let lineCount = previousFile?.lineCount ?? 0;
+      let contentHash: string;
+      if (metadataReusable) contentHash = previousFile!.contentHash!;
+      else {
+        text = await fs.readFile(file.absolutePath, "utf8");
+        lineCount = text.length === 0 ? 0 : text.split(/\r?\n/).length;
+        contentHash = hash(text);
+      }
       // Derived analysis is still reused when the verified content hash matches
       // and every cached field needed to rebuild the record is present.
       const reusable = Boolean(
         previousFile?.contentHash === contentHash &&
         previousFile.structuralHash &&
         previousFile.frameworkHints &&
+        previousFile.technologyHints &&
         previousFile.ownershipHints &&
         previousFile.securitySensitiveAreas &&
         previousFile.performanceSensitivePaths &&
@@ -144,8 +183,8 @@ export async function indexRepository(
         ? undefined
         : await extractionCache.read(file.path, contentHash);
       const languageAnalysis = reusable
-        ? analyzeLanguageFile(file.path, "")
-        : (cachedAnalysis ?? analyzeLanguageFile(file.path, text));
+        ? analyzeArtifact(file.path, "")
+        : (cachedAnalysis ?? analyzeArtifact(file.path, text));
       if (!reusable && !cachedAnalysis) {
         await extractionCache
           .write(file.path, contentHash, languageAnalysis)
@@ -264,9 +303,15 @@ export async function indexRepository(
             semantic?.typeRelationships ?? []
           );
 
+      const ecosystem = reusable
+        ? []
+        : enrichEcosystem({ filePath: file.path, language: languageAnalysis.language.id, source: text, analysis: languageAnalysis });
+      const technologyHints = reusable
+        ? (previousFile!.technologyHints ?? [])
+        : [...ecosystem.map(item => `${item.category}:${item.id}`), ...artifactTechnologyHints(file.path, text)].sort();
       const fileFrameworks = reusable
         ? (previousFile!.frameworkHints ?? [])
-        : detectFrameworks(file.path, text);
+        : [...new Set([...detectFrameworks(file.path, text), ...ecosystem.filter(item => item.category === "framework").map(item => item.id)])].sort();
       const fileOwnership = reusable
         ? (previousFile!.ownershipHints ?? [])
         : detectOwnership(file.path, text);
@@ -283,7 +328,18 @@ export async function indexRepository(
         : detectModernizationCandidates(file.path, text, lineCount);
       const fileEngineeringEntities = reusable
         ? (previous.engineeringEntities ?? []).filter((entity) => entity.filePath === file.path)
-        : detectEngineeringEntities(file.path, language, text);
+        : [
+            ...detectEngineeringEntities(file.path, language, text),
+            ...extractBuildAndPackageFacts(file.path, text),
+            ...ecosystem.flatMap((item) => item.facts)
+          ];
+      if (reusable)
+        semanticRelationships.push(
+          ...(previous.semanticRelationships ?? []).filter(
+            (relationship) => relationship.sourcePath === file.path
+          )
+        );
+      else semanticRelationships.push(...ecosystem.flatMap((item) => item.relationships));
 
       if (reusable) reusedFiles += 1;
       const repoFile: RepoFile = {
@@ -319,6 +375,7 @@ export async function indexRepository(
         securitySensitiveAreas: fileSecurity,
         performanceSensitivePaths: filePerformance,
         modernizationCandidates: fileModernization
+        ,technologyHints
       };
       files.push(repoFile);
       symbols.push(...fileSymbols);
@@ -368,6 +425,12 @@ export async function indexRepository(
     }
   }
 
+  semanticRelationships.push(
+    ...resolveCrossLanguageRelationships(
+      engineeringEntities,
+      new Map(files.map((file) => [file.path, file.language]))
+    )
+  );
   const resolvedDependencies = resolveLocalDependencies(dependencies, files);
   const intelligence: RepoIntelligence = {
     workspaceRoot,
@@ -383,6 +446,7 @@ export async function indexRepository(
     dataFlows,
     typeRelationships,
     engineeringEntities,
+    semanticRelationships: uniqueSemanticRelationships(semanticRelationships),
     ownershipHints: [...ownershipHints].sort(),
     frameworkHints: [...frameworkHints].sort(),
     securitySensitiveAreas: [...securitySensitiveAreas].sort(),
@@ -391,6 +455,7 @@ export async function indexRepository(
     languageSupport: [...languageSupport.values()]
       .map(finalizeSupport)
       .sort((left, right) => left.label.localeCompare(right.label)),
+    projectFingerprints: buildTechnologyFingerprints(files),
     incrementalStats: { reusedFiles, analyzedFiles: files.length - reusedFiles }
   };
 
@@ -469,12 +534,14 @@ export function emptyRepoIntelligence(workspaceRoot: string): RepoIntelligence {
     dataFlows: [],
     typeRelationships: [],
     engineeringEntities: [],
+    semanticRelationships: [],
     ownershipHints: [],
     frameworkHints: [],
     securitySensitiveAreas: [],
     performanceSensitivePaths: [],
     modernizationCandidates: [],
     languageSupport: [],
+    projectFingerprints: [],
     incrementalStats: { reusedFiles: 0, analyzedFiles: 0 }
   };
 }
@@ -699,6 +766,16 @@ function uniqueBy<T>(values: readonly T[], key: (value: T) => string): T[] {
   });
 }
 
+function uniqueSemanticRelationships(
+  values: NonNullable<RepoIntelligence["semanticRelationships"]>
+): NonNullable<RepoIntelligence["semanticRelationships"]> {
+  return uniqueBy(
+    values,
+    (value) =>
+      `${value.sourceKind}:${value.sourcePath ?? ""}:${value.sourceName}:${value.kind}:${value.targetKind}:${value.targetPath ?? ""}:${value.targetName}`
+  );
+}
+
 function hash(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
@@ -775,6 +852,27 @@ function detectFrameworks(filePath: string, text: string): string[] {
   if (/vitest|describe\(|it\(/i.test(text)) hints.push("vitest-or-jest");
   if (/vscode/i.test(text)) hints.push("vscode-extension");
   return hints;
+}
+
+/** Manifest evidence is intentionally kept outside language parsers. */
+function artifactTechnologyHints(filePath: string, text: string): string[] {
+  const name = filePath.split("/").at(-1)?.toLowerCase() ?? "";
+  const hints: string[] = [];
+  if (name === "package.json") {
+    hints.push("runtime:nodejs", "package:npm", "build:npm");
+    if (/pnpm/i.test(text)) hints.push("package:pnpm");
+  }
+  if (/^(?:pom\.xml|build\.gradle(?:\.kts)?)$/.test(name)) hints.push("runtime:jvm", `build:${name === "pom.xml" ? "maven" : "gradle"}`);
+  if (name === "pyproject.toml" || name === "requirements.txt") hints.push("runtime:python", "package:pip");
+  if (name === "go.mod" || name === "go.work") hints.push("runtime:go", "package:go-modules", "build:go");
+  if (name === "cargo.toml") hints.push("runtime:rust", "package:cargo", "build:cargo");
+  if (/\.(?:sln|csproj|vbproj)$/.test(name) || name === "global.json") hints.push("runtime:dotnet", "package:nuget", "build:dotnet");
+  if (name === "cmakelists.txt" || name === "makefile") hints.push(`build:${name === "makefile" ? "make" : "cmake"}`);
+  if (/postgres(?:ql)?|psql/i.test(text)) hints.push("database:postgresql");
+  if (/mongodb|mongoose/i.test(text)) hints.push("database:mongodb");
+  if (/mysql|mariadb/i.test(text)) hints.push("database:mysql");
+  if (/sqlite/i.test(text)) hints.push("database:sqlite");
+  return [...new Set(hints)];
 }
 
 function detectOwnership(filePath: string, text: string): string[] {

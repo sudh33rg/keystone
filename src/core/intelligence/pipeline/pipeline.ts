@@ -4,6 +4,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 
 import { emptyRepoIntelligence, indexRepository } from "../ingestion/repoIndexer";
+import { normalizeMaxFileSizeBytes } from "../ingestion/fileScanner";
 import { RevisionGuard } from "../ingestion/revisionGuard";
 import { reclaimSnapshotArchives } from "../ingestion/snapshotPrune";
 import { IntelligenceStore } from "../ingestion/intelligenceStore";
@@ -177,18 +178,23 @@ export async function buildRepositoryIntelligence(
     }
   }
   let intelligence: RepoIntelligence;
+  const maxFileSizeBytes = normalizeMaxFileSizeBytes(options.maxFileSizeBytes);
+  let skippedLargeFiles = 0;
   try {
     intelligence = await indexRepository(root, {
       persist: options.persist,
       signal: options.signal,
-      onDiscovery: (discovered, file) =>
+      maxFileSizeBytes,
+      onDiscovery: (discovered, file, skipped) => {
+        skippedLargeFiles = skipped;
         options.onProgress?.({
           stage: "structural",
           order: 1,
           total: STAGES.length,
           progress: 1,
-          message: `Discovering ${file} (${discovered} files found; no cap)`
-        }),
+          message: `Discovering ${file} (${discovered} files found; files over ${formatBytes(maxFileSizeBytes)} skipped${skipped ? `: ${skipped}` : ""})`
+        });
+      },
       onFile: (indexed, total, file) =>
         options.onProgress?.({
           stage: "structural",
@@ -223,6 +229,10 @@ export async function buildRepositoryIntelligence(
     );
     intelligence = emptyRepoIntelligence(root);
   }
+  if (skippedLargeFiles)
+    reportNotice(
+      `Skipped ${skippedLargeFiles} file${skippedLargeFiles === 1 ? "" : "s"} larger than ${formatBytes(maxFileSizeBytes)} during ingestion.`
+    );
   options.onProgress?.({
     stage: "structural",
     order: 1,
@@ -283,18 +293,10 @@ export async function buildRepositoryIntelligence(
     );
     semantic = emptyTypeScriptSemanticResult();
   }
-  const semanticEvidenceAdded = mergeProjectSemanticEvidence(intelligence, semantic);
-  if (semanticEvidenceAdded && options.persist !== false) {
-    try {
-      await promoteProjectSemanticEvidence(root, intelligence, runId, options, reportWarning);
-    } catch (error) {
-      if (isAbortError(error, options.signal))
-        throw new IntelligencePipelineCancelledError("structural");
-      reportWarning(
-        `Project-aware semantic evidence could not be promoted to OKF; continuing with the in-memory semantic result: ${errorMessage(error)}.`
-      );
-    }
-  }
+  // Merge semantic evidence into the in-memory model now, but defer canonical
+  // OKF promotion until every ingestion stage has completed. A failed early
+  // promotion used to leave a valid structural snapshot with no worker input.
+  mergeProjectSemanticEvidence(intelligence, semantic);
   options.onProgress?.({
     stage: "structural",
     order: 1,
@@ -497,8 +499,11 @@ export async function buildRepositoryIntelligence(
 
   const stages = STAGES.map((stage) => stageResults.get(stage.id)!);
 
-  const status =
-    stages.some((stage) => stage.status === "failed") || warnings.length > 0 ? "degraded" : "ready";
+  // Warnings are observable evidence, not a pipeline failure. A run is
+  // degraded only when a stage fails or a required persisted artifact cannot
+  // be produced; optional Git/runtime/diagnostic warnings must not block the
+  // completed intelligence and worker handoff.
+  const status = stages.some((stage) => stage.status === "failed") ? "degraded" : "ready";
   const cpgMetrics = context.previous.get("code-property-graph")?.metrics ?? {};
   const ingestion = {
     inputFingerprint: fingerprint(intelligence),
@@ -506,6 +511,8 @@ export async function buildRepositoryIntelligence(
     indexedBytes: intelligence.files.reduce((sum, file) => sum + file.sizeBytes, 0),
     discoveryMode: "unbounded-incremental" as const,
     completedWithoutFileCap: true,
+    fileSizeLimitBytes: maxFileSizeBytes,
+    skippedLargeFiles,
     cpgEligibleFiles: Number(cpgMetrics.eligibleFiles ?? 0),
     cpgIndexedFiles: Number(cpgMetrics.indexedFiles ?? 0),
     reusedFiles: intelligence.incrementalStats?.reusedFiles ?? 0,
@@ -535,6 +542,30 @@ export async function buildRepositoryIntelligence(
     deadCode
   };
   if (options.persist !== false) {
+    options.onProgress?.({
+      stage: "runtime-observability",
+      order: STAGES.length,
+      total: STAGES.length,
+      progress: 99,
+      message: "Promoting the completed repository model to canonical OKF..."
+    });
+    try {
+      await promoteProjectSemanticEvidence(
+        root,
+        intelligence,
+        runId,
+        options,
+        reportWarning,
+        false
+      );
+    } catch (error) {
+      if (isAbortError(error, options.signal))
+        throw new IntelligencePipelineCancelledError("runtime-observability");
+      snapshot.status = "degraded";
+      reportWarning(
+        `Canonical OKF promotion failed after ingestion; background workers will remain idle until a successful manual re-index: ${errorMessage(error)}`
+      );
+    }
     try {
       await writeJson(root, `${STORE}/snapshot.json`, snapshot);
     } catch (error) {
@@ -565,8 +596,8 @@ export async function buildRepositoryIntelligence(
     progress: 100,
     message:
       snapshot.status === "ready"
-        ? "All repository intelligence families are ready."
-        : "Repository intelligence completed with warnings; inspect ingestion activity."
+        ? `All repository intelligence families are ready${warnings.length ? ` with ${warnings.length} non-blocking warning(s)` : ""}.`
+        : "Repository intelligence completed with blocking failures; inspect ingestion activity."
   });
   return snapshot;
 }
@@ -685,13 +716,14 @@ function mergeProjectSemanticEvidence(
   intelligence: RepoIntelligence,
   semantic: TypeScriptSemanticResult
 ): boolean {
-  const before = JSON.stringify({
-    calls: intelligence.calls ?? [],
-    typeRelationships: intelligence.typeRelationships ?? []
-  });
+  const existingCalls = intelligence.calls ?? [];
+  const existingTypes = intelligence.typeRelationships ?? [];
+  const callableSymbols = semantic.calls.length
+    ? buildCallableSymbolIndex(intelligence)
+    : new Map<string, Array<{ name: string; line: number }>>();
   const semanticCalls = semantic.calls.map((call) => ({
     filePath: normalizeRelativePath(call.sourcePath),
-    caller: enclosingCallable(intelligence, call.sourcePath, call.sourceLine),
+    caller: enclosingCallable(callableSymbols, call.sourcePath, call.sourceLine),
     callee: call.callee,
     line: call.sourceLine,
     targetFilePath: normalizeRelativePath(call.targetPath),
@@ -715,17 +747,12 @@ function mergeProjectSemanticEvidence(
     }));
   if (!semanticCalls.length && !semanticTypes.length) return false;
 
-  intelligence.calls = mergeSemanticCalls(semanticCalls, intelligence.calls ?? []);
-  intelligence.typeRelationships = mergeSemanticTypes(
-    semanticTypes,
-    intelligence.typeRelationships ?? []
-  );
+  const mergedCalls = mergeSemanticCalls(semanticCalls, existingCalls);
+  const mergedTypes = mergeSemanticTypes(semanticTypes, existingTypes);
+  intelligence.calls = mergedCalls;
+  intelligence.typeRelationships = mergedTypes;
   return (
-    before !==
-    JSON.stringify({
-      calls: intelligence.calls,
-      typeRelationships: intelligence.typeRelationships
-    })
+    !sameSemanticCalls(existingCalls, mergedCalls) || !sameSemanticTypes(existingTypes, mergedTypes)
   );
 }
 
@@ -734,10 +761,12 @@ async function promoteProjectSemanticEvidence(
   intelligence: RepoIntelligence,
   extractionRunId: string,
   options: IntelligencePipelineOptions,
-  reportWarning: (message: string) => void
+  reportWarning: (message: string) => void,
+  showProgress = true
 ): Promise<void> {
   options.signal?.throwIfAborted();
-  options.onProgress?.({
+  const onProgress = showProgress ? options.onProgress : undefined;
+  onProgress?.({
     stage: "structural",
     order: 1,
     total: INTELLIGENCE_STAGES.length,
@@ -762,7 +791,7 @@ async function promoteProjectSemanticEvidence(
   });
   await okfStore.write(snapshot, {
     onProgress: (message) =>
-      options.onProgress?.({
+      onProgress?.({
         stage: "structural",
         order: 1,
         total: INTELLIGENCE_STAGES.length,
@@ -800,19 +829,79 @@ function typeRelationshipKey(relationship: TypeRelationshipFact): string {
   return `${relationship.kind}:${relationship.filePath}:${relationship.line}:${relationship.source}:${relationship.target}`;
 }
 
+function sameSemanticCalls(left: readonly SemanticCall[], right: readonly SemanticCall[]): boolean {
+  if (left.length !== right.length) return false;
+  return left.every(
+    (call, index) => semanticCallValueKey(call) === semanticCallValueKey(right[index])
+  );
+}
+
+function sameSemanticTypes(
+  left: readonly TypeRelationshipFact[],
+  right: readonly TypeRelationshipFact[]
+): boolean {
+  if (left.length !== right.length) return false;
+  return left.every(
+    (relationship, index) =>
+      typeRelationshipValueKey(relationship) === typeRelationshipValueKey(right[index])
+  );
+}
+
+function semanticCallValueKey(call: SemanticCall): string {
+  return `${semanticCallKey(call)}:${call.targetFilePath ?? ""}:${call.targetLine ?? ""}:${evidenceKey(call.evidence)}`;
+}
+
+function typeRelationshipValueKey(relationship: TypeRelationshipFact): string {
+  return `${typeRelationshipKey(relationship)}:${relationship.targetFilePath ?? ""}:${relationship.targetLine ?? ""}:${evidenceKey(relationship.evidence)}`;
+}
+
+function evidenceKey(evidence: EvidenceMetadata | undefined): string {
+  if (!evidence) return "";
+  return [
+    evidence.source,
+    evidence.confidence,
+    evidence.evidencePath ?? "",
+    evidence.evidenceLine ?? "",
+    evidence.extractorVersion,
+    evidence.stale ?? "",
+    evidence.warnings?.join("\u001f") ?? ""
+  ].join("\u001e");
+}
+
+function buildCallableSymbolIndex(
+  intelligence: RepoIntelligence
+): Map<string, Array<{ name: string; line: number }>> {
+  const byFile = new Map<string, Array<{ name: string; line: number }>>();
+  for (const symbol of intelligence.symbols) {
+    if (symbol.kind !== "function" && symbol.kind !== "method") continue;
+    const fileSymbols = byFile.get(normalizeRelativePath(symbol.filePath)) ?? [];
+    fileSymbols.push({ name: symbol.name, line: symbol.line });
+    byFile.set(normalizeRelativePath(symbol.filePath), fileSymbols);
+  }
+  for (const symbols of byFile.values()) symbols.sort((left, right) => left.line - right.line);
+  return byFile;
+}
+
 function enclosingCallable(
-  intelligence: RepoIntelligence,
+  callableSymbols: ReadonlyMap<string, Array<{ name: string; line: number }>>,
   filePath: string,
   line: number
 ): string | undefined {
-  return intelligence.symbols
-    .filter(
-      (symbol) =>
-        normalizeRelativePath(symbol.filePath) === normalizeRelativePath(filePath) &&
-        symbol.line <= line &&
-        (symbol.kind === "function" || symbol.kind === "method")
-    )
-    .sort((left, right) => right.line - left.line)[0]?.name;
+  const symbols = callableSymbols.get(normalizeRelativePath(filePath));
+  if (!symbols?.length) return undefined;
+
+  let low = 0;
+  let high = symbols.length;
+  while (low < high) {
+    const middle = low + Math.floor((high - low) / 2);
+    if (symbols[middle].line <= line) low = middle + 1;
+    else high = middle;
+  }
+  if (low === 0) return undefined;
+
+  let candidate = low - 1;
+  while (candidate > 0 && symbols[candidate - 1].line === symbols[candidate].line) candidate--;
+  return symbols[candidate].name;
 }
 
 function compilerEvidence(filePath: string, line: number): EvidenceMetadata {
@@ -827,6 +916,15 @@ function compilerEvidence(filePath: string, line: number): EvidenceMetadata {
 
 function normalizeRelativePath(value: string): string {
   return value.replaceAll("\\", "/").replace(/^\.\//, "");
+}
+
+function formatBytes(value: number): string {
+  if (value < 1024) return `${value} B`;
+  const kilobytes = value / 1024;
+  if (kilobytes < 1024)
+    return `${Number.isInteger(kilobytes) ? kilobytes : kilobytes.toFixed(1)} KiB`;
+  const megabytes = kilobytes / 1024;
+  return `${Number.isInteger(megabytes) ? megabytes : megabytes.toFixed(1)} MiB`;
 }
 
 function fullIncrementalPlan(intelligence: RepoIntelligence): IncrementalUpdatePlan {
@@ -911,7 +1009,7 @@ async function executeStage(
       ? await runStageInWorker(
           workerPath,
           definition.id,
-          serializeStageContext(stageContext),
+          serializeStageContext(stageContext, definition.id),
           options.signal
         )
       : await definition.analyze(stageContext);
@@ -956,25 +1054,106 @@ async function executeStage(
   }
 }
 
-function serializeStageContext(context: StageContext): SerializedStageContext {
+function serializeStageContext(
+  context: StageContext,
+  stageId: IntelligenceStageId
+): SerializedStageContext {
   return {
     root: context.root,
     persist: context.persist,
-    intelligence: context.intelligence,
-    graph: {
-      localEdges: context.graph.localEdges,
-      hubs: context.graph.hubs,
-      entryPoints: context.graph.entryPoints,
-      orphanSourceFiles: context.graph.orphanSourceFiles,
-      cycles: context.graph.cycles,
-      communities: context.graph.communities,
-      flows: context.graph.flows
-    },
+    intelligence: projectIntelligenceForStage(context.intelligence, stageId),
+    graph: projectGraphForStage(context.graph, stageId),
     runtime: context.runtime,
-    semantic: context.semantic,
+    semantic:
+      stageId === "code-property-graph" ? context.semantic : emptyTypeScriptSemanticResult(),
     evolution: context.evolution,
     deadCode: context.deadCode,
     previous: [...context.previous.entries()]
+  };
+}
+
+function projectIntelligenceForStage(
+  intelligence: RepoIntelligence,
+  stageId: IntelligenceStageId
+): RepoIntelligence {
+  const projected = emptyRepoIntelligence(intelligence.workspaceRoot);
+  projected.indexedAt = intelligence.indexedAt;
+
+  switch (stageId) {
+    case "structural":
+    case "build-script":
+    case "configuration":
+    case "data-persistence":
+    case "sdlc-workflow":
+    case "documentation":
+    case "runtime-observability":
+      projected.files = intelligence.files;
+      break;
+    case "language-framework":
+      projected.files = intelligence.files;
+      projected.frameworkHints = intelligence.frameworkHints;
+      break;
+    case "symbol":
+      projected.files = intelligence.files;
+      projected.symbols = intelligence.symbols;
+      break;
+    case "dependency":
+      projected.dependencies = intelligence.dependencies;
+      break;
+    case "api-route":
+      projected.apis = intelligence.apis;
+      break;
+    case "test":
+      projected.files = intelligence.files;
+      projected.tests = intelligence.tests;
+      break;
+    case "code-property-graph":
+    case "context":
+      projected.files = intelligence.files;
+      projected.tests = intelligence.tests;
+      break;
+    case "architecture":
+      projected.frameworkHints = intelligence.frameworkHints;
+      projected.services = intelligence.services;
+      break;
+    case "risk":
+      projected.securitySensitiveAreas = intelligence.securitySensitiveAreas;
+      projected.performanceSensitivePaths = intelligence.performanceSensitivePaths;
+      projected.modernizationCandidates = intelligence.modernizationCandidates;
+      break;
+    case "git-change":
+    case "impact":
+    case "security":
+    case "performance":
+      break;
+  }
+  return projected;
+}
+
+function projectGraphForStage(
+  graph: RepositoryGraphAnalysis,
+  stageId: IntelligenceStageId
+): SerializedStageContext["graph"] {
+  if (stageId === "call-graph" || stageId === "impact" || stageId === "context") {
+    return {
+      localEdges: graph.localEdges,
+      hubs: graph.hubs,
+      entryPoints: graph.entryPoints,
+      orphanSourceFiles: graph.orphanSourceFiles,
+      cycles: graph.cycles,
+      communities: graph.communities,
+      flows: graph.flows
+    };
+  }
+
+  return {
+    localEdges: [],
+    hubs: [],
+    entryPoints: stageId === "architecture" ? graph.entryPoints : [],
+    orphanSourceFiles: stageId === "risk" ? graph.orphanSourceFiles : [],
+    cycles: stageId === "architecture" || stageId === "risk" ? graph.cycles : [],
+    communities: stageId === "architecture" ? graph.communities : [],
+    flows: stageId === "architecture" ? graph.flows : []
   };
 }
 

@@ -126,6 +126,7 @@ export const LANGUAGE_DEFINITIONS: readonly LanguageDefinition[] = [
   def("python", "Python", [".py", ".pyi"], deterministic, "deterministic-adapter", ["source"]),
   def("java", "Java", [".java"], deterministic, "deterministic-adapter", ["source", "jvm"]),
   def("csharp", "C#", [".cs"], deterministic, "deterministic-adapter", ["source", "dotnet"]),
+  def("vbnet", "VB.NET", [".vb"], deterministic, "deterministic-adapter", ["source", "dotnet"]),
   def("go", "Go", [".go"], deterministic, "deterministic-adapter", ["source"]),
   def("rust", "Rust", [".rs"], deterministic, "deterministic-adapter", ["source"]),
   def("kotlin", "Kotlin", [".kt", ".kts"], deterministic, "deterministic-adapter", [

@@ -67,7 +67,19 @@ export interface OkfSummary {
 }
 export interface IntelligenceSummary {
   fileCount?: number;
+  querySuggestions?: string[];
   projectTypes?: string[];
+  projectFingerprints?: Array<{
+    projectPath: string;
+    name: string;
+    languages: string[];
+    frameworks: string[];
+    persistence: string[];
+    databases: string[];
+    messaging: string[];
+    contracts: string[];
+    confidence: number;
+  }>;
   architecture?: string;
   git?: { branch?: string; changedFiles?: string[] };
   languageCapabilities?: LanguageCapability[];
@@ -233,6 +245,7 @@ export interface TaskResult {
         relatedLabel?: string;
         summary: string;
       }>;
+      recommendations?: string[];
     };
     performance: {
       riskLevel: string;
@@ -256,6 +269,7 @@ export interface TaskResult {
         relatedLabel?: string;
         summary: string;
       }>;
+      recommendations?: string[];
     };
     modernization: {
       proposalId?: string;
@@ -267,6 +281,7 @@ export interface TaskResult {
         priority: string;
         evidence: string[];
       }>;
+      recommendations?: string[];
     };
     gitReview: {
       readOnly: true;

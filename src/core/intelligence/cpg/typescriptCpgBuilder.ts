@@ -81,6 +81,7 @@ export function buildTypeScriptCpg(input: TypeScriptCpgInput): CodePropertyGraph
     sourcePath: normalizedPath,
     contentHash: createHash("sha256").update(input.content).digest("hex"),
     capabilities: Object.freeze({
+      analysisLevel: "compiler" as const,
       ast: true,
       eog: true,
       cfg: true,

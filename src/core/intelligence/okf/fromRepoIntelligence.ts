@@ -1,6 +1,10 @@
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
-import type { EvidenceMetadata, RepoIntelligence } from "../../domain/types";
+import type {
+  EngineeringEntityKind,
+  EvidenceMetadata,
+  RepoIntelligence
+} from "../../domain/types";
 import { createOkfId, canonicalRelationshipKey } from "./identity";
 import { KEYSTONE_OKF_PROFILE, KEYSTONE_OKF_PROFILE_DIGEST } from "./profile";
 import {
@@ -132,14 +136,26 @@ export function repoIntelligenceToOkf(
     fallbackPath = canonicalKey,
     description?: string
   ): string => {
-    const composite = `${kind}:${canonicalKey}`;
+    const safeProperties =
+      properties && typeof properties === "object" ? properties : ({} as Record<string, unknown>);
+    const safeCanonicalKey = nonEmptyText(canonicalKey) ?? `${kind}:${units.length}`;
+    const safeName =
+      nonEmptyText(name) ??
+      nonEmptyText(typeof safeProperties.name === "string" ? safeProperties.name : undefined) ??
+      nonEmptyText(typeof safeProperties.path === "string" ? safeProperties.path : undefined) ??
+      nonEmptyText(
+        typeof safeProperties.filePath === "string" ? safeProperties.filePath : undefined
+      ) ??
+      safeCanonicalKey;
+    const safeFallbackPath = nonEmptyText(fallbackPath) ?? safeCanonicalKey;
+    const composite = `${kind}:${safeCanonicalKey}`;
     const existing = unitByKey.get(composite);
     if (existing) return existing;
     const id = createOkfId(workspaceId, "unit", composite);
     const prior = previousUnits.get(id);
     const evidenceId = addEvidence(
       source,
-      fallbackPath,
+      safeFallbackPath,
       "deterministic-extraction",
       `unit:${kind}`
     );
@@ -148,10 +164,10 @@ export function repoIntelligenceToOkf(
       profile: KEYSTONE_OKF_PROFILE_ID,
       profileVersion: KEYSTONE_OKF_PROFILE_VERSION,
       kind,
-      name,
+      name: safeName,
       description,
-      canonicalKey,
-      properties,
+      canonicalKey: safeCanonicalKey,
+      properties: safeProperties,
       confidence: confidence(source),
       provenance: provenance([evidenceId]),
       lifecycle: "active",
@@ -288,6 +304,26 @@ export function repoIntelligenceToOkf(
   addRelationship("contains", workspaceUnit, repositoryUnit);
   addObservation(repositoryUnit, "keystone:indexedAt", observedAt);
   addObservation(repositoryUnit, "keystone:fileCount", intelligence.files.length);
+  // A project is a module-level view over the same repository graph. This is
+  // deliberately language-neutral: a module can contain any mix of adapters.
+  for (const fingerprint of intelligence.projectFingerprints ?? []) {
+    const module = addUnit(
+      "module",
+      `project:${fingerprint.projectPath}`,
+      fingerprint.name,
+      { ...fingerprint },
+      undefined,
+      fingerprint.evidencePaths[0] ?? ".",
+      "Deterministically detected project/module boundary"
+    );
+    addRelationship("contains", repositoryUnit, module);
+    addObservation(module, "keystone:languages", fingerprint.languages);
+    addObservation(module, "keystone:frameworks", fingerprint.frameworks);
+    addObservation(module, "keystone:persistence", fingerprint.persistence);
+    addObservation(module, "keystone:databases", fingerprint.databases);
+    addObservation(module, "keystone:messaging", fingerprint.messaging);
+    addObservation(module, "keystone:contracts", fingerprint.contracts);
+  }
 
   for (const file of intelligence.files) {
     const kind: KeystoneKnowledgeKind =
@@ -335,7 +371,7 @@ export function repoIntelligenceToOkf(
   for (const fact of engineeringFacts) {
     const canonicalKey = `${fact.filePath}#${fact.name}:${fact.line}`;
     const id = addUnit(
-      fact.kind,
+      engineeringKnowledgeKind(fact.kind),
       canonicalKey,
       fact.name,
       {
@@ -412,6 +448,19 @@ export function repoIntelligenceToOkf(
           `Skipped ${relation.kind}: no ${relation.targetKind} entity named ${relation.targetName} was extracted from ${fact.filePath}.`
         );
     }
+  }
+  for (const relation of intelligence.semanticRelationships ?? []) {
+    const source = resolveEngineering(relation.sourceKind, relation.sourceName, relation.sourcePath);
+    const target = resolveEngineering(relation.targetKind, relation.targetName, relation.targetPath);
+    if (source && target)
+      addRelationship(relation.kind, source, target, relation.evidence, {
+        resolution: relation.resolution,
+        semanticConfidence: relation.confidence
+      });
+    else
+      warn(
+        `Skipped ${relation.kind}: unresolved ${relation.sourceKind}:${relation.sourceName} -> ${relation.targetKind}:${relation.targetName}.`
+      );
   }
   const symbolByName = new Map<string, string[]>();
   const symbolByFileAndName = new Map<string, string>();
@@ -809,6 +858,13 @@ export function repoIntelligenceToOkf(
     if (old.lifecycle !== "deleted" && !currentUnitIds.has(old.id))
       units.push({
         ...old,
+        name:
+          nonEmptyText(old.name) ??
+          nonEmptyText(old.canonicalKey) ??
+          nonEmptyText(
+            typeof old.properties?.path === "string" ? old.properties.path : undefined
+          ) ??
+          old.id,
         lifecycle: "deleted",
         lastSeenAt: observedAt,
         updatedAt: observedAt,
@@ -892,6 +948,50 @@ export function repoIntelligenceToOkf(
 function normalizePath(value: string): string {
   const normalized = value.split(path.sep).join("/");
   return normalized === "" ? "." : normalized;
+}
+
+/** Preserve the richer ingestion vocabulary while keeping the portable OKF profile compact. */
+function engineeringKnowledgeKind(kind: EngineeringEntityKind): KeystoneKnowledgeKind {
+  const direct: Partial<Record<EngineeringEntityKind, KeystoneKnowledgeKind>> = {
+    database: "database",
+    table: "table",
+    "orm-entity": "orm-entity",
+    query: "query",
+    "feature-flag": "feature-flag",
+    fixture: "fixture",
+    "ci-cd": "ci-cd",
+    infrastructure: "infrastructure",
+    component: "component",
+    event: "event",
+    "build-system": "build-system",
+    "package-manager": "package-manager",
+    route: "route",
+    endpoint: "route",
+    controller: "controller",
+    middleware: "middleware",
+    handler: "handler",
+    repository: "repository",
+    dao: "repository",
+    entity: "entity",
+    model: "entity",
+    migration: "migration",
+    contract: "contract",
+    message: "message",
+    consumer: "consumer",
+    producer: "producer",
+    project: "module",
+    package: "package",
+    crate: "package",
+    "external-package": "package",
+    configuration: "configuration"
+  };
+  return direct[kind] ?? "component";
+}
+
+function nonEmptyText(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
 }
 function isConfiguration(filePath: string, language: string): boolean {
   return (

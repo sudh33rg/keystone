@@ -169,6 +169,7 @@ export function buildUniversalCpg(input: UniversalCpgInput): CodePropertyGraph {
     sourcePath,
     contentHash: createHash("sha256").update(input.content).digest("hex"),
     capabilities: Object.freeze({
+      analysisLevel: "structural" as const,
       ast: true,
       eog: true,
       cfg: true,

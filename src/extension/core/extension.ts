@@ -96,6 +96,7 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   const refreshTimers = new Map<string, NodeJS.Timeout>();
+  const refreshPaths = new Map<string, Set<string>>();
   const recoveryTimers = new Map<string, NodeJS.Timeout>();
   const queueIntelligenceRefresh = (uri: vscode.Uri): void => {
     const relative = vscode.workspace.asRelativePath(uri, false).replace(/\\/g, "/");
@@ -109,6 +110,10 @@ export function activate(context: vscode.ExtensionContext): void {
     const folder = vscode.workspace.getWorkspaceFolder(uri);
     if (!folder) return;
     const root = folder.uri.fsPath;
+    if (!provider.shouldQueueAutomaticRefresh(root)) return;
+    const pendingPaths = refreshPaths.get(root) ?? new Set<string>();
+    pendingPaths.add(relative);
+    refreshPaths.set(root, pendingPaths);
     const existingTimer = refreshTimers.get(root);
     if (existingTimer) clearTimeout(existingTimer);
     output.debug(`Repository change detected: ${relative}. Intelligence refresh scheduled.`);
@@ -116,11 +121,14 @@ export function activate(context: vscode.ExtensionContext): void {
       root,
       setTimeout(() => {
         refreshTimers.delete(root);
+        const changedPaths = [...(refreshPaths.get(root) ?? [])];
+        refreshPaths.delete(root);
+        if (!provider.shouldQueueAutomaticRefresh(root)) return;
         const coordinator = backgroundWorkers.get(root) ?? createBackgroundWorkerCoordinator();
         backgroundWorkers.set(root, coordinator);
         coordinator.dispose("superseded");
         void provider
-          .indexWorkspace(root)
+          .indexWorkspace(root, changedPaths)
           .then((indexed) => launchBackgroundWorkers(root, coordinator, indexed))
           .catch((error) =>
             output.error(
@@ -161,6 +169,7 @@ export function activate(context: vscode.ExtensionContext): void {
       dispose: () => {
         for (const timer of refreshTimers.values()) clearTimeout(timer);
         refreshTimers.clear();
+        refreshPaths.clear();
         for (const timer of recoveryTimers.values()) clearTimeout(timer);
         recoveryTimers.clear();
       }

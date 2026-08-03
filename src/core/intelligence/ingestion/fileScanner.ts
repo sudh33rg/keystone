@@ -15,8 +15,11 @@ export interface ScannedFile {
 
 export interface FileScanProgress {
   discoveredFiles: number;
+  skippedFiles: number;
   currentPath: string;
 }
+
+export const DEFAULT_MAX_FILE_SIZE_BYTES = 3 * 1024 * 1024;
 
 const SOURCE_EXTENSIONS = new Set(
   LANGUAGE_DEFINITIONS.flatMap((definition) => [...definition.extensions])
@@ -31,6 +34,9 @@ const SPECIAL_SOURCE_FILES = new Set([
   "workspace",
   "build",
   "justfile"
+  ,"package.json", "tsconfig.json", "jsconfig.json", "nx.json", "turbo.json", "go.mod", "go.work",
+  "cargo.toml", "pyproject.toml", "requirements.txt", "pipfile", "setup.py", "setup.cfg", "global.json",
+  "directory.build.props", "directory.build.targets", "directory.packages.props"
 ]);
 const registry = new LanguageCapabilityRegistry();
 const IGNORED_DIRECTORY_NAMES = new Set(
@@ -77,18 +83,7 @@ const BINARY_EXTENSIONS = new Set([
 // so they never reach language analysis, semantic enrichment, or persistence.
 const IGNORED_FILE_NAMES = new Set([
   ".ds_store",
-  "package-lock.json",
-  "npm-shrinkwrap.json",
-  "yarn.lock",
-  "pnpm-lock.yaml",
-  "bun.lock",
-  "bun.lockb",
-  "composer.lock",
-  "gemfile.lock",
-  "podfile.lock",
-  "cartfile.resolved",
-  "cargo.lock",
-  "go.sum"
+  "bun.lockb"
 ]);
 
 const IGNORED_FILE_PATTERNS = [
@@ -102,20 +97,23 @@ const IGNORED_FILE_PATTERNS = [
 /**
  * Discover every supported source artifact in the workspace.
  *
- * There is deliberately no file-count or file-size cap. Discovery yields to the
- * event loop in bounded batches, honours cancellation, skips explicitly ignored
- * directories and generated/dependency artifacts, and tolerates files that
- * disappear or become unreadable while the repository is changing.
+ * Discovery yields to the event loop in bounded batches, honours cancellation,
+ * skips explicitly ignored directories and generated/dependency artifacts, and
+ * tolerates files that disappear or become unreadable while the repository is
+ * changing. Files larger than the configured limit are skipped before ingestion.
  */
 export async function scanFiles(
   workspaceRoot: string,
   signal?: AbortSignal,
-  onProgress?: (progress: FileScanProgress) => void
+  onProgress?: (progress: FileScanProgress) => void,
+  maxFileSizeBytes = DEFAULT_MAX_FILE_SIZE_BYTES
 ): Promise<ScannedFile[]> {
+  const fileSizeLimit = normalizeMaxFileSizeBytes(maxFileSizeBytes);
   const files: ScannedFile[] = [];
   const gitignore = await loadGitignore(workspaceRoot);
   const pending = [workspaceRoot];
   let visitedEntries = 0;
+  let skippedFiles = 0;
 
   while (pending.length > 0) {
     signal?.throwIfAborted();
@@ -147,12 +145,24 @@ export async function scanFiles(
       signal?.throwIfAborted();
       const batch = fileEntries.slice(offset, offset + INSPECTION_CONCURRENCY);
       const inspected = await Promise.all(
-        batch.map((entry) => inspectFile(workspaceRoot, directory, entry.name, signal))
+        batch.map((entry) =>
+          inspectFile(workspaceRoot, directory, entry.name, signal, fileSizeLimit)
+        )
       );
-      for (const file of inspected) {
+      for (const result of inspected) {
+        if (result && "skippedForSize" in result) {
+          skippedFiles += 1;
+          onProgress?.({
+            discoveredFiles: files.length,
+            skippedFiles,
+            currentPath: result.path
+          });
+          continue;
+        }
+        const file = result && "file" in result ? result.file : undefined;
         if (!file) continue;
         files.push(file);
-        onProgress?.({ discoveredFiles: files.length, currentPath: file.path });
+        onProgress?.({ discoveredFiles: files.length, skippedFiles, currentPath: file.path });
       }
       if (visitedEntries % YIELD_INTERVAL < batch.length)
         await new Promise<void>((resolve) => setImmediate(resolve));
@@ -167,8 +177,9 @@ async function inspectFile(
   workspaceRoot: string,
   directory: string,
   name: string,
-  signal?: AbortSignal
-): Promise<ScannedFile | undefined> {
+  signal: AbortSignal | undefined,
+  maxFileSizeBytes: number
+): Promise<{ file: ScannedFile } | { path: string; skippedForSize: true } | undefined> {
   signal?.throwIfAborted();
   const absolutePath = path.join(directory, name);
   if (isIgnoredFile(name)) return undefined;
@@ -187,7 +198,16 @@ async function inspectFile(
   signal?.throwIfAborted();
   if (!stat || !text) return undefined;
   const relativePath = path.relative(workspaceRoot, absolutePath).split(path.sep).join("/");
-  return { path: relativePath, absolutePath, sizeBytes: stat.size, modifiedTimeMs: stat.mtimeMs };
+  if (stat.size > maxFileSizeBytes) return { path: relativePath, skippedForSize: true };
+  return {
+    file: { path: relativePath, absolutePath, sizeBytes: stat.size, modifiedTimeMs: stat.mtimeMs }
+  };
+}
+
+export function normalizeMaxFileSizeBytes(value: number | undefined): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : DEFAULT_MAX_FILE_SIZE_BYTES;
 }
 
 /** Return whether a text-looking file is an ingestion artifact rather than source. */
@@ -205,6 +225,9 @@ export function languageForPath(filePath: string): string {
   if (name === "dockerfile") return "dockerfile";
   if (name === "makefile" || name === "cmakelists.txt" || name === "justfile") return "build";
   if (name === "pom.xml" || name.startsWith("build.gradle")) return "build";
+  if (/^(?:package\.json|tsconfig(?:\..+)?\.json|jsconfig\.json|nx\.json|turbo\.json)$/.test(name)) return "json";
+  if (/^(?:go\.mod|go\.work|cargo\.toml|pyproject\.toml|pipfile|requirements\.txt|setup\.cfg)$/.test(name)) return "toml";
+  if (/\.(?:sln|csproj|vbproj|props|targets)$/i.test(name)) return "xml";
   return "unknown";
 }
 

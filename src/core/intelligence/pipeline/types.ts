@@ -96,6 +96,8 @@ export interface IntelligenceIngestionSummary {
   indexedBytes: number;
   discoveryMode: "unbounded-incremental";
   completedWithoutFileCap: boolean;
+  fileSizeLimitBytes: number;
+  skippedLargeFiles: number;
   cpgEligibleFiles: number;
   cpgIndexedFiles: number;
   warnings: string[];
@@ -132,6 +134,8 @@ export interface IntelligencePipelineOptions {
   cognitive?: boolean;
   semanticEnricher?: SemanticEnrichmentProvider;
   maxWorkers?: number;
+  /** Maximum file size admitted to ingestion. Defaults to 3 MiB. */
+  maxFileSizeBytes?: number;
   /** Paths that triggered an incremental refresh; the full snapshot remains reconciled. */
   affectedPaths?: readonly string[];
 }

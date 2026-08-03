@@ -178,6 +178,11 @@ function commonPatterns(id: string): Array<[CodeSymbol["kind"], RegExp]> {
         /\b(?:public|private|protected|internal|static|virtual|override|async|sealed|\s)+[\w<>,?\[\]]+\s+(?<name>\w+)\s*\(/
       ]
     ],
+    vbnet: [
+      ["class", /^\s*(?:Public|Private|Friend|Protected)?\s*(?:Partial\s+)?Class\s+(?<name>\w+)/i],
+      ["interface", /^\s*(?:Public|Private|Friend)?\s*Interface\s+(?<name>\w+)/i],
+      ["method", /^\s*(?:Public|Private|Friend|Protected)?\s*(?:Shared\s+)?(?:Async\s+)?(?:Sub|Function)\s+(?<name>\w+)/i]
+    ],
     c: [["function", /^\s*[\w*\s]+\s+(?<name>\w+)\s*\([^;]*\)\s*\{/]],
     "objective-c": [["function", /^\s*[\w*\s]+\s+(?<name>\w+)\s*\([^;]*\)\s*\{/]],
     cpp: [["function", /^\s*[\w:*&<>\s]+\s+(?<name>\w+)\s*\([^;]*\)\s*(?:const\s*)?\{/]],
@@ -361,7 +366,7 @@ function callMatches(_id: string, line: string): string[] {
   return out;
 }
 function apiMatch(
-  _id: string,
+  id: string,
   line: string,
   filePath: string,
   lineNo: number
@@ -384,7 +389,16 @@ function apiMatch(
   if (attribute)
     return { method: attribute[1].toUpperCase(), path: attribute[2], filePath, line: lineNo };
   const go = line.match(/HandleFunc\s*\(\s*["']([^"']+)["']/i);
-  return go ? { method: "ANY", path: go[1], filePath, line: lineNo } : undefined;
+  if (go) return { method: "ANY", path: go[1], filePath, line: lineNo };
+  const minimal = line.match(/\bMap(Get|Post|Put|Patch|Delete)\s*\(\s*["']([^"']+)/i);
+  if (minimal) return { method: minimal[1].toUpperCase(), path: minimal[2], filePath, line: lineNo };
+  const python = line.match(/(?:@app|@router)\.(get|post|put|patch|delete)\s*\(\s*["']([^"']+)/i);
+  if (python) return { method: python[1].toUpperCase(), path: python[2], filePath, line: lineNo };
+  return id === "rust" ? rustRoute(line, filePath, lineNo) : undefined;
+}
+function rustRoute(sourceLine: string, filePath: string, line: number): ApiEndpoint | undefined {
+  const match = sourceLine.match(/\.route\s*\(\s*["']([^"']+)["']/);
+  return match ? { method: "ANY", path: match[1], filePath, line } : undefined;
 }
 function isTestLine(id: string, line: string): boolean {
   return (

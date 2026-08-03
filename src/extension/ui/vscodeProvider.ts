@@ -61,11 +61,13 @@ export class VscodeProvider {
   private refreshQueued = false;
   private readonly pendingIndexRoots = new Set<string>();
   private readonly pendingAffectedPaths = new Map<string, Set<string>>();
+  private readonly automaticRefreshPausedRoots = new Set<string>();
   private latestQaEvent?: QaServiceEvent;
   private webviewReady = false;
   private activeIndexPromise?: Promise<boolean>;
   private activeIndexRoot?: string;
   private readonly intelligenceRecoveryRoots = new Set<string>();
+  private readonly intelligenceRecoveryAttemptedRoots = new Set<string>();
   private readonly applicationStore = new ApplicationStore();
   private readonly sdlcEngine = new SDLCEngine();
   private sdlcPlan?: SDLCPlan;
@@ -213,6 +215,10 @@ export class VscodeProvider {
       });
       return false;
     }
+    if (!this.indexing) {
+      this.automaticRefreshPausedRoots.delete(requestedRoot);
+      this.intelligenceRecoveryAttemptedRoots.delete(requestedRoot);
+    }
     if (this.indexing) {
       this.queueAffectedPaths(requestedRoot, affectedPaths);
       if (this.activeIndexRoot === requestedRoot || !this.activeIndexRoot) {
@@ -331,6 +337,26 @@ export class VscodeProvider {
     const queued = this.pendingAffectedPaths.get(root) ?? new Set<string>();
     for (const value of paths) queued.add(value.replace(/\\/g, "/").replace(/^\.\//, ""));
     this.pendingAffectedPaths.set(root, queued);
+  }
+
+  shouldQueueAutomaticRefresh(root: string): boolean {
+    return !this.automaticRefreshPausedRoots.has(root);
+  }
+
+  stopIngestion(root = this.workspaceRoot()): void {
+    if (!root) return;
+    this.automaticRefreshPausedRoots.add(root);
+    this.refreshQueued = false;
+    this.pendingIndexRoots.delete(root);
+    this.pendingAffectedPaths.delete(root);
+    this.services.get(root)?.cancelIngestion();
+    this.logWarn(`Repository ingestion stop requested for ${root}.`);
+    this.post({
+      type: "NOTIFICATION",
+      level: "info",
+      message:
+        "Repository ingestion stopping; automatic refresh is paused until the next manual index."
+    });
   }
 
   private takeAffectedPaths(root: string): string[] {
@@ -613,8 +639,7 @@ export class VscodeProvider {
     }
     if (message.type === "CANCEL_INGESTION") {
       const root = this.workspaceRoot();
-      if (root) this.services.get(root)?.cancelIngestion();
-      this.logWarn("Repository intelligence cancellation requested by the user.");
+      if (root) this.stopIngestion(root);
       return;
     }
     if (message.type === "CANCEL_ANALYSIS") {
@@ -1775,6 +1800,7 @@ export class VscodeProvider {
       return;
     }
     if (this.intelligenceRecoveryRoots.has(root)) return;
+    if (this.intelligenceRecoveryAttemptedRoots.has(root)) return;
     this.intelligenceRecoveryRoots.add(root);
     try {
       const marker = path.join(root, ".keystone", "intelligence", "okf", "manifest.json");
@@ -1782,9 +1808,27 @@ export class VscodeProvider {
         .access(marker)
         .then(() => true)
         .catch(() => false);
-      if (!present) {
+      const snapshot = await fs
+        .readFile(path.join(root, ".keystone", "intelligence", "snapshot.json"), "utf8")
+        .then((value) => JSON.parse(value) as RepositoryIntelligenceSnapshot)
+        .catch(() => undefined);
+      const hasPersistedSnapshot = Boolean(
+        snapshot?.workspaceRoot === root &&
+        snapshot.intelligence &&
+        ["ready", "degraded"].includes(snapshot.status)
+      );
+      if (!present && !hasPersistedSnapshot) {
         this.logInfo(`Persisted intelligence is missing for ${root}; starting recovery indexing.`);
-        await this.indexWorkspace(root);
+        try {
+          await this.indexWorkspace(root);
+        } finally {
+          this.intelligenceRecoveryAttemptedRoots.add(root);
+        }
+      } else if (!present && hasPersistedSnapshot) {
+        this.intelligenceRecoveryAttemptedRoots.add(root);
+        this.logWarn(
+          `Canonical OKF promotion is unavailable for ${root}; retaining the persisted structural snapshot and waiting for a manual re-index.`
+        );
       }
     } finally {
       this.intelligenceRecoveryRoots.delete(root);
@@ -1999,7 +2043,11 @@ export class VscodeProvider {
       semanticEnricher: new VscodeLanguageServiceEnricher(),
       maxWorkers: vscode.workspace
         .getConfiguration("keystone.intelligence")
-        .get<number>("maxWorkers", 5)
+        .get<number>("maxWorkers", 5),
+      maxFileSizeBytes:
+        vscode.workspace.getConfiguration("keystone.intelligence").get<number>("maxFileSizeMb", 3) *
+        1024 *
+        1024
     });
     this.services.set(root, service);
     return service;

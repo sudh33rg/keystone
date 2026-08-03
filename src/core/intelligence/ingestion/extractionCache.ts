@@ -3,7 +3,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import type { LanguageAnalysisResult } from "../languages/languageAnalysis";
 
-export const STRUCTURAL_EXTRACTION_CACHE_VERSION = "deterministic-file-extraction-v1";
+export const STRUCTURAL_EXTRACTION_CACHE_VERSION = "deterministic-file-extraction-v2";
 
 interface ExtractionCacheEntry {
   version: 1;

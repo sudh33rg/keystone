@@ -53,6 +53,17 @@ const kinds: readonly KeystoneKnowledgeKind[] = [
   "event",
   "build-system",
   "package-manager"
+  ,"route"
+  ,"controller"
+  ,"middleware"
+  ,"handler"
+  ,"repository"
+  ,"entity"
+  ,"migration"
+  ,"contract"
+  ,"message"
+  ,"consumer"
+  ,"producer"
 ];
 const any = kinds;
 export const KEYSTONE_OKF_PROFILE: KeystoneOkfProfileDefinition = Object.freeze({
@@ -78,6 +89,19 @@ export const KEYSTONE_OKF_PROFILE: KeystoneOkfProfileDefinition = Object.freeze(
     "flows-to",
     "may-impact",
     "maps-to"
+    ,"declares"
+    ,"references"
+    ,"returns"
+    ,"uses"
+    ,"injects"
+    ,"provides"
+    ,"handles"
+    ,"authorizes"
+    ,"validates"
+    ,"persists"
+    ,"migrates"
+    ,"publishes"
+    ,"subscribes"
   ] as readonly KeystoneRelationshipKind[],
   requiredUnitFields: [
     "id",

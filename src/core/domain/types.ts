@@ -92,6 +92,8 @@ export interface RepoFile {
   securitySensitiveAreas?: string[];
   performanceSensitivePaths?: string[];
   modernizationCandidates?: string[];
+  /** Detected framework/persistence capabilities for this artifact. */
+  technologyHints?: string[];
 }
 
 export interface CodeSymbol {
@@ -169,11 +171,42 @@ export interface TypeRelationshipFact {
 }
 
 export type EngineeringEntityKind =
+  | "project"
+  | "package"
+  | "namespace"
+  | "assembly"
+  | "crate"
+  | "build-target"
+  | "external-package"
+  | "controller"
+  | "route"
+  | "endpoint"
+  | "middleware"
+  | "guard"
+  | "filter"
+  | "interceptor"
+  | "handler"
+  | "repository"
+  | "dao"
+  | "entity"
+  | "model"
+  | "schema"
   | "database"
   | "table"
+  | "column"
+  | "relation"
   | "orm-entity"
   | "query"
+  | "migration"
+  | "configuration"
+  | "environment-variable"
   | "feature-flag"
+  | "contract"
+  | "message"
+  | "consumer"
+  | "producer"
+  | "job"
+  | "worker"
   | "fixture"
   | "ci-cd"
   | "infrastructure"
@@ -182,15 +215,47 @@ export type EngineeringEntityKind =
   | "build-system"
   | "package-manager";
 
+export interface TechnologyFingerprint {
+  projectPath: string;
+  name: string;
+  languages: string[];
+  runtimes: string[];
+  frameworks: string[];
+  persistence: string[];
+  databases: string[];
+  messaging: string[];
+  contracts: string[];
+  packageEcosystems: string[];
+  buildSystems: string[];
+  evidencePaths: string[];
+  confidence: number;
+}
+
 export type EngineeringEntityRelationKind =
   | "contains"
+  | "declares"
   | "reads"
   | "writes"
   | "depends-on"
+  | "references"
+  | "calls"
+  | "returns"
+  | "implements"
+  | "extends"
+  | "uses"
+  | "injects"
+  | "provides"
   | "configured-by"
   | "maps-to"
   | "flows-to"
-  | "exposes";
+  | "exposes"
+  | "handles"
+  | "authorizes"
+  | "validates"
+  | "persists"
+  | "migrates"
+  | "publishes"
+  | "subscribes";
 
 export interface EngineeringEntityRelation {
   kind: EngineeringEntityRelationKind;
@@ -207,6 +272,20 @@ export interface EngineeringEntityFact {
   properties: Record<string, unknown>;
   relations?: EngineeringEntityRelation[];
   evidence?: EvidenceMetadata;
+}
+
+/** A normalized relationship that can link any extracted entities, including across languages. */
+export interface SemanticRelationshipFact {
+  sourceKind: EngineeringEntityKind;
+  sourceName: string;
+  sourcePath?: string;
+  targetKind: EngineeringEntityKind;
+  targetName: string;
+  targetPath?: string;
+  kind: EngineeringEntityRelationKind;
+  confidence: number;
+  resolution: "exact" | "probable" | "ambiguous" | "unresolved";
+  evidence: EvidenceMetadata;
 }
 
 export interface RepositoryLanguageSupport {
@@ -245,12 +324,14 @@ export interface RepoIntelligence {
   dataFlows?: DataFlowFact[];
   typeRelationships?: TypeRelationshipFact[];
   engineeringEntities?: EngineeringEntityFact[];
+  semanticRelationships?: SemanticRelationshipFact[];
   ownershipHints: string[];
   frameworkHints: string[];
   securitySensitiveAreas: string[];
   performanceSensitivePaths: string[];
   modernizationCandidates: string[];
   languageSupport?: RepositoryLanguageSupport[];
+  projectFingerprints?: TechnologyFingerprint[];
   incrementalStats?: {
     reusedFiles: number;
     analyzedFiles: number;

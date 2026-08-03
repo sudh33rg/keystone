@@ -34,7 +34,18 @@ export type KeystoneKnowledgeKind =
   | "component"
   | "event"
   | "build-system"
-  | "package-manager";
+  | "package-manager"
+  | "route"
+  | "controller"
+  | "middleware"
+  | "handler"
+  | "repository"
+  | "entity"
+  | "migration"
+  | "contract"
+  | "message"
+  | "consumer"
+  | "producer";
 export type KeystoneRelationshipKind =
   | "contains"
   | "defines"
@@ -52,7 +63,20 @@ export type KeystoneRelationshipKind =
   | "documented-by"
   | "flows-to"
   | "may-impact"
-  | "maps-to";
+  | "maps-to"
+  | "declares"
+  | "references"
+  | "returns"
+  | "uses"
+  | "injects"
+  | "provides"
+  | "handles"
+  | "authorizes"
+  | "validates"
+  | "persists"
+  | "migrates"
+  | "publishes"
+  | "subscribes";
 
 export interface OkfSourceLocation {
   readonly workspaceRelativePath: string;

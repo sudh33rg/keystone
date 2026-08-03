@@ -474,7 +474,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
     );
   }
   private indexButtonLabel(defaultLabel: string): string {
-    return this.isIndexing() ? "Queue refresh" : defaultLabel;
+    return this.isIndexing() ? "Stop ingestion" : defaultLabel;
   }
   private ingestionStatus(): JSX.Element | null {
     const ingestion = this.state.application.ingestion;
@@ -550,7 +550,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
     return (
       <Panel
         title="Background workers"
-        subtitle="Four independent analysis workers consume the last promoted OKF snapshot; ingestion remains the only repository discovery pass."
+        subtitle="Four independent analysis workers turn indexed repository evidence into findings and next actions."
       >
         <div className="background-worker-grid">
           {workers.map((worker) => {
@@ -565,25 +565,24 @@ export class App extends React.Component<Record<string, never>, AppState> {
                 <p>{state?.message ?? "Waiting for the workspace scan to start."}</p>
                 {state?.canonicalEvidence ? (
                   <small className="worker-evidence">
-                    OKF snapshot {state.canonicalEvidence.snapshotDigest.slice(0, 12)}… ·{" "}
-                    {state.canonicalEvidence.unitIds.length} unit(s) ·{" "}
+                    Repository evidence · {state.canonicalEvidence.unitIds.length} code element(s) ·{" "}
                     {state.canonicalEvidence.relationshipIds.length} relationship(s) ·{" "}
                     {state.canonicalEvidence.evidenceIds.length} evidence link(s)
                   </small>
                 ) : state?.status === "complete" ? (
                   <small className="worker-evidence">
-                    Completed without a persisted OKF envelope.
+                    Completed without additional persisted repository evidence.
                   </small>
                 ) : null}
                 {state?.error && <small className="worker-error">{state.error}</small>}
-                {state?.workerId && (
+                {state?.scopePaths?.length ? (
                   <small className="worker-meta">
-                    {state.workerId} · {state.scopePaths?.length ?? 0} canonical path(s)
-                    {state.attempt && state.maxAttempts
-                      ? ` · attempt ${state.attempt}/${state.maxAttempts}`
-                      : ""}
+                    Analysis scope: {state.scopePaths.length} repository path(s)
                     {state.durationMs !== undefined ? ` · ${state.durationMs}ms` : ""}
                   </small>
+                ) : null}
+                {state?.status === "complete" && (
+                  <WorkerInsights worker={worker} result={state.result} />
                 )}
                 {state?.retryAt && state.status === "failed" && (
                   <small className="worker-meta">
@@ -716,7 +715,11 @@ export class App extends React.Component<Record<string, never>, AppState> {
           <div className="actions">
             <button
               className="primary"
-              onClick={() => vscode.postMessage({ type: "INDEX_REPO", force: true })}
+              onClick={() =>
+                this.isIndexing()
+                  ? vscode.postMessage({ type: "CANCEL_INGESTION" })
+                  : vscode.postMessage({ type: "INDEX_REPO", force: true })
+              }
             >
               {this.indexButtonLabel("Index / refresh")}
             </button>
@@ -869,7 +872,11 @@ export class App extends React.Component<Record<string, never>, AppState> {
           </div>
           <button
             className="primary"
-            onClick={() => vscode.postMessage({ type: "INDEX_REPO", force: true })}
+            onClick={() =>
+              this.isIndexing()
+                ? vscode.postMessage({ type: "CANCEL_INGESTION" })
+                : vscode.postMessage({ type: "INDEX_REPO", force: true })
+            }
           >
             {this.indexButtonLabel("Refresh intelligence")}
           </button>
@@ -995,6 +1002,27 @@ export class App extends React.Component<Record<string, never>, AppState> {
               <LanguageCard key={language.id} language={language} />
             ))}
           </div>
+        </Panel>
+        <Panel
+          title="Projects and technology fingerprints"
+          subtitle="Manifest- and source-evidence-backed module boundaries."
+        >
+          {intel?.projectFingerprints?.length ? (
+            <ul className="fact-list">
+              {intel.projectFingerprints.map((project) => (
+                <li key={project.projectPath}>
+                  <b>{project.name}</b>
+                  <span>
+                    {[...project.languages, ...project.frameworks, ...project.persistence, ...project.databases, ...project.messaging, ...project.contracts]
+                      .filter(Boolean)
+                      .join(" · ") || "Structure-only"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <Empty text="Run repository indexing to derive project fingerprints." />
+          )}
         </Panel>
       </div>
     );
@@ -1299,22 +1327,22 @@ export class App extends React.Component<Record<string, never>, AppState> {
 
   private intelligenceQuery(): JSX.Element {
     const result = this.state.queryResult;
+    const suggestions = this.state.application.intelligence?.querySuggestions ?? [];
     return (
       <Panel
         title="Ask repository intelligence"
-        subtitle="Keystone classifies the engineering question, resolves OKF seed units, traverses intent-specific relationships, ranks evidence and exposes the traversal."
+        subtitle="Ask about this repository and get ranked evidence, related code, and the reasoning path behind the answer."
       >
-        <div className="query-examples">
-          {[
-            "What calls PaymentService?",
-            "What tests are impacted by UserService?",
-            "Show checkout flow",
-            "Where is authentication implemented?"
-          ].map((value) => (
-            <button key={value} onClick={() => this.setState({ query: value })}>
-              {value}
-            </button>
-          ))}
+        <div className="query-suggestions">
+          <small>Suggested questions from this repository ({suggestions.length})</small>
+          <div className="query-examples">
+            {suggestions.map((value) => (
+              <button key={value} onClick={() => this.setState({ query: value })}>
+                {value}
+              </button>
+            ))}
+          </div>
+          {!suggestions.length && <Empty text="Index the repository to generate suggestions." />}
         </div>
         <div className="inline-form">
           <input
@@ -1897,11 +1925,17 @@ export class App extends React.Component<Record<string, never>, AppState> {
           <EvidenceGroup
             title="QA"
             status={`${task.relatedTests.length} tests · ${task.missingTests.length} gaps`}
-            items={(analysis?.qa.gaps ?? []).map((item) => ({
-              label: item.type,
-              path: item.path,
-              detail: item.reason
-            }))}
+            items={[
+              ...(analysis?.qa.gaps ?? []).map((item) => ({
+                label: item.type,
+                path: item.path,
+                detail: item.reason
+              })),
+              ...(analysis?.qa.recommendations ?? []).map((item) => ({
+                label: "Recommended next step",
+                detail: item
+              }))
+            ]}
             onOpen={(path) => this.openSource(path)}
           />
           <EvidenceGroup
@@ -1915,10 +1949,14 @@ export class App extends React.Component<Record<string, never>, AppState> {
                 detail: item.explanation
               })),
               ...(analysis?.security.intelligenceSignals ?? []).map((item) => ({
-                label: `OKF ${item.kind}: ${item.label}`,
+                label: `Repository signal: ${item.label}`,
                 path: item.path,
                 line: item.line,
                 detail: item.summary
+              })),
+              ...(analysis?.security.recommendations ?? []).map((item) => ({
+                label: "Recommended next step",
+                detail: item
               }))
             ]}
             onOpen={(path, line) => this.openSource(path, line)}
@@ -1934,10 +1972,14 @@ export class App extends React.Component<Record<string, never>, AppState> {
                 detail: item.explanation
               })),
               ...(analysis?.performance.intelligenceSignals ?? []).map((item) => ({
-                label: `OKF ${item.kind}: ${item.label}`,
+                label: `Repository signal: ${item.label}`,
                 path: item.path,
                 line: item.line,
                 detail: item.summary
+              })),
+              ...(analysis?.performance.recommendations ?? []).map((item) => ({
+                label: "Recommended next step",
+                detail: item
               }))
             ]}
             onOpen={(path, line) => this.openSource(path, line)}
@@ -1945,10 +1987,16 @@ export class App extends React.Component<Record<string, never>, AppState> {
           <EvidenceGroup
             title="Modernization"
             status={`${analysis?.modernization.gaps.length ?? 0} gap(s)`}
-            items={(analysis?.modernization.gaps ?? []).map((item) => ({
-              label: `${item.priority}: ${item.title}`,
-              detail: item.evidence.join(" · ")
-            }))}
+            items={[
+              ...(analysis?.modernization.gaps ?? []).map((item) => ({
+                label: `${item.priority}: ${item.title}`,
+                detail: item.evidence.join(" · ")
+              })),
+              ...(analysis?.modernization.recommendations ?? []).map((item) => ({
+                label: "Recommended next step",
+                detail: item
+              }))
+            ]}
           />
         </div>
         {analysis?.gitReview && (
@@ -1976,7 +2024,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
         )}
         {analysis?.canonicalEvidence && Object.keys(analysis.canonicalEvidence).length > 0 && (
           <details>
-            <summary>Background worker OKF provenance</summary>
+            <summary>Analysis evidence coverage</summary>
             <ul className="fact-list">
               {Object.entries(analysis.canonicalEvidence).map(([worker, envelope]) => (
                 <li key={worker}>
@@ -1985,7 +2033,6 @@ export class App extends React.Component<Record<string, never>, AppState> {
                     {envelope.unitIds.length} unit(s) · {envelope.relationshipIds.length}{" "}
                     relationship(s) · {envelope.evidenceIds.length} evidence link(s)
                   </span>
-                  <code>snapshot {envelope.snapshotDigest.slice(0, 12)}…</code>
                 </li>
               ))}
             </ul>
@@ -2651,6 +2698,80 @@ function Status({ value }: { value: string }): JSX.Element {
 }
 function Empty({ text }: { text: string }): JSX.Element {
   return <div className="empty">{text}</div>;
+}
+function WorkerInsights({
+  worker,
+  result
+}: {
+  worker: BackgroundWorkerId;
+  result?: unknown;
+}): JSX.Element {
+  const record = asRecord(result);
+  const insights: Array<{ label: string; detail: string }> = [];
+  const add = (label: string, detail: unknown): void => {
+    if (typeof detail === "string" && detail.trim())
+      insights.push({ label, detail: detail.trim() });
+  };
+  for (const finding of asArray(record?.findings).slice(0, 3)) {
+    const item = asRecord(finding);
+    if (!item) continue;
+    const location = [item.path, item.line].filter((value) => value !== undefined).join(":");
+    add(
+      `${String(item.severity ?? "Finding")}: ${String(item.title ?? item.category ?? "Repository finding")}`,
+      [location, item.explanation ?? item.reason ?? item.evidence].filter(Boolean).join(" — ")
+    );
+  }
+  if (worker === "qa") {
+    for (const gap of asArray(record?.gaps).slice(0, 2)) {
+      const item = asRecord(gap);
+      if (item)
+        add(
+          `Test gap: ${String(item.type ?? "coverage gap")}`,
+          `${item.filePath ?? "repository"} — ${item.reason ?? "Coverage is incomplete."}`
+        );
+    }
+  }
+  for (const recommendation of asArray(record?.recommendations).slice(0, 3)) {
+    const item = asRecord(recommendation);
+    add(
+      "Recommended next step",
+      item
+        ? [item.title, item.description, item.suggestedAction].filter(Boolean).join(" — ")
+        : recommendation
+    );
+  }
+  const assessment = asRecord(record?.assessment);
+  for (const recommendation of asArray(assessment?.recommendations).slice(0, 2))
+    add("Recommended next step", recommendation);
+  for (const gap of asArray(record?.gaps).slice(0, worker === "qa" ? 0 : 2)) {
+    const item = asRecord(gap);
+    if (item)
+      add(
+        `Modernization gap: ${String(item.title ?? item.area ?? "Review")}`,
+        asArray(item.evidence).join(" · ")
+      );
+  }
+  return insights.length ? (
+    <div className="worker-insights">
+      <small>Key evidence and next actions</small>
+      {insights.slice(0, 5).map((item, index) => (
+        <div key={`${item.label}-${index}`}>
+          <b>{item.label}</b>
+          <span>{item.detail}</span>
+        </div>
+      ))}
+    </div>
+  ) : (
+    <small className="worker-meta">No actionable finding was reported for this analysis.</small>
+  );
+}
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
 }
 function EvidenceList({
   items,

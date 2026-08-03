@@ -20,6 +20,7 @@ export type OkfQueryIntent =
   | "data"
   | "configuration"
   | "documentation"
+  | "technology"
   | "generic"
   | "compound";
 
@@ -163,7 +164,7 @@ export function queryOkfSnapshot(
     candidates.set(id, current);
   };
 
-  for (const seed of seeds) add(seed, seedScores.get(seed) ?? 0, "direct OKF evidence match");
+  for (const seed of seeds) add(seed, seedScores.get(seed) ?? 0, "direct repository match");
 
   let traversed = 0;
   const traversals: OkfQueryTraversal[] = [];
@@ -212,23 +213,37 @@ export function queryOkfSnapshot(
     for (const queryIntent of intents) {
       if (queryIntent === "callers") {
         for (const rel of inc.filter((rel) => rel.kind === "calls")) {
-          follow(seed, rel, rel.sourceId, seedScore + 4, "caller via OKF calls relationship", []);
+          follow(
+            seed,
+            rel,
+            rel.sourceId,
+            seedScore + 4,
+            "caller via repository call relationship",
+            []
+          );
           // A CPG-derived call-flow can represent a test caller without itself being the
-          // user-facing test concept. Promote the canonical OKF test unit so compound
+          // user-facing test concept. Promote the canonical test unit so compound
           // questions such as “what calls X and which tests cover it?” surface the test.
           if (intents.includes("tests")) {
             const caller = byId.get(rel.sourceId);
             const callerPath = caller ? (unitPath(caller) ?? "") : "";
             const testUnit = callerPath ? testUnitsByPath.get(callerPath) : undefined;
             if (testUnit)
-              add(testUnit.id, seedScore + 5, "mapped test caller via persisted OKF call-flow", [
+              add(testUnit.id, seedScore + 5, "mapped test caller via persisted call flow", [
                 `${label(caller)} -[calls]-> ${label(seedUnit)}`
               ]);
           }
         }
       } else if (queryIntent === "callees") {
         for (const rel of out.filter((rel) => rel.kind === "calls"))
-          follow(seed, rel, rel.targetId, seedScore + 4, "callee via OKF calls relationship", []);
+          follow(
+            seed,
+            rel,
+            rel.targetId,
+            seedScore + 4,
+            "callee via repository call relationship",
+            []
+          );
       } else if (queryIntent === "dependencies") {
         for (const rel of out.filter((rel) =>
           ["imports", "depends-on", "configured-by", "maps-to"].includes(rel.kind)
@@ -349,7 +364,7 @@ export function queryOkfSnapshot(
     : 0;
   const relationshipKinds = [...new Set(traversals.map((item) => item.relationship))].sort();
   const maxDepth = intents.includes("impact") ? 3 : intents.includes("flow") ? 2 : 1;
-  const strategy = `Resolve lexical/canonical OKF seeds, execute deterministic ${intents.join(" + ")} relationship traversal${intents.length > 1 ? "s" : ""}, then rank evidence by match strength, provenance freshness, and confidence.`;
+  const strategy = `Match repository names and paths, follow the relevant ${intents.join(" + ")} relationship traversal${intents.length > 1 ? "s" : ""}, then rank evidence by match strength and confidence.`;
   return {
     query,
     intent,
@@ -360,7 +375,7 @@ export function queryOkfSnapshot(
     warnings: items.length
       ? []
       : [
-          "No evidence-backed OKF result matched the question. Try a symbol, file, API route, service, test, or configuration name."
+          "No repository item matched the question. Try a symbol, file, API route, service, test, or configuration name."
         ],
     plan: {
       terms,
@@ -456,6 +471,7 @@ function classifyAll(query: string): OkfQueryIntent[] {
   if (/\b(?:database|table|schema|orm|query|sql|persistence|data model)\b/.test(q)) add("data");
   if (/\bconfig|configuration|setting|environment\b/.test(q)) add("configuration");
   if (/\bdoc|documentation|readme|design\b/.test(q)) add("documentation");
+  if (/\b(?:language|framework|orm|database|messaging|contract|project|module|package ecosystem|support level)\b/.test(q)) add("technology");
   if (!intents.length && /\bwhere|defined|definition|implemented|implements?\b/.test(q))
     add("definition");
   if (!intents.length) add("generic");
@@ -478,6 +494,9 @@ function resultAllowed(intent: OkfQueryIntent, unit: KeystoneKnowledgeUnit): boo
   if (intent === "api")
     return (
       unit.kind === "api" ||
+      unit.kind === "route" ||
+      unit.kind === "controller" ||
+      unit.kind === "handler" ||
       unit.kind === "service" ||
       (unit.kind === "file" && !isTestPath(unitPath(unit) ?? unit.name))
     );
@@ -486,7 +505,7 @@ function resultAllowed(intent: OkfQueryIntent, unit: KeystoneKnowledgeUnit): boo
       unit.kind
     );
   if (intent === "data")
-    return ["database", "table", "orm-entity", "query", "data-entity", "file", "service"].includes(
+    return ["database", "table", "orm-entity", "entity", "repository", "migration", "query", "data-entity", "file", "service"].includes(
       unit.kind
     );
   if (intent === "security" || intent === "performance")
@@ -516,6 +535,18 @@ function resultAllowed(intent: OkfQueryIntent, unit: KeystoneKnowledgeUnit): boo
       unit.kind === "module" ||
       unit.kind === "service"
     );
+  if (intent === "technology")
+    return [
+      "module",
+      "package",
+      "package-manager",
+      "build-system",
+      "architecture-boundary",
+      "database",
+      "contract",
+      "repository",
+      "file"
+    ].includes(unit.kind);
   return true;
 }
 function shouldSuppressSeed(
@@ -528,10 +559,7 @@ function shouldSuppressSeed(
     ["callers", "callees", "tests", "dependencies", "dependents"].includes(intent)
   );
   return (
-    actionOnly &&
-    seeds.includes(id) &&
-    reasons.size === 1 &&
-    reasons.has("direct OKF evidence match")
+    actionOnly && seeds.includes(id) && reasons.size === 1 && reasons.has("direct repository match")
   );
 }
 function isTestPath(value: string): boolean {
@@ -574,9 +602,11 @@ function unitScore(
     unit.properties.category === "performance"
   )
     score += 4;
+  if (intent === "technology" && ["module", "architecture-boundary", "package"].includes(unit.kind))
+    score += 3;
   if (
     intent === "data" &&
-    ["database", "table", "orm-entity", "query", "data-entity"].includes(unit.kind)
+    ["database", "table", "orm-entity", "entity", "repository", "migration", "query", "data-entity"].includes(unit.kind)
   )
     score += 4;
   return score;
@@ -635,7 +665,7 @@ function summarizeIntents(
   intents: readonly OkfQueryIntent[],
   items: readonly OkfQueryItem[]
 ): string {
-  if (!items.length) return "No evidence-backed result was found in the promoted OKF snapshot.";
+  if (!items.length) return "No matching repository evidence was found for this question.";
   const lead = items
     .slice(0, 5)
     .map((item) => item.path ?? `${item.kind}:${item.label}`)

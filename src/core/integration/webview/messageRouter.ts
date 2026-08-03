@@ -300,7 +300,19 @@ export type ExtensionToWebviewMessage =
 export interface WorkspaceSummary {
   fileCount: number;
   files: RepoFile[];
+  querySuggestions?: string[];
   projectTypes: string[];
+  projectFingerprints?: Array<{
+    projectPath: string;
+    name: string;
+    languages: string[];
+    frameworks: string[];
+    persistence: string[];
+    databases: string[];
+    messaging: string[];
+    contracts: string[];
+    confidence: number;
+  }>;
   architecture: string;
   git: { branch: string; changedFiles: string[] };
   stages?: IntelligenceStageResult[];
@@ -523,6 +535,7 @@ export interface KeystoneTaskResult {
         confidence: number;
       }>;
       intelligenceSignals: TaskIntelligenceSignal[];
+      recommendations?: string[];
     };
     performance: {
       riskLevel: string;
@@ -537,6 +550,7 @@ export interface KeystoneTaskResult {
         confidence: number;
       }>;
       intelligenceSignals: TaskIntelligenceSignal[];
+      recommendations?: string[];
     };
     modernization: {
       proposalId?: string;
@@ -548,6 +562,7 @@ export interface KeystoneTaskResult {
         priority: string;
         evidence: string[];
       }>;
+      recommendations?: string[];
     };
     gitReview: {
       readOnly: true;

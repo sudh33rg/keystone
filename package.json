@@ -78,6 +78,12 @@
           "maximum": 16,
           "description": "Maximum number of simultaneous intelligence stage workers."
         },
+        "keystone.intelligence.maxFileSizeMb": {
+          "type": "number",
+          "default": 3,
+          "minimum": 0.1,
+          "description": "Maximum file size admitted to repository ingestion in MB (default: 3 MB). Larger files are skipped."
+        },
         "keystone.intelligence.workerRetries": {
           "type": "number",
           "default": 2,

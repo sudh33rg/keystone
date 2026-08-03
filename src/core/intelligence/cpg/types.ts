@@ -35,6 +35,8 @@ export interface CpgEdge {
 }
 
 export interface CpgCapabilities {
+  /** Whether edges are compiler-bound or deterministic structural approximations. */
+  readonly analysisLevel: "compiler" | "structural";
   readonly ast: boolean;
   readonly eog: boolean;
   readonly cfg: boolean;
