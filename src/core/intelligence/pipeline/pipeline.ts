@@ -1439,7 +1439,7 @@ const STAGES: StageDefinition[] = [
           .trim()
           .split("\n")
           .filter(Boolean)
-          .map((line) => line.slice(3));
+          .map((line) => line.slice(2).trim());
         return {
           summary: `${files.length} changed files on ${branch.trim() || "detached HEAD"} with ${evolution.coupling.length} historical co-change pairs.`,
           items: [

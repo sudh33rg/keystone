@@ -55,6 +55,18 @@ declare module "vscode" {
   }
   export interface TextEditor {
     document: TextDocument;
+    selection: Selection;
+  }
+  export interface Selection {
+    readonly start: Position;
+    readonly end: Position;
+  }
+  export interface Diagnostic {
+    readonly code?: string | number | { readonly value: string | number; readonly target?: Uri };
+    readonly message: string;
+    readonly source?: string;
+    readonly severity: number;
+    readonly range: Range;
   }
   export class Position {
     constructor(line: number, character: number);
@@ -218,6 +230,10 @@ declare module "vscode" {
     function createFileSystemWatcher(globPattern: string): FileSystemWatcher;
     function getConfiguration(section?: string, scope?: Uri): WorkspaceConfiguration;
     function openTextDocument(uri: Uri): Thenable<TextDocument>;
+  }
+  export namespace languages {
+    function getDiagnostics(resource: Uri): readonly Diagnostic[];
+    function getDiagnostics(): readonly (readonly [Uri, readonly Diagnostic[]])[];
   }
   export namespace env {
     const clipboard: { readText(): Thenable<string>; writeText(value: string): Thenable<void> };

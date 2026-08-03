@@ -3,10 +3,16 @@ import { ModernizationAgent } from "./modernizationAgent";
 import { PerformanceAgent } from "./performanceAgent";
 import { PrEvidenceAgent } from "./prEvidenceAgent";
 import { SecurityAgent } from "./securityAgent";
+import type { ContextBuildOptions } from "../../context/intentContextBuilder";
 import {
-  buildIntentContextPack,
-  type ContextBuildOptions
-} from "../../context/intentContextBuilder";
+  ContextEngine,
+  operationForIntentType,
+  type ContextEngineLogger,
+  type ContextDiagnostic,
+  type ContextUserContext,
+  type ContextWorkspaceState,
+  type ContextChangesState
+} from "../../context/contextEngine";
 import { classifyIntent } from "../../context/IntentClassifier";
 import { routeIntent } from "../../context/routing/intentRouter";
 import { MetricsStore } from "../../platform/metrics/metricsStore";
@@ -24,10 +30,13 @@ import { selectCanonicalContext } from "../../intelligence/okf/canonicalContext"
  * name; only telemetry persistence is best-effort.
  */
 export class CaptainAgent {
+  constructor(private readonly contextLogger?: ContextEngineLogger) {}
+
   async run(
     intent: DeveloperIntent,
     intelligence: RepoIntelligence,
-    contextOptions: ContextBuildOptions = {}
+    contextOptions: ContextBuildOptions = {},
+    contextInputs: ContextPreparationInputs = {}
   ): Promise<KeystoneRunResult> {
     const analysis = await stage("intent classification", () => classifyIntent(intent));
     const routeDecision = routeIntent(analysis);
@@ -35,15 +44,42 @@ export class CaptainAgent {
       discoverCopilotCustomizations(intent.workspaceRoot)
     );
     let okfSnapshot = contextOptions.okfSnapshot;
-    const contextPack = await stage("context engineering", () =>
-      buildIntentContextPack(
+    const tokenBudget =
+      contextOptions.delegationTokenBudget ??
+      (contextOptions.compressionTier === "aggressive"
+        ? 6_000
+        : contextOptions.compressionTier === "off"
+          ? 24_000
+          : 12_000);
+    const contextPreparation = await stage("context engineering", () =>
+      new ContextEngine(intent.workspaceRoot, this.contextLogger).prepareContext({
         intent,
+        objective: intent.text,
+        operation: operationForIntentType(analysis.intentType),
+        tokenBudget,
         intelligence,
         routeDecision,
-        customizations.skills,
-        contextOptions
-      )
+        skills: customizations.skills,
+        buildOptions: contextOptions,
+        sourceRevision: contextOptions.okfSnapshot?.manifest.digests.snapshot,
+        decisions: contextInputs.decisions,
+        workspace: contextInputs.workspace,
+        changes: contextInputs.changes,
+        diagnostics: contextInputs.diagnostics,
+        userContext: [
+          ...(contextInputs.userContext ?? []),
+          ...customizations.instructions.flatMap((instruction) =>
+            instruction.guidance.map((content) => ({
+              label: instruction.path,
+              path: instruction.path,
+              source: "repository-instruction",
+              content
+            }))
+          )
+        ]
+      })
     );
+    const contextPack = contextPreparation.contextPack;
     const canonicalTaskContext = okfSnapshot
       ? selectCanonicalContext(okfSnapshot, intent.text, {
           graphMode: "impact",
@@ -92,6 +128,7 @@ export class CaptainAgent {
       routeDecision,
       intelligence,
       contextPack,
+      contextPackage: contextPreparation.contextPackage,
       qa,
       security,
       performance,
@@ -100,6 +137,14 @@ export class CaptainAgent {
       metrics
     };
   }
+}
+
+export interface ContextPreparationInputs {
+  readonly decisions?: readonly string[];
+  readonly workspace?: ContextWorkspaceState;
+  readonly changes?: ContextChangesState;
+  readonly diagnostics?: readonly ContextDiagnostic[];
+  readonly userContext?: readonly ContextUserContext[];
 }
 
 async function stage<T>(name: string, operation: () => Promise<T>): Promise<T> {

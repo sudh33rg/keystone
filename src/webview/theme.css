@@ -507,6 +507,50 @@ label {
 .callout {
   display: block;
 }
+.context-summary {
+  display: grid;
+  gap: 6px;
+}
+.context-summary .actions {
+  margin-top: 2px;
+}
+.context-sources {
+  display: grid;
+  gap: 4px;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.context-sources span:first-child {
+  color: var(--text);
+  font-weight: 700;
+}
+.context-sources .included {
+  color: var(--accent);
+}
+.context-candidates {
+  display: grid;
+  gap: 7px;
+  margin-top: 6px;
+  border-top: 1px solid var(--border);
+  padding-top: 6px;
+}
+.context-candidates article {
+  display: grid;
+  gap: 3px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border);
+}
+.context-candidates article div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.context-candidates article span,
+.context-candidates article small {
+  color: var(--muted);
+  font-size: 10px;
+}
 .copilot-boundary {
   display: grid;
   gap: 5px;

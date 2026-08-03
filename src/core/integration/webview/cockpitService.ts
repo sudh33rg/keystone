@@ -74,6 +74,15 @@ import {
   discoverCopilotCustomizations,
   type CopilotCustomizationInventory
 } from "../../context/copilotCustomizations";
+import {
+  ContextEngine,
+  type ContextEngineLogEvent,
+  type ContextExpansionLevel,
+  type ContextFragment,
+  summarizeContextPackage,
+  type ContextDiagnostic,
+  type ContextWorkspaceState
+} from "../../context/contextEngine";
 import { CpgShardStore } from "../../intelligence/cpg";
 import {
   buildCpgExplorerResult,
@@ -99,7 +108,7 @@ const MANIFEST_PATH = `${INTELLIGENCE_DIR}/manifest.json`;
 const ACTIVITY_PATH = `${INTELLIGENCE_DIR}/activity.json`;
 const SETTINGS_PATH = ".keystone/settings.json";
 const CONTEXT_CACHE_DIR = ".keystone/context/cache";
-const CONTEXT_PACKET_VERSION = 4;
+const CONTEXT_PACKET_VERSION = 5;
 const CONTEXT_EVALUATIONS_PATH = ".keystone/context/evaluations.json";
 const ENHANCEMENT_SESSIONS_DIR = ".keystone/context/sessions";
 const CONTEXT_FEEDBACK_PATH = ".keystone/context/feedback.json";
@@ -118,6 +127,7 @@ export class CockpitService {
   private okfSnapshotDigest?: string;
   private readonly queryCache = new Map<string, OkfQueryResult>();
   private readonly graphCache = new Map<string, IntelligenceGraphResult>();
+  private readonly contextEngine: ContextEngine;
 
   constructor(
     private readonly workspaceRoot: string,
@@ -127,6 +137,9 @@ export class CockpitService {
       maxFileSizeBytes?: number;
     } = {}
   ) {
+    this.contextEngine = new ContextEngine(this.workspaceRoot, (event) => {
+      void this.recordContextEngineEvent(event);
+    });
     this.taskWorkspaces = new TaskWorkspaceManager(workspaceRoot);
   }
 
@@ -489,7 +502,12 @@ export class CockpitService {
 
   async analyze(
     text: string,
-    editorContext: { currentFile?: string } = {}
+    editorContext: {
+      currentFile?: string;
+      languageId?: string;
+      selection?: { startLine: number; endLine: number };
+      diagnostics?: readonly ContextDiagnostic[];
+    } = {}
   ): Promise<KeystoneTaskResult> {
     const intent: DeveloperIntent = {
       id: `task-${Date.now()}`,
@@ -512,7 +530,13 @@ export class CockpitService {
       throw new Error(
         "The canonical OKF snapshot is not ready. Wait for intelligence promotion to finish."
       );
-    const gitDiff = await this.gitDiff();
+    const git = new GitReadOnly(this.workspaceRoot);
+    const [gitDiff, gitStatus, gitBranch, activePlan] = await Promise.all([
+      this.gitDiff(),
+      git.status().catch(() => ""),
+      git.branch().catch(() => ""),
+      this.readJson<SDLCPlan>(".keystone/state/sdlc/active-plan.json")
+    ]);
     const copilotCustomizations = await discoverCopilotCustomizations(this.workspaceRoot);
     const customizationFingerprint = createHash("sha256")
       .update(JSON.stringify(copilotCustomizations))
@@ -531,6 +555,10 @@ export class CockpitService {
           contextPacketVersion: CONTEXT_PACKET_VERSION,
           text: text.trim(),
           currentFile: editorContext.currentFile,
+          languageId: editorContext.languageId,
+          diagnostics: editorContext.diagnostics,
+          gitStatus,
+          gitBranch,
           gitDiff: createHash("sha256").update(gitDiff).digest("hex"),
           feedback: learnedFeedback,
           fingerprint: canonicalSnapshotDigest,
@@ -546,14 +574,17 @@ export class CockpitService {
     const cached = await this.readJson<{
       createdAt: string;
       result: KeystoneTaskResult;
+      contextPackage?: import("../../context/contextEngine").ContextPackage;
       contextPacketPayloads?: NonNullable<ContextPack["contextPacketPayloads"]>;
       contextPackId?: string;
       contextSnapshotDigest?: string;
     }>(`${CONTEXT_CACHE_DIR}/${cacheKey}.json`);
-    if (cached && Date.now() - Date.parse(cached.createdAt) < 24 * 60 * 60 * 1000) {
+    if (cached?.contextPackage && Date.now() - Date.parse(cached.createdAt) < 24 * 60 * 60 * 1000) {
       const detected = await detectValidationCommands(this.workspaceRoot);
       const result = ensureTaskResearch(text, {
         ...cached.result,
+        contextSummary:
+          cached.result.contextSummary ?? summarizeContextPackage(cached.contextPackage),
         copilotCustomizations,
         validationCommands: detected.all,
         retrievalMetrics: cached.result.retrievalMetrics
@@ -564,6 +595,7 @@ export class CockpitService {
         await this.writeJson(`${CONTEXT_CACHE_DIR}/${cacheKey}.json`, {
           createdAt: cached.createdAt,
           result,
+          contextPackage: cached.contextPackage,
           contextPacketPayloads: cached.contextPacketPayloads ?? [],
           contextPackId: cached.contextPackId,
           contextSnapshotDigest:
@@ -574,6 +606,10 @@ export class CockpitService {
         `Reused intent context ${cacheKey.slice(0, 12)} with ${result.contextTokens?.prompt ?? 0} prompt tokens and pre-plan R&D ${result.researchDocument.id}.`
       );
       await this.recordEvaluation(text, result);
+      await this.recordContextEngineEvent({
+        phase: "package-created",
+        message: `Context package ${cached.contextPackage.id} loaded from the local context cache.`
+      });
       return this.materializeTaskWorkspace(text, result, {
         contextPacketPayloads: cached.contextPacketPayloads ?? [],
         contextPackId: cached.contextPackId,
@@ -587,7 +623,9 @@ export class CockpitService {
     // it before QA/security/performance/modernization prevents extension-host memory spikes.
     const run = await (async () => {
       const okfSnapshot = canonicalSnapshot;
-      return new CaptainAgent().run(intent, intelligence, {
+      return new CaptainAgent((event) => {
+        void this.recordContextEngineEvent(event);
+      }).run(intent, intelligence, {
         compressionTier: settings?.compressionTier ?? "standard",
         codingStandards: settings?.codingStandards,
         thingsToAvoid: settings?.thingsToAvoid,
@@ -603,6 +641,28 @@ export class CockpitService {
           .filter((entry) => entry.score < 0)
           .map((entry) => entry.path),
         okfSnapshot
+      }, {
+        decisions: activePlan?.stories
+          .flatMap((story) => story.decisions)
+          .filter((decision) => decision.trim())
+          .slice(-24),
+        workspace: {
+          currentFile: editorContext.currentFile,
+          languageId: editorContext.languageId,
+          selection: editorContext.selection,
+          branch: gitBranch,
+          statusEntries: gitStatus ? gitStatus.split(/\r?\n/).filter(Boolean).length : 0
+        } satisfies ContextWorkspaceState,
+        changes: { branch: gitBranch, status: gitStatus, diff: gitDiff },
+        diagnostics: editorContext.diagnostics,
+        userContext: [
+          ...(settings?.codingStandards
+            ? [{ label: "Coding standards", content: settings.codingStandards, source: "settings" }]
+            : []),
+          ...(settings?.thingsToAvoid
+            ? [{ label: "Things to avoid", content: settings.thingsToAvoid, source: "settings" }]
+            : [])
+        ]
       });
     })();
     await this.record(
@@ -636,6 +696,7 @@ export class CockpitService {
     await this.writeJson(`${CONTEXT_CACHE_DIR}/${cacheKey}.json`, {
       createdAt: new Date().toISOString(),
       result,
+      contextPackage: run.contextPackage,
       contextPacketPayloads: run.contextPack.contextPacketPayloads ?? [],
       contextPackId: run.contextPack.id,
       contextSnapshotDigest: run.contextPack.contextManifest?.snapshotDigest
@@ -671,7 +732,7 @@ export class CockpitService {
       ...new Set(
         status
           .split(/\r?\n/)
-          .map((line) => line.slice(3).trim())
+          .map((line) => line.slice(2).trim())
           .filter(Boolean)
           .map((value) => (value.includes(" -> ") ? value.split(" -> ").at(-1)! : value))
           .map(normalizeWorkspacePath)
@@ -1157,6 +1218,14 @@ export class CockpitService {
     };
   }
 
+  async expandContext(
+    contextId: string,
+    focus: string,
+    level: ContextExpansionLevel
+  ): Promise<ContextFragment> {
+    return this.contextEngine.expandContext({ contextId, focus, level });
+  }
+
   async recordContextFeedback(
     intent: string,
     pathValue: string | undefined,
@@ -1539,7 +1608,7 @@ export class CockpitService {
       ...(request.changedPaths ?? []).map(normalizeWorkspacePath),
       ...gitStatus
         .split(/\r?\n/)
-        .map((line) => line.slice(3).trim())
+        .map((line) => line.slice(2).trim())
         .filter(Boolean)
         .map((value) => (value.includes(" -> ") ? value.split(" -> ").at(-1)! : value))
         .map(normalizeWorkspacePath)
@@ -2001,6 +2070,18 @@ export class CockpitService {
     } catch {
       /* Observability must never break a read-only product action. */
     }
+  }
+
+  private async recordContextEngineEvent(event: ContextEngineLogEvent): Promise<void> {
+    const type =
+      event.phase === "request"
+        ? "context-request"
+        : event.phase === "candidates-collected"
+          ? "context-candidates-collected"
+          : event.phase === "package-created"
+            ? "context-package-created"
+            : "context-expanded";
+    await this.recordBestEffort(type, event.message);
   }
   private async record(type: string, message: string, progress?: number): Promise<void> {
     const write = this.activityWrite.then(async () => {
@@ -2906,6 +2987,7 @@ function normalizeRunResult(
       packets: run.contextPack.contextPackets?.length ?? 1,
       tier: run.contextPack.compressionTier ?? "standard"
     },
+    contextSummary: summarizeContextPackage(run.contextPackage),
     contextSections: run.contextPack.contextSections?.map((section) => ({
       path: section.path,
       reason: section.reason,

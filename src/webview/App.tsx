@@ -23,6 +23,7 @@ import type {
   Nav,
   ContextPacketPayload,
   ContextPacketSegmentKind,
+  ContextFragment,
   SdlcPlan,
   Story,
   TaskResult
@@ -52,6 +53,7 @@ interface AppState {
   selectedGraphNodeId?: string;
   collapsedGraphNodeIds: string[];
   loadedContextPackets: Record<string, ContextPacketPayload>;
+  expandedContext?: ContextFragment;
   cpg?: IntelligenceCpgResult;
   cpgPath: string;
   cpgEdgeKind: string;
@@ -157,6 +159,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
       this.setState({
         task: message.result as TaskResult,
         loadedContextPackets: {},
+        expandedContext: undefined,
         notice: "Intent R&D is ready. Review evidence and create the SDLC plan."
       });
     } else if (message.type === "SDLC_PLAN_RESULT") {
@@ -355,6 +358,11 @@ export class App extends React.Component<Record<string, never>, AppState> {
           ? `Context packet ${String(message.packetId)} is stale. Regenerate intent context after the latest indexing run.`
           : `Loaded context packet ${String(message.packetId)} (${packet?.segmentKinds.join(" · ") ?? "no segments"}).`
       }));
+    } else if (message.type === "CONTEXT_FRAGMENT_RESULT") {
+      this.setState({
+        expandedContext: message.fragment as ContextFragment,
+        notice: `Expanded ${String((message.fragment as ContextFragment).candidates.length)} retained context candidate(s).`
+      });
     } else if (message.type === "VALIDATION_RESULT") {
       const results = (message.results as Array<{ status: string }> | undefined) ?? [];
       this.setState({
@@ -1013,7 +1021,14 @@ export class App extends React.Component<Record<string, never>, AppState> {
                 <li key={project.projectPath}>
                   <b>{project.name}</b>
                   <span>
-                    {[...project.languages, ...project.frameworks, ...project.persistence, ...project.databases, ...project.messaging, ...project.contracts]
+                    {[
+                      ...project.languages,
+                      ...project.frameworks,
+                      ...project.persistence,
+                      ...project.databases,
+                      ...project.messaging,
+                      ...project.contracts
+                    ]
                       .filter(Boolean)
                       .join(" · ") || "Structure-only"}
                   </span>
@@ -2093,6 +2108,77 @@ export class App extends React.Component<Record<string, never>, AppState> {
               detail="ordered context segments"
             />
           </div>
+          {task.contextSummary && (
+            <div className="callout context-summary">
+              <strong>
+                {task.contextSummary.operation} · {task.contextSummary.transmittedCandidateCount}{" "}
+                transmitted
+              </strong>
+              <span>
+                {task.contextSummary.allCandidateCount} known ·{" "}
+                {task.contextSummary.selectedCandidateCount} relevant ·{" "}
+                {task.contextSummary.retainedCandidateCount} retained ·{" "}
+                {task.contextSummary.omittedContextCount} retrievable
+              </span>
+              <small>Source revision {task.contextSummary.sourceRevision.slice(0, 16)}…</small>
+              <div className="context-sources">
+                <span>Context Sources</span>
+                {task.contextSummary.sourceCounts.map((source) => (
+                  <span key={source.category} className={source.included ? "included" : "muted"}>
+                    {source.label} {source.included ? `${source.count} included` : "not available"}
+                  </span>
+                ))}
+              </div>
+              {task.contextSummary.candidates.length ? (
+                <details className="context-candidates">
+                  <summary>Inspect selected candidates ({task.contextSummary.candidates.length})</summary>
+                  {task.contextSummary.candidates.slice(0, 12).map((candidate) => (
+                    <article key={candidate.id}>
+                      <div>
+                        <b>{candidate.label}</b>
+                        <span>{candidate.category} · {candidate.sourceType} · {candidate.estimatedTokenCost} tokens</span>
+                      </div>
+                      {candidate.path ? (
+                        <button className="link-button" onClick={() => this.openSource(candidate.path!)}>
+                          {candidate.path}
+                        </button>
+                      ) : null}
+                      <small>
+                        {candidate.evidence.map((evidence) =>
+                          [evidence.entityId, evidence.relationshipId, evidence.evidenceId, evidence.id]
+                            .filter(Boolean)
+                            .join(" · ") || evidence.label
+                        ).join(" | ")}
+                      </small>
+                    </article>
+                  ))}
+                </details>
+              ) : null}
+              <div className="actions">
+                <button
+                  onClick={() =>
+                    vscode.postMessage({
+                      type: "EXPAND_CONTEXT",
+                      contextId: task.contextSummary!.id,
+                      focus: task.researchDocument.problemStatement || this.state.intent,
+                      level: "standard"
+                    })
+                  }
+                >
+                  Expand retained context
+                </button>
+              </div>
+            </div>
+          )}
+          {this.state.expandedContext && (
+            <details className="context-expansion" open>
+              <summary>
+                Expanded retained context ({this.state.expandedContext.candidates.length}{" "}
+                candidates, {this.state.expandedContext.estimatedTokens} tokens)
+              </summary>
+              <pre>{this.state.expandedContext.content}</pre>
+            </details>
+          )}
           <div className="context-sections">
             {(task.contextSections ?? []).map((section) => (
               <article key={section.path}>

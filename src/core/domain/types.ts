@@ -1,3 +1,5 @@
+import type { ContextPackage } from "../context/contextEngine";
+
 export type IntentType =
   | "feature"
   | "bugfix"
@@ -565,6 +567,7 @@ export interface KeystoneRunResult {
   routeDecision: RouteDecision;
   intelligence: RepoIntelligence;
   contextPack: ContextPack;
+  contextPackage: ContextPackage;
   qa: QaAnalysis;
   security: SecurityAnalysis;
   performance: PerformanceAnalysis;

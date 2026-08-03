@@ -19,6 +19,11 @@ export interface EvidenceItem {
   label: string;
   path?: string;
   line?: number;
+  startLine?: number;
+  endLine?: number;
+  entityId?: string;
+  relationshipId?: string;
+  evidenceId?: string;
   okfId?: string;
   confidence?: number;
   summary?: string;
@@ -103,6 +108,48 @@ export interface ContextSection {
   score?: number;
   evidence?: EvidenceItem[];
 }
+export interface ContextPackageSummary {
+  id: string;
+  operation: string;
+  tokenBudget: number;
+  estimatedTransmittedTokens: number;
+  allCandidateCount: number;
+  selectedCandidateCount: number;
+  transmittedCandidateCount: number;
+  retainedCandidateCount: number;
+  omittedContextCount: number;
+  sourceRevision: string;
+  sourceCounts: Array<{
+    category: string;
+    label: string;
+    count: number;
+    included: boolean;
+  }>;
+  candidates: Array<{
+    id: string;
+    category: string;
+    sourceType: string;
+    label: string;
+    path?: string;
+    relevance: number;
+    estimatedTokenCost: number;
+    evidence: EvidenceItem[];
+  }>;
+}
+export interface ContextFragment {
+  contextId: string;
+  focus: string;
+  level: "summary" | "standard" | "full";
+  candidates: Array<{
+    id: string;
+    category?: string;
+    sourceType: string;
+    payload: Record<string, unknown>;
+    content?: string;
+  }>;
+  estimatedTokens: number;
+  content: string;
+}
 export type ContextPacketSegmentKind = "summary" | "selected-intelligence" | "source-excerpts";
 export interface ContextPacketSegment {
   kind: ContextPacketSegmentKind;
@@ -168,6 +215,7 @@ export interface TaskResult {
   prMarkdown?: string;
   validationCommands?: string[];
   contextTokens?: { raw: number; selected: number; prompt: number; packets: number; tier: string };
+  contextSummary?: ContextPackageSummary;
   contextPackets?: Array<{
     id: string;
     sequence: number;

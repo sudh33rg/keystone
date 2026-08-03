@@ -34,6 +34,7 @@ import type {
 } from "../../intelligence/explorer";
 import type { SDLCResearchDocument } from "../../workflow/sdlc/engine";
 import type { OkfCanonicalEvidenceEnvelope } from "../../intelligence/okf/types";
+import type { ContextFragment, ContextPackageSummary } from "../../context/contextEngine";
 
 export interface CopilotDelegationResult {
   success: boolean;
@@ -68,6 +69,12 @@ export type WebviewToExtensionMessage =
   | { type: "DELETE_ENHANCEMENT_SESSION"; sessionId: string }
   | { type: "RETRIEVE_CONTEXT_ORIGINAL"; path: string; expectedHash?: string }
   | { type: "LOAD_CONTEXT_PACKET"; packetId: string; segmentKinds?: ContextPacketSegmentKind[] }
+  | {
+      type: "EXPAND_CONTEXT";
+      contextId: string;
+      focus: string;
+      level: "summary" | "standard" | "full";
+    }
   | {
       type: "RECORD_CONTEXT_FEEDBACK";
       intent: string;
@@ -173,6 +180,7 @@ export type ExtensionToWebviewMessage =
       segmentKinds?: ContextPacketSegmentKind[];
       packet?: ContextPacketPayload;
     }
+  | { type: "CONTEXT_FRAGMENT_RESULT"; fragment: ContextFragment }
   | { type: "CORRECTION_PACKET_RESULT"; packet: CorrectionPacket }
   | { type: "VALIDATION_RESULT"; results: ValidationRunResult[] }
   | {
@@ -472,6 +480,7 @@ export interface KeystoneTaskResult {
   >;
   excludedPaths: Array<{ path: string; reason: string }>;
   contextTokens?: { raw: number; selected: number; prompt: number; packets: number; tier: string };
+  contextSummary?: ContextPackageSummary;
   contextPackets?: NonNullable<ContextPack["contextPackets"]>;
   retrievalMetrics?: NonNullable<ContextPack["retrievalMetrics"]>;
   contextSections?: Array<{

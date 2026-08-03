@@ -452,11 +452,33 @@ export class VscodeProvider {
     this.logInfo(`Analyzing task intent against persisted repository intelligence: ${text.trim()}`);
     try {
       const active = vscode.window.activeTextEditor?.document.uri;
+      const editor = vscode.window.activeTextEditor;
       const currentFile =
         active?.scheme === "file"
           ? vscode.workspace.asRelativePath(active, false).replace(/\\/g, "/")
           : undefined;
-      const result = await this.getService(root).analyze(text.trim(), { currentFile });
+      const diagnostics = active
+        ? vscode.languages.getDiagnostics(active).map((diagnostic) => ({
+            path: currentFile ?? active.fsPath,
+            code:
+              typeof diagnostic.code === "object" ? diagnostic.code.value : diagnostic.code,
+            message: diagnostic.message,
+            source: diagnostic.source,
+            severity: String(diagnostic.severity),
+            startLine: diagnostic.range.start.line,
+            startColumn: diagnostic.range.start.character,
+            endLine: diagnostic.range.end.line,
+            endColumn: diagnostic.range.end.character
+          }))
+        : [];
+      const result = await this.getService(root).analyze(text.trim(), {
+        currentFile,
+        languageId: editor?.document.languageId,
+        selection: editor
+          ? { startLine: editor.selection.start.line, endLine: editor.selection.end.line }
+          : undefined,
+        diagnostics
+      });
       if (generation !== this.analysisGeneration) {
         if (result.taskWorkspace)
           await this.getService(root).discardTaskWorkspace(result.taskWorkspace);
@@ -592,6 +614,21 @@ export class VscodeProvider {
         void this.getService(root)
           .loadContextPacket(message.packetId, message.segmentKinds)
           .then((result) => this.post({ type: "CONTEXT_PACKET_RESULT", ...result }))
+          .catch((error) =>
+            this.post({
+              type: "ERROR",
+              operation: "analysis",
+              message: error instanceof Error ? error.message : String(error)
+            })
+          );
+      return;
+    }
+    if (message.type === "EXPAND_CONTEXT") {
+      const root = this.workspaceRoot();
+      if (root)
+        void this.getService(root)
+          .expandContext(message.contextId, message.focus, message.level)
+          .then((fragment) => this.post({ type: "CONTEXT_FRAGMENT_RESULT", fragment }))
           .catch((error) =>
             this.post({
               type: "ERROR",
