@@ -60,6 +60,7 @@ import {
   type IntentLifecycle,
   type IntentState
 } from "@core/intent/intentState";
+import { selectIntentPrimaryAction } from "@core/intent/primaryAction";
 
 /**
  * Implements VS Code's WebviewViewProvider interface for the Keystone VSCode UI.
@@ -535,7 +536,8 @@ export class VscodeProvider {
           });
           this.post({ type: "APPLICATION_STATE", state: this.applicationStore.snapshot() });
         },
-        intentId
+        intentId,
+        this.intentStateEngine?.snapshot()
       );
       if (generation !== this.analysisGeneration) {
         if (result.taskWorkspace)
@@ -593,6 +595,7 @@ export class VscodeProvider {
         affectedAreas: result.relevantFiles
       }
     );
+    engine.updateScope({ included: result.relevantFiles }, "derived-keystone-state");
     this.intentStateEngine = engine;
     this.intentStateRoot = root;
     engine.startUnderstanding("derived-keystone-state");
@@ -623,6 +626,7 @@ export class VscodeProvider {
       | { type: "SET_INTENT_LIFECYCLE" }
       | { type: "EXPAND_INTENT_SCOPE" }
       | { type: "KEEP_INTENT_SCOPE" }
+      | { type: "CREATE_INTENT_FOLLOW_UP" }
     >
   ): Promise<void> {
     const engine = this.intentStateEngine;
@@ -645,12 +649,24 @@ export class VscodeProvider {
         state = engine.transition(message.lifecycle);
         break;
       case "EXPAND_INTENT_SCOPE":
-        state = engine.updateScope({ included: message.areas }, "copilot-recommendation");
+        state = engine.resolveScopeChange(
+          message.proposalId ?? latestScopeProposalId(engine.snapshot()),
+          "EXPAND_SCOPE",
+          message.reason
+        );
         break;
       case "KEEP_INTENT_SCOPE":
-        state = engine.updateScope(
-          { boundaries: [message.reason ?? "Keep the accepted scope boundary."] },
-          "user"
+        state = engine.resolveScopeChange(
+          message.proposalId ?? latestScopeProposalId(engine.snapshot()),
+          "KEEP_CURRENT_SCOPE",
+          message.reason
+        );
+        break;
+      case "CREATE_INTENT_FOLLOW_UP":
+        state = engine.resolveScopeChange(
+          message.proposalId ?? latestScopeProposalId(engine.snapshot()),
+          "CREATE_FOLLOW_UP",
+          message.reason
         );
         break;
     }
@@ -664,6 +680,7 @@ export class VscodeProvider {
       message.type === "REJECT_INTENT_DECISION" ||
       message.type === "EXPAND_INTENT_SCOPE" ||
       message.type === "KEEP_INTENT_SCOPE"
+      || message.type === "CREATE_INTENT_FOLLOW_UP"
     ) {
       await this.refreshPreparedIntentContext(root, state);
     }
@@ -887,6 +904,33 @@ export class VscodeProvider {
       });
       return;
     }
+    if (message.type === "DISCUSS_INTENT_DECISION") {
+      const root = this.workspaceRoot();
+      if (root)
+        void this.discussIntentDecision(root, message)
+          .then((result) =>
+            this.post({
+              type: "DECISION_DISCUSSION_RESULT",
+              decisionId: message.decisionId,
+              result
+            })
+          )
+          .catch((error) =>
+            this.post({
+              type: "DECISION_DISCUSSION_RESULT",
+              decisionId: message.decisionId,
+              result: {
+                success: false,
+                captured: false,
+                mode: "Copilot Discussion",
+                startedAt: new Date().toISOString(),
+                completedAt: new Date().toISOString(),
+                error: error instanceof Error ? error.message : String(error)
+              }
+            })
+          );
+      return;
+    }
     if (message.type === "ANALYZE_INTENT") {
       void this.analyzeIntent(message.text);
       return;
@@ -896,7 +940,10 @@ export class VscodeProvider {
       message.type === "REJECT_INTENT_DECISION" ||
       message.type === "ADD_INTENT_BLOCKER" ||
       message.type === "RESOLVE_INTENT_BLOCKER" ||
-      message.type === "SET_INTENT_LIFECYCLE"
+      message.type === "SET_INTENT_LIFECYCLE" ||
+      message.type === "EXPAND_INTENT_SCOPE" ||
+      message.type === "KEEP_INTENT_SCOPE" ||
+      message.type === "CREATE_INTENT_FOLLOW_UP"
     ) {
       void this.mutateIntentState(message).catch((error) =>
         this.post({
@@ -1692,7 +1739,25 @@ export class VscodeProvider {
     root: string,
     message: Extract<WebviewToExtensionMessage, { type: "APPROVE_DELEGATION" }>
   ): Promise<CopilotDelegationResult> {
-    const contextPackageId = message.contextPackId;
+    const rootTask = this.applicationStore.snapshot().taskAnalysis as
+      KeystoneTaskResult | undefined;
+    const intentState = this.intentStateEngine?.snapshot();
+    const primaryAction = intentState ? selectIntentPrimaryAction(intentState) : undefined;
+    if (intentState && !primaryAction?.operation)
+      throw new Error("This Intent is complete. Choose an explicit follow-up before delegating.");
+    let task = rootTask;
+    if (
+      intentState &&
+      task?.intentId === intentState.id &&
+      primaryAction?.operation &&
+      !message.correctionPacketId &&
+      !message.continuation
+    ) {
+      task = await this.getService(root).refreshIntentContext(intentState, task);
+      this.applicationStore.update({ taskAnalysis: task });
+      this.post({ type: "TASK_RESULT", result: task });
+    }
+    const contextPackageId = task?.contextSummary?.id ?? message.contextPackId;
     if (!contextPackageId)
       throw new Error(
         "Delegation requires the prepared ContextPackage ID. Regenerate the intent context."
@@ -1717,7 +1782,6 @@ export class VscodeProvider {
       }
     }
     let storyId = message.storyId;
-    const task = this.applicationStore.snapshot().taskAnalysis as KeystoneTaskResult | undefined;
     const contextSummary = task?.contextSummary;
     const contextUsage = contextSummary
       ? {
@@ -1788,10 +1852,12 @@ export class VscodeProvider {
     }
     const operation = message.continuation
       ? "CONTINUE"
-      : delegationOperationForStory(
-          storyId ? this.sdlcPlan?.stories.find((story) => story.id === storyId) : undefined,
-          task
-        );
+      : !message.correctionPacketId && primaryAction?.operation
+        ? primaryAction.operation
+        : delegationOperationForStory(
+            storyId ? this.sdlcPlan?.stories.find((story) => story.id === storyId) : undefined,
+            task
+          );
     const result = await this.delegateApprovedPrompt(root, message.mode, authoritativePrompt, {
       storyId,
       agent: message.agent,
@@ -1865,6 +1931,53 @@ export class VscodeProvider {
     return result;
   }
 
+  private async discussIntentDecision(
+    root: string,
+    message: Extract<WebviewToExtensionMessage, { type: "DISCUSS_INTENT_DECISION" }>
+  ): Promise<CopilotDelegationResult> {
+    const intentState = this.intentStateEngine?.snapshot();
+    const decision = intentState?.decisions.find((item) => item.id === message.decisionId);
+    const task = this.applicationStore.snapshot().taskAnalysis as KeystoneTaskResult | undefined;
+    const contextPackageId =
+      task?.contextSummary?.id ?? intentState?.latestCopilotInteraction?.contextPackageId;
+    if (!intentState || !decision || decision.status !== "PROPOSED")
+      throw new Error("This decision is no longer open for discussion.");
+    if (!task || task.intentId !== intentState.id || !contextPackageId)
+      throw new Error("The active Intent has no prepared ContextPackage for discussion.");
+    const evidence = (decision.evidence ?? [])
+      .map((item) => `${item.label}${item.path ? ` · ${item.path}` : ""}`)
+      .join("\n- ");
+    const discussionContext = [
+      `Decision under discussion: ${decision.title}`,
+      `Recommendation: ${decision.recommendation}`,
+      decision.reason ? `Recommendation reason: ${decision.reason}` : "",
+      evidence ? `Relevant Intelligence evidence:\n- ${evidence}` : "",
+      `Current Intent: ${intentState.goal}`,
+      `Current objective: ${intentState.currentObjective}`,
+      "Evaluate this decision against the supplied ContextPackage. Keep the response concise and state the recommended resolution clearly.",
+      `User message: ${message.message.trim()}`
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+    return this.delegateApprovedPrompt(root, "Copilot Discussion", "", {
+      contextPackageId,
+      discussionId: message.decisionId,
+      operation: "ANSWER_QUESTION",
+      userInput: discussionContext,
+      mutateIntentState: false,
+      skipApproval: true,
+      contextUsage: task.contextSummary
+        ? {
+            estimatedTransmittedTokens: task.contextSummary.estimatedTransmittedTokens,
+            allCandidateCount: task.contextSummary.allCandidateCount,
+            transmittedCandidateCount: task.contextSummary.transmittedCandidateCount,
+            retainedCandidateCount: task.contextSummary.retainedCandidateCount,
+            omittedContextCount: task.contextSummary.omittedContextCount
+          }
+        : undefined
+    });
+  }
+
   private async delegateApprovedPrompt(
     root: string,
     mode: string,
@@ -1876,6 +1989,7 @@ export class VscodeProvider {
       instructions?: readonly string[];
       correctionPacketId?: string;
       contextPackageId?: string;
+      discussionId?: string;
       continuation?: boolean;
       mutateIntentState?: boolean;
       skipApproval?: boolean;
@@ -1921,6 +2035,7 @@ export class VscodeProvider {
           this.post({
             type: "COPILOT_STREAM",
             storyId: options.storyId,
+            discussionId: options.discussionId,
             contextPackageId: options.contextPackageId,
             text: value
           }),
@@ -1965,6 +2080,7 @@ export class VscodeProvider {
     this.post({
       type: "COPILOT_STREAM",
       storyId: options.storyId,
+      discussionId: options.discussionId,
       contextPackageId: result.contextPackageId,
       text: "",
       done: true
@@ -2566,7 +2682,7 @@ export class VscodeProvider {
         message: message.message,
         updatedAt: new Date().toISOString()
       });
-    if (message.type === "COPILOT_STREAM") {
+    if (message.type === "COPILOT_STREAM" && !message.discussionId) {
       const previous = this.applicationStore.snapshot().delegationResult as
         CopilotDelegationResult | undefined;
       this.applicationStore.update({
@@ -2737,6 +2853,12 @@ export class VscodeProvider {
   notify(message: string): void {
     this.output.info(message);
   }
+}
+
+function latestScopeProposalId(state: IntentState): string {
+  const proposal = state.scopeChangeProposals.find((item) => item.status === "PROPOSED");
+  if (!proposal) throw new Error("No pending Intent scope change proposal was found.");
+  return proposal.id;
 }
 
 type PersistedHandoffRecord = {

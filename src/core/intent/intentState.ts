@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 
 import type { ContextEvidenceReference } from "../context/contextEngine";
-import type { CopilotResponseEnvelope } from "../copilot/responseContract";
+import type {
+  CopilotResponseEnvelope,
+  CopilotScopeChangeProposal
+} from "../copilot/responseContract";
 import { JsonStorage } from "../platform/storage/jsonStorage";
 
 export type IntentLifecycle =
@@ -27,6 +30,8 @@ export interface IntentDecision {
   evidence?: ContextEvidenceReference[];
   createdAt: string;
   resolvedAt?: string;
+  /** Optional user explanation for a resolution; the proposal reason is preserved. */
+  resolutionReason?: string;
 }
 
 /** Provenance for the intentionally compact string-valued parts of Intent state. */
@@ -45,6 +50,23 @@ export interface IntentScope {
   followUps: string[];
 }
 
+export type IntentScopeChangeStatus =
+  | "PROPOSED"
+  | "EXPANDED"
+  | "KEPT"
+  | "FOLLOW_UP_CANDIDATE"
+  | "DISCUSSION";
+
+export interface IntentScopeChangeProposal extends CopilotScopeChangeProposal {
+  id: string;
+  originalScope: IntentScope;
+  status: IntentScopeChangeStatus;
+  provenance: IntentProvenance;
+  createdAt: string;
+  resolvedAt?: string;
+  decisionId?: string;
+}
+
 export interface IntentOutcome {
   id: string;
   category:
@@ -61,6 +83,7 @@ export interface IntentState {
   goal: string;
   understanding: string[];
   scope: IntentScope;
+  scopeChangeProposals: IntentScopeChangeProposal[];
   constraints: string[];
   decisions: IntentDecision[];
   currentObjective: string;
@@ -107,6 +130,7 @@ export class IntentStateEngine {
       goal,
       understanding: [],
       scope: { included: [], excluded: [], boundaries: [], followUps: [] },
+      scopeChangeProposals: [],
       constraints: unique(initial.constraints ?? []),
       decisions: [],
       currentObjective: goal,
@@ -211,6 +235,77 @@ export class IntentStateEngine {
     });
   }
 
+  resolveScopeChange(
+    proposalId: string,
+    action: "EXPAND_SCOPE" | "KEEP_CURRENT_SCOPE" | "CREATE_FOLLOW_UP" | "DISCUSS",
+    reason?: string
+  ): IntentState {
+    const proposal = this.state.scopeChangeProposals.find((item) => item.id === proposalId);
+    if (!proposal) throw new Error(`Intent scope change ${proposalId} was not found.`);
+    const now = new Date().toISOString();
+    const status =
+      action === "EXPAND_SCOPE"
+        ? "EXPANDED"
+        : action === "KEEP_CURRENT_SCOPE"
+          ? "KEPT"
+          : action === "CREATE_FOLLOW_UP"
+            ? "FOLLOW_UP_CANDIDATE"
+            : "DISCUSSION";
+    const scope =
+      action === "EXPAND_SCOPE"
+        ? {
+            ...this.state.scope,
+            included: unique([...this.state.scope.included, ...proposal.affectedAreas])
+          }
+        : action === "CREATE_FOLLOW_UP"
+          ? {
+              ...this.state.scope,
+              followUps: unique([...this.state.scope.followUps, ...proposal.affectedAreas]),
+              excluded: unique([...this.state.scope.excluded, ...proposal.affectedAreas])
+            }
+          : action === "KEEP_CURRENT_SCOPE"
+            ? {
+                ...this.state.scope,
+                boundaries: unique([
+                  ...this.state.scope.boundaries,
+                  reason?.trim() || `Keep current scope; defer: ${proposal.summary}`
+                ]),
+                excluded: unique([...this.state.scope.excluded, ...proposal.affectedAreas])
+              }
+            : this.state.scope;
+    const proposals = this.state.scopeChangeProposals.map((item) =>
+      item.id === proposalId
+        ? {
+            ...item,
+            status,
+            resolvedAt: action === "DISCUSS" ? undefined : now
+          }
+        : item
+    );
+    return this.commit({
+      scope,
+      scopeChangeProposals: proposals,
+      provenance: appendProvenanceMany(
+        this.state,
+        [
+          ...((action === "EXPAND_SCOPE" ? proposal.affectedAreas : []) as string[]).map((value) => ({
+            field: "scope.included",
+            value,
+            provenance: "user-accepted-copilot-recommendation" as const
+          })),
+          ...(action === "KEEP_CURRENT_SCOPE" || action === "CREATE_FOLLOW_UP"
+            ? [{
+                field: action === "KEEP_CURRENT_SCOPE" ? "scope.excluded" : "scope.followUps",
+                value: proposal.summary,
+                provenance: "user" as const
+              }]
+            : [])
+        ],
+        now
+      )
+    });
+  }
+
   updateConstraints(
     constraints: readonly string[],
     provenance: IntentProvenance = "user"
@@ -232,15 +327,22 @@ export class IntentStateEngine {
     const proposed = result.decisionsProposed ?? [];
     const decisions = [...this.state.decisions];
     const outcomes = [...this.state.outcomes];
+    const nextLifecycle =
+      result.blockers?.length &&
+      ["UNDERSTANDING", "READY", "IN_PROGRESS", "REVIEW"].includes(this.state.lifecycle)
+        ? "BLOCKED"
+        : this.state.lifecycle;
     for (const proposal of proposed) {
-      if (
-        !decisions.some(
-          (item) =>
-            item.title === proposal.title &&
-            item.recommendation === proposal.recommendation &&
-            item.status !== "SUPERSEDED"
-        )
-      ) {
+      const existing = decisions.filter(
+        (item) => item.title === proposal.title && item.recommendation === proposal.recommendation
+      );
+      const active = existing.some(
+        (item) => item.status === "PROPOSED" || item.status === "ACCEPTED"
+      );
+      const rejectedWithoutNewEvidence = existing.some(
+        (item) => item.status === "REJECTED" && !hasMateriallyNewEvidence(item, proposal.evidence)
+      );
+      if (!active && !rejectedWithoutNewEvidence) {
         decisions.unshift({
           id: randomUUID(),
           title: proposal.title,
@@ -286,6 +388,32 @@ export class IntentStateEngine {
     const detailChangedAreas = stringArray(detailRecord?.changedAreas);
     const detailWorkPerformed = stringArray(detailRecord?.workPerformed);
     const proposedScopeAreas = result.scopeChange?.affectedAreas ?? [];
+    const observedAreas = unique([
+      ...(result.affectedAreas ?? []),
+      ...detailChangedAreas,
+      ...stringArray(detailRecord?.affectedAreas),
+      ...(result.scopeChange?.affectedAreas ?? [])
+    ]);
+    const drift = detectScopeDrift(this.state, observedAreas);
+    const incomingScopeChange = result.scopeChange;
+    if (drift) {
+      const proposal = this.createScopeChangeProposal(
+        incomingScopeChange ?? {
+          summary: `Work may affect ${drift?.affectedAreas.join(", ")}.`,
+          affectedAreas: drift?.affectedAreas ?? [],
+          reason: "Deterministic scope comparison found work outside the accepted boundary.",
+          signals: drift?.signals,
+          options: ["EXPAND_SCOPE", "KEEP_CURRENT_SCOPE", "CREATE_FOLLOW_UP", "DISCUSS"]
+        },
+        now
+      );
+      if (proposal) {
+        const decision = decisions.find((item) => item.id === proposal.decisionId);
+        if (decision) proposal.decisionId = decision.id;
+      }
+    }
+    for (const decision of this.state.decisions)
+      if (!decisions.some((item) => item.id === decision.id)) decisions.unshift(decision);
     addOutcome(
       "understanding",
       result.summary ?? result.userVisibleResponse,
@@ -313,6 +441,7 @@ export class IntentStateEngine {
     const completedWork = unique([...this.state.completedWork, ...detailWorkPerformed]);
     return this.commit({
       decisions,
+      scopeChangeProposals: this.state.scopeChangeProposals,
       outcomes: outcomes.slice(0, 200),
       understanding: unique([
         ...this.state.understanding,
@@ -358,6 +487,15 @@ export class IntentStateEngine {
       provenance: appendProvenanceMany(
         this.state,
         [
+          ...(nextLifecycle !== this.state.lifecycle
+            ? [
+                {
+                  field: "lifecycle",
+                  value: nextLifecycle,
+                  provenance: "copilot-recommendation" as const
+                }
+              ]
+            : []),
           ...((result.summary ?? result.userVisibleResponse)
             ? [
                 {
@@ -428,7 +566,8 @@ export class IntentStateEngine {
             : [])
         ],
         now
-      )
+      ),
+      lifecycle: nextLifecycle
     });
   }
 
@@ -476,7 +615,7 @@ export class IntentStateEngine {
     const state = this.resolveDecision(id, "REJECTED", "user");
     const decision = state.decisions.find((item) => item.id === id);
     const rejectionReason = reason?.trim();
-    if (decision && rejectionReason) decision.reason = rejectionReason;
+    if (decision && rejectionReason) decision.resolutionReason = rejectionReason;
     if (rejectionReason)
       state.understanding = unique([...state.understanding, `Rejected: ${rejectionReason}`]);
     return this.commit({
@@ -500,10 +639,12 @@ export class IntentStateEngine {
     const blockers = this.state.blockers.map((item) =>
       item.id === id ? { ...item, resolvedAt: new Date().toISOString() } : item
     );
+    let lifecycle = this.state.lifecycle;
     if (this.state.lifecycle === "BLOCKED" && blockers.every((item) => item.resolvedAt))
-      this.transition("IN_PROGRESS");
+      lifecycle = this.transition("IN_PROGRESS").lifecycle;
     return this.commit({
       blockers,
+      lifecycle,
       provenance: appendProvenance(this.state, `blockers.${id}`, "resolved", "user")
     });
   }
@@ -553,18 +694,28 @@ export class IntentStateEngine {
     if (!decision) throw new Error(`Intent decision ${id} was not found.`);
     if (decision.status !== "PROPOSED")
       throw new Error(`Intent decision ${id} is already ${decision.status}.`);
+    const decisions = this.state.decisions.map((item) =>
+      item.id === id ? { ...item, status, provenance, resolvedAt: new Date().toISOString() } : item
+    );
+    const lifecycle: IntentLifecycle =
+      this.state.lifecycle === "UNDERSTANDING" &&
+      decisions.every((item) => item.status !== "PROPOSED") &&
+      this.state.openQuestions.length === 0
+        ? "READY"
+        : this.state.lifecycle;
+    const decisionProvenance = appendProvenance(
+      this.state,
+      `decisions.${status}`,
+      decision.recommendation,
+      provenance
+    );
     return this.commit({
-      decisions: this.state.decisions.map((item) =>
-        item.id === id
-          ? { ...item, status, provenance, resolvedAt: new Date().toISOString() }
-          : item
-      ),
-      provenance: appendProvenance(
-        this.state,
-        `decisions.${status}`,
-        decision.recommendation,
-        provenance
-      )
+      decisions,
+      lifecycle,
+      provenance:
+        lifecycle !== this.state.lifecycle
+          ? [...decisionProvenance, provenanceRecord("lifecycle", lifecycle, provenance)]
+          : decisionProvenance
     });
   }
   private commit(patch: Partial<IntentState>): IntentState {
@@ -575,6 +726,44 @@ export class IntentStateEngine {
       updatedAt: new Date().toISOString()
     };
     return this.snapshot();
+  }
+
+  private createScopeChangeProposal(
+    proposal: CopilotScopeChangeProposal,
+    now: string
+  ): IntentScopeChangeProposal | undefined {
+    const areas = unique(proposal.affectedAreas);
+    if (!areas.length) return undefined;
+    const existing = this.state.scopeChangeProposals.find(
+      (item) => item.status === "PROPOSED" && sameAreas(item.affectedAreas, areas)
+    );
+    if (existing) return existing;
+    const id = proposal.id ?? randomUUID();
+    const decision: IntentDecision = {
+      id: randomUUID(),
+      title: "Scope change recommended",
+      recommendation: proposal.summary,
+      reason: proposal.reason,
+      status: "PROPOSED",
+      provenance: "copilot-recommendation",
+      createdAt: now
+    };
+    this.state.decisions.unshift(decision);
+    const next: IntentScopeChangeProposal = {
+      ...proposal,
+      id,
+      affectedAreas: areas,
+      originalScope: structuredClone(this.state.scope),
+      status: "PROPOSED",
+      provenance: "copilot-recommendation",
+      createdAt: now,
+      decisionId: decision.id,
+      options: proposal.options.length
+        ? proposal.options
+        : ["EXPAND_SCOPE", "KEEP_CURRENT_SCOPE", "CREATE_FOLLOW_UP", "DISCUSS"]
+    };
+    this.state.scopeChangeProposals = [next, ...this.state.scopeChangeProposals].slice(0, 50);
+    return next;
   }
 }
 
@@ -656,6 +845,7 @@ function normalizeState(state: IntentState): IntentState {
       boundaries: scope.boundaries ?? [],
       followUps: scope.followUps ?? []
     },
+    scopeChangeProposals: state.scopeChangeProposals ?? [],
     decisions: state.decisions ?? [],
     blockers: state.blockers ?? [],
     understanding: state.understanding ?? [],
@@ -688,6 +878,42 @@ function unique(items: readonly string[]): string[] {
   return [...new Set(items.map((item) => item.trim()).filter(Boolean))];
 }
 
+function sameAreas(left: readonly string[], right: readonly string[]): boolean {
+  const a = new Set(left.map(normalizeArea));
+  const b = new Set(right.map(normalizeArea));
+  return a.size === b.size && [...a].every((value) => b.has(value));
+}
+
+function normalizeArea(value: string): string {
+  return value.trim().replaceAll("\\", "/").replace(/^\.\//, "").toLowerCase();
+}
+
+function areaWithin(area: string, accepted: string): boolean {
+  const candidate = normalizeArea(area);
+  const boundary = normalizeArea(accepted);
+  return candidate === boundary || candidate.startsWith(`${boundary}/`) || boundary.includes(candidate);
+}
+
+function detectScopeDrift(
+  state: IntentState,
+  observedAreas: readonly string[]
+): { affectedAreas: string[]; signals: CopilotScopeChangeProposal["signals"] } | undefined {
+  const accepted = [...state.scope.included, ...state.affectedAreas];
+  if (!accepted.length) return undefined;
+  const outside = unique(
+    observedAreas.filter(
+      (area) =>
+        !state.scope.excluded.some((excluded) => areaWithin(area, excluded)) &&
+        !accepted.some((included) => areaWithin(area, included))
+    )
+  );
+  if (!outside.length) return undefined;
+  return {
+    affectedAreas: outside,
+    signals: ["affected-component-outside-scope", "new-dependency"]
+  };
+}
+
 function scopeValues(scope: Partial<IntentScope>): string[] {
   return unique([
     ...(scope.included ?? []),
@@ -706,6 +932,36 @@ function uniqueBlockers(
     if (!result.some((item) => item.summary === summary && !item.resolvedAt))
       result.push({ id: randomUUID(), summary, provenance });
   return result;
+}
+
+function hasMateriallyNewEvidence(
+  previous: IntentDecision,
+  incoming: readonly ContextEvidenceReference[] | undefined
+): boolean {
+  if (!incoming?.length) return false;
+  const known = new Set(
+    (previous.evidence ?? []).map((item) =>
+      [
+        item.id ?? item.evidenceId ?? "",
+        item.kind,
+        item.label,
+        item.path ?? "",
+        item.startLine ?? ""
+      ].join("|")
+    )
+  );
+  return incoming.some(
+    (item) =>
+      !known.has(
+        [
+          item.id ?? item.evidenceId ?? "",
+          item.kind,
+          item.label,
+          item.path ?? "",
+          item.startLine ?? ""
+        ].join("|")
+      )
+  );
 }
 
 function provenanceRecord(

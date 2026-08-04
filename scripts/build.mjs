@@ -93,6 +93,10 @@ async function buildWebview() {
       /from\s+(['"])(\.\/[^'"]+?)(?:\.ts)?\1/g,
       (m, q, s) => `from ${q}${s.endsWith(".js") ? s : s + ".js"}${q}`
     );
+    source = source.replace(
+      /from\s+(['"])@core\/intent\/primaryAction\1/g,
+      'from "./intentPrimaryAction.js"'
+    );
     const result = ts.transpileModule(source, {
       fileName: file,
       compilerOptions: {
@@ -106,6 +110,21 @@ async function buildWebview() {
     ensure(out);
     fs.writeFileSync(out, result.outputText);
   }
+  const primaryActionSource = fs.readFileSync(
+    path.join(root, "src/core/intent/primaryAction.ts"),
+    "utf8"
+  );
+  const primaryAction = ts.transpileModule(primaryActionSource, {
+    fileName: path.join(root, "src/core/intent/primaryAction.ts"),
+    compilerOptions: {
+      target: ts.ScriptTarget.ES2022,
+      module: ts.ModuleKind.ES2022,
+      moduleResolution: ts.ModuleResolutionKind.Bundler,
+      strict: true
+    }
+  });
+  ensure(path.join(root, "dist/media/intentPrimaryAction.js"));
+  fs.writeFileSync(path.join(root, "dist/media/intentPrimaryAction.js"), primaryAction.outputText);
   fs.mkdirSync(path.join(root, "dist/media"), { recursive: true });
   fs.copyFileSync(
     path.join(root, "src/webview/theme.css"),

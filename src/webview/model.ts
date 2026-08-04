@@ -540,8 +540,23 @@ export interface IntentDecision {
   title: string;
   recommendation: string;
   reason?: string;
+  evidence?: EvidenceItem[];
   status: "PROPOSED" | "ACCEPTED" | "REJECTED" | "SUPERSEDED";
   provenance: string;
+  createdAt: string;
+  resolvedAt?: string;
+  resolutionReason?: string;
+}
+export interface IntentScopeChangeProposal {
+  id: string;
+  summary: string;
+  affectedAreas: string[];
+  reason?: string;
+  signals?: string[];
+  options: string[];
+  originalScope: { included: string[]; excluded: string[]; boundaries: string[]; followUps: string[] };
+  status: "PROPOSED" | "EXPANDED" | "KEPT" | "FOLLOW_UP_CANDIDATE" | "DISCUSSION";
+  decisionId?: string;
   createdAt: string;
   resolvedAt?: string;
 }
@@ -550,6 +565,7 @@ export interface IntentState {
   goal: string;
   understanding: string[];
   scope: { included: string[]; excluded: string[]; boundaries: string[]; followUps: string[] };
+  scopeChangeProposals: IntentScopeChangeProposal[];
   constraints: string[];
   decisions: IntentDecision[];
   currentObjective: string;

@@ -92,6 +92,7 @@ import { compressConversationHistory } from "../../context/taskAwareCompression"
 import { classifyIntent } from "../../context/IntentClassifier";
 import { routeIntent } from "../../context/routing/intentRouter";
 import type { IntentState } from "../../intent/intentState";
+import { selectIntentPrimaryAction } from "../../intent/primaryAction";
 import { CpgShardStore } from "../../intelligence/cpg";
 import {
   buildCpgExplorerResult,
@@ -518,7 +519,8 @@ export class CockpitService {
       diagnostics?: readonly ContextDiagnostic[];
     } = {},
     onProgress?: (progress: number, message: string) => void,
-    intentId?: string
+    intentId?: string,
+    intentState?: IntentState
   ): Promise<KeystoneTaskResult> {
     onProgress?.(10, "Loading the latest repository intelligence.");
     const intent: DeveloperIntent = {
@@ -582,7 +584,24 @@ export class CockpitService {
             compressionTier: settings?.compressionTier,
             codingStandards: settings?.codingStandards,
             thingsToAvoid: settings?.thingsToAvoid
-          }
+          },
+          intentState: intentState
+            ? {
+                id: intentState.id,
+                lifecycle: intentState.lifecycle,
+                objective: intentState.currentObjective,
+                questions: intentState.openQuestions,
+                scope: intentState.scope,
+                scopeChangeProposals: intentState.scopeChangeProposals,
+                decisions: intentState.decisions.map((decision) => ({
+                  id: decision.id,
+                  status: decision.status,
+                  title: decision.title,
+                  recommendation: decision.recommendation,
+                  resolutionReason: decision.resolutionReason
+                }))
+              }
+            : undefined
         })
       )
       .digest("hex");
@@ -687,7 +706,8 @@ export class CockpitService {
             ...(settings?.thingsToAvoid
               ? [{ label: "Things to avoid", content: settings.thingsToAvoid, source: "settings" }]
               : [])
-          ]
+          ],
+          intentState
         }
       );
     })();
@@ -771,7 +791,9 @@ export class CockpitService {
     const preparation = await this.contextEngine.prepareContext({
       intent,
       objective: intentState.currentObjective,
-      operation: operationForIntentType(analysis.intentType),
+      operation:
+        selectIntentPrimaryAction(intentState).operation ??
+        operationForIntentType(analysis.intentType),
       tokenBudget: 6_000,
       intelligence: snapshot.intelligence,
       routeDecision: routeIntent(analysis),
@@ -782,7 +804,8 @@ export class CockpitService {
         thingsToAvoid: settings?.thingsToAvoid,
         gitDiff,
         okfSnapshot: canonicalSnapshot,
-        preferredPaths: [...intentState.affectedAreas, ...intentState.scope.included]
+        preferredPaths: [...intentState.affectedAreas, ...intentState.scope.included],
+        excludedPaths: intentState.scope.excluded
       },
       sourceRevision:
         canonicalSnapshot.manifest.digests.snapshot ?? canonicalSnapshot.manifest.extractionRunId,

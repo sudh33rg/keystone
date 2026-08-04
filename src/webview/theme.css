@@ -325,7 +325,8 @@ label {
 .status.completed,
 .status.passed,
 .status.ready,
-.status.approved {
+.status.approved,
+.status.accepted {
   border-color: #3c826b;
   color: #76d4ae;
   background: #123d31;
@@ -333,7 +334,8 @@ label {
 .status.failed,
 .status.error,
 .status.blocked,
-.status.review-required {
+.status.review-required,
+.status.rejected {
   border-color: #8d4e4e;
   color: #f0a0a0;
   background: #3a1b21;
@@ -449,15 +451,206 @@ label {
   border: 1px solid #2e6075;
   background: #0b2a38;
 }
+.intent-primary-row button {
+  flex: 0 0 auto;
+  min-width: 164px;
+}
 .intent-primary-row > div {
   display: grid;
   gap: 3px;
   min-width: 0;
 }
+.advanced-action {
+  border-color: #31586a;
+  background: #102c38;
+  color: #a7c1cc;
+}
 .decision-list {
   display: grid;
   gap: 8px;
   margin-top: 14px;
+  min-width: 0;
+}
+.decision-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
+  gap: 14px;
+  align-items: start;
+  margin-top: 14px;
+}
+.decision-helper,
+.decision-kicker {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+}
+.decision-kicker {
+  color: var(--warn);
+  font-weight: 700;
+}
+.decision-actions {
+  display: grid;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+.decision-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.decision-copy b:not(.decision-kicker) {
+  font-size: 13px;
+}
+.decision-rejection-form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.decision-rejection-form input {
+  width: 180px;
+  padding: 7px 8px;
+}
+.decision-discussion {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid #3c7186;
+  border-radius: 9px;
+  background: linear-gradient(155deg, #102f3e, #0a202b);
+  box-shadow: 0 10px 26px #020b1040;
+}
+.discussion-heading,
+.discussion-composer {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+.discussion-heading h3 {
+  margin: 3px 0 0;
+  font-size: 14px;
+  line-height: 1.3;
+}
+.icon-button {
+  padding: 1px 7px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 1;
+}
+.icon-button:hover:not(:disabled) {
+  transform: none;
+}
+.discussion-context {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid #28556a;
+  background: #081d27;
+  color: #a9c8d5;
+  font-size: 10px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.discussion-context b {
+  color: var(--text);
+}
+.discussion-thread {
+  display: grid;
+  gap: 8px;
+  min-height: 92px;
+  max-height: 250px;
+  overflow: auto;
+  padding: 2px;
+}
+.discussion-message {
+  max-width: 92%;
+  padding: 8px 9px;
+  border: 1px solid #28556a;
+  border-radius: 8px;
+  background: #0b2532;
+}
+.discussion-message.user {
+  justify-self: end;
+  border-color: #3d7184;
+  background: #12394a;
+}
+.discussion-message span {
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.discussion-message p,
+.discussion-empty,
+.discussion-pending {
+  margin: 4px 0 0;
+  color: #c7dce5;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.discussion-empty,
+.discussion-pending {
+  color: var(--muted);
+  font-size: 11px;
+}
+.discussion-composer {
+  align-items: stretch;
+}
+.discussion-composer textarea {
+  min-height: 64px;
+  resize: vertical;
+}
+.discussion-composer button {
+  align-self: flex-end;
+  flex: 0 0 auto;
+}
+.discussion-resolution {
+  display: grid;
+  gap: 7px;
+  padding-top: 9px;
+  border-top: 1px solid #28556a;
+}
+.discussion-resolution > span {
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+}
+.discussion-resolution .actions {
+  gap: 6px;
+}
+.decision-history {
+  margin-top: 14px;
+  border-top: 1px solid #224b5d;
+  padding-top: 10px;
+}
+.decision-history summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+}
+.decision-history-item {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  margin-top: 8px;
+  padding: 8px;
+  background: #081d27;
+}
+.decision-history-item > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.decision-history-item small {
+  color: var(--muted);
+  overflow-wrap: anywhere;
 }
 .decision-item {
   display: flex;
@@ -1786,6 +1979,11 @@ select {
     grid-template-columns: 1fr;
   }
 }
+@media (max-width: 900px) {
+  .decision-workspace {
+    grid-template-columns: 1fr;
+  }
+}
 @media (max-width: 720px) {
   .shell {
     grid-template-columns: 1fr;
@@ -1813,8 +2011,64 @@ select {
   .intent-summary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+  .intent-header-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+  }
+  .intent-objective {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    order: -1;
+  }
+  .intent-header-row select {
+    width: 100%;
+    min-width: 0;
+  }
+  .intent-header-row small {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .intent-primary-row {
+    align-items: stretch;
+  }
+  .intent-primary-row > div,
+  .intent-primary-row button {
+    width: 100%;
+  }
+  .intent-primary-row button {
+    min-width: 0;
+  }
   .decision-item {
     display: grid;
+  }
+  .decision-workspace {
+    grid-template-columns: 1fr;
+  }
+  .decision-actions,
+  .decision-actions .actions,
+  .discussion-composer,
+  .discussion-resolution .actions {
+    width: 100%;
+  }
+  .decision-actions .actions,
+  .discussion-resolution .actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .decision-actions button,
+  .discussion-resolution button {
+    width: 100%;
+  }
+  .decision-rejection-form input {
+    flex: 1;
+    width: auto;
+  }
+  .discussion-composer {
+    display: grid;
+  }
+  .discussion-composer button {
+    width: 100%;
   }
   .graph-canvas {
     height: 500px;

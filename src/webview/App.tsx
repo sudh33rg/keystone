@@ -1,5 +1,6 @@
 import { vscode } from "./vscodeApi.js";
 import { GraphCanvas, type VisualGraphNode } from "./GraphCanvas.js";
+import { selectIntentPrimaryAction, type IntentPrimaryAction } from "@core/intent/primaryAction";
 import type {
   ApplicationState,
   BacklogStory,
@@ -18,6 +19,7 @@ import type {
   IntelligenceSummary,
   IntelligenceView,
   IngestionState,
+  IntentDecision,
   Operation,
   LanguageCapability,
   Nav,
@@ -71,6 +73,14 @@ interface AppState {
   intentQuestion: string;
   intentBlocker: string;
   selectedStoryId?: string;
+  decisionDiscussion?: {
+    decisionId: string;
+    messages: Array<{ role: "user" | "assistant"; text: string }>;
+    input: string;
+    pending: boolean;
+  };
+  rejectingDecisionId?: string;
+  rejectionReason: string;
 }
 
 const emptyApplication: ApplicationState = {
@@ -142,7 +152,8 @@ export class App extends React.Component<Record<string, never>, AppState> {
     evidenceText: "",
     selectedCriteria: {},
     intentQuestion: "",
-    intentBlocker: ""
+    intentBlocker: "",
+    rejectionReason: ""
   };
   private readonly onMessage = (event: MessageEvent): void =>
     this.handle(event.data as { type?: string; [key: string]: unknown });
@@ -413,14 +424,54 @@ export class App extends React.Component<Record<string, never>, AppState> {
             : "Copilot delegation opened externally; Keystone is waiting for concrete returned evidence."
           : String(result.error ?? "Delegation failed.")
       }));
+    } else if (message.type === "DECISION_DISCUSSION_RESULT") {
+      const result = message.result as CopilotDelegationResult;
+      this.setState((previous) => {
+        const discussion = previous.decisionDiscussion;
+        if (!discussion || discussion.decisionId !== String(message.decisionId)) return null;
+        const last = discussion.messages.at(-1);
+        const messages = result.text
+          ? last?.role === "assistant"
+            ? [...discussion.messages.slice(0, -1), { role: "assistant" as const, text: result.text }]
+            : [...discussion.messages, { role: "assistant" as const, text: result.text }]
+          : discussion.messages;
+        return {
+          decisionDiscussion: {
+            ...discussion,
+            pending: false,
+            messages
+          },
+          notice: result.success
+            ? "Copilot replied in the decision discussion. Resolve it when the conclusion is clear."
+            : String(result.error ?? "Discussion failed.")
+        };
+      });
     } else if (message.type === "COPILOT_ACTIVITY") {
       this.setState({ notice: String(message.message) });
     } else if (message.type === "COPILOT_STREAM") {
       const stream = message as {
         contextPackageId?: string;
         storyId?: string;
+        discussionId?: string;
         text?: string;
       };
+      if (stream.discussionId) {
+        this.setState((previous) => {
+          const discussion = previous.decisionDiscussion;
+          if (!discussion || discussion.decisionId !== stream.discussionId || !stream.text)
+            return null;
+          const last = discussion.messages.at(-1);
+          const messages =
+            last?.role === "assistant"
+              ? [
+                  ...discussion.messages.slice(0, -1),
+                  { role: "assistant" as const, text: `${last.text}${stream.text}` }
+                ]
+              : [...discussion.messages, { role: "assistant" as const, text: stream.text }];
+          return { decisionDiscussion: { ...discussion, messages } };
+        });
+        return;
+      }
       this.setState((previous) => ({
         application: {
           ...previous.application,
@@ -841,7 +892,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
                   vscode.postMessage({ type: "ANALYZE_INTENT", text: this.state.intent.trim() })
                 }
               >
-                Research intent
+                Understand Intent
               </button>
               {this.state.task?.researchStatus === "ready" && (
                 <button
@@ -1640,7 +1691,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
             detail="security / performance"
           />
         </div>
-        {this.intentWorkspace(task, current)}
+        {this.intentWorkspace()}
         {!plan && this.prePlanResearch(task)}
         {plan && this.researchAndSpecification(plan)}
         {plan && this.sdlcExecution(plan, current)}
@@ -1736,7 +1787,236 @@ export class App extends React.Component<Record<string, never>, AppState> {
     );
   }
 
-  private intentWorkspace(task: TaskResult, current: Story | undefined): JSX.Element {
+  private decisionCandidate(decision: IntentDecision): JSX.Element {
+    const rejecting = this.state.rejectingDecisionId === decision.id;
+    return (
+      <div className="decision-item" key={decision.id}>
+        <div className="decision-copy">
+          <span className="decision-kicker">Recommended decision</span>
+          <b>{decision.title}</b>
+          <span>{decision.recommendation}</span>
+          {decision.reason && (
+            <small>
+              <b>Reason</b> · {decision.reason}
+            </small>
+          )}
+        </div>
+        <div className="decision-actions">
+          <div className="actions">
+            <button
+              className="primary"
+              onClick={() => this.resolveDecision(decision.id, "accepted")}
+            >
+              Accept
+            </button>
+            <button onClick={() => this.beginDecisionRejection(decision.id)}>Reject</button>
+            <button
+              className="discussion-button"
+              onClick={() => this.openDecisionDiscussion(decision)}
+            >
+              Discuss
+            </button>
+          </div>
+          {rejecting && (
+            <div className="decision-rejection-form">
+              <input
+                autoFocus
+                value={this.state.rejectionReason}
+                placeholder="Optional reason"
+                aria-label="Optional rejection reason"
+                onChange={(event: React.FormEvent<HTMLInputElement>) =>
+                  this.setState({ rejectionReason: event.currentTarget.value })
+                }
+              />
+              <button
+                className="danger"
+                onClick={() => this.resolveDecision(decision.id, "rejected")}
+              >
+                Confirm reject
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  private decisionDiscussion(
+    intent: NonNullable<ApplicationState["intentState"]>
+  ): JSX.Element | null {
+    const discussion = this.state.decisionDiscussion;
+    if (!discussion) return null;
+    const decision = intent.decisions.find((item) => item.id === discussion.decisionId);
+    if (!decision) return null;
+    const contextPackageId = intent.latestCopilotInteraction?.contextPackageId;
+    return (
+      <aside className="decision-discussion" aria-label="Decision discussion">
+        <div className="discussion-heading">
+          <div>
+            <span className="decision-kicker">Copilot discussion</span>
+            <h3>{decision.title}</h3>
+          </div>
+          <button
+            className="icon-button"
+            aria-label="Close discussion"
+            onClick={() => this.closeDecisionDiscussion()}
+          >
+            ×
+          </button>
+        </div>
+        <div className="discussion-context">
+          <span>
+            <b>Intent</b> · {intent.goal}
+          </span>
+          <span>
+            <b>Objective</b> · {intent.currentObjective}
+          </span>
+          {contextPackageId && (
+            <span>
+              <b>ContextPackage</b> · {contextPackageId}
+            </span>
+          )}
+          {(decision.evidence ?? []).length > 0 && (
+            <span>
+              <b>Evidence</b> · {(decision.evidence ?? []).map((item) => item.label).join(" · ")}
+            </span>
+          )}
+        </div>
+        <div className="discussion-thread" aria-live="polite">
+          {discussion.messages.length === 0 && (
+            <p className="discussion-empty">
+              Ask Copilot to weigh the recommendation against the current Intent.
+            </p>
+          )}
+          {discussion.messages.map((message, index) => (
+            <div className={`discussion-message ${message.role}`} key={`${message.role}-${index}`}>
+              <span>{message.role === "user" ? "You" : "Copilot"}</span>
+              <p>{message.text}</p>
+            </div>
+          ))}
+          {discussion.pending && (
+            <div className="discussion-pending">Copilot is considering the supplied evidence…</div>
+          )}
+        </div>
+        <div className="discussion-composer">
+          <textarea
+            rows={3}
+            value={discussion.input}
+            disabled={discussion.pending}
+            placeholder="Ask a short follow-up…"
+            aria-label="Decision discussion message"
+            onChange={(event: React.FormEvent<HTMLTextAreaElement>) =>
+              this.setState((previous) => ({
+                decisionDiscussion: previous.decisionDiscussion
+                  ? { ...previous.decisionDiscussion, input: event.currentTarget.value }
+                  : previous.decisionDiscussion
+              }))
+            }
+          />
+          <button
+            className="primary"
+            disabled={discussion.pending || !discussion.input.trim()}
+            onClick={() => this.sendDecisionDiscussion()}
+          >
+            {discussion.pending ? "Thinking…" : "Send"}
+          </button>
+        </div>
+        <div className="discussion-resolution">
+          <span>When resolved</span>
+          <div className="actions">
+            <button
+              className="primary"
+              onClick={() => this.resolveDecision(decision.id, "accepted")}
+            >
+              Accept recommendation
+            </button>
+            <button onClick={() => this.beginDecisionRejection(decision.id)}>
+              Reject recommendation
+            </button>
+            <button onClick={() => this.resolveDecision(decision.id, "saved")}>
+              Save as decision
+            </button>
+            <button
+              className="advanced-action"
+              onClick={() =>
+                document
+                  .querySelector<HTMLTextAreaElement>(".discussion-composer textarea")
+                  ?.focus()
+              }
+            >
+              Keep discussing
+            </button>
+          </div>
+        </div>
+      </aside>
+    );
+  }
+
+  private openDecisionDiscussion(decision: IntentDecision): void {
+    this.setState({
+      decisionDiscussion: { decisionId: decision.id, messages: [], input: "", pending: false },
+      rejectingDecisionId: undefined,
+      rejectionReason: ""
+    });
+  }
+
+  private closeDecisionDiscussion(): void {
+    this.setState({ decisionDiscussion: undefined });
+  }
+
+  private sendDecisionDiscussion(): void {
+    const discussion = this.state.decisionDiscussion;
+    const message = discussion?.input.trim();
+    if (!discussion || !message || discussion.pending) return;
+    const transcript = [
+      ...discussion.messages,
+      { role: "user" as const, text: message }
+    ]
+      .map((item) => `${item.role === "user" ? "User" : "Copilot"}: ${item.text}`)
+      .join("\n\n");
+    this.setState({
+      decisionDiscussion: {
+        ...discussion,
+        input: "",
+        pending: true,
+        messages: [...discussion.messages, { role: "user", text: message }]
+      }
+    });
+    vscode.postMessage({
+      type: "DISCUSS_INTENT_DECISION",
+      decisionId: discussion.decisionId,
+      message: transcript
+    });
+  }
+
+  private beginDecisionRejection(decisionId: string): void {
+    this.setState({ rejectingDecisionId: decisionId, rejectionReason: "" });
+  }
+
+  private resolveDecision(decisionId: string, resolution: "accepted" | "rejected" | "saved"): void {
+    if (resolution === "rejected") {
+      vscode.postMessage({
+        type: "REJECT_INTENT_DECISION",
+        decisionId,
+        reason: this.state.rejectionReason.trim() || undefined
+      });
+    } else {
+      vscode.postMessage({ type: "ACCEPT_INTENT_DECISION", decisionId });
+    }
+    this.setState({
+      decisionDiscussion: undefined,
+      rejectingDecisionId: undefined,
+      rejectionReason: "",
+      notice:
+        resolution === "rejected"
+          ? "Decision rejected and kept in Intent history."
+          : resolution === "saved"
+            ? "Decision saved to Intent State."
+            : "Decision accepted and added to future relevant Copilot context."
+    });
+  }
+
+  private intentWorkspace(): JSX.Element {
     const intent = this.state.application.intentState;
     if (!intent) return <></>;
     const operation = this.state.application.operations?.find(
@@ -1744,9 +2024,10 @@ export class App extends React.Component<Record<string, never>, AppState> {
     );
     const running = operation?.status === "running";
     const proposed = intent.decisions.filter((decision) => decision.status === "PROPOSED");
+    const resolved = intent.decisions.filter((decision) => decision.status !== "PROPOSED");
     const activeBlockers = intent.blockers.filter((blocker) => !blocker.resolvedAt);
-    const scopeChange = this.state.application.delegationResult?.structured?.scopeChange;
-    const primary = this.primaryIntentAction(intent.lifecycle, running, current, intent.goal);
+    const scopeChange = intent.scopeChangeProposals.find((proposal) => proposal.status === "PROPOSED");
+    const primary = this.primaryIntentAction(intent);
     return (
       <Panel
         title="Intent state"
@@ -1817,41 +2098,31 @@ export class App extends React.Component<Record<string, never>, AppState> {
           </button>
         </div>
         {proposed.length > 0 && (
-          <div className="decision-list">
-            <strong>Decision candidates</strong>
-            {proposed.map((decision) => (
-              <div className="decision-item" key={decision.id}>
+          <div className="decision-workspace">
+            <div className="decision-list">
+              <strong>Decision candidates</strong>
+              <small className="decision-helper">
+                Copilot recommendations stay temporary until you resolve them.
+              </small>
+              {proposed.map((decision) => this.decisionCandidate(decision))}
+            </div>
+            {this.state.decisionDiscussion && this.decisionDiscussion(intent)}
+          </div>
+        )}
+        {resolved.length > 0 && (
+          <details className="decision-history">
+            <summary>Decision history · {resolved.length}</summary>
+            {resolved.slice(0, 12).map((decision) => (
+              <div className="decision-history-item" key={decision.id}>
+                <span className={`status ${decision.status.toLowerCase()}`}>{decision.status}</span>
                 <div>
                   <b>{decision.title}</b>
-                  <span>{decision.recommendation}</span>
-                  {decision.reason && <small>{decision.reason}</small>}
-                </div>
-                <div className="actions">
-                  <button
-                    className="primary"
-                    onClick={() =>
-                      vscode.postMessage({
-                        type: "ACCEPT_INTENT_DECISION",
-                        decisionId: decision.id
-                      })
-                    }
-                  >
-                    Accept
-                  </button>
-                  <button
-                    onClick={() =>
-                      vscode.postMessage({
-                        type: "REJECT_INTENT_DECISION",
-                        decisionId: decision.id
-                      })
-                    }
-                  >
-                    Reject
-                  </button>
+                  <small>{decision.recommendation}</small>
+                  {decision.resolutionReason && <small>Reason: {decision.resolutionReason}</small>}
                 </div>
               </div>
             ))}
-          </div>
+          </details>
         )}
         {activeBlockers.length > 0 && (
           <div className="callout warning">
@@ -1896,25 +2167,53 @@ export class App extends React.Component<Record<string, never>, AppState> {
             <strong>Scope change recommended</strong>
             <span>{scopeChange.summary}</span>
             <small>Affected: {scopeChange.affectedAreas.join(", ")}</small>
+            {scopeChange.signals?.length ? (
+              <small>Signals: {scopeChange.signals.join(" · ")}</small>
+            ) : null}
             <div className="actions">
               <button
                 className="primary"
                 onClick={() =>
                   vscode.postMessage({
                     type: "EXPAND_INTENT_SCOPE",
-                    areas: scopeChange.affectedAreas,
+                    proposalId: scopeChange.id,
                     reason: scopeChange.reason
                   })
                 }
               >
-                Expand scope
+                Expand Scope
               </button>
               <button
                 onClick={() =>
-                  vscode.postMessage({ type: "KEEP_INTENT_SCOPE", reason: scopeChange.reason })
+                  vscode.postMessage({
+                    type: "KEEP_INTENT_SCOPE",
+                    proposalId: scopeChange.id,
+                    reason: scopeChange.reason
+                  })
                 }
               >
-                Keep current scope
+                Keep Current Scope
+              </button>
+              <button
+                onClick={() =>
+                  vscode.postMessage({
+                    type: "CREATE_INTENT_FOLLOW_UP",
+                    proposalId: scopeChange.id,
+                    reason: scopeChange.reason
+                  })
+                }
+              >
+                Create Follow-up
+              </button>
+              <button
+                onClick={() => {
+                  const decision = intent.decisions.find(
+                    (item) => item.id === scopeChange.decisionId
+                  );
+                  if (decision) this.openDecisionDiscussion(decision);
+                }}
+              >
+                Discuss
               </button>
             </div>
           </div>
@@ -1945,69 +2244,15 @@ export class App extends React.Component<Record<string, never>, AppState> {
   }
 
   private primaryIntentAction(
-    lifecycle: IntentLifecycle,
-    running: boolean,
-    current: Story | undefined,
-    goal: string
-  ): { label: string; description: string; enabled: boolean; run: () => void } {
-    const noOp = (): void => undefined;
-    if (running)
-      return {
-        label: "Stop",
-        description: "Stop the active Copilot operation.",
-        enabled: true,
-        run: noOp
-      };
-    if (lifecycle === "DRAFT" || lifecycle === "UNDERSTANDING") {
-      return {
-        label: "Understand Intent",
-        description: "Prepare repository-backed understanding.",
-        enabled: true,
-        run: () =>
-          vscode.postMessage({
-            type: "ANALYZE_INTENT",
-            text: this.state.intent.trim() || goal
-          })
-      };
-    }
-    if (lifecycle === "BLOCKED")
-      return {
-        label: "Resolve Blocker",
-        description: "Resolve an active blocker before continuing.",
-        enabled: false,
-        run: noOp
-      };
-    if (lifecycle === "REVIEW")
-      return {
-        label: "Review Changes",
-        description: "Run validation and inspect the current result.",
-        enabled: true,
-        run: () =>
-          vscode.postMessage({ type: "RUN_VALIDATION", scope: "impacted", storyId: current?.id })
-      };
-    if (lifecycle === "COMPLETE")
-      return {
-        label: "Follow Up",
-        description: "The accepted Intent is complete.",
-        enabled: false,
-        run: noOp
-      };
-    if (current && (current.status === "in-progress" || current.status === "awaiting-validation")) {
-      const hasResult = Boolean(this.state.application.delegationResult?.captured);
-      return {
-        label: "Continue with Copilot",
-        description: hasResult
-          ? "Continue the current objective using distilled Intent state."
-          : "Delegate the current objective using the prepared ContextPackage.",
-        enabled: true,
-        run: () => (hasResult ? this.continueWithCopilot(current) : this.delegate(current))
-      };
-    }
+    intent: NonNullable<ApplicationState["intentState"]>
+  ): IntentPrimaryAction & { run: () => void } {
+    const action = selectIntentPrimaryAction(intent);
     return {
-      label: "Continue with Copilot",
-      description: "Approve the prepared repository context to continue.",
-      enabled: Boolean(current),
-      run: current ? () => this.delegate(current) : noOp
+      ...action,
+      enabled: action.enabled && Boolean(this.state.task),
+      run: () => {
+        if (this.state.task) this.delegate(this.currentStory());
+      }
     };
   }
 
@@ -2231,10 +2476,10 @@ export class App extends React.Component<Record<string, never>, AppState> {
                   (current.status === "delegated" &&
                     current.delegation?.status === "delegated" &&
                     !current.delegation.completedAt)) && (
-                  <button onClick={() => this.delegate(current)}>
+                  <button className="advanced-action" onClick={() => this.delegate(current)}>
                     {current.status === "delegated"
-                      ? "Retry Copilot delegation"
-                      : "Prepare & approve Copilot delegation"}
+                      ? "Retry delegation (advanced)"
+                      : "Delegate story (advanced)"}
                   </button>
                 )}
                 {["in-progress", "delegated", "awaiting-validation", "review-required"].includes(
@@ -2536,11 +2781,11 @@ export class App extends React.Component<Record<string, never>, AppState> {
           </details>
           {current && (
             <button
-              className="primary"
+              className="advanced-action"
               disabled={current.status !== "in-progress"}
               onClick={() => this.delegate(current)}
             >
-              Approve and delegate selected story
+              Delegate selected story (advanced)
             </button>
           )}
           {this.state.application.delegationResult && (
@@ -2672,7 +2917,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
                       ) : null}
                       {details && (
                         <div>
-                          <b>{details.operation} details</b>
+                          <b>Copilot outcome details</b>
                           {details.understanding && <p>{details.understanding}</p>}
                           {details.approach && (
                             <p>
@@ -2739,13 +2984,6 @@ export class App extends React.Component<Record<string, never>, AppState> {
               {this.state.application.delegationResult.text && (
                 <pre>{this.state.application.delegationResult.text}</pre>
               )}
-              {this.state.application.delegationResult.captured &&
-                this.state.application.delegationResult.contextPackageId &&
-                current && (
-                  <button className="primary" onClick={() => this.continueWithCopilot(current)}>
-                    Continue with Copilot
-                  </button>
-                )}
             </details>
           )}
           {this.state.application.correctionPacket ? (
@@ -2965,8 +3203,8 @@ export class App extends React.Component<Record<string, never>, AppState> {
                 changed.
               </p>
               <small>
-                Operation {summary.operation} · {summary.allCandidateCount} candidate(s) considered
-                · revision {summary.sourceRevision.slice(0, 12)}…
+                Prepared for the current Intent · {summary.allCandidateCount} candidate(s)
+                considered · revision {summary.sourceRevision.slice(0, 12)}…
               </small>
             </details>
           </div>
@@ -3139,7 +3377,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
       notice: `Loaded ${inventory.length} repository instruction source(s) for review before delegation.`
     });
   }
-  private delegate(story: Story): void {
+  private delegate(story?: Story): void {
     const task = this.state.task;
     if (!task) return;
     const discovered = task.repoSkills?.map((skill) => skill.name) ?? [];
@@ -3151,7 +3389,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
       type: "APPROVE_DELEGATION",
       mode: "Copilot Chat",
       prompt: task.copilotPrompt,
-      storyId: story.id,
+      storyId: story?.id,
       agent: this.state.agent.trim() || "GitHub Copilot",
       skills: selectedSkills.length ? selectedSkills : discovered,
       instructions: this.state.instructions
@@ -3159,28 +3397,6 @@ export class App extends React.Component<Record<string, never>, AppState> {
         .map((value) => value.trim())
         .filter(Boolean),
       contextPackId: task.contextSummary?.id
-    });
-  }
-  private continueWithCopilot(story: Story): void {
-    const task = this.state.task;
-    const contextPackageId = this.state.application.delegationResult?.contextPackageId;
-    if (!task || !contextPackageId) return;
-    vscode.postMessage({
-      type: "APPROVE_DELEGATION",
-      mode: "Copilot Chat",
-      prompt: "",
-      storyId: story.id,
-      agent: this.state.agent.trim() || "GitHub Copilot",
-      skills: this.state.skills
-        .split(",")
-        .map((value) => value.trim())
-        .filter(Boolean),
-      instructions: this.state.instructions
-        .split(/\r?\n/)
-        .map((value) => value.trim())
-        .filter(Boolean),
-      contextPackId: contextPackageId,
-      continuation: true
     });
   }
   private delegateCorrection(story: Story, packet: CorrectionPacket): void {

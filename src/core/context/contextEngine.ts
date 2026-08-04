@@ -1731,6 +1731,12 @@ function durableIntentCandidates(
     });
   for (const value of state.scope.excluded)
     addIntent(`excluded-${value}`, "Scope exclusion", value, 0.98);
+  for (const value of state.scope.included)
+    addIntent(`included-${value}`, "Accepted scope", value, 0.99);
+  for (const value of state.scope.boundaries)
+    addIntent(`boundary-${value}`, "Intent boundary", value, 0.99);
+  for (const value of state.scope.followUps)
+    addIntent(`follow-up-${value}`, "Follow-up candidate", value, 0.8);
   for (const blocker of state.blockers.filter((item) => !item.resolvedAt))
     result.push({
       ...basicCandidate(

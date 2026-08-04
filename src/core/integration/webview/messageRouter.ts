@@ -200,11 +200,13 @@ export type WebviewToExtensionMessage =
   | { type: "RECORD_DECISION"; category: "task" | "risk"; action: string; subject: string }
   | { type: "ACCEPT_INTENT_DECISION"; decisionId: string }
   | { type: "REJECT_INTENT_DECISION"; decisionId: string; reason?: string }
+  | { type: "DISCUSS_INTENT_DECISION"; decisionId: string; message: string }
   | { type: "ADD_INTENT_BLOCKER"; summary: string }
   | { type: "RESOLVE_INTENT_BLOCKER"; blockerId: string }
   | { type: "SET_INTENT_LIFECYCLE"; lifecycle: IntentLifecycle }
-  | { type: "EXPAND_INTENT_SCOPE"; areas: string[]; reason?: string }
-  | { type: "KEEP_INTENT_SCOPE"; reason?: string }
+  | { type: "EXPAND_INTENT_SCOPE"; proposalId?: string; areas?: string[]; reason?: string }
+  | { type: "KEEP_INTENT_SCOPE"; proposalId?: string; reason?: string }
+  | { type: "CREATE_INTENT_FOLLOW_UP"; proposalId?: string; reason?: string }
   | { type: "ASK_ABOUT_INTENT"; question: string };
 
 export type ExtensionToWebviewMessage =
@@ -285,6 +287,11 @@ export type ExtensionToWebviewMessage =
   | { type: "MODERNIZATION_PLAN"; plan: ModernizationPlan }
   | ({ type: "DELEGATION_RESULT" } & CopilotDelegationResult)
   | {
+      type: "DECISION_DISCUSSION_RESULT";
+      decisionId: string;
+      result: CopilotDelegationResult;
+    }
+  | {
       type: "COPILOT_ACTIVITY";
       storyId?: string;
       contextPackageId?: string;
@@ -295,6 +302,7 @@ export type ExtensionToWebviewMessage =
   | {
       type: "COPILOT_STREAM";
       storyId?: string;
+      discussionId?: string;
       contextPackageId?: string;
       text: string;
       done?: boolean;

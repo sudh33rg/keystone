@@ -21,6 +21,7 @@ import type { DeveloperIntent, KeystoneRunResult, RepoIntelligence } from "../..
 import { discoverCopilotCustomizations } from "../../context/copilotCustomizations";
 import { selectCanonicalContext } from "../../intelligence/okf/canonicalContext";
 import type { IntentState } from "../../intent/intentState";
+import { selectIntentPrimaryAction } from "../../intent/primaryAction";
 
 /**
  * Orchestrates one intent analysis from deterministic repository intelligence to a
@@ -57,12 +58,25 @@ export class CaptainAgent {
       new ContextEngine(intent.workspaceRoot, this.contextLogger).prepareContext({
         intent,
         objective: intent.text,
-        operation: operationForIntentType(analysis.intentType),
+        operation: contextInputs.intentState
+          ? (selectIntentPrimaryAction(contextInputs.intentState).operation ??
+            operationForIntentType(analysis.intentType))
+          : operationForIntentType(analysis.intentType),
         tokenBudget,
         intelligence,
         routeDecision,
         skills: customizations.skills,
-        buildOptions: contextOptions,
+        buildOptions: {
+          ...contextOptions,
+          preferredPaths: [
+            ...(contextOptions.preferredPaths ?? []),
+            ...(contextInputs.intentState?.scope.included ?? [])
+          ],
+          excludedPaths: [
+            ...(contextOptions.excludedPaths ?? []),
+            ...(contextInputs.intentState?.scope.excluded ?? [])
+          ]
+        },
         sourceRevision: contextOptions.okfSnapshot?.manifest.digests.snapshot,
         decisions: contextInputs.decisions,
         intentState: contextInputs.intentState,

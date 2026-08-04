@@ -31,9 +31,17 @@ export interface CopilotDecisionProposal {
 }
 
 export interface CopilotScopeChangeProposal {
+  id?: string;
   summary: string;
   affectedAreas: string[];
   reason?: string;
+  signals?: Array<
+    | "affected-component-outside-scope"
+    | "new-dependency"
+    | "shared-contract"
+    | "integration-boundary"
+    | "workspace-change-outside-scope"
+  >;
   options: Array<"EXPAND_SCOPE" | "KEEP_CURRENT_SCOPE" | "CREATE_FOLLOW_UP" | "DISCUSS">;
 }
 
@@ -354,7 +362,24 @@ function asScopeChange(value: unknown): CopilotScopeChangeProposal | undefined {
     (item): item is CopilotScopeChangeProposal["options"][number] =>
       ["EXPAND_SCOPE", "KEEP_CURRENT_SCOPE", "CREATE_FOLLOW_UP", "DISCUSS"].includes(item)
   );
-  return { summary, affectedAreas, reason: asString(value.reason), options };
+  const signals = (asStrings(value.signals) ?? []).filter(
+    (item): item is NonNullable<CopilotScopeChangeProposal["signals"]>[number] =>
+      [
+        "affected-component-outside-scope",
+        "new-dependency",
+        "shared-contract",
+        "integration-boundary",
+        "workspace-change-outside-scope"
+      ].includes(item)
+  );
+  return {
+    id: asString(value.id),
+    summary,
+    affectedAreas,
+    reason: asString(value.reason),
+    signals: signals.length ? signals : undefined,
+    options
+  };
 }
 
 function asEvidence(
