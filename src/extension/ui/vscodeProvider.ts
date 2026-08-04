@@ -49,6 +49,10 @@ import {
 } from "@core/integration/valueedge";
 import { KEYSTONE_CONTEXT_TOOL_NAME, KeystoneContextTool } from "../copilot/keystoneContextTool";
 import {
+  KEYSTONE_INTELLIGENCE_TOOL_NAME,
+  KeystoneIntelligenceTool
+} from "../copilot/keystoneIntelligenceTool";
+import {
   CopilotDelegationService,
   type CopilotDelegationRequest,
   type DelegationContext,
@@ -61,6 +65,12 @@ import {
   type IntentState
 } from "@core/intent/intentState";
 import { selectIntentPrimaryAction } from "@core/intent/primaryAction";
+import {
+  copilotActivityPhase,
+  COPILOT_ACTIVITY_LABELS,
+  type CopilotActivityEvent,
+  type CopilotActivityState
+} from "@core/copilot/activity";
 
 /**
  * Implements VS Code's WebviewViewProvider interface for the Keystone VSCode UI.
@@ -82,6 +92,7 @@ export class VscodeProvider {
   private activeIndexRoot?: string;
   private readonly intelligenceRecoveryRoots = new Set<string>();
   private readonly intelligenceRecoveryAttemptedRoots = new Set<string>();
+  private readonly reconcilingIntentRoots = new Set<string>();
   private readonly applicationStore = new ApplicationStore();
   private readonly sdlcEngine = new SDLCEngine();
   private sdlcPlan?: SDLCPlan;
@@ -104,7 +115,20 @@ export class VscodeProvider {
 
   registerLanguageModelTools(): vscode.Disposable {
     if (typeof vscode.lm.registerTool !== "function") return { dispose: () => undefined };
-    return vscode.lm.registerTool(
+    const intelligence = vscode.lm.registerTool(
+      KEYSTONE_INTELLIGENCE_TOOL_NAME,
+      new KeystoneIntelligenceTool(
+        async (input, token) => {
+          const root = this.workspaceRoot();
+          if (!root) throw new Error("Open a workspace before requesting Keystone Intelligence.");
+          if (token.isCancellationRequested) throw new Error("Keystone intelligence was cancelled.");
+          return this.getService(root).retrieveCopilotIntelligence(input);
+        },
+        (input) =>
+          `Keystone Intelligence: ${input.operation}${input.query ? ` for ${input.query}` : ""}`.trim()
+      )
+    );
+    const context = vscode.lm.registerTool(
       KEYSTONE_CONTEXT_TOOL_NAME,
       new KeystoneContextTool(
         async (input, token) => {
@@ -114,10 +138,15 @@ export class VscodeProvider {
             throw new Error("Keystone context retrieval was cancelled.");
           return this.getService(root).retrieveCopilotContext(input);
         },
-        (input) =>
-          `Keystone ${input.operation.replaceAll("_", " ")} ${input.query ? `for ${input.query}` : ""}`.trim()
+        () => "Keystone: Expanding exact retained source context"
       )
     );
+    return {
+      dispose: () => {
+      intelligence.dispose();
+      context.dispose();
+      }
+    };
   }
 
   /** Shows a "vscode ready" message to the user. */
@@ -699,23 +728,34 @@ export class VscodeProvider {
     });
   }
 
-  private async askAboutIntent(question: string): Promise<void> {
-    const root = this.workspaceRoot();
+  private async askAboutIntent(root: string, question: string): Promise<CopilotDelegationResult> {
+    const intentState = this.intentStateEngine?.snapshot();
     const task = this.applicationStore.snapshot().taskAnalysis as KeystoneTaskResult | undefined;
-    const contextPackageId = task?.contextSummary?.id;
-    if (!root || !task || !contextPackageId)
+    if (!intentState || !task || task.intentId !== intentState.id)
+      throw new Error("Prepare the active Intent before asking a question.");
+    const refreshed = await this.getService(root).refreshIntentContext(intentState, task, {
+      operation: "ANSWER_QUESTION",
+      question
+    });
+    this.applicationStore.update({ taskAnalysis: refreshed });
+    this.post({ type: "TASK_RESULT", result: refreshed });
+    const contextPackageId = refreshed.contextSummary?.id;
+    if (!contextPackageId)
       throw new Error("Prepare Intent context before asking a question.");
-    const basePrompt = await this.getService(root).getDelegationPrompt(contextPackageId);
-    await this.getService(root).approveDelegation("Copilot Chat", basePrompt);
-    const result = await this.delegateApprovedPrompt(root, "Copilot Chat", basePrompt, {
+    return this.delegateApprovedPrompt(root, "Intent question", "", {
       contextPackageId,
-      continuation: true,
       mutateIntentState: false,
       skipApproval: true,
-      userInput: `Answer this question about the active Intent. Do not mutate the Intent state from the question alone: ${question.trim()}`,
-      operation: "CONTINUE"
+      discussionId: "intent-question",
+      userInput: [
+        "Answer this question about the active Intent without asking the user to restate it.",
+        "Use the current Intent State, current objective, accepted decisions, and only the relevant prepared repository evidence.",
+        "Use Keystone targeted retrieval for a missing fact or progressive context expansion when needed.",
+        "Do not mutate Intent State from the question alone; preserve evidence references for repository-specific claims.",
+        `Question: ${question.trim()}`
+      ].join("\n"),
+      operation: "ANSWER_QUESTION"
     });
-    this.post({ type: "DELEGATION_RESULT", ...result });
   }
 
   private async persistIntentStateSnapshot(root: string, state: IntentState): Promise<void> {
@@ -896,7 +936,7 @@ export class VscodeProvider {
     }
     if (message.type === "CANCEL_COPILOT") {
       this.copilotDelegationService.cancel();
-      this.emitCopilotActivity("cancelled", "Copilot operation stopped", 100);
+      this.emitCopilotActivity("cancelled", "Copilot operation stopped", 100, undefined, undefined, "CANCELLED");
       this.post({
         type: "NOTIFICATION",
         level: "info",
@@ -923,6 +963,29 @@ export class VscodeProvider {
                 success: false,
                 captured: false,
                 mode: "Copilot Discussion",
+                startedAt: new Date().toISOString(),
+                completedAt: new Date().toISOString(),
+                error: error instanceof Error ? error.message : String(error)
+              }
+            })
+          );
+      return;
+    }
+    if (message.type === "ASK_ABOUT_INTENT") {
+      const root = this.workspaceRoot();
+      if (root)
+        void this.askAboutIntent(root, message.question)
+          .then((result) =>
+            this.post({ type: "INTENT_QUESTION_RESULT", question: message.question, result })
+          )
+          .catch((error) =>
+            this.post({
+              type: "INTENT_QUESTION_RESULT",
+              question: message.question,
+              result: {
+                success: false,
+                captured: false,
+                mode: "Intent question",
                 startedAt: new Date().toISOString(),
                 completedAt: new Date().toISOString(),
                 error: error instanceof Error ? error.message : String(error)
@@ -1037,7 +1100,8 @@ export class VscodeProvider {
     }
     if (message.type === "APPROVE_DELEGATION") {
       const root = this.workspaceRoot();
-      if (root)
+      if (root) {
+        this.emitCopilotActivity("queued", "Copilot work is queued", 0);
         void this.approveAndDelegate(root, message)
           .then((result) => this.post({ type: "DELEGATION_RESULT", ...result }))
           .catch((error) => {
@@ -1054,6 +1118,7 @@ export class VscodeProvider {
               error: error instanceof Error ? error.message : String(error)
             });
           });
+      }
       return;
     }
     if (message.type === "COPY_COPILOT_PROMPT") {
@@ -1139,10 +1204,27 @@ export class VscodeProvider {
           this.getService(root).graphIntelligence(
             message.mode,
             message.query ?? "",
-            message.seedIds ?? []
+            message.seedIds ?? [],
+            message.depth
           )
         )
           .then((result) => this.post({ type: "INTELLIGENCE_GRAPH_RESULT", result }))
+          .catch((error) =>
+            this.post({
+              type: "NOTIFICATION",
+              level: "error",
+              message: error instanceof Error ? error.message : String(error)
+            })
+          );
+      return;
+    }
+    if (message.type === "LOAD_INTELLIGENCE_REUSE") {
+      const root = this.workspaceRoot();
+      if (root)
+        void this.whenIndexReady(root, () =>
+          this.getService(root).reuseIntelligence(message.query ?? "", message.limit)
+        )
+          .then((result) => this.post({ type: "INTELLIGENCE_REUSE_RESULT", result }))
           .catch((error) =>
             this.post({
               type: "NOTIFICATION",
@@ -1640,7 +1722,13 @@ export class VscodeProvider {
       const task = this.applicationStore.snapshot().taskAnalysis as KeystoneTaskResult | undefined;
       if (!task) throw new Error("Analyze an intent before creating Task Handoff.");
       const correctionPackets = await this.getService(root).correctionPacketsForActiveTask();
-      const input = authoritativeHandoffInput(task, root, this.sdlcPlan, correctionPackets);
+      const input = authoritativeHandoffInput(
+        task,
+        root,
+        this.sdlcPlan,
+        correctionPackets,
+        this.intentStateEngine?.snapshot()
+      );
       const packageValue = new TaskStatePackageBuilder().build(input);
       const encrypted = await encryptHandoffPackage(JSON.stringify(packageValue), passphrase);
       await this.getService(root).exportActiveTaskForHandoff(root);
@@ -1693,6 +1781,14 @@ export class VscodeProvider {
       const restored = preview.packageValue;
       const root = this.workspaceRoot();
       if (root) {
+        if (restored.intentState) {
+          const restoredIntent = IntentStateEngine.from(restored.intentState).snapshot();
+          this.intentStateEngine = IntentStateEngine.from(restoredIntent);
+          this.intentStateRoot = root;
+          await this.persistIntentStateSnapshot(root, restoredIntent);
+          this.applicationStore.update({ intentState: restoredIntent });
+          this.post({ type: "STATE_UPDATE", state: { intentState: restoredIntent } });
+        }
         await this.getService(root).importTaskHandoff(
           restored as unknown as Record<string, unknown>
         );
@@ -1724,6 +1820,7 @@ export class VscodeProvider {
         continuationBriefing: preview.continuationBriefing,
         restoredNow: true
       });
+      this.post({ type: "APPLICATION_STATE", state: this.applicationStore.snapshot() });
       if (restored.sdlcPlan) this.post({ type: "SDLC_PLAN_RESULT", plan: restored.sdlcPlan });
     } catch (error) {
       this.post({
@@ -2065,6 +2162,7 @@ export class VscodeProvider {
       startedAt: response.startedAt || startedAt,
       completedAt: response.completedAt || new Date().toISOString()
     };
+    result.artifactPath = await this.getService(root).recordDelegationResult(result);
     if (this.intentStateEngine && options.mutateIntentState !== false) {
       const nextState = result.structured
         ? this.intentStateEngine.applyCopilotResult(result.structured, result.contextPackageId)
@@ -2076,6 +2174,29 @@ export class VscodeProvider {
       await this.persistIntentStateSnapshot(root, nextState);
       this.applicationStore.update({ intentState: nextState });
       this.post({ type: "STATE_UPDATE", state: { intentState: nextState } });
+      if (result.contextPackageId) {
+        await this.getService(root).recordCopilotInteraction(
+          nextState.id,
+          {
+            packageId: result.contextPackageId,
+            structuredStatus: result.structuredStatus ?? "absent",
+            summary: result.structured?.summary ?? result.text,
+            acceptedDecisionIds: nextState.decisions
+              .filter((decision) => decision.status === "ACCEPTED")
+              .map((decision) => decision.id),
+            rawHistory: result.artifactPath ? [result.artifactPath] : []
+          },
+          nextState
+        );
+      }
+      // Materialize the next package immediately from distilled state. The
+      // continuation path can therefore use this package instead of replaying
+      // the package that produced the just-captured response.
+      const currentTask = this.applicationStore.snapshot().taskAnalysis as
+        | KeystoneTaskResult
+        | undefined;
+      if (currentTask?.intentId === nextState.id)
+        await this.refreshPreparedIntentContext(root, nextState);
     }
     this.post({
       type: "COPILOT_STREAM",
@@ -2085,7 +2206,6 @@ export class VscodeProvider {
       text: "",
       done: true
     });
-    result.artifactPath = await this.getService(root).recordDelegationResult(result);
     this.post({
       type: "NOTIFICATION",
       level: result.success ? "info" : "error",
@@ -2313,7 +2433,64 @@ export class VscodeProvider {
   async activeWorkspaceChanged(): Promise<void> {
     const root = this.workspaceRoot();
     if (root) await this.ensureWorkspaceIntelligence(root);
+    if (root) await this.reconcileActiveIntentContext(root);
     if (this.panel) await this.loadIntelligence();
+  }
+
+  /** Reconciles the active Intent after edits, deletes, pulls, or branch changes. */
+  async workspaceFilesChanged(root: string, changedPaths: readonly string[] = []): Promise<void> {
+    if (root !== this.workspaceRoot() || changedPaths.some((value) => /[\\/]\.keystone[\\/]/.test(value)))
+      return;
+    const affected = changedPaths
+      .map((value) => path.relative(root, value).replace(/\\/g, "/"))
+      .filter((value) => value && !value.startsWith("../"));
+    if (affected.length && this.shouldQueueAutomaticRefresh(root)) {
+      await this.indexWorkspace(root, affected);
+      this.post({ type: "INTELLIGENCE_GRAPH_REFRESH" });
+    }
+    await this.reconcileActiveIntentContext(root, affected, true);
+  }
+
+  private async reconcileActiveIntentContext(
+    root: string,
+    changedPaths: readonly string[] = [],
+    indexAlreadyRefreshed = false
+  ): Promise<void> {
+      const state = this.intentStateEngine?.snapshot();
+    const task = this.applicationStore.snapshot().taskAnalysis as KeystoneTaskResult | undefined;
+    const contextId = task && task.intentId === state?.id ? task.contextSummary?.id : undefined;
+    if (!state || !task || !contextId || this.reconcilingIntentRoots.has(root)) return;
+    this.reconcilingIntentRoots.add(root);
+    try {
+      const service = this.getService(root);
+      await service.markContextEvidenceStale(contextId, changedPaths);
+      const stale = await service.getContextStaleSources(contextId);
+      if (!stale.length) return;
+      const repositoryChanged = stale.some(
+        (item) => item.path === "repository" || item.path === "repository intelligence"
+      );
+      const affected = stale
+        .map((item) => item.path)
+        .filter((value) => value !== "repository" && value !== "repository intelligence");
+      for (const changedPath of changedPaths) if (!affected.includes(changedPath)) affected.push(changedPath);
+      // A branch/intelligence change needs a fresh promoted snapshot. File-only changes use the
+      // same bounded incremental path and are refreshed silently in the background.
+      if (!indexAlreadyRefreshed) await this.indexWorkspace(root, repositoryChanged ? [] : affected);
+      const refreshed = await service.refreshIntentContext(state, task);
+      this.applicationStore.update({ taskAnalysis: refreshed });
+      this.post({ type: "TASK_RESULT", result: refreshed });
+    } catch (error) {
+      this.logInfo(
+        `Active Intent reconciliation deferred: ${error instanceof Error ? error.message : String(error)}`
+      );
+      this.post({
+        type: "NOTIFICATION",
+        level: "info",
+        message: "Repository changed since this Intent context was prepared. Refresh Context before delegating."
+      });
+    } finally {
+      this.reconcilingIntentRoots.delete(root);
+    }
   }
 
   async ensureWorkspaceIntelligence(root: string): Promise<void> {
@@ -2607,15 +2784,28 @@ export class VscodeProvider {
     message: string,
     progress: number,
     storyId?: string,
-    contextPackageId?: string
+    contextPackageId?: string,
+    state: CopilotActivityState = "RUNNING"
   ): void {
+    const phase = copilotActivityPhase(stage, message);
+    const activity: CopilotActivityEvent = {
+      id: `copilot-${phase}`,
+      intentId: this.intentStateEngine?.snapshot().id,
+      phase,
+      label: COPILOT_ACTIVITY_LABELS[phase],
+      state,
+      progress,
+      timestamp: new Date().toISOString(),
+      detail: message
+    };
     this.post({
       type: "COPILOT_ACTIVITY",
       stage,
       message,
       progress,
       storyId,
-      contextPackageId
+      contextPackageId,
+      activity
     });
     const root = this.workspaceRoot();
     if (root) void this.getService(root).recordCopilotActivity(message);
@@ -2654,6 +2844,22 @@ export class VscodeProvider {
       });
     if (message.type === "DELEGATION_RESULT") {
       this.applicationStore.update({ delegationResult: message });
+      const phase = message.cancellation === "cancelled" || message.success
+        ? "preparing-recommendation"
+        : "understanding";
+      const state: CopilotActivityState = message.cancellation === "cancelled"
+        ? "CANCELLED"
+        : message.success ? "COMPLETED" : "FAILED";
+      this.applicationStore.mergeCopilotActivity({
+        id: `copilot-${phase}`,
+        intentId: this.intentStateEngine?.snapshot().id,
+        phase,
+        label: COPILOT_ACTIVITY_LABELS[phase],
+        state,
+        progress: 100,
+        timestamp: new Date().toISOString(),
+        detail: message.error
+      });
       this.applicationStore.mergeOperation({
         id: "copilot-delegation",
         kind: "delegation",
@@ -2673,15 +2879,36 @@ export class VscodeProvider {
         updatedAt: new Date().toISOString()
       });
     }
-    if (message.type === "COPILOT_ACTIVITY")
+    if (message.type === "INTENT_QUESTION_RESULT") {
       this.applicationStore.mergeOperation({
         id: "copilot-delegation",
         kind: "delegation",
-        status: "running",
+        status: message.result.success ? "completed" : "failed",
+        progress: 100,
+        message: message.result.success ? "Intent answer captured" : (message.result.error ?? "Intent question failed"),
+        updatedAt: new Date().toISOString()
+      });
+    }
+    if (message.type === "COPILOT_ACTIVITY") {
+      this.applicationStore.mergeCopilotActivity(message.activity);
+      this.applicationStore.mergeOperation({
+        id: "copilot-delegation",
+        kind: "delegation",
+        status:
+          message.activity.state === "QUEUED"
+            ? "queued"
+            : message.activity.state === "COMPLETED"
+              ? "completed"
+              : message.activity.state === "FAILED"
+                ? "failed"
+                : message.activity.state === "CANCELLED"
+                  ? "cancelled"
+                  : "running",
         progress: message.progress,
         message: message.message,
         updatedAt: new Date().toISOString()
       });
+    }
     if (message.type === "COPILOT_STREAM" && !message.discussionId) {
       const previous = this.applicationStore.snapshot().delegationResult as
         CopilotDelegationResult | undefined;
@@ -2872,7 +3099,8 @@ function authoritativeHandoffInput(
   result: KeystoneTaskResult,
   root: string,
   plan?: SDLCPlan,
-  correctionPackets: CorrectionPacket[] = []
+  correctionPackets: CorrectionPacket[] = [],
+  intentState?: IntentState
 ): TaskStatePackageInput {
   const stories = plan?.stories ?? [];
   const completed = stories.filter((s) => s.status === "completed");
@@ -2907,6 +3135,13 @@ function authoritativeHandoffInput(
   const qa = result.analysisEvidence?.qa;
   const security = result.analysisEvidence?.security;
   const performance = result.analysisEvidence?.performance;
+  const durableScope = intentState?.scope.included ?? relevantFiles;
+  const durableConstraints = [...new Set([...(intentState?.constraints ?? []), ...(research.constraints ?? [])])];
+  const durableCompleted = [...new Set([...(intentState?.completedWork ?? []), ...completed.map((s) => s.title)])];
+  const durableBlockers = [
+    ...(intentState?.blockers.filter((item) => !item.resolvedAt).map((item) => item.summary) ?? []),
+    ...blocked.flatMap((s) => (s.blockers.length ? s.blockers : [s.title]))
+  ];
   return {
     handoffId: `handoff-${Date.now()}`,
     taskId: plan?.id ?? result.taskWorkspace?.id ?? `task-${Date.now()}`,
@@ -2917,24 +3152,19 @@ function authoritativeHandoffInput(
       workspaceFingerprint: result.taskWorkspace?.id
     },
     task: {
-      originalUserRequest: plan?.intent ?? research.problemStatement,
-      normalizedProblemStatement: research.problemStatement,
-      businessGoal: research.problemStatement,
-      technicalGoal:
+      originalUserRequest: intentState?.goal ?? plan?.intent ?? research.problemStatement,
+      normalizedProblemStatement: intentState?.goal ?? research.problemStatement,
+      businessGoal: intentState?.goal ?? research.problemStatement,
+      technicalGoal: intentState?.currentObjective ??
         research.recommendedApproach?.[0] ??
         "Implement the approved repository-specific behavior safely.",
-      scope: relevantFiles,
+      scope: durableScope,
       nonGoals: [
         "Automatic Git mutation",
         "Credential or token sharing",
         "Unapproved repository-wide refactoring"
       ],
-      constraints: [
-        ...new Set([
-          "Git and merge-request access remain read-only",
-          ...(research.constraints ?? [])
-        ])
-      ],
+      constraints: [...new Set(["Git and merge-request access remain read-only", ...durableConstraints])],
       assumptions: research.unknowns.length
         ? []
         : ["Repository R&D has no unresolved blocking question."],
@@ -2995,11 +3225,11 @@ function authoritativeHandoffInput(
       progressPercentage: stories.length
         ? Math.round((completed.length / stories.length) * 100)
         : 0,
-      completedWorkSummary: completed.map((s) => s.title),
-      currentActivity: current?.title,
-      pendingAction: current?.objective,
-      blockers: blocked.flatMap((s) => (s.blockers.length ? s.blockers : [s.title])),
-      openQuestions: research.unknowns,
+      completedWorkSummary: durableCompleted,
+      currentActivity: intentState?.currentObjective ?? current?.title,
+      pendingAction: intentState?.currentObjective ?? current?.objective,
+      blockers: durableBlockers,
+      openQuestions: [...new Set([...(intentState?.openQuestions ?? []), ...research.unknowns])],
       lastUpdateTime: new Date().toISOString()
     },
     context: {
@@ -3009,7 +3239,7 @@ function authoritativeHandoffInput(
       relevantModules: [
         ...new Set((result.impactedServices ?? []).map((item) => item.split(" — ")[0]))
       ],
-      relevantFiles,
+      relevantFiles: [...new Set([...relevantFiles, ...durableScope])],
       relevantSymbols,
       dependencyRelationships: research.affectedFlows,
       impactedComponents: [
@@ -3037,7 +3267,7 @@ function authoritativeHandoffInput(
       filesReportedChanged: result.analysisEvidence?.gitReview.changedFiles ?? [],
       filesAdded: [],
       filesRemoved: [],
-      majorImplementationChanges: completed.map((s) => s.title),
+      majorImplementationChanges: [...new Set([...(intentState?.changes ?? []), ...durableCompleted])],
       knownUnfinishedAreas: pending.map((s) => s.title)
     },
     quality: {
@@ -3064,25 +3294,57 @@ function authoritativeHandoffInput(
     },
     correctionPackets: correctionPackets.length ? correctionPackets : undefined,
     decisions: {
-      acceptedDecisions: stories.flatMap((s) => s.decisions),
-      rejectedAlternatives: [],
-      decisionReasons: [],
-      assumptions: [],
-      unresolvedQuestions: research.unknowns,
-      risks: [...research.risks],
+      acceptedDecisions: [
+        ...(intentState?.decisions.filter((d) => d.status === "ACCEPTED").map((d) => `${d.title}: ${d.recommendation}`) ?? []),
+        ...stories.flatMap((s) => s.decisions)
+      ],
+      rejectedAlternatives: intentState?.decisions
+        .filter((d) => d.status === "REJECTED")
+        .map((d) => `${d.title}: ${d.recommendation}`) ?? [],
+      decisionReasons: intentState?.decisions.flatMap((d) => d.reason ? [`${d.title}: ${d.reason}`] : []) ?? [],
+      assumptions: intentState?.provenance.filter((item) => item.field === "assumption").map((item) => item.value) ?? [],
+      unresolvedQuestions: [...new Set([...(intentState?.openQuestions ?? []), ...research.unknowns])],
+      risks: [...new Set([...(intentState?.risks ?? []), ...research.risks])],
       reviewerComments: []
     },
     continuation: {
-      exactNextRecommendedAction: current?.objective ?? "Review completion evidence",
+      exactNextRecommendedAction: intentState?.currentObjective ?? current?.objective ?? "Review completion evidence",
       suggestedFirstPrompt: result.copilotPrompt,
-      expectedFilesToInspect: relevantFiles,
+      expectedFilesToInspect: [...new Set([...relevantFiles, ...durableScope])],
       expectedTestsToRun: result.relatedTests,
       environmentRequirements: [],
       setupReminders: [],
       restoreWarnings: [],
       manualRepositorySyncReminder: "Synchronize the repository manually before restoring.",
       definitionOfCompletion: current?.acceptanceCriteria ?? acceptance
-    }
+    },
+    intentState,
+    referenceStatus: [
+      ...(intentState?.contextReferences ?? []).map((reference) => ({
+        reference,
+        kind: "context" as const,
+        status: "refresh-required" as const,
+        note: "Re-resolve against the receiving workspace with Context Engine."
+      })),
+      {
+        reference: ".keystone/intelligence/current.json",
+        kind: "intelligence" as const,
+        status: "refresh-required" as const,
+        note: "Repository intelligence is rebuilt or refreshed on resume."
+      },
+      ...(intentState?.intelligenceReferences ?? []).map((reference) => ({
+        reference,
+        kind: "intelligence" as const,
+        status: "refresh-required" as const,
+        note: "Reference is advisory until refreshed by the receiving Context Engine."
+      }))
+    ],
+    recentActivity: [
+      ...(intentState?.latestCopilotInteraction?.summary
+        ? [`Copilot: ${intentState.latestCopilotInteraction.summary}`]
+        : []),
+      ...((intentState?.completedWork ?? []).slice(-5).map((item) => `Completed: ${item}`))
+    ]
   };
 }
 
@@ -3095,13 +3357,13 @@ function copilotToolActivity(input: unknown): string {
     typeof input === "object" && input !== null && "query" in input
       ? String((input as { query?: unknown }).query ?? "")
       : "";
-  if (operation === "get_flows" && /auth|login|identity|session/i.test(query))
-    return "Expanding authentication flow";
-  if (operation === "get_impact") return "Inspecting affected components";
-  if (operation === "get_relationships" || operation === "get_symbols")
-    return "Inspecting affected components";
+  if (operation === "flow" && /auth|login|identity|session/i.test(query))
+    return "Tracing authentication flow";
+  if (operation === "impact") return "Checking affected callers";
+  if (operation === "reuse") return "Finding existing pattern";
+  if (operation === "path" || operation === "explain") return "Inspecting dependency impact";
   if (operation === "expand_context") return "Expanding retained context";
-  return "Inspecting affected components";
+  return "Finding existing pattern";
 }
 
 function delegationOperation(task: KeystoneTaskResult | undefined): DelegationOperation {

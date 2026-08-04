@@ -127,6 +127,7 @@ export const KEYSTONE_OKF_PROFILE: KeystoneOkfProfileDefinition = Object.freeze(
     "sourceId",
     "targetId",
     "properties",
+    "origin",
     "confidence",
     "provenance",
     "lifecycle",

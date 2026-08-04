@@ -274,10 +274,10 @@ export class IntentStateEngine {
               }
             : this.state.scope;
     const proposals = this.state.scopeChangeProposals.map((item) =>
-      item.id === proposalId
-        ? {
-            ...item,
-            status,
+        item.id === proposalId
+          ? {
+              ...item,
+              status: status as IntentScopeChangeStatus,
             resolvedAt: action === "DISCUSS" ? undefined : now
           }
         : item

@@ -10,6 +10,7 @@ import {
   type StructuredResponseSource
 } from "@core/copilot/responseContract";
 import { KEYSTONE_CONTEXT_TOOL_NAME } from "./keystoneContextTool";
+import { KEYSTONE_INTELLIGENCE_TOOL_NAME } from "./keystoneIntelligenceTool";
 
 export type DelegationOperation = ContextOperation | "CONTINUE";
 
@@ -81,26 +82,38 @@ export interface CopilotDelegationResult {
 const CONTEXT_TOOL = {
   name: KEYSTONE_CONTEXT_TOOL_NAME,
   description:
-    "Retrieve the smallest missing repository fact from Keystone's prepared ContextPackage.",
+    "Expand one already-referenced retained ContextPackage fragment when exact source or implementation detail is needed.",
   inputSchema: {
     type: "object",
     properties: {
       packageId: { type: "string" },
       operation: {
         type: "string",
-        enum: [
-          "get_intelligence",
-          "get_symbols",
-          "get_relationships",
-          "get_flows",
-          "get_impact",
-          "get_intent",
-          "expand_context"
-        ]
+        enum: ["expand_context"]
       },
       query: { type: "string" },
+      from: { type: "string" },
+      to: { type: "string" },
       contextReference: { type: "string" },
       level: { type: "string" },
+      limit: { type: "number" }
+    },
+    required: ["packageId", "operation"]
+  }
+} as const;
+
+const INTELLIGENCE_TOOL = {
+  name: KEYSTONE_INTELLIGENCE_TOOL_NAME,
+  description:
+    "Query Keystone Intelligence for the smallest evidence-backed repository-structural answer. Prefer this before source exploration.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      packageId: { type: "string" },
+      operation: { type: "string", enum: ["query", "path", "explain", "flow", "impact", "reuse"] },
+      query: { type: "string" },
+      from: { type: "string" },
+      to: { type: "string" },
       limit: { type: "number" }
     },
     required: ["packageId", "operation"]
@@ -196,6 +209,8 @@ export class CopilotDelegationService {
       let messages: vscode.LanguageModelChatMessage[] = [
         vscode.LanguageModelChatMessage.User(prompt)
       ];
+      const intelligenceTool =
+        vscode.lm.tools.find((item) => item.name === KEYSTONE_INTELLIGENCE_TOOL_NAME) ?? INTELLIGENCE_TOOL;
       const contextTool =
         vscode.lm.tools.find((item) => item.name === KEYSTONE_CONTEXT_TOOL_NAME) ?? CONTEXT_TOOL;
       const responseTool = COPILOT_RESPONSE_TOOL as unknown as vscode.LanguageModelChatTool;
@@ -204,7 +219,7 @@ export class CopilotDelegationService {
         const response = await model.sendRequest(
           messages,
           {
-            tools: [contextTool, responseTool],
+            tools: [intelligenceTool, contextTool, responseTool],
             justification:
               "Keystone is delegating a user-approved Intent with bounded repository context."
           },
@@ -254,8 +269,10 @@ export class CopilotDelegationService {
           if (cancellation.token.isCancellationRequested)
             throw new CopilotDelegationCancelledError();
           callbacks.onActivity?.(
-            "context-retrieval",
-            "Inspecting a targeted Keystone context expansion",
+            call.name === KEYSTONE_INTELLIGENCE_TOOL_NAME ? "intelligence-retrieval" : "context-retrieval",
+            call.name === KEYSTONE_INTELLIGENCE_TOOL_NAME
+              ? "Consulting Keystone Intelligence for a structural answer"
+              : "Expanding exact retained source context",
             52
           );
           callbacks.onContextExpansion(call.input, turn);
@@ -395,7 +412,7 @@ function buildDelegationPrompt(
   const modelInputBudget = model.maxInputTokens || 4_096;
   // The selected model's input limit includes the instruction envelope and room for a
   // response/tool turn. Keep the transmitted package conservative; retained context stays
-  // available through keystone_get_context using the same package ID.
+  // available through Keystone's targeted tools using the same package ID.
   const contextBudget = Math.max(800, Math.min(2_200, Math.floor(modelInputBudget * 0.45)));
   const boundedContent = boundedContextContent(contextPackage.content, contextBudget);
   return [
@@ -403,7 +420,11 @@ function buildDelegationPrompt(
     request.operation === "CONTINUE"
       ? "Continue the existing Intent from durable state; do not reconstruct or request the prior raw conversation."
       : "Keystone has completed repository intelligence and Intent preparation. Treat the bounded ContextPackage below as the source of repository-specific facts.",
-    "Use Keystone targeted retrieval only when a fact is missing. Do not perform broad repository search, dump the repository, or invent evidence.",
+    "When repository-structural knowledge is missing, consult keystone_intelligence first with the smallest operation (query, path, explain, flow, impact, or reuse). Do not perform broad repository search, dump the repository, or invent evidence.",
+    request.operation === "IMPLEMENT"
+      ? "Before implementing, understand the affected flow and use any EXISTING PATTERNS evidence in the ContextPackage. Prefer a compatible existing pattern, native platform capability, and installed dependency; introduce a new abstraction or dependency only when the accepted Intent requires it. Make the smallest change that satisfies the accepted Intent without weakening security, validation, compatibility, error handling, or required behavior. If the implementation would add a dependency, shared abstraction, shared contract/interface change, integration boundary, or significant infrastructure outside the accepted scope, stop and report a scopeChange proposal with the matching signal instead of silently broadening scope."
+      : "Use the smallest useful Keystone context and preserve exact constraints, identifiers, errors, numbers, and negations from the supplied Intent.",
+    "Inspect the supplied ContextPackage before retrieval. If Keystone Intelligence cannot answer confidently, say so and use keystone_get_context only for narrow exact source detail when implementation facts are necessary; do not reread established Intent context.",
     "Return a concise human-readable explanation in text. Then call keystone_record_structured_response once with the durable outcome. Use the operation-specific details shape when useful: UNDERSTAND_INTENT (understanding, likelyScope, constraintsDetected, repositoryEvidence), PLAN_CHANGE (approach, affectedAreas, dependencies, risks, proposedActions), IMPLEMENT (workPerformed, changedAreas, unresolvedIssues, nextAction), or REVIEW_CHANGE (findings, severity, evidence, recommendation). Keep every model-generated statement a COPILOT_RECOMMENDATION unless its evidence reference matches the supplied ContextPackage; never invent source facts or evidence IDs. If the structured call cannot be completed, the readable text remains the authoritative user-facing response.",
     `Intent ID: ${request.intentId}`,
     `Operation: ${request.operation}`,
@@ -422,7 +443,7 @@ function buildDelegationPrompt(
 function boundedContextContent(content: string, tokenBudget: number): string {
   const characterBudget = Math.max(3_200, tokenBudget * 4);
   if (content.length <= characterBudget) return content;
-  return `${content.slice(0, characterBudget).trim()}\n\n[Keystone transmitted a bounded prefix for this model input limit. Use keystone_get_context with the same ContextPackage ID for a targeted retained-context expansion.]`;
+  return `${content.slice(0, characterBudget).trim()}\n\n[Keystone transmitted a bounded prefix for this model input limit. Use keystone_intelligence first for structural facts, then keystone_get_context with the same ContextPackage ID for exact retained source context.]`;
 }
 
 function streamReadableText(

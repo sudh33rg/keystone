@@ -41,6 +41,7 @@ import type {
   KeystoneWebviewState,
   TaskIntelligenceSignal,
   CopilotContextToolInput,
+  CopilotIntelligenceToolInput,
   WorkspaceSummary
 } from "./messageRouter";
 import { RepositoryModelBuilder } from "../../intelligence/repository/model-builder";
@@ -56,7 +57,13 @@ import {
 } from "../../workflow/tasks/taskWorkspaceManager";
 import type { TaskStatePackage } from "../../workflow/handoff/contracts";
 import { OkfSnapshotStore, type OkfSnapshotSummaryProjection } from "../../intelligence/okf/store";
-import { queryOkfSnapshot, type OkfQueryResult } from "../../intelligence/okf/queryEngine";
+import {
+  executeOkfOperation,
+  queryOkfSnapshot,
+  type OkfIntelligenceOperation,
+  type OkfQueryResult,
+  type OkfReuseResult
+} from "../../intelligence/okf/queryEngine";
 import type {
   KeystoneOkfSnapshot,
   OkfCanonicalEvidenceEnvelope
@@ -87,6 +94,7 @@ import {
   summarizeContextPackage,
   type ContextDiagnostic,
   type ContextWorkspaceState
+  , type ContextOperation
 } from "../../context/contextEngine";
 import { compressConversationHistory } from "../../context/taskAwareCompression";
 import { classifyIntent } from "../../context/IntentClassifier";
@@ -105,6 +113,12 @@ import {
 } from "../../intelligence/explorer";
 import type { CpgEdgeKind } from "../../intelligence/cpg/types";
 import type { OkfGraphProjection } from "../../intelligence/okf/projections";
+import {
+  shortestStructuralPath,
+  type ArchitectureAnchor,
+  type StructuralCommunity,
+  type StructuralPath
+} from "../../intelligence/okf/structuralAnalysis";
 import {
   createResearchDocument,
   type SDLCPlan,
@@ -613,7 +627,14 @@ export class CockpitService {
       contextPackId?: string;
       contextSnapshotDigest?: string;
     }>(`${CONTEXT_CACHE_DIR}/${cacheKey}.json`);
-    if (cached?.contextPackage && Date.now() - Date.parse(cached.createdAt) < 24 * 60 * 60 * 1000) {
+    const cachedStaleSources = cached?.contextPackage
+      ? await this.contextEngine.getContextStaleSources(cached.contextPackage.id)
+      : [];
+    if (
+      cached?.contextPackage &&
+      !cachedStaleSources.length &&
+      Date.now() - Date.parse(cached.createdAt) < 24 * 60 * 60 * 1000
+    ) {
       const detected = await detectValidationCommands(this.workspaceRoot);
       const result = ensureTaskResearch(text, {
         ...cached.result,
@@ -650,6 +671,12 @@ export class CockpitService {
         contextSnapshotDigest:
           cached.contextSnapshotDigest ?? result.contextManifest?.snapshotDigest
       });
+    }
+    if (cached?.contextPackage && cachedStaleSources.length) {
+      await this.record(
+        "context-cache-stale",
+        `Discarded cached Intent context ${cacheKey.slice(0, 12)} because ${cachedStaleSources.map((item) => item.path).join(", ")} changed.`
+      );
     }
     const retrievalText: string | undefined = undefined;
     // Keep the authoritative OKF snapshot scoped only to context construction. On a real
@@ -765,7 +792,8 @@ export class CockpitService {
   /** Rebuilds only the bounded ContextPackage after a durable Intent mutation. */
   async refreshIntentContext(
     intentState: IntentState,
-    task: KeystoneTaskResult
+    task: KeystoneTaskResult,
+    options: { operation?: ContextOperation; question?: string } = {}
   ): Promise<KeystoneTaskResult> {
     const snapshot = await this.readJson<RepositoryIntelligenceSnapshot>(
       `${INTELLIGENCE_DIR}/snapshot.json`
@@ -792,6 +820,7 @@ export class CockpitService {
       intent,
       objective: intentState.currentObjective,
       operation:
+        options.operation ??
         selectIntentPrimaryAction(intentState).operation ??
         operationForIntentType(analysis.intentType),
       tokenBudget: 6_000,
@@ -816,6 +845,13 @@ export class CockpitService {
       },
       changes: { branch: gitBranch, status: gitStatus, diff: gitDiff },
       userContext: [
+        ...(options.question?.trim()
+          ? [{
+              label: "Current Intent question",
+              content: options.question.trim(),
+              source: "user"
+            }]
+          : []),
         ...(settings?.codingStandards
           ? [{ label: "Coding standards", content: settings.codingStandards, source: "settings" }]
           : []),
@@ -1379,6 +1415,14 @@ export class CockpitService {
     return this.contextEngine.getFreshDelegationPrompt(contextId);
   }
 
+  async getContextStaleSources(contextId: string) {
+    return this.contextEngine.getContextStaleSources(contextId);
+  }
+
+  async markContextEvidenceStale(contextId: string, paths: readonly string[]): Promise<void> {
+    await this.contextEngine.markContextEvidenceStale(contextId, paths);
+  }
+
   async getContinuationPrompt(contextId: string): Promise<string> {
     await this.contextEngine.getFreshDelegationPrompt(contextId);
     const contextPackage = await this.getContextPackage(contextId);
@@ -1451,6 +1495,26 @@ export class CockpitService {
     ].join("\n");
   }
 
+  /** Records the closed-loop handoff without adding the raw response to future prompts. */
+  async recordCopilotInteraction(
+    intentId: string,
+    interaction: {
+      packageId?: string;
+      recordedAt?: string;
+      structuredStatus: "complete" | "partial" | "absent";
+      summary?: string;
+      acceptedDecisionIds: readonly string[];
+      rawHistory?: readonly string[];
+    },
+    state: IntentState
+  ): Promise<void> {
+    await this.contextEngine.recordCopilotInteraction(intentId, interaction, state);
+  }
+
+  async readContextObservability(intentId: string) {
+    return this.contextEngine.readContextObservability(intentId);
+  }
+
   async retrieveCopilotContext(input: CopilotContextToolInput): Promise<string> {
     const contextPackage = await this.getContextPackage(input.packageId);
     if (!contextPackage)
@@ -1462,83 +1526,16 @@ export class CockpitService {
     const staleSources = await this.contextEngine.getContextStaleSources(contextPackage.id);
     let result: Record<string, unknown>;
     switch (input.operation) {
-      case "get_intelligence": {
-        const intelligence = input.query ? await this.queryIntelligence(query) : undefined;
-        result = {
-          packageId: contextPackage.id,
-          sourceRevision: contextPackage.sourceRevision,
-          knownContext: contextPackage.knownContext,
-          transmittedContext: contextPackage.transmittedContext.map(compactCandidate),
-          retainedContext: contextPackage.retainedContext.slice(0, limit).map(compactCandidate),
-          ...(intelligence ? { query: compactQuery(intelligence, limit) } : {})
-        };
-        break;
-      }
-      case "get_symbols": {
-        const packageSymbols = contextPackage.selectedContext
-          .concat(contextPackage.retainedContext)
-          .filter(
-            (candidate, index, candidates) =>
-              candidate.sourceType === "symbol" &&
-              candidates.findIndex((item) => item.id === candidate.id) === index &&
-              candidateMatches(candidate, query)
-          )
-          .slice(0, limit);
-        const queried = packageSymbols.length ? undefined : await this.queryIntelligence(query);
-        result = {
-          packageId: contextPackage.id,
-          operation: "relevant symbols",
-          symbols: packageSymbols.length
-            ? packageSymbols.map(compactCandidate)
-            : queried?.items
-                .filter((item) => /symbol|class|function|method|component/i.test(item.kind))
-                .slice(0, limit)
-        };
-        break;
-      }
-      case "get_relationships":
-      case "get_flows":
-      case "get_impact": {
-        const mode =
-          input.operation === "get_flows"
-            ? "flows"
-            : input.operation === "get_impact"
-              ? "impact"
-              : "repository";
-        const graph = await this.graphIntelligence(mode, query);
-        result = {
-          packageId: contextPackage.id,
-          operation: input.operation,
-          query,
-          seedIds: graph.seedIds,
-          nodes: graph.nodes.slice(0, limit),
-          edges: graph.edges.slice(0, Math.min(limit * 2, 80)),
-          warnings: graph.warnings
-        };
-        break;
-      }
-      case "get_intent": {
-        const active = await this.loadState();
-        result = {
-          packageId: contextPackage.id,
-          intent: contextPackage.intent,
-          objective: contextPackage.objective,
-          operation: contextPackage.operation,
-          activeTask: active.activeTask,
-          sdlc: await this.readJson<SDLCPlan>(".keystone/state/sdlc/active-plan.json")
-        };
-        break;
-      }
       case "expand_context": {
         const fragment = await this.contextEngine.expandContext({
           contextId: input.packageId,
           contextReference: input.contextReference,
-          focus: input.query?.trim() || contextPackage.objective,
+          focus: query,
           level: input.level ?? "standard"
         });
         result = {
           packageId: fragment.contextId,
-          operation: "expanded context",
+          operation: "expand_context",
           reference: fragment.reference,
           focus: fragment.focus,
           level: fragment.level,
@@ -1557,6 +1554,36 @@ export class CockpitService {
       `${input.operation} requested from context package ${contextPackage.id}${input.query ? ` for ${input.query}` : ""}.`
     );
     return JSON.stringify(result);
+  }
+
+  async retrieveCopilotIntelligence(input: CopilotIntelligenceToolInput): Promise<string> {
+    const contextPackage = await this.getContextPackage(input.packageId);
+    if (!contextPackage)
+      throw new Error(`Keystone context package ${input.packageId} is not available.`);
+    const snapshot = await this.readOkfSnapshot();
+    if (!snapshot) throw new Error("Authoritative OKF intelligence is not ready. Index the repository first.");
+    const query = input.query?.trim() || contextPackage.objective;
+    const limit = Math.max(1, Math.min(input.limit ?? 8, 16));
+    const operationResult = executeOkfOperation(snapshot, {
+      operation: input.operation as OkfIntelligenceOperation,
+      query,
+      from: input.from,
+      to: input.to,
+      limit
+    });
+    const response = compactIntelligenceResult(
+      contextPackage.id,
+      JSON.stringify(contextPackage.sourceRevision),
+      input.operation,
+      query,
+      operationResult,
+      limit
+    );
+    await this.recordBestEffort(
+      "copilot-intelligence",
+      `${input.operation} consulted Keystone Intelligence for ${query}.`
+    );
+    return JSON.stringify(response);
   }
 
   async recordCopilotActivity(message: string): Promise<void> {
@@ -1710,12 +1737,14 @@ export class CockpitService {
   async graphIntelligence(
     mode: IntelligenceGraphMode,
     query = "",
-    seedIds: readonly string[] = []
+    seedIds: readonly string[] = [],
+    requestedDepth?: number
   ): Promise<IntelligenceGraphResult> {
     const snapshot = await this.readOkfSnapshot();
     if (!snapshot)
       throw new Error("Authoritative OKF intelligence is not ready. Index the repository first.");
-    const cacheKey = this.okfCacheKey(snapshot, "graph", { mode, query, seedIds });
+    const depth = Math.max(1, Math.min(requestedDepth ?? (mode === "impact" ? 3 : mode === "flows" ? 2 : 2), 4));
+    const cacheKey = this.okfCacheKey(snapshot, "graph", { mode, query, seedIds, depth });
     const cached = this.graphCache.get(cacheKey);
     if (cached) {
       await this.recordBestEffort(
@@ -1739,16 +1768,90 @@ export class CockpitService {
       mode,
       query,
       seedIds,
-      depth: mode === "impact" ? 3 : mode === "flows" ? 2 : 2,
+      depth,
       limit: mode === "repository" ? 90 : mode === "flows" ? 70 : 120
     });
-    this.remember(this.graphCache, cacheKey, result);
-    await this.writeCacheBestEffort(`${GRAPH_CACHE_DIR}/${cacheKey}.json`, result);
+    const structural = await new OkfSnapshotStore(this.workspaceRoot).readStructuralProjection();
+    const structuralResult: IntelligenceGraphResult = structural
+      ? {
+          ...result,
+          nodes: result.nodes.map((node) => {
+            const communityId = structural.assignments[node.id];
+            const community = structural.communities.find((item) => item.id === communityId);
+            const anchor = structural.anchors.find((item) => item.unitId === node.id);
+            return {
+              ...node,
+              communityId,
+              communityLabel: community?.label,
+              architectureAnchor: anchor
+                ? { weightedDegree: anchor.weightedDegree, reason: anchor.reason }
+                : undefined
+            };
+          })
+        }
+      : result;
+    this.remember(this.graphCache, cacheKey, structuralResult);
+    await this.writeCacheBestEffort(`${GRAPH_CACHE_DIR}/${cacheKey}.json`, structuralResult);
     await this.recordBestEffort(
       "intelligence-graph",
-      `${mode} graph returned ${result.nodes.length} node(s) and ${result.edges.length} edge(s).`
+      `${mode} graph returned ${structuralResult.nodes.length} node(s) and ${structuralResult.edges.length} edge(s).`
+    );
+    return structuralResult;
+  }
+
+  async reuseIntelligence(query = "", limit = 8): Promise<OkfReuseResult> {
+    const snapshot = await this.readOkfSnapshot();
+    if (!snapshot)
+      throw new Error("Authoritative OKF intelligence is not ready. Index the repository first.");
+    const result = executeOkfOperation(snapshot, {
+      operation: "reuse",
+      query: query.trim() || "existing implementation pattern",
+      limit: Math.max(1, Math.min(limit, 16))
+    });
+    if (result.operation !== "reuse") throw new Error("Unexpected Intelligence REUSE result.");
+    await this.recordBestEffort(
+      "intelligence-reuse",
+      `REUSE returned ${result.candidates.length} evidence-backed candidate(s).`
     );
     return result;
+  }
+
+  /** Query the persisted derived architecture metadata without treating labels as semantic truth. */
+  async getCommunityForEntity(entityId: string): Promise<StructuralCommunity | undefined> {
+    const snapshot = await this.readOkfSnapshot();
+    const projection = await new OkfSnapshotStore(this.workspaceRoot).readStructuralProjection();
+    if (!snapshot || !projection) return undefined;
+    const communityId = projection.assignments[entityId];
+    return projection.communities.find((community) => community.id === communityId);
+  }
+
+  async listCommunityMembers(communityId: string): Promise<readonly string[]> {
+    const projection = await new OkfSnapshotStore(this.workspaceRoot).readStructuralProjection();
+    return projection?.communities.find((community) => community.id === communityId)?.memberIds ?? [];
+  }
+
+  async getNeighboringCommunities(communityId: string): Promise<readonly string[]> {
+    const snapshot = await this.readOkfSnapshot();
+    const projection = await new OkfSnapshotStore(this.workspaceRoot).readStructuralProjection();
+    if (!snapshot || !projection) return [];
+    const assignments = projection.assignments;
+    const neighbors = new Set<string>();
+    for (const rel of snapshot.relationships.filter((item) => item.lifecycle === "active")) {
+      const source = assignments[rel.sourceId], target = assignments[rel.targetId];
+      if (source === communityId && target && target !== communityId) neighbors.add(target);
+      if (target === communityId && source && source !== communityId) neighbors.add(source);
+    }
+    return [...neighbors].sort();
+  }
+
+  async listArchitectureAnchors(limit = 30): Promise<readonly ArchitectureAnchor[]> {
+    const projection = await new OkfSnapshotStore(this.workspaceRoot).readStructuralProjection();
+    return projection?.anchors.slice(0, Math.max(1, Math.min(limit, 100))) ?? [];
+  }
+
+  async findShortestStructuralPath(sourceId: string, targetId: string): Promise<StructuralPath | undefined> {
+    const snapshot = await this.readOkfSnapshot();
+    return snapshot ? shortestStructuralPath(snapshot, sourceId, targetId) : undefined;
   }
 
   async cpgIntelligence(
@@ -2874,6 +2977,15 @@ function normalizeWorkspacePath(value: string): string {
   return value.replace(/\\/g, "/").replace(/^\.\//, "");
 }
 
+function parseChangedWorkspacePaths(status: string): string[] {
+  return status
+    .split(/\r?\n/)
+    .map((line) => line.slice(3).trim())
+    .map((line) => line.replace(/^"|"$/g, ""))
+    .filter(Boolean)
+    .map(normalizeWorkspacePath);
+}
+
 function cloneQueryResult(result: OkfQueryResult) {
   return {
     ...result,
@@ -3521,4 +3633,97 @@ function compactQuery(
     items: result.items.slice(0, limit),
     traversals: result.traversals.slice(0, Math.min(limit, 24))
   };
+}
+
+/** Normalize every Intelligence operation to the small contract Copilot needs. */
+function compactIntelligenceResult(
+  packageId: string,
+  sourceRevision: string,
+  operation: string,
+  query: string,
+  value: unknown,
+  limit: number
+): Record<string, unknown> {
+  const root = asRecord(value);
+  const entities = collectRecords(root, ["items", "nodes", "candidates", "direct", "probable", "possible", "subject"])
+    .slice(0, limit)
+    .map((item) => {
+      const entity = asRecord(item.candidate ?? item);
+      return {
+        id: stringValue(entity.id ?? item.id),
+        label: stringValue(entity.label ?? entity.name ?? item.label ?? item.name),
+        kind: stringValue(entity.kind ?? item.kind),
+        ...(entity.path ?? item.path ? { path: entity.path ?? item.path } : {}),
+        ...(entity.line ?? item.line ? { line: entity.line ?? item.line } : {}),
+        ...(entity.summary ?? item.summary ? { summary: entity.summary ?? item.summary } : {}),
+        confidence: numberValue(entity.confidence ?? item.confidence ?? item.score)
+      };
+    })
+    .filter((item) => item.id || item.label);
+  const relationships = collectRecords(root, ["traversals", "relationships"])
+    .slice(0, limit)
+    .map((item) => ({
+      from: stringValue(item.sourceLabel ?? item.sourceId),
+      relationship: stringValue(item.relationship ?? item.kind),
+      to: stringValue(item.targetLabel ?? item.targetId)
+    }))
+    .filter((item) => item.from || item.to);
+  const evidence = uniqueStrings(
+    collectRecords(root, ["evidence"])
+      .flatMap((item) => [
+        ...stringArray(item.evidenceIds),
+        ...stringArray(item.paths).map((pathValue) => `path:${pathValue}`)
+      ])
+      .concat(stringArray(root.evidenceIds))
+  ).slice(0, limit * 2);
+  const answer = stringValue(root.answer) ||
+    (entities.length
+      ? entities.map((item) => `${item.label}${item.path ? ` (${item.path})` : ""}`).join(", ")
+      : "Keystone Intelligence could not establish a confident repository answer.");
+  const confidence = numberValue(root.confidence) ||
+    (entities.length ? Math.min(...entities.map((item) => item.confidence || 0)) : 0);
+  return {
+    packageId,
+    operation,
+    query,
+    answer,
+    facts: entities.map((item) => item.summary || item.label),
+    entities,
+    relationships,
+    provenance: { source: "Keystone Intelligence", sourceRevision },
+    confidence,
+    evidence,
+    contextReferences: entities
+      .map((item) => item.id)
+      .filter(Boolean)
+      .map((id) => `${packageId}#${id}`),
+    warnings: stringArray(root.warnings)
+  };
+}
+
+function asRecord(value: unknown): Record<string, any> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, any>)
+    : {};
+}
+
+function collectRecords(root: Record<string, any>, keys: string[]): Record<string, any>[] {
+  return keys.flatMap((key) => {
+    const value = root[key];
+    if (Array.isArray(value)) return value.map(asRecord).filter((item) => Object.keys(item).length);
+    const record = asRecord(value);
+    return Object.keys(record).length ? [record] : [];
+  });
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === "string" ? value : value == null ? "" : String(value);
+}
+
+function numberValue(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }

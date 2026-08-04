@@ -5,12 +5,24 @@ export interface VisualGraphNode {
   path?: string;
   line?: number;
   seed?: boolean;
+  communityId?: string;
+  communityLabel?: string;
+  architectureAnchor?: { weightedDegree: number; reason: string };
+  lensRole?: "target" | "direct" | "available" | "out-of-scope" | "included" | "retained" | "excluded" | "candidate" | "used-by";
+  lensReason?: string;
+  estimatedTokens?: number;
+  confidence?: number;
 }
 export interface VisualGraphEdge {
   id: string;
   sourceId: string;
   targetId: string;
   kind: string;
+  origin?: "EXTRACTED" | "RESOLVED" | "INFERRED" | "AMBIGUOUS";
+  confidence?: number;
+  evidenceIds?: string[];
+  sourceLocation?: { workspaceRelativePath: string; startLine?: number; endLine?: number };
+  resolutionExplanation?: string;
 }
 
 interface Props {
@@ -18,6 +30,8 @@ interface Props {
   edges: readonly VisualGraphEdge[];
   selectedId?: string;
   onSelect: (node: VisualGraphNode) => void;
+  onSelectEdge?: (edge: VisualGraphEdge) => void;
+  selectedEdgeId?: string;
   emptyText?: string;
 }
 interface State {
@@ -33,6 +47,15 @@ interface State {
 interface Positioned extends VisualGraphNode {
   x: number;
   y: number;
+}
+
+interface CommunityGroup {
+  id: string;
+  label: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 export class GraphCanvas extends React.Component<Props, State> {
@@ -52,6 +75,7 @@ export class GraphCanvas extends React.Component<Props, State> {
       return <div className="empty graph-empty">{this.props.emptyText ?? "No graph data."}</div>;
     const positioned = layout(this.props.nodes, this.props.edges);
     const positions = new Map(positioned.map((node) => [node.id, node]));
+    const communities = communityGroups(positioned);
     return (
       <div className="graph-shell">
         <div className="graph-toolbar">
@@ -63,7 +87,7 @@ export class GraphCanvas extends React.Component<Props, State> {
             +
           </button>
           <button onClick={() => this.setState({ zoom: 1, panX: 0, panY: 0 })}>Reset</button>
-          <span className="graph-hint">Drag canvas to pan · click a node to inspect</span>
+          <span className="graph-hint">Drag to pan · scroll to zoom · click a node or edge to inspect</span>
         </div>
         <svg
           className="graph-canvas"
@@ -72,6 +96,7 @@ export class GraphCanvas extends React.Component<Props, State> {
           onMouseMove={(event: any) => this.move(event)}
           onMouseUp={() => this.end()}
           onMouseLeave={() => this.end()}
+          onWheel={(event: any) => this.wheel(event)}
         >
           <defs>
             <marker
@@ -88,30 +113,37 @@ export class GraphCanvas extends React.Component<Props, State> {
           <g
             transform={`translate(${this.state.panX} ${this.state.panY}) scale(${this.state.zoom})`}
           >
+            {communities.map((community) => (
+              <g className="graph-community" key={community.id}>
+                <rect x={community.x} y={community.y} width={community.width} height={community.height} rx="18" />
+                <text x={community.x + 14} y={community.y + 19}>{clip(community.label, 28)}</text>
+              </g>
+            ))}
             {this.props.edges.map((edge) => {
               const from = positions.get(edge.sourceId),
                 to = positions.get(edge.targetId);
               if (!from || !to) return null;
               return (
-                <g key={edge.id}>
+                <g key={edge.id} className={this.props.selectedEdgeId === edge.id ? "edge-selected" : ""} onClick={(event: any) => { event.stopPropagation(); this.props.onSelectEdge?.(edge); }}>
                   <line
                     x1={from.x}
                     y1={from.y}
                     x2={to.x}
                     y2={to.y}
-                    className={`graph-edge edge-${safe(edge.kind)}`}
+                    className={`graph-edge edge-${safe(edge.kind)} origin-${safe(edge.origin ?? "EXTRACTED")}`}
                     markerEnd="url(#keystone-arrow)"
                   />
                   <text x={(from.x + to.x) / 2} y={(from.y + to.y) / 2 - 5} className="edge-label">
-                    {edge.kind}
+                    {clip(edge.kind, 18)}
                   </text>
+                  <title>{`${edge.kind}${edge.origin ? ` (${edge.origin})` : ""}${edge.confidence ? ` · ${Math.round(edge.confidence * 100)}% confidence` : ""}`}</title>
                 </g>
               );
             })}
             {positioned.map((node) => (
               <g
                 key={node.id}
-                className={`graph-node ${node.seed ? "seed" : ""} ${this.props.selectedId === node.id ? "selected" : ""}`}
+                className={`graph-node ${node.seed ? "seed" : ""} ${node.architectureAnchor ? "anchor" : ""} ${node.lensRole ? `lens-${safe(node.lensRole)}` : ""} ${this.props.selectedId === node.id ? "selected" : ""}`}
                 transform={`translate(${node.x} ${node.y})`}
                 onMouseDown={(event: any) => event.stopPropagation()}
                 onClick={() => this.props.onSelect(node)}
@@ -123,6 +155,8 @@ export class GraphCanvas extends React.Component<Props, State> {
                 <text y="13" textAnchor="middle" className="node-label">
                   {clip(node.label, 20)}
                 </text>
+                {node.lensRole && <text y="42" textAnchor="middle" className="node-role">{node.lensRole}</text>}
+                {node.architectureAnchor && <text y="-39" textAnchor="middle" className="node-badge">◆ anchor</text>}
               </g>
             ))}
           </g>
@@ -138,6 +172,10 @@ export class GraphCanvas extends React.Component<Props, State> {
       originX: this.state.panX,
       originY: this.state.panY
     });
+  }
+  private wheel(event: any): void {
+    event.preventDefault();
+    this.setState({ zoom: Math.max(0.45, Math.min(2.4, this.state.zoom + (event.deltaY < 0 ? 0.1 : -0.1))) });
   }
   private move(event: any): void {
     if (!this.state.dragging) return;
@@ -207,6 +245,23 @@ function layout(
     );
   });
   return output;
+}
+
+function communityGroups(nodes: Positioned[]): CommunityGroup[] {
+  const groups = new Map<string, Positioned[]>();
+  for (const node of nodes) {
+    if (!node.communityId) continue;
+    const list = groups.get(node.communityId) ?? [];
+    list.push(node);
+    groups.set(node.communityId, list);
+  }
+  return [...groups].map(([id, members]) => {
+    const minX = Math.min(...members.map((node) => node.x)) - 92;
+    const maxX = Math.max(...members.map((node) => node.x)) + 92;
+    const minY = Math.min(...members.map((node) => node.y)) - 52;
+    const maxY = Math.max(...members.map((node) => node.y)) + 52;
+    return { id, label: members[0].communityLabel ?? id, x: minX, y: minY, width: Math.max(180, maxX - minX), height: Math.max(116, maxY - minY) };
+  });
 }
 function safe(value: string): string {
   return value.replace(/[^a-z0-9]+/gi, "-").toLowerCase();

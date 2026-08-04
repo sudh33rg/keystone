@@ -17,7 +17,8 @@ import {
   type KeystoneOkfSnapshot,
   type OkfConfidence,
   type OkfEvidence,
-  type OkfProvenance
+  type OkfProvenance,
+  type OkfRelationshipOrigin
 } from "./types";
 
 export interface RepoIntelligenceOkfOptions {
@@ -185,7 +186,9 @@ export function repoIntelligenceToOkf(
     sourceId: string,
     targetId: string,
     source?: EvidenceMetadata,
-    properties: Record<string, unknown> = {}
+    properties: Record<string, unknown> = {},
+    origin?: OkfRelationshipOrigin,
+    resolutionExplanation?: string
   ): string | undefined => {
     const sourceKind = unitById.get(sourceId)?.kind;
     const targetKind = unitById.get(targetId)?.kind;
@@ -230,6 +233,21 @@ export function repoIntelligenceToOkf(
       sourceId,
       targetId,
       properties,
+      origin:
+        origin ??
+        (source?.source === "heuristic" || source?.source === "regex"
+          ? "INFERRED"
+          : "EXTRACTED"),
+      sourceLocation: source
+        ? {
+            workspaceRelativePath: normalizePath(source.evidencePath ?? fallbackPathForRelationship(sourceId, targetId)),
+            startLine: source.evidenceLine,
+            endLine: source.evidenceLine
+          }
+        : undefined,
+      resolutionExplanation:
+        resolutionExplanation ??
+        (typeof properties.resolution === "string" ? properties.resolution : undefined),
       confidence: confidence(source),
       provenance: provenance([evidenceId]),
       lifecycle: "active",
@@ -281,6 +299,9 @@ export function repoIntelligenceToOkf(
     const unit = unitById.get(id);
     const p = unit?.properties.path ?? unit?.properties.filePath;
     return typeof p === "string" ? p : undefined;
+  }
+  function fallbackPathForRelationship(sourceId: string, targetId: string): string {
+    return evidencePathForUnit(sourceId) ?? evidencePathForUnit(targetId) ?? ".";
   }
 
   const workspaceUnit = addUnit(
@@ -581,7 +602,17 @@ export function repoIntelligenceToOkf(
         relation.filePath
       );
     if (parent) addRelationship("defines", parent, source, relation.evidence);
-    addRelationship(relation.kind, source, target, relation.evidence);
+    addRelationship(
+      relation.kind,
+      source,
+      target,
+      relation.evidence,
+      {},
+      relation.targetFilePath ? "RESOLVED" : "INFERRED",
+      relation.targetFilePath
+        ? `Resolved ${relation.target} to ${relation.targetFilePath}${relation.targetLine ? `:${relation.targetLine}` : ""}.`
+        : `Target ${relation.target} was selected from the available type declarations.`
+    );
   }
   for (const edge of intelligence.dependencies) {
     const from = fileId(edge.from);
@@ -660,9 +691,33 @@ export function repoIntelligenceToOkf(
     );
     addRelationship("defines", parent, flow, call.evidence);
     const source = callerCandidates[0] ?? flow;
-    const target = calleeCandidates[0];
-    if (target) addRelationship("calls", source, target, call.evidence);
-    else addObservation(flow, "keystone:unresolvedCallee", call.callee, call.evidence);
+    const uniqueTargets = [...new Set(calleeCandidates)];
+    if (uniqueTargets.length === 1) {
+      const resolvedByLocation = Boolean(call.targetFilePath || baseMethodTarget);
+      addRelationship(
+        "calls",
+        source,
+        uniqueTargets[0],
+        call.evidence,
+        { resolution: resolvedByLocation ? "Deterministically resolved from the import scope or language-service declaration." : "Single available declaration matched the call name." },
+        resolvedByLocation ? "RESOLVED" : "INFERRED",
+        resolvedByLocation
+          ? `Resolved ${call.callee} to its declaration${call.targetFilePath ? ` in ${call.targetFilePath}` : " via import scope"}.`
+          : `Only one candidate declaration matched ${call.callee}; verify dynamic dispatch if applicable.`
+      );
+    } else if (uniqueTargets.length > 1) {
+      for (const candidate of uniqueTargets)
+        addRelationship(
+          "calls",
+          source,
+          candidate,
+          call.evidence,
+          { resolution: `Multiple candidate declarations matched ${call.callee}.`, candidateCount: uniqueTargets.length },
+          "AMBIGUOUS",
+          `Ambiguous call ${call.callee}; ${uniqueTargets.length} candidate declarations remain visible.`
+        );
+      addObservation(flow, "keystone:ambiguousCallee", { callee: call.callee, candidateCount: uniqueTargets.length }, call.evidence);
+    } else addObservation(flow, "keystone:unresolvedCallee", call.callee, call.evidence);
   }
   for (const flowFact of intelligence.controlFlows ?? []) {
     const parent = fileId(flowFact.filePath);
@@ -890,6 +945,7 @@ export function repoIntelligenceToOkf(
     )
       relationships.push({
         ...old,
+        origin: old.origin ?? "EXTRACTED",
         lifecycle: "deleted",
         lastSeenAt: observedAt,
         updatedAt: observedAt,
@@ -928,7 +984,7 @@ export function repoIntelligenceToOkf(
       parentExtractionRunId: previous?.manifest.extractionRunId,
       repositoryRevision: options.repositoryRevision,
       validation: { valid: true, validatorVersion: "2.1.0", validatedAt: observedAt },
-      projections: { graphVersion: 1, cpgBindingVersion: 1, searchVersion: 1 },
+      projections: { graphVersion: 2, cpgBindingVersion: 1, searchVersion: 1 },
       counts: {
         units: units.length,
         relationships: relationships.length,

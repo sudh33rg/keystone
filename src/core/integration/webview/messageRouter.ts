@@ -35,11 +35,13 @@ import type {
 import type { SDLCResearchDocument } from "../../workflow/sdlc/engine";
 import type { OkfCanonicalEvidenceEnvelope } from "../../intelligence/okf/types";
 import type { ContextFragment, ContextPackageSummary } from "../../context/contextEngine";
+import type { OkfReuseResult } from "../../intelligence/okf/queryEngine";
 import type {
   CopilotResponseEnvelope,
   StructuredResponseSource
 } from "../../copilot/responseContract";
 import type { IntentLifecycle, IntentState } from "../../intent/intentState";
+import type { CopilotActivityEvent } from "../../copilot/activity";
 
 export interface CopilotDelegationResult {
   success: boolean;
@@ -78,14 +80,24 @@ export interface CopilotDelegationResult {
   };
 }
 
-export type CopilotContextToolOperation =
-  | "get_intelligence"
-  | "get_symbols"
-  | "get_relationships"
-  | "get_flows"
-  | "get_impact"
-  | "get_intent"
-  | "expand_context";
+export type CopilotIntelligenceOperation =
+  | "query"
+  | "path"
+  | "explain"
+  | "flow"
+  | "impact"
+  | "reuse";
+
+export interface CopilotIntelligenceToolInput {
+  packageId: string;
+  operation: CopilotIntelligenceOperation;
+  query?: string;
+  from?: string;
+  to?: string;
+  limit?: number;
+}
+
+export type CopilotContextToolOperation = "expand_context";
 
 export interface CopilotContextToolInput {
   packageId: string;
@@ -183,7 +195,9 @@ export type WebviewToExtensionMessage =
       mode: IntelligenceGraphMode;
       query?: string;
       seedIds?: string[];
+      depth?: number;
     }
+  | { type: "LOAD_INTELLIGENCE_REUSE"; query?: string; limit?: number }
   | {
       type: "LOAD_CPG_VIEW";
       sourcePath?: string;
@@ -292,12 +306,18 @@ export type ExtensionToWebviewMessage =
       result: CopilotDelegationResult;
     }
   | {
+      type: "INTENT_QUESTION_RESULT";
+      question: string;
+      result: CopilotDelegationResult;
+    }
+  | {
       type: "COPILOT_ACTIVITY";
       storyId?: string;
       contextPackageId?: string;
       stage: string;
       message: string;
       progress: number;
+      activity: CopilotActivityEvent;
     }
   | {
       type: "COPILOT_STREAM";
@@ -383,6 +403,8 @@ export type ExtensionToWebviewMessage =
     }
   | { type: "INTELLIGENCE_EXPLORER_RESULT"; result: IntelligenceExplorerResult }
   | { type: "INTELLIGENCE_GRAPH_RESULT"; result: IntelligenceGraphResult }
+  | { type: "INTELLIGENCE_GRAPH_REFRESH" }
+  | { type: "INTELLIGENCE_REUSE_RESULT"; result: OkfReuseResult }
   | { type: "CPG_VIEW_RESULT"; result: IntelligenceCpgResult }
   | { type: "NOTIFICATION"; level: "info" | "error"; message: string };
 
@@ -508,6 +530,7 @@ export interface KeystoneWebviewState {
   activeTask?: TaskWorkspaceSnapshot;
   correctionPacket?: CorrectionPacket;
   intentState?: IntentState;
+  copilotActivity?: CopilotActivityEvent[];
 }
 
 export interface RouteEvidence {

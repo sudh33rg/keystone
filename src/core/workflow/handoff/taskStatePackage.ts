@@ -48,6 +48,9 @@ const topLevelKeys = [
   "correctionPackets",
   "decisions",
   "continuation",
+  "intentState",
+  "referenceStatus",
+  "recentActivity",
   "redactionReport",
   "checksum"
 ] as const;
@@ -270,6 +273,10 @@ export function validateTaskStatePackage(value: unknown): asserts value is TaskS
   if (typeof redaction.safeToShare !== "boolean")
     throw new TaskStateValidationError("Task state redaction report is invalid.");
   requireArrays(redaction, ["removedCategories", "redactedPaths", "findings"], "redactionReport");
+  if (value.referenceStatus !== undefined && !Array.isArray(value.referenceStatus))
+    throw new TaskStateValidationError("Task state referenceStatus must be an array.");
+  if (value.recentActivity !== undefined && !Array.isArray(value.recentActivity))
+    throw new TaskStateValidationError("Task state recentActivity must be an array.");
   if (typeof (value.repositoryReference as Record<string, unknown>).repositoryName !== "string")
     throw new TaskStateValidationError("Expected repository name is required.");
 }

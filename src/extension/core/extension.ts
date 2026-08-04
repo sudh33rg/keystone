@@ -15,6 +15,8 @@ export function activate(context: vscode.ExtensionContext): void {
   const statusBar = createStatusBar();
   const output = vscode.window.createOutputChannel("Keystone Intelligence", { log: true });
   const provider = new VscodeProvider(context.extensionUri, statusBar, output, context);
+  const changeTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const pendingChanges = new Map<string, Set<string>>();
   const qaService = new QaService();
   const backgroundWorkers = new Map<string, BackgroundWorkerCoordinator>();
   const createBackgroundWorkerCoordinator = (): BackgroundWorkerCoordinator =>
@@ -109,14 +111,39 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
-  // Indexing is intentionally user-controlled after the first promoted
-  // snapshot. Repository file events do not start background refreshes.
-  // Use the UI's Index / refresh action for an explicit refresh.
   context.subscriptions.push(
     vscode.window.onDidChangeActiveTextEditor(() => {
       void provider.activeWorkspaceChanged();
     })
   );
+  // Reconciliation is scoped to the active Intent. It refreshes only when an existing
+  // package has relevant stale evidence, so ordinary edits do not produce alerts.
+  for (const folder of vscode.workspace.workspaceFolders ?? []) {
+    const watcher = vscode.workspace.createFileSystemWatcher(`${folder.uri.fsPath}/**`);
+    const reconcile = (uri: vscode.Uri) => {
+      const root = folder.uri.fsPath;
+      const paths = pendingChanges.get(root) ?? new Set<string>();
+      paths.add(uri.fsPath);
+      pendingChanges.set(root, paths);
+      const existing = changeTimers.get(root);
+      if (existing) clearTimeout(existing);
+      changeTimers.set(
+        root,
+        setTimeout(() => {
+          changeTimers.delete(root);
+          const changed = [...(pendingChanges.get(root) ?? [])];
+          pendingChanges.delete(root);
+          void provider.workspaceFilesChanged(root, changed);
+        }, 300)
+      );
+    };
+    context.subscriptions.push(
+      watcher,
+      watcher.onDidCreate(reconcile),
+      watcher.onDidChange(reconcile),
+      watcher.onDidDelete(reconcile)
+    );
+  }
 }
 
 /** Called when the extension is deactivated. */

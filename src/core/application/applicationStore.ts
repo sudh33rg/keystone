@@ -1,5 +1,6 @@
 import type { OkfCanonicalEvidenceEnvelope } from "../intelligence/okf/types";
 import type { IntentState } from "../intent/intentState";
+import type { CopilotActivityEvent } from "../copilot/activity";
 
 export interface KeystoneOperation {
   id: string;
@@ -67,6 +68,7 @@ export interface KeystoneApplicationState {
   valueEdgeFeature?: unknown;
   handoffs: unknown[];
   operations: KeystoneOperation[];
+  copilotActivity: CopilotActivityEvent[];
   notification?: { level: "info" | "error"; message: string };
 }
 
@@ -83,6 +85,7 @@ export class ApplicationStore {
       intelligenceActivity: [],
       handoffs: [],
       operations: [],
+      copilotActivity: [],
       ...initial
     };
   }
@@ -104,6 +107,13 @@ export class ApplicationStore {
     const operations = this.state.operations.filter((item) => item.id !== operation.id);
     operations.unshift(operation);
     return this.update({ operations: operations.slice(0, 100) });
+  }
+
+  mergeCopilotActivity(event: CopilotActivityEvent): Readonly<KeystoneApplicationState> {
+    const next = event.state === "QUEUED"
+      ? [event]
+      : [...(this.state.copilotActivity ?? []).filter((item) => item.id !== event.id), event];
+    return this.update({ copilotActivity: next.slice(-12) });
   }
 
   subscribe(listener: StateListener): { dispose(): void } {

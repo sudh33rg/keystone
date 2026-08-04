@@ -1,0 +1,150 @@
+{
+  "name": "keystone-valueedge-poc",
+  "displayName": "Keystone ValueEdge POC",
+  "description": "POC: local repository intelligence enriched ValueEdge User Story and Quality Story generation.",
+  "version": "0.2.0",
+  "publisher": "keystone-dev",
+  "engines": {
+    "vscode": "^1.95.0",
+    "node": ">=20"
+  },
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:keystone.poc.open",
+    "onCommand:keystone.poc.generateStories",
+    "onCommand:keystone.index.restart"
+  ],
+  "main": "./dist/extension/extension.js",
+  "scripts": {
+    "clean": "node scripts/clean.mjs",
+    "build:extension": "node scripts/build-extension.mjs",
+    "build:webview": "node scripts/build-webview.mjs",
+    "build": "npm run clean && npm run build:extension && npm run build:webview",
+    "typecheck": "tsc --noEmit",
+    "verify:poc": "node --experimental-strip-types scripts/verify-valueedge-poc.mjs",
+    "verify": "npm run typecheck && npm run verify:poc && npm run build",
+    "package": "npm run verify && vsce package --allow-missing-repository --no-dependencies"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "keystone.poc.open",
+        "title": "Keystone POC: Open ValueEdge Story Generator"
+      },
+      {
+        "command": "keystone.poc.generateStories",
+        "title": "Keystone POC: Generate ValueEdge Stories"
+      },
+      {
+        "command": "keystone.poc.openSettings",
+        "title": "Keystone POC: Open ValueEdge Settings"
+      },
+      {
+        "command": "keystone.index.restart",
+        "title": "Keystone POC: Rebuild Repository Intelligence"
+      }
+    ],
+    "configuration": {
+      "title": "Keystone ValueEdge POC",
+      "properties": {
+        "keystone.indexing.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable local repository intelligence."
+        },
+        "keystone.indexing.onWorkspaceOpen": {
+          "type": "boolean",
+          "default": true,
+          "description": "Build/reconcile repository intelligence when a workspace opens."
+        },
+        "keystone.indexing.onBranchChange": {
+          "type": "boolean",
+          "default": true,
+          "description": "Refresh repository intelligence after a branch change."
+        },
+        "keystone.indexing.maxFileSizeKb": {
+          "type": "number",
+          "default": 1024,
+          "minimum": 1,
+          "description": "Maximum file size considered during indexing."
+        },
+        "keystone.indexing.maxFiles": {
+          "type": "number",
+          "default": 100000,
+          "minimum": 1,
+          "description": "Maximum files considered in one repository index."
+        },
+        "keystone.indexing.workerCount": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 32,
+          "description": "Intelligence worker count. Use 0 for automatic default."
+        },
+        "keystone.indexing.retainedGenerations": {
+          "type": "number",
+          "default": 2,
+          "minimum": 2,
+          "maximum": 8,
+          "description": "Local intelligence generations retained for recovery."
+        },
+        "keystone.indexing.exclusions": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "description": "Additional glob patterns excluded from repository intelligence."
+        },
+        "keystone.logging.level": {
+          "type": "string",
+          "enum": [
+            "debug",
+            "info",
+            "warning",
+            "error"
+          ],
+          "default": "info",
+          "description": "POC output log level."
+        },
+        "keystone.poc.valueEdge.baseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "ValueEdge base URL."
+        },
+        "keystone.poc.valueEdge.sharedSpaceId": {
+          "type": "string",
+          "default": "",
+          "description": "ValueEdge shared space ID."
+        },
+        "keystone.poc.valueEdge.workspaceId": {
+          "type": "string",
+          "default": "",
+          "description": "ValueEdge workspace ID."
+        },
+        "keystone.poc.valueEdge.authorization": {
+          "type": "string",
+          "default": "",
+          "description": "Full ValueEdge Authorization header value. Do not commit credentials."
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "tree-sitter-go": "^0.25.0",
+    "tree-sitter-java": "^0.23.5",
+    "tree-sitter-javascript": "^0.25.0",
+    "tree-sitter-python": "^0.25.0",
+    "tree-sitter-rust": "^0.24.0",
+    "tree-sitter-typescript": "^0.23.2",
+    "typescript": "^6.0.3",
+    "web-tree-sitter": "^0.26.11",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.0",
+    "@types/vscode": "^1.95.0",
+    "@vscode/vsce": "^3.9.0",
+    "esbuild": "^0.28.0"
+  }
+}

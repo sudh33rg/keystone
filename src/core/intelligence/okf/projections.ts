@@ -1,4 +1,5 @@
-import type { KeystoneOkfSnapshot } from "./types";
+import type { KeystoneOkfSnapshot, OkfRelationshipOrigin, OkfConfidence, OkfSourceLocation } from "./types";
+import { analyzeOkfStructure, type StructuralAnalysis } from "./structuralAnalysis";
 export interface OkfGraphNode {
   readonly id: string;
   readonly okfId: string;
@@ -15,13 +16,19 @@ export interface OkfGraphEdge {
   readonly kind: string;
   readonly lifecycle: string;
   readonly properties: Readonly<Record<string, unknown>>;
+  readonly origin: OkfRelationshipOrigin;
+  readonly confidence: OkfConfidence;
+  readonly evidenceIds: readonly string[];
+  readonly sourceLocation?: OkfSourceLocation;
+  readonly resolutionExplanation?: string;
 }
 export interface OkfGraphProjection {
-  readonly version: 1;
+  readonly version: 2;
   readonly extractionRunId: string;
   readonly nodes: readonly OkfGraphNode[];
   readonly edges: readonly OkfGraphEdge[];
 }
+export type OkfStructuralProjection = StructuralAnalysis;
 export interface OkfSearchDocument {
   readonly id: string;
   readonly okfId: string;
@@ -38,7 +45,7 @@ export interface OkfCpgBinding {
 }
 export function projectOkfGraph(snapshot: KeystoneOkfSnapshot): OkfGraphProjection {
   return {
-    version: 1,
+    version: 2,
     extractionRunId: snapshot.manifest.extractionRunId,
     nodes: snapshot.units.map((u) => ({
       id: u.id,
@@ -55,9 +62,19 @@ export function projectOkfGraph(snapshot: KeystoneOkfSnapshot): OkfGraphProjecti
       targetId: r.targetId,
       kind: r.kind,
       lifecycle: r.lifecycle,
-      properties: r.properties
+      properties: r.properties,
+      origin: r.origin,
+      confidence: r.confidence,
+      evidenceIds: r.provenance.evidenceIds,
+      sourceLocation: r.sourceLocation,
+      resolutionExplanation: r.resolutionExplanation
     }))
   };
+}
+
+/** Derived structural metadata is persisted separately so the OKF knowledge ledger remains observed/derived facts. */
+export function projectOkfStructuralAnalysis(snapshot: KeystoneOkfSnapshot): OkfStructuralProjection {
+  return analyzeOkfStructure(snapshot);
 }
 export function projectOkfSearch(snapshot: KeystoneOkfSnapshot): OkfSearchDocument[] {
   return snapshot.units

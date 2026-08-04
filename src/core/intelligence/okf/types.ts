@@ -4,6 +4,12 @@ export const KEYSTONE_OKF_PROFILE_ID =
 export const KEYSTONE_OKF_PROFILE_VERSION = "2.1.0";
 
 export type OkfConfidenceLevel = "observed" | "derived" | "inferred";
+/** How a relationship was established, kept separate from confidence. */
+export type OkfRelationshipOrigin =
+  | "EXTRACTED"
+  | "RESOLVED"
+  | "INFERRED"
+  | "AMBIGUOUS";
 export type OkfLifecycle = "active" | "deprecated" | "deleted";
 export type KeystoneKnowledgeKind =
   | "repository"
@@ -138,6 +144,11 @@ export interface KeystoneKnowledgeRelationship {
   readonly sourceId: string;
   readonly targetId: string;
   readonly properties: Readonly<Record<string, unknown>>;
+  readonly origin: OkfRelationshipOrigin;
+  /** Location of the relationship assertion, when the extractor can provide it. */
+  readonly sourceLocation?: OkfSourceLocation;
+  /** Human-readable deterministic resolution note for cross-file or uncertain edges. */
+  readonly resolutionExplanation?: string;
   readonly confidence: OkfConfidence;
   readonly provenance: OkfProvenance;
   readonly lifecycle: OkfLifecycle;

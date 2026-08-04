@@ -33,6 +33,7 @@ import type {
   SemanticEnrichmentResult
 } from "../languages/semanticEnrichment";
 import { OkfSnapshotStore } from "../okf/store";
+import { planIncrementalUpdate } from "../pipeline/incremental";
 import { ExtractionCache } from "./extractionCache";
 import {
   analyzeArtifact,
@@ -498,8 +499,14 @@ export async function indexRepository(
         message: `Writing OKF units, relationships, evidence, and projections (${okfSnapshot.units.length} units)...`
       });
       try {
+        const incremental = planIncrementalUpdate(previous, intelligence);
+        const structuralAnalysis =
+          incremental.action === "skip" || incremental.action === "file-local"
+            ? await okfStore.readStructuralProjection()
+            : undefined;
         await okfStore.write(okfSnapshot, {
-          onProgress: (message) => options.onPersistence?.({ phase: "okf-store", message })
+          onProgress: (message) => options.onPersistence?.({ phase: "okf-store", message }),
+          structuralAnalysis
         });
         options.onPersistence?.({
           phase: "okf-complete",

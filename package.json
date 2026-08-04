@@ -24,7 +24,8 @@
     "onCommand:keystone.configureValueEdge",
     "onCommand:keystone.importValueEdgeFeature",
     "onCommand:keystone.publishValueEdgeStories",
-    "onLanguageModelTool:keystone_get_context"
+    "onLanguageModelTool:keystone_get_context",
+    "onLanguageModelTool:keystone_intelligence"
   ],
   "contributes": {
     "commands": [
@@ -67,12 +68,12 @@
     "languageModelTools": [
       {
         "name": "keystone_get_context",
-        "displayName": "Keystone Context",
+        "displayName": "Keystone Context Expansion",
         "toolReferenceName": "keystoneContext",
         "canBeReferencedInPrompt": true,
         "icon": "$(library)",
-        "userDescription": "Retrieve targeted repository intelligence from Keystone's prepared context.",
-        "modelDescription": "Use this single coherent Keystone retrieval tool only when the provided ContextPackage is insufficient. Start with the compressed package, use existing context first, and request the smallest useful repository-specific information. Operations are get_intelligence, get_symbols, get_relationships, get_flows, get_impact, get_intent, and expand_context. Never use it to broadly rediscover the repository and never assume missing facts.",
+        "userDescription": "Expand exact retained source context after Keystone Intelligence identifies the relevant entity.",
+        "modelDescription": "Use only after consulting keystone_intelligence and only when exact implementation detail remains necessary. Expand the smallest referenced ContextPackage fragment.",
         "tags": [
           "keystone",
           "repository-intelligence",
@@ -92,12 +93,6 @@
             "operation": {
               "type": "string",
               "enum": [
-                "get_intelligence",
-                "get_symbols",
-                "get_relationships",
-                "get_flows",
-                "get_impact",
-                "get_intent",
                 "expand_context"
               ],
               "description": "The smallest targeted retrieval operation needed for correctness."
@@ -105,6 +100,14 @@
             "query": {
               "type": "string",
               "description": "A narrow repository-specific query, symbol, component, or flow name."
+            },
+            "from": {
+              "type": "string",
+              "description": "PATH operation start symbol/component."
+            },
+            "to": {
+              "type": "string",
+              "description": "PATH operation destination symbol/component."
             },
             "contextReference": {
               "type": "string",
@@ -130,6 +133,36 @@
               "maximum": 48,
               "description": "Maximum bounded result count."
             }
+          }
+        }
+      },
+      {
+        "name": "keystone_intelligence",
+        "displayName": "Keystone Intelligence",
+        "toolReferenceName": "keystoneIntelligence",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(symbol-misc)",
+        "userDescription": "Answer repository-structural questions from Keystone's bounded intelligence graph.",
+        "modelDescription": "Start with the supplied ContextPackage. For repository-structural questions, consult Keystone Intelligence before any source exploration. Retrieve the smallest useful result with one operation: query, path, explain, flow, impact, or reuse. Do not broadly search the repository. If confidence is insufficient, say so; expand exact source separately only when implementation detail is necessary.",
+        "tags": [
+          "keystone",
+          "repository-intelligence",
+          "graph"
+        ],
+        "inputSchema": {
+          "type": "object",
+          "required": ["packageId", "operation"],
+          "properties": {
+            "packageId": { "type": "string", "description": "ContextPackage ID supplied by Keystone." },
+            "operation": {
+              "type": "string",
+              "enum": ["query", "path", "explain", "flow", "impact", "reuse"],
+              "description": "The smallest structural retrieval operation needed."
+            },
+            "query": { "type": "string", "description": "A narrow symbol, component, flow, or repository question." },
+            "from": { "type": "string", "description": "PATH operation start symbol or component." },
+            "to": { "type": "string", "description": "PATH operation destination symbol or component." },
+            "limit": { "type": "number", "minimum": 1, "maximum": 16, "description": "Maximum bounded result count." }
           }
         }
       }

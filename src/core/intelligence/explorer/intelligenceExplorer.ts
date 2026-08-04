@@ -4,7 +4,9 @@ import type {
   KeystoneKnowledgeRelationship,
   KeystoneKnowledgeUnit,
   KeystoneOkfSnapshot,
-  OkfEvidence
+  OkfEvidence,
+  OkfRelationshipOrigin,
+  OkfSourceLocation
 } from "../okf/types";
 
 export type IntelligenceGraphMode =
@@ -47,6 +49,9 @@ export interface IntelligenceGraphNode {
   readonly evidenceIds: readonly string[];
   readonly properties: Readonly<Record<string, unknown>>;
   readonly seed: boolean;
+  readonly communityId?: string;
+  readonly communityLabel?: string;
+  readonly architectureAnchor?: { weightedDegree: number; reason: string };
 }
 
 export interface IntelligenceGraphEdge {
@@ -56,6 +61,9 @@ export interface IntelligenceGraphEdge {
   readonly kind: string;
   readonly confidence: number;
   readonly evidenceIds: readonly string[];
+  readonly origin: OkfRelationshipOrigin;
+  readonly sourceLocation?: OkfSourceLocation;
+  readonly resolutionExplanation?: string;
 }
 
 export interface IntelligenceGraphResult {
@@ -386,7 +394,10 @@ export function buildOkfGraphView(
       targetId: rel.targetId,
       kind: rel.kind,
       confidence: rel.confidence.score,
-      evidenceIds: [...rel.provenance.evidenceIds]
+      evidenceIds: [...rel.provenance.evidenceIds],
+      origin: rel.origin,
+      sourceLocation: rel.sourceLocation,
+      resolutionExplanation: rel.resolutionExplanation
     }));
   return {
     mode,

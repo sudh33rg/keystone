@@ -120,8 +120,15 @@ export interface RedactionReport {
   findings: Array<{ category: string; path: string; confidence: "LOW" | "MEDIUM" | "HIGH" }>;
   safeToShare: boolean;
 }
+export interface HandoffReferenceStatus {
+  reference: string;
+  kind: "context" | "intelligence" | "artifact";
+  status: "resolvable" | "unresolved" | "refresh-required";
+  note?: string;
+}
 import type { SDLCPlan } from "../sdlc/engine";
 import type { CorrectionPacket } from "../../domain/types";
+import type { IntentState } from "../../intent/intentState";
 
 export interface TaskStatePackage {
   schemaVersion: string;
@@ -143,6 +150,9 @@ export interface TaskStatePackage {
   correctionPackets?: CorrectionPacket[];
   decisions: DecisionState;
   continuation: ContinuationState;
+  intentState?: IntentState;
+  referenceStatus?: HandoffReferenceStatus[];
+  recentActivity?: string[];
   redactionReport: RedactionReport;
   checksum: string;
 }

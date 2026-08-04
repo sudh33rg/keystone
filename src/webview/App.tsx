@@ -1,6 +1,7 @@
 import { vscode } from "./vscodeApi.js";
-import { GraphCanvas, type VisualGraphNode } from "./GraphCanvas.js";
+import { GraphCanvas, type VisualGraphEdge, type VisualGraphNode } from "./GraphCanvas.js";
 import { selectIntentPrimaryAction, type IntentPrimaryAction } from "@core/intent/primaryAction";
+import type { CopilotActivityEvent } from "@core/copilot/activity";
 import type {
   ApplicationState,
   BacklogStory,
@@ -13,6 +14,7 @@ import type {
   IntelligenceExplorerItem,
   IntelligenceExplorerResult,
   IntelligenceGraphMode,
+  IntelligenceGraphEdge,
   IntelligenceGraphNode,
   IntelligenceGraphResult,
   IntelligenceQueryResult,
@@ -20,6 +22,7 @@ import type {
   IntelligenceView,
   IngestionState,
   IntentDecision,
+  IntentState,
   Operation,
   LanguageCapability,
   Nav,
@@ -27,10 +30,12 @@ import type {
   ContextPacketSegmentKind,
   ContextFragment,
   ContextInspectorItem,
+  ContextPackageSummary,
   IntentLifecycle,
   SdlcPlan,
   Story,
   TaskResult
+  , ReuseResult
 } from "./model.js";
 
 interface AppState {
@@ -42,6 +47,7 @@ interface AppState {
   intent: string;
   passphrase: string;
   handoffText: string;
+  handoffOpen: boolean;
   manualSyncConfirmed: boolean;
   query: string;
   queryItems: EvidenceItem[];
@@ -53,8 +59,12 @@ interface AppState {
   graphMode: IntelligenceGraphMode;
   graphQuery: string;
   graphRelationshipKind: string;
+  graphScope: "1 hop" | "2 hops" | "community" | "related flow";
+  graphLens: "intent" | "context" | "reuse";
   graph?: IntelligenceGraphResult;
+  reuse?: ReuseResult;
   selectedGraphNodeId?: string;
+  selectedGraphEdgeId?: string;
   collapsedGraphNodeIds: string[];
   loadedContextPackets: Record<string, ContextPacketPayload>;
   expandedContext?: ContextFragment;
@@ -71,6 +81,14 @@ interface AppState {
   evidenceText: string;
   selectedCriteria: Record<string, boolean>;
   intentQuestion: string;
+  intentDiscussion?: {
+    messages: Array<{
+      role: "user" | "assistant";
+      text: string;
+      evidence?: Array<{ label: string; path?: string; startLine?: number; endLine?: number }>;
+    }>;
+    pending: boolean;
+  };
   intentBlocker: string;
   selectedStoryId?: string;
   decisionDiscussion?: {
@@ -81,6 +99,7 @@ interface AppState {
   };
   rejectingDecisionId?: string;
   rejectionReason: string;
+  copilotActivityDetails: boolean;
 }
 
 const emptyApplication: ApplicationState = {
@@ -129,6 +148,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
     intent: "",
     passphrase: "",
     handoffText: "",
+    handoffOpen: false,
     manualSyncConfirmed: false,
     query: "",
     queryItems: [],
@@ -138,6 +158,8 @@ export class App extends React.Component<Record<string, never>, AppState> {
     graphMode: "repository",
     graphQuery: "",
     graphRelationshipKind: "all",
+    graphScope: "1 hop",
+    graphLens: "intent",
     collapsedGraphNodeIds: [],
     loadedContextPackets: {},
     contextInspectorOpen: false,
@@ -153,7 +175,8 @@ export class App extends React.Component<Record<string, never>, AppState> {
     selectedCriteria: {},
     intentQuestion: "",
     intentBlocker: "",
-    rejectionReason: ""
+    rejectionReason: "",
+    copilotActivityDetails: false
   };
   private readonly onMessage = (event: MessageEvent): void =>
     this.handle(event.data as { type?: string; [key: string]: unknown });
@@ -362,6 +385,8 @@ export class App extends React.Component<Record<string, never>, AppState> {
       });
     } else if (message.type === "INTELLIGENCE_GRAPH_RESULT") {
       const result = message.result as IntelligenceGraphResult;
+      const previous = this.state.graph;
+      const nodeIds = new Set(result.nodes.map((node) => node.id));
       const relationshipKind =
         this.state.graphRelationshipKind === "all" ||
         result.relationshipKinds.includes(this.state.graphRelationshipKind)
@@ -371,10 +396,21 @@ export class App extends React.Component<Record<string, never>, AppState> {
         graph: result,
         graphMode: result.mode,
         graphRelationshipKind: relationshipKind,
-        selectedGraphNodeId: result.seedIds[0],
-        collapsedGraphNodeIds: [],
+        selectedGraphNodeId:
+          previous?.nodes.some((node) => node.id === this.state.selectedGraphNodeId) &&
+          nodeIds.has(this.state.selectedGraphNodeId ?? "")
+            ? this.state.selectedGraphNodeId
+            : result.seedIds[0],
+        selectedGraphEdgeId: undefined,
+        collapsedGraphNodeIds: this.state.collapsedGraphNodeIds.filter((id) => nodeIds.has(id)),
         notice: `${result.mode} graph loaded ${result.nodes.length} node(s) and ${result.edges.length} relationship(s).`
       });
+    } else if (message.type === "INTELLIGENCE_GRAPH_REFRESH") {
+      const graph = this.state.graph;
+      if (graph) this.loadGraph(graph.mode, this.state.graphQuery, graph.seedIds);
+    } else if (message.type === "INTELLIGENCE_REUSE_RESULT") {
+      const reuse = message.result as ReuseResult;
+      this.setState({ reuse, notice: `Reuse Lens found ${reuse.candidates.length} existing pattern candidate(s).` });
     } else if (message.type === "CPG_VIEW_RESULT") {
       const result = message.result as IntelligenceCpgResult;
       this.setState({
@@ -417,7 +453,25 @@ export class App extends React.Component<Record<string, never>, AppState> {
     } else if (message.type === "DELEGATION_RESULT") {
       const result = message as unknown as CopilotDelegationResult;
       this.setState((previous) => ({
-        application: { ...previous.application, delegationResult: result },
+        application: {
+          ...previous.application,
+          delegationResult: result,
+          copilotActivity: (() => {
+            const events = previous.application.copilotActivity ?? [];
+            const current = events.at(-1);
+            if (!current) return events;
+            return [
+              ...events.slice(0, -1),
+              {
+                ...current,
+                state: result.cancellation === "cancelled" ? "CANCELLED" : result.success ? "COMPLETED" : "FAILED",
+                progress: 100,
+                timestamp: result.completedAt,
+                detail: result.error
+              }
+            ];
+          })()
+        },
         notice: result.success
           ? result.captured
             ? "Copilot response was captured by Keystone and linked to the active SDLC story."
@@ -446,8 +500,61 @@ export class App extends React.Component<Record<string, never>, AppState> {
             : String(result.error ?? "Discussion failed.")
         };
       });
+    } else if (message.type === "INTENT_QUESTION_RESULT") {
+      const result = message.result as CopilotDelegationResult;
+      this.setState((previous) => {
+        const discussion = previous.intentDiscussion;
+        if (!discussion) return null;
+        const answer = result.text || result.error || "No answer was returned.";
+        return {
+          application: {
+            ...previous.application,
+            operations: (previous.application.operations ?? []).map((operation) =>
+              operation.id === "copilot-delegation"
+                ? {
+                    ...operation,
+                    status: result.success ? "completed" : "failed",
+                    progress: 100,
+                    message: result.success ? "Intent answer captured" : (result.error ?? "Intent question failed"),
+                    updatedAt: result.completedAt
+                  }
+                : operation
+            )
+          },
+          intentDiscussion: {
+            ...discussion,
+            pending: false,
+            messages: [
+              ...discussion.messages,
+              {
+                role: "assistant" as const,
+                text: answer,
+                evidence: result.structured?.evidenceReferences?.map((item) => ({
+                  label: item.label,
+                  path: item.path,
+                  startLine: item.startLine,
+                  endLine: item.endLine
+                }))
+              }
+            ]
+          },
+          notice: result.success
+            ? "Intent answer ready. No Intent State was changed."
+            : String(result.error ?? "Intent question failed.")
+        };
+      });
     } else if (message.type === "COPILOT_ACTIVITY") {
-      this.setState({ notice: String(message.message) });
+      const activity = message.activity as CopilotActivityEvent;
+      this.setState((previous) => ({
+        application: {
+          ...previous.application,
+          copilotActivity:
+            activity.state === "QUEUED"
+              ? [activity]
+              : [...(previous.application.copilotActivity ?? []).filter((item) => item.id !== activity.id), activity].slice(-12)
+        },
+        notice: activity.label
+      }));
     } else if (message.type === "COPILOT_STREAM") {
       const stream = message as {
         contextPackageId?: string;
@@ -456,6 +563,22 @@ export class App extends React.Component<Record<string, never>, AppState> {
         text?: string;
       };
       if (stream.discussionId) {
+        if (stream.discussionId === "intent-question") {
+          this.setState((previous) => {
+            const discussion = previous.intentDiscussion;
+            if (!discussion || !stream.text) return null;
+            const last = discussion.messages.at(-1);
+            const messages =
+              last?.role === "assistant"
+                ? [
+                    ...discussion.messages.slice(0, -1),
+                    { ...last, text: `${last.text}${stream.text}` }
+                  ]
+                : [...discussion.messages, { role: "assistant" as const, text: stream.text }];
+            return { intentDiscussion: { ...discussion, messages } };
+          });
+          return;
+        }
         this.setState((previous) => {
           const discussion = previous.decisionDiscussion;
           if (!discussion || discussion.decisionId !== stream.discussionId || !stream.text)
@@ -496,11 +619,15 @@ export class App extends React.Component<Record<string, never>, AppState> {
         notice: `Encrypted Task Handoff created and copied to the clipboard. Checksum ${String(message.checksum ?? "").slice(0, 12)}…`
       });
     } else if (message.type === "TASK_HANDOFF_RESTORED") {
+      const restoredIntent = (message.packageValue as { intentState?: IntentState } | undefined)?.intentState;
       this.setState({
+        application: restoredIntent
+          ? { ...this.state.application, intentState: restoredIntent }
+          : this.state.application,
         plan:
           (message.packageValue as { sdlcPlan?: SdlcPlan } | undefined)?.sdlcPlan ??
           this.state.plan,
-        notice: "Task Handoff restored. Continue from the exact next action."
+        notice: "Task Handoff restored. Intent state loaded; refreshing repository context."
       });
     } else if (message.type === "BROWSER_VIEW_OPENED") {
       this.setState({ notice: "The synchronized Browser View is open." });
@@ -854,11 +981,13 @@ export class App extends React.Component<Record<string, never>, AppState> {
           <Metric
             label="Context"
             value={
-              this.state.task ? `${this.state.task.tokenReduction ?? 0}% smaller` : "Not prepared"
+              this.state.task?.contextTokens
+                ? `${formatContextTokens(this.state.task.contextTokens.selected)} estimated`
+                : "Not prepared"
             }
             detail={
               this.state.task?.contextManifest
-                ? `${this.state.task.contextManifest.usedTokens}/${this.state.task.contextManifest.delegationTokenBudget} delegation tokens`
+                ? `${Math.round((this.state.task.contextManifest.usedTokens / Math.max(1, this.state.task.contextManifest.delegationTokenBudget)) * 100)}% of delegation budget · raw repository context remains local`
                 : "Ingestion is never budget-limited"
             }
           />
@@ -1218,8 +1347,19 @@ export class App extends React.Component<Record<string, never>, AppState> {
   private intelligenceGraph(flowOnly: boolean): JSX.Element {
     const result = this.state.graph;
     const selected = result?.nodes.find((node) => node.id === this.state.selectedGraphNodeId);
+    const selectedEdge = result?.edges.find((edge) => edge.id === this.state.selectedGraphEdgeId);
     const mode: IntelligenceGraphMode = flowOnly ? "flows" : this.state.graphMode;
-    const relationshipEdges = (result?.edges ?? []).filter(
+    const lens = flowOnly ? "intent" : this.state.graphLens;
+    const context = this.state.task?.contextSummary;
+    const activeIntent = this.state.application.intentState;
+    const intentText = activeIntent
+      ? [activeIntent.currentObjective, activeIntent.goal, ...activeIntent.scope.included, ...activeIntent.affectedAreas].filter(Boolean).join(" ")
+      : this.state.graphQuery;
+    const contextInspector = context?.inspector;
+    const contextNodes = contextInspector ? contextProjection(contextInspector, this.state.graph ?? undefined) : undefined;
+    const reuseNodes = lens === "reuse" ? reuseProjection(this.state.reuse) : undefined;
+    const projected = lens === "context" ? contextNodes : lens === "reuse" ? reuseNodes : undefined;
+    const relationshipEdges = (projected?.edges ?? result?.edges ?? []).filter(
       (edge) =>
         this.state.graphRelationshipKind === "all" || edge.kind === this.state.graphRelationshipKind
     );
@@ -1243,23 +1383,57 @@ export class App extends React.Component<Record<string, never>, AppState> {
       connectedIds.add(edge.sourceId);
       connectedIds.add(edge.targetId);
     }
-    const visibleNodes = (result?.nodes ?? []).filter(
+    const visibleNodes = (projected?.nodes ?? result?.nodes ?? []).filter(
       (node) =>
         !hidden.has(node.id) &&
         (this.state.graphRelationshipKind === "all" || connectedIds.has(node.id))
     );
+    const degree = new Map<string, number>();
+    for (const edge of visibleEdges) {
+      degree.set(edge.sourceId, (degree.get(edge.sourceId) ?? 0) + 1);
+      degree.set(edge.targetId, (degree.get(edge.targetId) ?? 0) + 1);
+    }
+    const visualNodes: VisualGraphNode[] = visibleNodes.map((node) => {
+      const visualNode = node as VisualGraphNode;
+      const communityId = visualNode.communityId ?? communityFor(visualNode.path, visualNode.kind);
+      const anchor = visualNode.architectureAnchor ?? ((degree.get(visualNode.id) ?? 0) >= 4
+        ? { weightedDegree: degree.get(visualNode.id) ?? 0, reason: "High connectivity in this bounded projection." }
+        : undefined);
+      return {
+        ...visualNode,
+        communityId,
+        communityLabel: node.communityLabel ?? communityLabel(communityId),
+        architectureAnchor: anchor,
+        lensRole: visualNode.lensRole ?? (lens === "intent" ? visualNode.seed ? "target" : (degree.get(visualNode.id) ?? 0) > 0 ? "direct" : "available" : undefined)
+      };
+    });
     return (
       <div className="view-stack">
         <Panel
-          title={flowOnly ? "Engineering Flow Explorer" : "Knowledge Graph"}
+          title={flowOnly ? "Engineering Flow Explorer" : `${lens[0].toUpperCase()}${lens.slice(1)} Lens`}
           subtitle={
             flowOnly
               ? "Call/data-flow relationships projected from OKF."
-              : "Interactive view of the authoritative OKF relationship graph."
+              : lens === "intent"
+                ? "What part of the repository does this Intent touch?"
+                : lens === "context"
+                  ? "The active ContextPackage: sent to Copilot, available on demand, or excluded."
+                  : "Evidence-backed existing patterns related to the active Intent."
           }
         >
           <div className="inline-form">
             {!flowOnly && (
+              <select aria-label="Graph lens" value={this.state.graphLens} onChange={(event: React.FormEvent<HTMLSelectElement>) => {
+                const next = event.currentTarget.value as AppState["graphLens"];
+                this.setState({ graphLens: next, selectedGraphNodeId: undefined, selectedGraphEdgeId: undefined });
+                if (next === "reuse") this.loadReuse(intentText);
+              }}>
+                <option value="intent">Intent Lens</option>
+                <option value="context">Context Lens</option>
+                <option value="reuse">Reuse Lens</option>
+              </select>
+            )}
+            {!flowOnly && lens !== "context" && lens !== "reuse" && (
               <select
                 value={this.state.graphMode}
                 onChange={(event: React.FormEvent<HTMLSelectElement>) =>
@@ -1286,6 +1460,16 @@ export class App extends React.Component<Record<string, never>, AppState> {
                 </option>
               ))}
             </select>
+            <select
+              aria-label="Graph scope"
+              value={this.state.graphScope}
+              onChange={(event: React.FormEvent<HTMLSelectElement>) => this.setState({ graphScope: event.currentTarget.value as AppState["graphScope"] })}
+            >
+              <option>1 hop</option>
+              <option>2 hops</option>
+              <option>community</option>
+              <option>related flow</option>
+            </select>
             <input
               className="grow"
               value={this.state.graphQuery}
@@ -1298,8 +1482,8 @@ export class App extends React.Component<Record<string, never>, AppState> {
                   : "Focus by symbol, file, API or service…"
               }
             />
-            <button className="primary" onClick={() => this.loadGraph(mode, this.state.graphQuery)}>
-              Load {flowOnly ? "flows" : "graph"}
+            <button className="primary" onClick={() => lens === "reuse" ? this.loadReuse(intentText) : this.loadGraph(mode, lens === "intent" ? intentText : this.state.graphQuery)}>
+              Load {flowOnly ? "flows" : lens}
             </button>
           </div>
           {result?.warnings.map((value) => (
@@ -1307,17 +1491,28 @@ export class App extends React.Component<Record<string, never>, AppState> {
               {value}
             </div>
           ))}
+          {lens === "context" && context && <div className="projection-summary"><b>ContextPackage {context.id}</b> · {formatContextTokens(context.estimatedTransmittedTokens)} sent · {contextInspector?.availableOnDemand.length ?? 0} expandable · click a retained node to request targeted context.</div>}
+          {lens === "reuse" && this.state.reuse?.warnings.map((warning) => <div className="callout warning" key={warning}>{warning}</div>)}
+          <div className="graph-legend" aria-label="Relationship provenance legend">
+            <span><i className="legend-swatch origin-EXTRACTED" /> EXTRACTED / RESOLVED · deterministic</span>
+            <span><i className="legend-swatch origin-INFERRED" /> INFERRED · heuristic</span>
+            <span><i className="legend-swatch origin-AMBIGUOUS" /> AMBIGUOUS · verify candidates</span>
+          </div>
           <div className="graph-layout">
             <GraphCanvas
-              nodes={visibleNodes as VisualGraphNode[]}
-              edges={visibleEdges}
+              nodes={visualNodes}
+              edges={visibleEdges as VisualGraphEdge[]}
               selectedId={this.state.selectedGraphNodeId}
-              onSelect={(node) => this.setState({ selectedGraphNodeId: node.id })}
+              selectedEdgeId={this.state.selectedGraphEdgeId}
+              onSelect={(node) => this.selectProjectionNode(node, lens)}
+              onSelectEdge={(edge) => this.setState({ selectedGraphEdgeId: edge.id, selectedGraphNodeId: undefined })}
               emptyText="Load a graph from the promoted OKF snapshot."
             />
-            <GraphInspector
+            {lens === "intent" || flowOnly ? <GraphInspector
               node={selected}
               relationshipKinds={result?.relationshipKinds ?? []}
+              edges={visibleEdges as IntelligenceGraphEdge[]}
+              selectedEdge={selectedEdge}
               onOpen={(path, line) => this.openSource(path, line)}
               onFocus={(node) => this.loadGraph(mode, node.label, [node.id])}
               onExpand={(node) =>
@@ -1333,8 +1528,27 @@ export class App extends React.Component<Record<string, never>, AppState> {
                     : [...previous.collapsedGraphNodeIds, node.id]
                 }))
               }
-            />
+              onAction={(action, node) => this.runGraphAction(action, node)}
+            /> : <ProjectionInspector lens={lens} node={visualNodes.find((node) => node.id === this.state.selectedGraphNodeId)} reuse={this.state.reuse} onOpen={(path, line) => this.openSource(path, line)} onExpand={(node) => lens === "reuse" ? this.useReuseAsContext(node) : node.lensRole === "retained" && this.expandContextByReference(node.id)} />}
           </div>
+          {visibleEdges.length > 0 && (
+            <details className="graph-evidence" open>
+              <summary>Relationship evidence ({visibleEdges.length})</summary>
+              {visibleEdges.slice(0, 24).map((edge) => {
+                const source = result?.nodes.find((node) => node.id === edge.sourceId);
+                const target = result?.nodes.find((node) => node.id === edge.targetId);
+                const location = edge.sourceLocation;
+                return (
+                  <div className="graph-evidence-row" key={edge.id}>
+                    <b>{source?.label ?? edge.sourceId} —[{edge.kind}]→ {target?.label ?? edge.targetId}</b>
+                    <Status value={edge.origin ?? "INFERRED"} />
+                    <small>{Math.round((edge.confidence ?? 0) * 100)}% confidence · {(edge.evidenceIds?.length ?? 0)} evidence link(s){location ? ` · ${location.workspaceRelativePath}${location.startLine ? `:${location.startLine}` : ""}` : ""}</small>
+                    {edge.resolutionExplanation && <small>{edge.resolutionExplanation}</small>}
+                  </div>
+                );
+              })}
+            </details>
+          )}
           {result?.truncated && (
             <small>
               Visualization is intentionally bounded for readability. The persisted OKF store
@@ -1344,6 +1558,23 @@ export class App extends React.Component<Record<string, never>, AppState> {
         </Panel>
       </div>
     );
+  }
+
+  private runGraphAction(
+    action: "explain" | "callers" | "dependencies" | "flow" | "impact",
+    node: IntelligenceGraphNode
+  ): void {
+    if (action === "explain") {
+      this.setState({ intelligenceView: "Query", query: node.label });
+      vscode.postMessage({ type: "QUERY_INTELLIGENCE", query: `explain ${node.label}` });
+      return;
+    }
+    const mode: IntelligenceGraphMode =
+      action === "callers" ? "calls" :
+      action === "dependencies" ? "dependencies" :
+      action === "flow" ? "flows" : "impact";
+    this.setState({ graphMode: mode, graphQuery: node.label, selectedGraphNodeId: node.id, selectedGraphEdgeId: undefined });
+    this.loadGraph(mode, node.label, [node.id]);
   }
 
   private intelligenceCpg(): JSX.Element {
@@ -1550,7 +1781,11 @@ export class App extends React.Component<Record<string, never>, AppState> {
   }
   private loadIntelligenceSurface(view: IntelligenceView): void {
     if (view === "Explorer") this.loadExplorer(true);
-    else if (view === "Graph") this.loadGraph(this.state.graphMode, this.state.graphQuery);
+    else if (view === "Graph") {
+      const intent = this.state.application.intentState;
+      const query = intent ? [intent.currentObjective, ...intent.scope.included, ...intent.affectedAreas].filter(Boolean).join(" ") : this.state.graphQuery;
+      this.loadGraph(this.state.graphMode, query);
+    }
     else if (view === "CPG") this.loadCpg();
     else if (view === "Flows") this.loadGraph("flows", this.state.graphQuery);
   }
@@ -1563,7 +1798,28 @@ export class App extends React.Component<Record<string, never>, AppState> {
     });
   }
   private loadGraph(mode: IntelligenceGraphMode, query = "", seedIds: string[] = []): void {
-    vscode.postMessage({ type: "LOAD_INTELLIGENCE_GRAPH", mode, query: query.trim(), seedIds });
+    const depth = this.state.graphScope === "1 hop" ? 1 : this.state.graphScope === "community" ? 3 : 2;
+    vscode.postMessage({ type: "LOAD_INTELLIGENCE_GRAPH", mode: this.state.graphScope === "related flow" ? "flows" : mode, query: query.trim(), seedIds, depth });
+  }
+  private loadReuse(query: string): void {
+    vscode.postMessage({ type: "LOAD_INTELLIGENCE_REUSE", query: query.trim(), limit: 8 });
+  }
+  private selectProjectionNode(node: VisualGraphNode, lens: AppState["graphLens"] | string): void {
+    this.setState({ selectedGraphNodeId: node.id, selectedGraphEdgeId: undefined });
+    if (lens === "context" && node.lensRole === "retained") this.expandContextByReference(node.id);
+  }
+  private expandContextByReference(reference: string): void {
+    const item = this.state.task?.contextSummary?.inspector?.availableOnDemand.find((candidate) => candidate.contextReference === reference || candidate.id === reference);
+    if (item) this.expandContext(item);
+  }
+  private useReuseAsContext(node: VisualGraphNode): void {
+    const contextId = this.state.task?.contextSummary?.id;
+    if (!contextId) {
+      this.setState({ notice: "Prepare Intent context before using a reuse candidate as context." });
+      return;
+    }
+    vscode.postMessage({ type: "EXPAND_CONTEXT", contextId, focus: node.label, level: "L2" });
+    this.setState({ notice: `Requested targeted context for ${node.label}.` });
   }
   private loadCpg(): void {
     vscode.postMessage({
@@ -1637,9 +1893,9 @@ export class App extends React.Component<Record<string, never>, AppState> {
       );
     return (
       <section>
-        <div className="page-title">
+        <div className="page-title intent-page-header">
           <div>
-            <p className="eyebrow">WORK</p>
+            <p className="eyebrow">ACTIVE INTENT</p>
             <div className="active-intent-heading">
               <h1>{plan?.intent ?? (this.state.intent || "Active intent")}</h1>
               {this.state.application.intentState && (
@@ -1651,6 +1907,10 @@ export class App extends React.Component<Record<string, never>, AppState> {
               )}
             </div>
             <p>{task.reason}</p>
+            <div className="intent-header-meta">
+              {this.state.application.workspace?.branch && <span>Branch · {this.state.application.workspace.branch}</span>}
+              {this.state.application.workspace?.name && <span>Workspace · {this.state.application.workspace.name}</span>}
+            </div>
           </div>
           <div className="actions">
             <button
@@ -1669,56 +1929,49 @@ export class App extends React.Component<Record<string, never>, AppState> {
             </button>
           </div>
         </div>
-        <div className="metric-grid">
-          <Metric
-            label="Route"
-            value={task.route ?? "pending"}
-            detail={task.intentType ?? "intent"}
-          />
-          <Metric
-            label="Context reduction"
-            value={`${task.tokenReduction ?? 0}%`}
-            detail={`${task.contextTokens?.prompt ?? 0} prompt tokens`}
-          />
-          <Metric
-            label="QA coverage"
-            value={`${task.relatedTests.length} tests`}
-            detail={`${task.missingTests.length} gaps`}
-          />
-          <Metric
-            label="Risk"
-            value={`${task.securityRisk} / ${task.performanceRisk}`}
-            detail="security / performance"
-          />
-        </div>
         {this.intentWorkspace()}
         {!plan && this.prePlanResearch(task)}
-        {plan && this.researchAndSpecification(plan)}
-        {plan && this.sdlcExecution(plan, current)}
-        {this.taskEvidence(task)}
-        {this.contextAndDelegation(task, current)}
-        {task.prMarkdown && (
-          <Panel
-            title="Read-only PR Review"
-            subtitle="Reviewer-ready evidence only. Keystone never creates, updates, approves or merges the remote MR/PR."
-          >
-            <div className="actions">
-              <button
-                onClick={() =>
-                  vscode.postMessage({ type: "COPY_PR_MARKDOWN", markdown: task.prMarkdown })
-                }
-              >
-                Copy PR review
-              </button>
+        {plan && (
+          <details className="intent-secondary-details">
+            <summary>Detailed plan and story execution</summary>
+            <div className="intent-secondary-stack">
+              {this.researchAndSpecification(plan)}
+              {this.sdlcExecution(plan, current)}
             </div>
-            <pre>{task.prMarkdown}</pre>
-          </Panel>
+          </details>
         )}
-        <div id="handoff">
+        <details className="intent-secondary-details">
+          <summary>Evidence and review</summary>
+          {this.taskEvidence(task)}
+          {task.prMarkdown && (
+            <Panel
+              title="Read-only PR Review"
+              subtitle="Reviewer-ready evidence only. Keystone never creates, updates, approves or merges the remote MR/PR."
+            >
+              <div className="actions">
+                <button
+                  onClick={() =>
+                    vscode.postMessage({ type: "COPY_PR_MARKDOWN", markdown: task.prMarkdown })
+                  }
+                >
+                  Copy PR review
+                </button>
+              </div>
+              <pre>{task.prMarkdown}</pre>
+            </Panel>
+          )}
+        </details>
+        <details className="intent-secondary-details copilot-details">
+          <summary>Copilot packet, instructions, and captured result</summary>
+          {this.contextAndDelegation(task, current)}
+        </details>
+        <details id="handoff" className="intent-handoff-details" open={this.state.handoffOpen}>
+          <summary>Task Handoff from this Intent</summary>
           <Panel
             title="Task Handoff"
-            subtitle="Encrypted portable continuity attached to this active task. No credentials, token sharing, cloud session, or Git mutation."
+            subtitle="Encrypted portable continuity attached to this active Intent. No credentials, token sharing, cloud session, or Git mutation."
           >
+            {this.handoffPreview()}
             <label>
               Passphrase
               <input
@@ -1782,7 +2035,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
               Verify and restore
             </button>
           </Panel>
-        </div>
+        </details>
       </section>
     );
   }
@@ -2019,227 +2272,126 @@ export class App extends React.Component<Record<string, never>, AppState> {
   private intentWorkspace(): JSX.Element {
     const intent = this.state.application.intentState;
     if (!intent) return <></>;
-    const operation = this.state.application.operations?.find(
-      (item) => item.id === "copilot-delegation"
-    );
+    const operation = this.state.application.operations?.find((item) => item.id === "copilot-delegation");
     const running = operation?.status === "running";
-    const proposed = intent.decisions.filter((decision) => decision.status === "PROPOSED");
-    const resolved = intent.decisions.filter((decision) => decision.status !== "PROPOSED");
-    const activeBlockers = intent.blockers.filter((blocker) => !blocker.resolvedAt);
-    const scopeChange = intent.scopeChangeProposals.find((proposal) => proposal.status === "PROPOSED");
+    const activity = this.state.application.copilotActivity ?? [];
+    const proposed = intent.decisions.filter((item) => item.status === "PROPOSED");
+    const resolved = intent.decisions.filter((item) => item.status !== "PROPOSED");
+    const blockers = intent.blockers.filter((item) => !item.resolvedAt);
+    const scopeChange = intent.scopeChangeProposals.find((item) => item.status === "PROPOSED");
     const primary = this.primaryIntentAction(intent);
     return (
-      <Panel
-        title="Intent state"
-        subtitle="Durable engineering state stays separate from the Copilot conversation."
-      >
-        <div className="intent-header-row">
-          <span className={`status ${intent.lifecycle.toLowerCase()}`}>
-            {intentLifecycleLabel(intent.lifecycle)}
-          </span>
-          <span className="intent-objective">Current objective: {intent.currentObjective}</span>
-          <select
-            className="intent-lifecycle-control"
-            value=""
-            aria-label="Correct Intent lifecycle"
-            onChange={(event: React.FormEvent<HTMLSelectElement>) => {
-              const next = event.currentTarget.value as IntentLifecycle;
-              if (next) vscode.postMessage({ type: "SET_INTENT_LIFECYCLE", lifecycle: next });
-            }}
-          >
-            <option value="" disabled>
-              Correct lifecycle…
-            </option>
-            {intentLifecycleTransitions[intent.lifecycle]
-              .filter((next) => next !== "BLOCKED")
-              .map((next) => (
-                <option value={next} key={next}>
-                  Move to {intentLifecycleLabel(next)}
-                </option>
-              ))}
-          </select>
-          {intent.latestCopilotInteraction?.contextPackageId && (
-            <small>ContextPackage {intent.latestCopilotInteraction.contextPackageId}</small>
-          )}
-        </div>
-        <div className="intent-summary-grid">
-          <div>
-            <span>Understanding</span>
-            <strong>{intent.understanding.at(-1) ?? "Not captured yet"}</strong>
-          </div>
-          <div>
-            <span>Completed</span>
-            <strong>{intent.completedWork.length} durable item(s)</strong>
-          </div>
-          <div>
-            <span>Questions</span>
-            <strong>{intent.openQuestions.length}</strong>
-          </div>
-          <div>
-            <span>Blockers</span>
-            <strong>{activeBlockers.length}</strong>
-          </div>
-        </div>
-        <div className="intent-primary-row">
-          <div>
-            <strong>{running ? "Copilot working" : primary.label}</strong>
-            <small>
-              {running ? (operation?.message ?? "Streaming a response…") : primary.description}
-            </small>
-          </div>
-          <button
-            className={running ? "danger" : "primary"}
-            onClick={() =>
-              running ? vscode.postMessage({ type: "CANCEL_COPILOT" }) : primary.run()
-            }
-            disabled={!running && !primary.enabled}
-          >
-            {running ? "Stop" : primary.label}
-          </button>
-        </div>
-        {proposed.length > 0 && (
-          <div className="decision-workspace">
-            <div className="decision-list">
-              <strong>Decision candidates</strong>
-              <small className="decision-helper">
-                Copilot recommendations stay temporary until you resolve them.
-              </small>
-              {proposed.map((decision) => this.decisionCandidate(decision))}
-            </div>
-            {this.state.decisionDiscussion && this.decisionDiscussion(intent)}
-          </div>
-        )}
-        {resolved.length > 0 && (
-          <details className="decision-history">
-            <summary>Decision history · {resolved.length}</summary>
-            {resolved.slice(0, 12).map((decision) => (
-              <div className="decision-history-item" key={decision.id}>
-                <span className={`status ${decision.status.toLowerCase()}`}>{decision.status}</span>
-                <div>
-                  <b>{decision.title}</b>
-                  <small>{decision.recommendation}</small>
-                  {decision.resolutionReason && <small>Reason: {decision.resolutionReason}</small>}
-                </div>
-              </div>
-            ))}
-          </details>
-        )}
-        {activeBlockers.length > 0 && (
-          <div className="callout warning">
-            <strong>Blocked</strong>
-            {activeBlockers.map((blocker) => (
-              <div className="blocker-row" key={blocker.id}>
-                <span>{blocker.summary}</span>
-                <button
-                  onClick={() =>
-                    vscode.postMessage({ type: "RESOLVE_INTENT_BLOCKER", blockerId: blocker.id })
-                  }
-                >
-                  Resolve
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-        <div className="add-blocker-row">
-          <input
-            value={this.state.intentBlocker}
-            onChange={(event: React.FormEvent<HTMLInputElement>) =>
-              this.setState({ intentBlocker: event.currentTarget.value })
-            }
-            placeholder="Describe a real blocker…"
-          />
-          <button
-            disabled={!this.state.intentBlocker.trim()}
-            onClick={() => {
-              vscode.postMessage({
-                type: "ADD_INTENT_BLOCKER",
-                summary: this.state.intentBlocker.trim()
-              });
-              this.setState({ intentBlocker: "" });
-            }}
-          >
-            Mark blocked
-          </button>
-        </div>
-        {scopeChange && (
-          <div className="callout warning">
-            <strong>Scope change recommended</strong>
-            <span>{scopeChange.summary}</span>
-            <small>Affected: {scopeChange.affectedAreas.join(", ")}</small>
-            {scopeChange.signals?.length ? (
-              <small>Signals: {scopeChange.signals.join(" · ")}</small>
-            ) : null}
-            <div className="actions">
-              <button
-                className="primary"
-                onClick={() =>
-                  vscode.postMessage({
-                    type: "EXPAND_INTENT_SCOPE",
-                    proposalId: scopeChange.id,
-                    reason: scopeChange.reason
-                  })
-                }
-              >
-                Expand Scope
-              </button>
-              <button
-                onClick={() =>
-                  vscode.postMessage({
-                    type: "KEEP_INTENT_SCOPE",
-                    proposalId: scopeChange.id,
-                    reason: scopeChange.reason
-                  })
-                }
-              >
-                Keep Current Scope
-              </button>
-              <button
-                onClick={() =>
-                  vscode.postMessage({
-                    type: "CREATE_INTENT_FOLLOW_UP",
-                    proposalId: scopeChange.id,
-                    reason: scopeChange.reason
-                  })
-                }
-              >
-                Create Follow-up
-              </button>
-              <button
-                onClick={() => {
-                  const decision = intent.decisions.find(
-                    (item) => item.id === scopeChange.decisionId
-                  );
-                  if (decision) this.openDecisionDiscussion(decision);
-                }}
-              >
-                Discuss
-              </button>
+      <Panel title="Active Intent workspace" subtitle="The current engineering thread, its decisions, evidence, and next action stay together here.">
+        <div className="intent-overview">
+          <div className="intent-overview-heading">
+            <div><span className="eyebrow">OVERVIEW</span><h3>{intent.goal}</h3></div>
+            <div className="intent-overview-controls">
+              <span className={`status ${intent.lifecycle.toLowerCase()}`}>{intentLifecycleLabel(intent.lifecycle)}</span>
+              <select className="intent-lifecycle-control" value="" aria-label="Correct Intent lifecycle" onChange={(event: React.FormEvent<HTMLSelectElement>) => {
+                const next = event.currentTarget.value as IntentLifecycle;
+                if (next) vscode.postMessage({ type: "SET_INTENT_LIFECYCLE", lifecycle: next });
+              }}>
+                <option value="" disabled>Correct lifecycle…</option>
+                {intentLifecycleTransitions[intent.lifecycle].filter((next) => next !== "BLOCKED").map((next) => <option value={next} key={next}>Move to {intentLifecycleLabel(next)}</option>)}
+              </select>
             </div>
           </div>
-        )}
-        <div className="ask-intent-row">
-          <input
-            value={this.state.intentQuestion}
-            onChange={(event: React.FormEvent<HTMLInputElement>) =>
-              this.setState({ intentQuestion: event.currentTarget.value })
-            }
-            placeholder="Ask about this Intent…"
-          />
-          <button
-            disabled={!this.state.intentQuestion.trim() || running}
-            onClick={() => {
-              vscode.postMessage({
-                type: "ASK_ABOUT_INTENT",
-                question: this.state.intentQuestion.trim()
-              });
-              this.setState({ intentQuestion: "" });
-            }}
-          >
-            Ask
-          </button>
+          <div className="intent-overview-grid">
+            <div><span>What Keystone understands</span><p>{intent.understanding.at(-1) ?? "Understanding is still being established."}</p></div>
+            <div><span>Scope</span><p>{intent.scope.included.length ? `Includes ${intent.scope.included.slice(0, 3).join(", ")}` : "Scope is not narrowed yet."}{intent.scope.excluded.length ? ` · Excludes ${intent.scope.excluded.slice(0, 2).join(", ")}` : ""}</p></div>
+          </div>
+          <div className="intent-objective-band"><span>Current objective</span><strong>{intent.currentObjective}</strong></div>
         </div>
+
+        <div className="intent-section current-work-section">
+          <div className="intent-section-heading"><div><span className="eyebrow">CURRENT WORK</span><h3>{running ? "Copilot is working on the Intent" : "Continue the Intent"}</h3></div>{operation?.message && <small>{operation.message}</small>}</div>
+          <div className="intent-primary-row">
+            <div><strong>{running ? "Copilot working" : primary.label}</strong><small>{running ? (operation?.message ?? "Streaming a response…") : primary.description}</small></div>
+            <button className={running ? "danger" : "primary"} onClick={() => running ? vscode.postMessage({ type: "CANCEL_COPILOT" }) : primary.run()} disabled={!running && !primary.enabled}>{running ? "Stop" : primary.label}</button>
+          </div>
+          {this.copilotActivity(activity, running)}
+        </div>
+
+        <div className="intent-progress-strip" aria-label="Intent progress">
+          <div><span>Completed</span><strong>{intent.completedWork.length} item(s)</strong></div>
+          <div><span>Questions</span><strong>{intent.openQuestions.length}</strong></div>
+          <div><span>Decisions</span><strong>{intent.decisions.filter((item) => item.status === "ACCEPTED").length} accepted</strong></div>
+          <div><span>Next</span><strong>{primary.label}</strong></div>
+        </div>
+
+        {(proposed.length || intent.openQuestions.length || blockers.length) > 0 && <div className="intent-section intent-important-section">
+          <div className="intent-section-heading"><div><span className="eyebrow">DECISIONS / QUESTIONS / BLOCKERS</span><h3>Items needing attention</h3></div></div>
+          <div className="intent-attention-grid">
+            {proposed.length > 0 && <div className="intent-attention-column"><strong>Decision candidates</strong><small>Recommendations stay temporary until you resolve them.</small><div className="decision-list">{proposed.map((decision) => this.decisionCandidate(decision))}</div></div>}
+            {intent.openQuestions.length > 0 && <div className="intent-attention-column"><strong>Open questions</strong><small>Clarify these before they become durable decisions.</small><ul className="intent-compact-list">{intent.openQuestions.slice(0, 4).map((question) => <li key={question}>{question}</li>)}</ul></div>}
+            {blockers.length > 0 && <div className="intent-attention-column blocked-attention"><strong>Blocked</strong>{blockers.map((blocker) => <div className="blocker-row" key={blocker.id}><span>{blocker.summary}</span><button onClick={() => vscode.postMessage({ type: "RESOLVE_INTENT_BLOCKER", blockerId: blocker.id })}>Resolve</button></div>)}</div>}
+          </div>
+          <div className="add-blocker-row"><input value={this.state.intentBlocker} onChange={(event: React.FormEvent<HTMLInputElement>) => this.setState({ intentBlocker: event.currentTarget.value })} placeholder="Add a real blocker…" /><button disabled={!this.state.intentBlocker.trim()} onClick={() => { vscode.postMessage({ type: "ADD_INTENT_BLOCKER", summary: this.state.intentBlocker.trim() }); this.setState({ intentBlocker: "" }); }}>Mark blocked</button></div>
+        </div>}
+
+        {(resolved.length || intent.affectedAreas.length || intent.changes.length || scopeChange) && <div className="intent-section">
+          <div className="intent-section-heading"><div><span className="eyebrow">CHANGES</span><h3>What has moved</h3></div></div>
+          <div className="intent-change-grid">
+            {(intent.affectedAreas.length || intent.changes.length) > 0 && <div><span>Affected areas</span><p>{[...intent.affectedAreas, ...intent.changes].slice(0, 8).join(" · ")}</p></div>}
+            {resolved.length > 0 && <details className="intent-history-details"><summary>Decision history · {resolved.length}</summary>{resolved.slice(0, 8).map((decision) => <div className="decision-history-item" key={decision.id}><span className={`status ${decision.status.toLowerCase()}`}>{decision.status}</span><div><b>{decision.title}</b><small>{decision.recommendation}</small></div></div>)}</details>}
+          </div>
+          {scopeChange && <div className="callout warning scope-change-callout"><strong>Scope change recommended</strong><span>{scopeChange.summary}</span><small>Affected: {scopeChange.affectedAreas.join(", ")}</small><div className="actions"><button className="primary" onClick={() => vscode.postMessage({ type: "EXPAND_INTENT_SCOPE", proposalId: scopeChange.id, reason: scopeChange.reason })}>Expand scope</button><button onClick={() => vscode.postMessage({ type: "KEEP_INTENT_SCOPE", proposalId: scopeChange.id, reason: scopeChange.reason })}>Keep current scope</button><button onClick={() => vscode.postMessage({ type: "CREATE_INTENT_FOLLOW_UP", proposalId: scopeChange.id, reason: scopeChange.reason })}>Create follow-up</button><button onClick={() => { const decision = intent.decisions.find((item) => item.id === scopeChange.decisionId); if (decision) this.openDecisionDiscussion(decision); }}>Discuss</button></div></div>}
+        </div>}
+
+        <div className="intent-section intent-context-section"><div className="intent-section-heading"><div><span className="eyebrow">CONTEXT</span><h3>What Keystone is using</h3></div></div>{this.contextExperience(this.state.task)}</div>
+
+        <div className="intent-section intent-ask-section"><div className="intent-section-heading"><div><span className="eyebrow">ASK ABOUT THIS INTENT</span><h3>Get a contextual answer</h3></div><small>No Intent State changes from a question alone.</small></div>
+          <div className="ask-intent-row"><input onKeyDown={(event: KeyboardEvent) => { if (event.key === "Enter" && this.state.intentQuestion.trim() && !running) this.askIntentQuestion(); }} value={this.state.intentQuestion} onChange={(event: React.FormEvent<HTMLInputElement>) => this.setState({ intentQuestion: event.currentTarget.value })} placeholder="Ask about this Intent…" /><button disabled={!this.state.intentQuestion.trim() || running} onClick={() => this.askIntentQuestion()}>Send</button></div>
+          {this.state.intentDiscussion && <div className="intent-question-thread" aria-live="polite" aria-label="Intent answers">{this.state.intentDiscussion.messages.map((message, index) => <div className={`intent-question-message ${message.role}`} key={`${message.role}-${index}`}><span>{message.role === "user" ? "You" : "Keystone"}</span><p>{message.text}</p>{message.evidence?.length ? <small className="intent-question-evidence">Evidence: {message.evidence.map((item) => `${item.label}${item.path ? ` · ${item.path}` : ""}`).join(" · ")}</small> : null}</div>)}{this.state.intentDiscussion.pending && <div className="intent-question-pending">Keystone is checking the prepared context…</div>}</div>}
+        </div>
+        {this.state.decisionDiscussion && this.decisionDiscussion(intent)}
       </Panel>
+    );
+  }
+
+  private askIntentQuestion(): void {
+    const question = this.state.intentQuestion.trim();
+    if (!question || this.state.intentDiscussion?.pending) return;
+    this.setState((previous) => ({
+      intentQuestion: "",
+      intentDiscussion: {
+        pending: true,
+        messages: [
+          ...(previous.intentDiscussion?.messages ?? []),
+          { role: "user", text: question }
+        ]
+      }
+    }));
+    vscode.postMessage({ type: "ASK_ABOUT_INTENT", question });
+  }
+
+  private copilotActivity(events: CopilotActivityEvent[], running: boolean): JSX.Element | null {
+    if (!events.length) return null;
+    const visible = running ? events : events.filter((event) => event.state !== "RUNNING").slice(-4);
+    const latest = events.at(-1);
+    return (
+      <div className={`copilot-activity ${running ? "is-running" : "is-settled"}`} aria-live="polite">
+        <div className="copilot-activity-heading">
+          <strong>{running ? "Copilot working" : latest?.state === "FAILED" ? "Copilot needs attention" : "Copilot activity"}</strong>
+          <button className="activity-details-button" onClick={() => this.setState((previous) => ({ copilotActivityDetails: !previous.copilotActivityDetails }))}>
+            {this.state.copilotActivityDetails ? "Hide details" : "View details"}
+          </button>
+        </div>
+        <div className="copilot-activity-list">
+          {(this.state.copilotActivityDetails ? events : visible).map((event) => (
+            <div className="copilot-activity-item" key={`${event.id}-${event.state}`}>
+              <span className={`activity-marker ${event.state.toLowerCase()}`} aria-hidden="true">
+                {event.state === "COMPLETED" ? "✓" : event.state === "RUNNING" ? "●" : event.state === "QUEUED" ? "○" : "!"}
+              </span>
+              <span>{event.label}</span>
+              {this.state.copilotActivityDetails && event.detail && <small>{event.detail}</small>}
+            </div>
+          ))}
+        </div>
+        {!running && !this.state.copilotActivityDetails && events.length > visible.length && (
+          <small className="copilot-activity-summary">{events.length} meaningful steps recorded for this run.</small>
+        )}
+      </div>
     );
   }
 
@@ -2691,13 +2843,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
     const structured = delegationResult?.structured;
     const details = structured?.details;
     return (
-      <div className="two-column">
-        <Panel
-          title="Context"
-          subtitle="Inspect the focused context prepared for this intent before handing work to Copilot."
-        >
-          {this.contextExperience(taskResult)}
-        </Panel>
+      <div className="delegation-secondary">
         <Panel
           title="Copilot delegation"
           subtitle="After repository intelligence and approved R&D, Copilot is the implementation worker. Keystone sends the selected intelligence packet instead of asking Copilot to rediscover the repository."
@@ -3144,6 +3290,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
             <span>{inspector.availableOnDemand.length} available on demand</span>
             <span>{inspector.excluded.length} excluded</span>
           </div>
+          <ContextSavingsSummary summary={summary} inspector={inspector} />
           <small className="context-package-id">
             ContextPackage {summary.id} · this is the exact package available to Copilot
           </small>
@@ -3206,6 +3353,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
                 Prepared for the current Intent · {summary.allCandidateCount} candidate(s)
                 considered · revision {summary.sourceRevision.slice(0, 12)}…
               </small>
+              <ContextSavingsDetails events={summary.savingsEvents ?? []} />
             </details>
           </div>
         )}
@@ -3265,6 +3413,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
                 <div className="context-item-meta">
                   {item.expandable && <em className="expandable-badge">Expandable</em>}
                   {item.compressed && <span>Prepared as a concise fact</span>}
+                  {item.compression?.derived && <span title={item.compression.originalHash}>Signal reduced · {item.compression.originalBytes} → {item.compression.compressedBytes} bytes</span>}
                   {expandable && item.expandable && (
                     <button
                       className="context-expand-button"
@@ -3425,7 +3574,62 @@ export class App extends React.Component<Record<string, never>, AppState> {
   }
   private openHandoff(): void {
     this.navigate("Work");
+    this.setState({ handoffOpen: true });
     setTimeout(() => document.getElementById("handoff")?.scrollIntoView({ behavior: "smooth" }), 0);
+  }
+
+  private handoffPreview(): JSX.Element {
+    const intent = this.state.application.intentState;
+    const task = this.state.task ?? this.state.application.taskAnalysis;
+    const decisions = intent?.decisions.filter((item) => item.status === "ACCEPTED").length ?? 0;
+    const blockers = intent?.blockers.filter((item) => !item.resolvedAt).length ?? 0;
+    const references = new Set([
+      ...(intent?.contextReferences ?? []),
+      ...(intent?.intelligenceReferences ?? []),
+      ...((task?.contextSections ?? []).map((item) => item.path))
+    ]).size;
+    const areas = intent?.affectedAreas.length ?? task?.impactedServices?.length ?? 0;
+    return (
+      <div className="handoff-preview" aria-label="Task Handoff preview">
+        <div className="handoff-preview-heading">
+          <div>
+            <span className="decision-kicker">Before handoff</span>
+            <h3>What will be handed off</h3>
+          </div>
+          <span className="status-chip">Durable state only</span>
+        </div>
+        <div className="handoff-preview-grid">
+          <span><b>Intent</b><small>{intent?.goal ?? task?.researchDocument?.problemStatement ?? "Active Intent"}</small></span>
+          <span><b>{decisions} decisions</b><small>Accepted decisions and rejected alternatives</small></span>
+          <span><b>Current objective</b><small>{intent?.currentObjective ?? "Not recorded"}</small></span>
+          <span><b>{blockers} blockers</b><small>Open blockers and risks</small></span>
+          <span><b>{references} relevant repository references</b><small>Context and intelligence references re-resolved on resume</small></span>
+          <span><b>{areas} changed areas</b><small>Affected areas and relevant changes</small></span>
+        </div>
+        <details className="handoff-preview-inspection">
+          <summary>Allow inspection</summary>
+          <p>Large conversation history excluded. Credentials, model tokens, and hidden Copilot state are never included.</p>
+          <pre>{JSON.stringify({
+            goal: intent?.goal,
+            scope: intent?.scope,
+            constraints: intent?.constraints,
+            acceptedDecisions: intent?.decisions.filter((item) => item.status === "ACCEPTED").map((item) => item.title),
+            rejectedApproaches: intent?.decisions.filter((item) => item.status === "REJECTED").map((item) => item.title),
+            currentObjective: intent?.currentObjective,
+            completedWork: intent?.completedWork,
+            openQuestions: intent?.openQuestions,
+            blockers: intent?.blockers,
+            risks: intent?.risks,
+            affectedAreas: intent?.affectedAreas,
+            changes: intent?.changes,
+            contextReferences: intent?.contextReferences,
+            intelligenceReferences: intent?.intelligenceReferences,
+            artifacts: intent?.artifacts,
+            recentActivity: intent?.latestCopilotInteraction?.summary
+          }, null, 2)}</pre>
+        </details>
+      </div>
+    );
   }
 
   private activity(): JSX.Element {
@@ -3669,6 +3873,34 @@ function formatContextTokens(value: number): string {
   if (value >= 1_000) return `~${(value / 1_000).toFixed(value >= 10_000 ? 0 : 1)}K`;
   return `~${Math.round(value)}`;
 }
+function ContextSavingsSummary({
+  summary,
+  inspector
+}: {
+  summary: NonNullable<TaskResult["contextSummary"]>;
+  inspector: { estimatedPreparedTokens: number; estimatedAvoidedTokens: number };
+}): JSX.Element {
+  const events = (summary.savingsEvents ?? []).filter((event) => event.avoidedEstimatedTokens > 0);
+  const original = inspector.estimatedPreparedTokens + inspector.estimatedAvoidedTokens;
+  return (
+    <div className="context-savings-summary" aria-label="Context savings observability">
+      <div><strong>Context prepared</strong><span>estimated, candidate-level attribution</span></div>
+      <div className="context-savings-metrics"><span>Original available <b>{formatContextTokens(original)}</b></span><span>Transmitted <b>{formatContextTokens(inspector.estimatedPreparedTokens)}</b></span><span>Avoided <b>{formatContextTokens(inspector.estimatedAvoidedTokens)}</b></span></div>
+      <div className="context-savings-signals">
+        {events.length ? events.map((event) => <span key={event.category}>{event.category} reduced</span>) : <span>No meaningful reduction measured for this package</span>}
+      </div>
+    </div>
+  );
+}
+function ContextSavingsDetails({ events }: { events: NonNullable<NonNullable<TaskResult["contextSummary"]>["savingsEvents"]> }): JSX.Element {
+  return (
+    <div className="context-savings-details">
+      <h4>Savings attribution</h4>
+      {events.length ? events.map((event) => <div className="context-savings-row" key={event.category}><b>{event.category}</b><span>{formatContextTokens(event.originalEstimatedTokens)} original → {formatContextTokens(event.transmittedEstimatedTokens)} transmitted · {formatContextTokens(event.avoidedEstimatedTokens)} avoided</span><small>{event.reductionStrategy} · {event.candidateIds.length} candidate(s)</small></div>) : <small>No candidate-level savings events were recorded.</small>}
+      <small>Counts are deterministic estimates from this ContextPackage; categories are mutually exclusive and are not added to the package total twice.</small>
+    </div>
+  );
+}
 function WorkerInsights({
   worker,
   result
@@ -3874,23 +4106,125 @@ function ExplorerRow({
     </article>
   );
 }
+function communityFor(path: string | undefined, kind: string): string {
+  const first = path?.split(/[\\/]/).filter(Boolean)[0];
+  return first && !/^(src|lib|app)$/i.test(first) ? first : kind;
+}
+function communityLabel(id: string): string {
+  return id.replace(/[-_]/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+function contextProjection(
+  inspector: NonNullable<NonNullable<ContextPackageSummary["inspector"]>>,
+  graph?: IntelligenceGraphResult
+): { nodes: VisualGraphNode[]; edges: VisualGraphEdge[] } {
+  const groups: Array<[string, readonly ContextInspectorItem[], VisualGraphNode["lensRole"]]> = [
+    ["must-preserve", inspector.mustPreserve, "included"],
+    ["included", inspector.included, "included"],
+    ["available-on-demand", inspector.availableOnDemand, "retained"],
+    ["excluded", inspector.excluded, "excluded"]
+  ];
+  const nodes: VisualGraphNode[] = [{ id: "context-package", label: "ContextPackage", kind: "operation", seed: true, lensRole: "target", lensReason: "Prepared package for the active operation." }];
+  const edges: VisualGraphEdge[] = [];
+  for (const [group, items, role] of groups) {
+    for (const item of items) {
+      const id = item.contextReference || item.id;
+      nodes.push({ id, label: item.label, kind: item.category, path: item.path, seed: false, communityId: group, communityLabel: group.replace(/-/g, " "), lensRole: role, lensReason: item.reason, estimatedTokens: item.estimatedTokenCost, confidence: item.relevance });
+      edges.push({ id: `context-${id}`, sourceId: "context-package", targetId: id, kind: group, origin: "INFERRED", confidence: item.relevance });
+      const match = graph?.nodes.find((node) => node.id === item.id || node.path === item.path || node.evidenceIds.some((evidence) => item.evidence.some((candidate) => candidate.evidenceId === evidence)));
+      if (match) {
+        nodes.push({ ...match, id: `${id}-graph`, label: match.label, seed: false, lensRole: role, communityId: group, communityLabel: group.replace(/-/g, " ") });
+        edges.push({ id: `context-link-${id}`, sourceId: id, targetId: `${id}-graph`, kind: "maps-to", origin: "RESOLVED", confidence: Math.max(item.relevance, match.confidence) });
+      }
+    }
+  }
+  return { nodes, edges };
+}
+function reuseProjection(reuse?: ReuseResult): { nodes: VisualGraphNode[]; edges: VisualGraphEdge[] } {
+  if (!reuse) return { nodes: [], edges: [] };
+  const nodes: VisualGraphNode[] = [{ id: "reuse-intent", label: reuse.intent, kind: "current objective", seed: true, lensRole: "target" }];
+  const edges: VisualGraphEdge[] = [];
+  for (const [index, item] of reuse.candidates.entries()) {
+    const candidateId = `candidate-${item.candidate.id}-${index}`;
+    nodes.push({ id: candidateId, label: item.candidate.label, kind: item.candidate.kind, path: item.candidate.path, line: item.candidate.line, lensRole: "candidate", lensReason: item.whyItMatches.join("; "), confidence: item.candidate.confidence });
+    edges.push({ id: `reuse-${candidateId}`, sourceId: "reuse-intent", targetId: candidateId, kind: "similar implementation", origin: "INFERRED", confidence: item.candidate.confidence });
+    for (const [usedIndex, used] of item.whereUsed.entries()) {
+      const usedId = `${candidateId}-used-${used.id}-${usedIndex}`;
+      nodes.push({ id: usedId, label: used.label, kind: used.kind, path: used.path, line: used.line, lensRole: "used-by", confidence: used.confidence });
+      edges.push({ id: `used-${usedId}`, sourceId: candidateId, targetId: usedId, kind: "already used by", origin: "RESOLVED", confidence: used.confidence });
+    }
+  }
+  return { nodes, edges };
+}
+function ProjectionInspector({
+  lens,
+  node,
+  reuse,
+  onOpen,
+  onExpand
+}: {
+  lens: string;
+  node?: VisualGraphNode;
+  reuse?: ReuseResult;
+  onOpen: (path: string, line?: number) => void;
+  onExpand: (node: VisualGraphNode) => void;
+}): JSX.Element {
+  const candidate = node && reuse?.candidates.find((item) => node.id.includes(item.candidate.id));
+  return <div className="graph-inspector"><div className="inspector-content">
+    {node ? <>
+      <p className="eyebrow">{lens.toUpperCase()} LENS</p><h3>{node.label}</h3><Status value={node.kind} />
+      {node.lensRole && <p><b>State:</b> {node.lensRole}</p>}
+      {node.lensReason && <p className="graph-structure-note"><b>Why:</b> {node.lensReason}</p>}
+      {node.estimatedTokens !== undefined && <p><b>Context cost:</b> ~{node.estimatedTokens} tokens</p>}
+      {node.confidence !== undefined && <p><b>Confidence:</b> {Math.round(node.confidence * 100)}%</p>}
+      {node.path && <button className="link-button" onClick={() => onOpen(node.path!, node.line)}>{node.path}{node.line ? `:${node.line}` : ""}</button>}
+      {candidate && <>
+        <h4>Why this candidate matches</h4><ul>{candidate.whyItMatches.map((reason) => <li key={reason}>{reason}</li>)}</ul>
+        <h4>Relevant flow</h4>{candidate.relationships.slice(0, 5).map((flow) => <small className="projection-flow" key={`${flow.sourceId}-${flow.targetId}`}>{flow.sourceLabel} —[{flow.relationship}]→ {flow.targetLabel}</small>)}
+        <p><b>Evidence:</b> {candidate.evidence.evidenceIds.join(" · ") || "none linked"}</p>
+        <div className="actions"><button onClick={() => onExpand(node)}>Use as Context</button><button onClick={() => node.path && onOpen(node.path, node.line)}>Inspect Pattern</button></div>
+      </>}
+      {lens === "context" && node.lensRole === "retained" && <button className="primary" onClick={() => onExpand(node)}>Expand targeted context</button>}
+    </> : <Empty text="Select a projection node to inspect its inclusion, reuse, or scope explanation." />}
+  </div></div>;
+}
 function GraphInspector({
   node,
   relationshipKinds,
+  edges,
+  selectedEdge,
   onOpen,
   onFocus,
   onExpand,
   collapsed,
-  onCollapse
+  onCollapse,
+  onAction
 }: {
   node: IntelligenceGraphNode | undefined;
   relationshipKinds: readonly string[];
+  edges: readonly IntelligenceGraphEdge[];
+  selectedEdge: IntelligenceGraphEdge | undefined;
   onOpen: (path: string, line?: number) => void;
   onFocus: (node: IntelligenceGraphNode) => void;
   onExpand: (node: IntelligenceGraphNode) => void;
   collapsed: boolean;
   onCollapse: (node: IntelligenceGraphNode) => void;
+  onAction: (action: "explain" | "callers" | "dependencies" | "flow" | "impact", node: IntelligenceGraphNode) => void;
 }): JSX.Element {
+  if (selectedEdge) {
+    return (
+      <div className="graph-inspector">
+        <div className="inspector-content">
+          <p className="eyebrow">SELECTED RELATIONSHIP</p>
+          <h3>{selectedEdge.kind}</h3>
+          <Status value={selectedEdge.origin} />
+          <p>{Math.round(selectedEdge.confidence * 100)}% confidence · {selectedEdge.evidenceIds.length} evidence link(s)</p>
+          {selectedEdge.sourceLocation && <small>{selectedEdge.sourceLocation.workspaceRelativePath}{selectedEdge.sourceLocation.startLine ? `:${selectedEdge.sourceLocation.startLine}` : ""}</small>}
+          {selectedEdge.resolutionExplanation && <p className="graph-structure-note">{selectedEdge.resolutionExplanation}</p>}
+          <button onClick={() => navigator.clipboard?.writeText(selectedEdge.id)}>Copy relationship ID</button>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="graph-inspector">
       {node ? (
@@ -3902,6 +4236,13 @@ function GraphInspector({
             {Math.round(node.confidence * 100)}% confidence · {node.evidenceIds.length} evidence
             link(s)
           </p>
+          {node.communityLabel && (
+            <p className="graph-structure-note">
+              Community: {node.communityLabel}
+              {node.architectureAnchor ? ` · Architecture Anchor (${node.architectureAnchor.weightedDegree} weighted connectivity)` : ""}
+            </p>
+          )}
+          {node.architectureAnchor && <small>{node.architectureAnchor.reason}</small>}
           {node.path && (
             <button className="link-button" onClick={() => onOpen(node.path!, node.line)}>
               {node.path}
@@ -3909,6 +4250,11 @@ function GraphInspector({
             </button>
           )}
           <div className="actions">
+            <button onClick={() => onAction("explain", node)}>Explain</button>
+            <button onClick={() => onAction("callers", node)}>Show callers</button>
+            <button onClick={() => onAction("dependencies", node)}>Show dependencies</button>
+            <button onClick={() => onAction("flow", node)}>Show flow</button>
+            <button onClick={() => onAction("impact", node)}>Impact</button>
             <button onClick={() => onFocus(node)}>Focus neighborhood</button>
             <button onClick={() => onExpand(node)}>Expand neighborhood</button>
             <button onClick={() => onCollapse(node)}>
@@ -3918,6 +4264,14 @@ function GraphInspector({
           <details>
             <summary>Visible relationship kinds</summary>
             <p>{relationshipKinds.join(" · ") || "none"}</p>
+          </details>
+          <details>
+            <summary>Relationships ({edges.filter((edge) => edge.sourceId === node.id || edge.targetId === node.id).length})</summary>
+            <div className="graph-mini-list">
+              {edges.filter((edge) => edge.sourceId === node.id || edge.targetId === node.id).slice(0, 12).map((edge) => (
+                <span key={edge.id}><Status value={edge.origin} /> {edge.kind}</span>
+              ))}
+            </div>
           </details>
         </div>
       ) : (

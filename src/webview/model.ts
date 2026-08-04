@@ -141,6 +141,7 @@ export interface ContextPackageSummary {
     compressed: boolean;
     contextReference: string;
     reason: string;
+    compression?: { strategy: string; originalBytes: number; compressedBytes: number; originalHash: string; derived: boolean };
     provenance?: {
       authoritativePath?: string;
       sourceHash?: string;
@@ -161,12 +162,24 @@ export interface ContextPackageSummary {
     compressed: boolean;
     contextReference: string;
     reason: string;
+    compression?: { strategy: string; originalBytes: number; compressedBytes: number; originalHash: string; derived: boolean };
     provenance?: {
       authoritativePath?: string;
       sourceHash?: string;
       sourceRevision: string;
       ranges: EvidenceItem[];
     };
+  }>;
+  savingsEvents?: Array<{
+    category: "Repository Exploration" | "Tool/Runtime Output" | "Conversation/Intent History" | "Semantic Compression" | "Deduplication";
+    originalEstimatedTokens: number;
+    transmittedEstimatedTokens: number;
+    avoidedEstimatedTokens: number;
+    reductionStrategy: string;
+    contextPackageId: string;
+    operation: string;
+    timestamp: string;
+    candidateIds: string[];
   }>;
   inspector?: {
     estimatedPreparedTokens: number;
@@ -417,6 +430,36 @@ export interface TaskResult {
   };
   taskWorkspace?: { id?: string; name?: string };
 }
+
+export interface ReuseCandidate {
+  candidate: {
+    id: string;
+    label: string;
+    kind: string;
+    path?: string;
+    line?: number;
+    summary: string;
+    reason: string;
+    confidence: number;
+    evidenceIds: string[];
+  };
+  whyItMatches: readonly string[];
+  whereUsed: readonly ReuseCandidate["candidate"][];
+  relationships: readonly {
+    sourceId: string;
+    targetId: string;
+    relationship: string;
+    sourceLabel: string;
+    targetLabel: string;
+  }[];
+  evidence: { evidenceIds: readonly string[]; paths?: readonly string[]; lines?: readonly number[] };
+}
+export interface ReuseResult {
+  operation: "reuse";
+  intent: string;
+  candidates: readonly ReuseCandidate[];
+  warnings: readonly string[];
+}
 export interface ResearchDocument {
   title: string;
   problemStatement: string;
@@ -585,6 +628,7 @@ export interface IntentState {
     createdAt: string;
   }>;
   contextReferences: string[];
+  intelligenceReferences: string[];
   latestCopilotInteraction?: {
     summary?: string;
     contextPackageId?: string;
@@ -713,6 +757,10 @@ export interface IntelligenceGraphNode {
   confidence: number;
   evidenceIds: string[];
   seed: boolean;
+  communityId?: string;
+  communityLabel?: string;
+  architectureAnchor?: { weightedDegree: number; reason: string };
+  properties?: Record<string, unknown>;
 }
 export interface IntelligenceGraphEdge {
   id: string;
@@ -721,6 +769,9 @@ export interface IntelligenceGraphEdge {
   kind: string;
   confidence: number;
   evidenceIds: string[];
+  origin: "EXTRACTED" | "RESOLVED" | "INFERRED" | "AMBIGUOUS";
+  sourceLocation?: { workspaceRelativePath: string; startLine?: number; endLine?: number };
+  resolutionExplanation?: string;
 }
 export interface IntelligenceGraphResult {
   mode: IntelligenceGraphMode;
@@ -828,6 +879,7 @@ export interface ApplicationState {
   taskAnalysis?: TaskResult;
   delegationResult?: CopilotDelegationResult;
   intentState?: IntentState;
+  copilotActivity?: import("@core/copilot/activity").CopilotActivityEvent[];
   correctionPacket?: CorrectionPacket;
   sdlc?: SdlcPlan;
   ingestion?: IngestionState;

@@ -4,6 +4,108 @@ import type {
   KeystoneOkfSnapshot,
   OkfEvidence
 } from "./types";
+import { analyzeOkfStructure } from "./structuralAnalysis";
+
+/** The shared graph-backed operations used by the cockpit and Copilot delegation. */
+export type OkfIntelligenceOperation = "query" | "path" | "explain" | "flow" | "impact" | "reuse";
+
+export interface OkfOperationRequest {
+  readonly operation: OkfIntelligenceOperation;
+  readonly query: string;
+  readonly from?: string;
+  readonly to?: string;
+  readonly changedPaths?: readonly string[];
+  readonly limit?: number;
+}
+
+export interface OkfOperationEvidence {
+  readonly evidenceIds: readonly string[];
+  readonly paths: readonly string[];
+  readonly lines: readonly number[];
+}
+
+export interface OkfPathStep {
+  readonly nodeId: string;
+  readonly label: string;
+  readonly kind: string;
+  readonly relationshipFromPrevious?: string;
+  readonly confidence: number;
+  readonly provenance: string;
+  readonly evidence: OkfOperationEvidence;
+}
+
+export interface OkfPathResult {
+  readonly operation: "path";
+  readonly from: string;
+  readonly to: string;
+  readonly found: boolean;
+  readonly nodes: readonly OkfPathStep[];
+  readonly alternativePath: boolean;
+  readonly confidence: number;
+  readonly evidence: OkfOperationEvidence;
+  readonly warnings: readonly string[];
+}
+
+export interface OkfExplainResult {
+  readonly operation: "explain";
+  readonly subject?: OkfQueryItem;
+  readonly role?: string;
+  readonly community?: { id: string; label: string };
+  readonly architectureAnchor?: { weightedDegree: number; reason: string };
+  readonly callers: readonly OkfQueryItem[];
+  readonly callees: readonly OkfQueryItem[];
+  readonly dependencies: readonly OkfQueryItem[];
+  readonly contracts: readonly OkfQueryItem[];
+  readonly flows: readonly OkfQueryItem[];
+  readonly evidence: OkfOperationEvidence;
+  readonly warnings: readonly string[];
+}
+
+export interface OkfFlowResult {
+  readonly operation: "flow";
+  readonly query: string;
+  readonly nodes: readonly OkfPathStep[];
+  readonly relationships: readonly OkfQueryTraversal[];
+  readonly evidence: OkfOperationEvidence;
+  readonly warnings: readonly string[];
+}
+
+export interface OkfImpactItem extends OkfQueryItem {
+  readonly impact: "direct" | "probable" | "possible";
+}
+
+export interface OkfImpactResult {
+  readonly operation: "impact";
+  readonly target: string;
+  readonly direct: readonly OkfImpactItem[];
+  readonly probable: readonly OkfImpactItem[];
+  readonly possible: readonly OkfImpactItem[];
+  readonly evidence: OkfOperationEvidence;
+  readonly warnings: readonly string[];
+}
+
+export interface OkfReuseCandidate {
+  readonly candidate: OkfQueryItem;
+  readonly whyItMatches: readonly string[];
+  readonly whereUsed: readonly OkfQueryItem[];
+  readonly relationships: readonly OkfQueryTraversal[];
+  readonly evidence: OkfOperationEvidence;
+}
+
+export interface OkfReuseResult {
+  readonly operation: "reuse";
+  readonly intent: string;
+  readonly candidates: readonly OkfReuseCandidate[];
+  readonly warnings: readonly string[];
+}
+
+export type OkfOperationResult =
+  | OkfQueryResult
+  | OkfPathResult
+  | OkfExplainResult
+  | OkfFlowResult
+  | OkfImpactResult
+  | OkfReuseResult;
 
 export type OkfQueryIntent =
   | "definition"
@@ -701,4 +803,253 @@ function summarizeIntents(
   );
   const prefix = names.length > 1 ? `${names.join(" + ")} evidence` : `${names[0]} evidence`;
   return `${prefix}: ${lead}${items.length > 5 ? ` and ${items.length - 5} more` : ""}.`;
+}
+
+/** Dispatches all higher-level operations through the same OKF snapshot and evidence ledger. */
+export function executeOkfOperation(
+  snapshot: KeystoneOkfSnapshot,
+  request: OkfOperationRequest & { readonly operation: "reuse" }
+): OkfReuseResult;
+export function executeOkfOperation(
+  snapshot: KeystoneOkfSnapshot,
+  request: OkfOperationRequest
+): OkfOperationResult;
+export function executeOkfOperation(
+  snapshot: KeystoneOkfSnapshot,
+  request: OkfOperationRequest
+): OkfOperationResult {
+  switch (request.operation) {
+    case "query":
+      return queryOkfSnapshot(snapshot, request.query, request.limit ?? 50);
+    case "path":
+      return pathOkfSnapshot(snapshot, request.from ?? request.query, request.to ?? "", request.limit);
+    case "explain":
+      return explainOkfSnapshot(snapshot, request.query, request.limit);
+    case "flow":
+      return flowOkfSnapshot(snapshot, request.query, request.limit);
+    case "impact":
+      return impactOkfSnapshot(snapshot, request.query, request.changedPaths, request.limit);
+    case "reuse":
+      return reuseOkfSnapshot(snapshot, request.query, request.limit);
+  }
+}
+
+function activeGraph(snapshot: KeystoneOkfSnapshot) {
+  const units = snapshot.units.filter((unit) => unit.lifecycle === "active");
+  const unitIds = new Set(units.map((unit) => unit.id));
+  const relationships = snapshot.relationships.filter(
+    (relationship) =>
+      relationship.lifecycle === "active" &&
+      unitIds.has(relationship.sourceId) &&
+      unitIds.has(relationship.targetId)
+  );
+  return {
+    units,
+    relationships,
+    byId: new Map(units.map((unit) => [unit.id, unit])),
+    evidence: new Map(snapshot.evidence.map((item) => [item.id, item]))
+  };
+}
+
+function resolveOperationUnits(
+  units: readonly KeystoneKnowledgeUnit[],
+  text: string,
+  limit = 8
+): KeystoneKnowledgeUnit[] {
+  const terms = tokenize(text);
+  return units
+    .map((unit) => ({ unit, score: unitScore(unit, text.toLowerCase(), terms, "generic") }))
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score || a.unit.canonicalKey.localeCompare(b.unit.canonicalKey))
+    .slice(0, limit)
+    .map((item) => item.unit);
+}
+
+function evidenceFor(
+  ids: readonly string[],
+  evidenceById: Map<string, OkfEvidence>
+): OkfOperationEvidence {
+  const evidence = [...new Set(ids)].map((id) => evidenceById.get(id)).filter(Boolean) as OkfEvidence[];
+  return {
+    evidenceIds: evidence.map((item) => item.id),
+    paths: [...new Set(evidence.map((item) => item.source.workspaceRelativePath))],
+    lines: [...new Set(evidence.map((item) => item.source.startLine).filter((line): line is number => line !== undefined))]
+  };
+}
+
+function unitEvidence(unit: KeystoneKnowledgeUnit, evidenceById: Map<string, OkfEvidence>) {
+  return evidenceFor(unit.provenance.evidenceIds, evidenceById);
+}
+
+function operationItem(
+  unit: KeystoneKnowledgeUnit,
+  reason: string,
+  snapshot: KeystoneOkfSnapshot,
+  score = 1,
+  path: string[] = []
+): OkfQueryItem {
+  const byEvidence = new Map(snapshot.evidence.map((item) => [item.id, item]));
+  return toItem(unit, score, [reason], path, byEvidence);
+}
+
+function pathOkfSnapshot(
+  snapshot: KeystoneOkfSnapshot,
+  fromQuery: string,
+  toQuery: string,
+  limit = 8
+): OkfPathResult {
+  const graph = activeGraph(snapshot);
+  const from = resolveOperationUnits(graph.units, fromQuery, 1)[0];
+  const to = resolveOperationUnits(graph.units, toQuery, 1)[0];
+  if (!from || !to)
+    return {
+      operation: "path", from: fromQuery, to: toQuery, found: false, nodes: [], alternativePath: false,
+      confidence: 0, evidence: evidenceFor([], graph.evidence), warnings: ["Both path endpoints must match active repository concepts."]
+    };
+  const meaningful = new Set([
+    "calls", "imports", "depends-on", "reads", "writes", "flows-to", "implements", "extends", "exposes", "maps-to", "publishes", "subscribes", "handles", "uses", "provides", "persists"
+  ]);
+  const adjacency = new Map<string, Array<{ rel: KeystoneKnowledgeRelationship; next: string }>>();
+  for (const rel of graph.relationships) {
+    if (!meaningful.has(rel.kind)) continue;
+    for (const [next, reverse] of [[rel.targetId, false], [rel.sourceId, true]] as const) {
+      const list = adjacency.get(reverse ? rel.targetId : rel.sourceId) ?? [];
+      list.push({ rel, next });
+      adjacency.set(reverse ? rel.targetId : rel.sourceId, list);
+    }
+  }
+  const distance = new Map<string, number>([[from.id, 0]]);
+  const previous = new Map<string, { id: string; rel: KeystoneKnowledgeRelationship }>();
+  const open = [from.id];
+  while (open.length) {
+    open.sort((a, b) => (distance.get(a) ?? Infinity) - (distance.get(b) ?? Infinity));
+    const current = open.shift()!;
+    if (current === to.id) break;
+    for (const { rel, next } of adjacency.get(current) ?? []) {
+      const cost = 1.1 - Math.min(0.45, rel.confidence.score * 0.45) + (rel.kind === "maps-to" ? 0.25 : 0);
+      const candidate = (distance.get(current) ?? Infinity) + cost;
+      if (candidate < (distance.get(next) ?? Infinity)) {
+        distance.set(next, candidate);
+        previous.set(next, { id: current, rel });
+        open.push(next);
+      }
+    }
+  }
+  const ids: string[] = [];
+  const rels: KeystoneKnowledgeRelationship[] = [];
+  for (let id = to.id; id; ) {
+    ids.unshift(id);
+    const prior = previous.get(id);
+    if (!prior) break;
+    rels.unshift(prior.rel);
+    id = prior.id;
+  }
+  const found = ids[0] === from.id && ids.at(-1) === to.id;
+  const evidenceIds = [...ids.flatMap((id) => graph.byId.get(id)?.provenance.evidenceIds ?? []), ...rels.flatMap((rel) => rel.provenance.evidenceIds)];
+  const nodes = found ? ids.slice(0, Math.max(2, limit)).map((id, index) => {
+    const unit = graph.byId.get(id)!;
+    const rel = rels[index - 1];
+    return {
+      nodeId: id, label: label(unit), kind: unit.kind,
+      ...(rel ? { relationshipFromPrevious: rel.kind } : {}),
+      confidence: Math.min(unit.confidence.score, rel?.confidence.score ?? unit.confidence.score),
+      provenance: rel ? `${rel.origin}:${rel.resolutionExplanation ?? "relationship assertion"}` : `${unit.provenance.extractor}:${unit.provenance.extractionRunId}`,
+      evidence: evidenceFor([...unit.provenance.evidenceIds, ...(rel?.provenance.evidenceIds ?? [])], graph.evidence)
+    };
+  }) : [];
+  const alternativePath = found && rels.length > 1 && graph.relationships.filter((rel) => rel.kind === rels[0].kind && rel.sourceId === from.id).length > 1;
+  return {
+    operation: "path", from: fromQuery, to: toQuery, found, nodes, alternativePath,
+    confidence: found ? nodes.reduce((sum, node) => sum + node.confidence, 0) / nodes.length : 0,
+    evidence: evidenceFor(evidenceIds, graph.evidence), warnings: found ? [] : ["No meaningful engineering path was found between the matched endpoints."]
+  };
+}
+
+function explainOkfSnapshot(snapshot: KeystoneOkfSnapshot, query: string, limit = 8): OkfExplainResult {
+  const graph = activeGraph(snapshot);
+  const subject = resolveOperationUnits(graph.units, query, 1)[0];
+  if (!subject)
+    return { operation: "explain", callers: [], callees: [], dependencies: [], contracts: [], flows: [], evidence: evidenceFor([], graph.evidence), warnings: ["No active symbol, component, or concept matched the explanation target."] };
+  const outgoing = graph.relationships.filter((rel) => rel.sourceId === subject.id);
+  const incoming = graph.relationships.filter((rel) => rel.targetId === subject.id);
+  const related = (rels: readonly KeystoneKnowledgeRelationship[], kinds: readonly string[], direction: "source" | "target") => rels.filter((rel) => kinds.includes(rel.kind)).slice(0, limit).map((rel) => operationItem(graph.byId.get(direction === "source" ? rel.targetId : rel.sourceId)!, `relationship: ${rel.kind}`, snapshot, rel.confidence.score));
+  const structural = analyzeOkfStructure(snapshot);
+  const communityId = structural.assignments[subject.id];
+  const community = structural.communities.find((item) => item.id === communityId);
+  const anchor = structural.anchors.find((item) => item.unitId === subject.id);
+  const evidenceIds = [...subject.provenance.evidenceIds, ...outgoing.flatMap((rel) => rel.provenance.evidenceIds), ...incoming.flatMap((rel) => rel.provenance.evidenceIds)];
+  return {
+    operation: "explain", subject: operationItem(subject, "explanation target", snapshot, subject.confidence.score),
+    role: typeof subject.properties.role === "string" ? subject.properties.role : subject.description,
+    community: community ? { id: community.id, label: community.label } : undefined,
+    architectureAnchor: anchor ? { weightedDegree: anchor.weightedDegree, reason: anchor.reason } : undefined,
+    callers: related(incoming, ["calls"], "source"), callees: related(outgoing, ["calls"], "target"),
+    dependencies: related(outgoing, ["imports", "depends-on", "configured-by", "maps-to"], "target"),
+    contracts: related([...outgoing, ...incoming], ["implements", "extends", "exposes", "provides", "handles"], "target"),
+    flows: related([...outgoing, ...incoming], ["flows-to", "reads", "writes", "publishes", "subscribes"], "target"),
+    evidence: evidenceFor(evidenceIds, graph.evidence), warnings: []
+  };
+}
+
+function flowOkfSnapshot(snapshot: KeystoneOkfSnapshot, query: string, limit = 24): OkfFlowResult {
+  const graph = activeGraph(snapshot);
+  const seeds = resolveOperationUnits(graph.units, query, 3);
+  const allowed = new Set(["flows-to", "calls", "reads", "writes", "publishes", "subscribes", "returns", "uses", "persists"]);
+  const selected = new Set(seeds.map((unit) => unit.id));
+  const relationships = graph.relationships.filter((rel) => allowed.has(rel.kind) && (selected.has(rel.sourceId) || selected.has(rel.targetId))).slice(0, limit * 2);
+  for (const rel of relationships) { selected.add(rel.sourceId); selected.add(rel.targetId); }
+  const nodes = [...selected].slice(0, limit).map((id) => { const unit = graph.byId.get(id)!; return { nodeId: id, label: label(unit), kind: unit.kind, confidence: unit.confidence.score, provenance: `${unit.provenance.extractor}:${unit.provenance.extractionRunId}`, evidence: unitEvidence(unit, graph.evidence) }; });
+  const traversals = relationships.map((rel) => ({ sourceId: rel.sourceId, targetId: rel.targetId, relationship: rel.kind, sourceLabel: label(graph.byId.get(rel.sourceId)), targetLabel: label(graph.byId.get(rel.targetId)) }));
+  return { operation: "flow", query, nodes, relationships: traversals, evidence: evidenceFor([...nodes.flatMap((node) => node.evidence.evidenceIds), ...relationships.flatMap((rel) => rel.provenance.evidenceIds)], graph.evidence), warnings: nodes.length ? [] : ["No persisted call/data/service flow matched the query."] };
+}
+
+function impactOkfSnapshot(snapshot: KeystoneOkfSnapshot, query: string, changedPaths: readonly string[] = [], limit = 24): OkfImpactResult {
+  const graph = activeGraph(snapshot);
+  const targets = resolveOperationUnits(graph.units, query, 6).filter((unit) => !query || changedPaths.length === 0 || changedPaths.some((path) => unitPath(unit)?.includes(path)));
+  const seeds = targets.length ? targets : graph.units.filter((unit) => changedPaths.some((path) => unitPath(unit)?.includes(path)));
+  const direct: OkfImpactItem[] = [], probable: OkfImpactItem[] = [], possible: OkfImpactItem[] = [];
+  const seen = new Set<string>();
+  for (const seed of seeds) {
+    for (const rel of graph.relationships.filter((item) => item.targetId === seed.id && ["calls", "imports", "depends-on", "tests", "covers", "may-impact", "exposes", "implements"].includes(item.kind))) {
+      if (seen.has(rel.sourceId)) continue; seen.add(rel.sourceId);
+      const unit = graph.byId.get(rel.sourceId)!; const item = { ...operationItem(unit, `impact via ${rel.kind}`, snapshot, rel.confidence.score), impact: rel.kind === "calls" || rel.kind === "imports" ? "direct" : rel.kind === "tests" || rel.kind === "covers" ? "probable" : "possible" } as OkfImpactItem;
+      (item.impact === "direct" ? direct : item.impact === "probable" ? probable : possible).push(item);
+    }
+  }
+  const all = [...direct, ...probable, ...possible].slice(0, limit);
+  return { operation: "impact", target: query, direct: direct.slice(0, limit), probable: probable.slice(0, limit), possible: possible.slice(0, limit), evidence: evidenceFor(all.flatMap((item) => item.evidenceIds), graph.evidence), warnings: seeds.length ? [] : ["No change target or current-workspace path matched active intelligence."] };
+}
+
+function reuseOkfSnapshot(snapshot: KeystoneOkfSnapshot, intent: string, limit = 8): OkfReuseResult {
+  const graph = activeGraph(snapshot); const terms = tokenize(intent);
+  const outgoingByUnit = new Map<string, KeystoneKnowledgeRelationship[]>();
+  const incomingByUnit = new Map<string, KeystoneKnowledgeRelationship[]>();
+  for (const relationship of graph.relationships) {
+    const outgoing = outgoingByUnit.get(relationship.sourceId) ?? [];
+    outgoing.push(relationship);
+    outgoingByUnit.set(relationship.sourceId, outgoing);
+    const incoming = incomingByUnit.get(relationship.targetId) ?? [];
+    incoming.push(relationship);
+    incomingByUnit.set(relationship.targetId, incoming);
+  }
+  const candidates = graph.units.filter((unit) => ["symbol", "service", "component", "repository", "module", "handler", "middleware", "api"].includes(unit.kind)).map((unit) => {
+    const outgoing = outgoingByUnit.get(unit.id) ?? []; const incoming = incomingByUnit.get(unit.id) ?? [];
+    const neighborIds = [...outgoing, ...incoming].map((rel) => rel.sourceId === unit.id ? rel.targetId : rel.sourceId);
+    const neighborText = neighborIds.map((id) => {
+      const neighbor = graph.byId.get(id); return neighbor ? `${neighbor.name} ${neighbor.kind} ${JSON.stringify(neighbor.properties)}` : "";
+    }).join(" ");
+    const reasons: string[] = []; const hay = `${unit.name} ${unit.description ?? ""} ${unit.canonicalKey} ${JSON.stringify(unit.properties)} ${neighborText}`.toLowerCase();
+    if (/^(?:docs?|documentation|scripts?|fixtures?)\//i.test(unitPath(unit) ?? "")) return undefined;
+    const implementationName = /request|fetch|client|transport|http/i.test(unit.name) && !/interface|type/i.test(String(unit.properties.symbolKind ?? ""));
+    const integrationPath = /(?:integration|client|http|transport|network)/i.test(unitPath(unit) ?? "");
+    const capabilitySignal = terms.some((term) => ["http", "outbound", "request", "fetch"].includes(term)) && implementationName && integrationPath;
+    if (capabilitySignal) reasons.push("matches an outbound integration/request implementation shape");
+    const score = terms.reduce((sum, term) => { if (hay.includes(term)) { reasons.push(neighborText.toLowerCase().includes(term) && !`${unit.name} ${unit.description ?? ""}`.toLowerCase().includes(term) ? `matches related capability '${term}'` : `matches concept term '${term}'`); return sum + (neighborText.toLowerCase().includes(term) ? 2.5 : 3); } return sum; }, 0) + (capabilitySignal ? 5 : 0) + (unit.confidence.score * 0.5);
+    const usedBy = incoming.filter((rel) => ["calls", "imports", "depends-on", "uses", "implements"].includes(rel.kind)).slice(0, 5).map((rel) => operationItem(graph.byId.get(rel.sourceId)!, `uses candidate via ${rel.kind}`, snapshot, rel.confidence.score));
+    if (usedBy.length) reasons.push(`already used by ${usedBy.length} repository component(s)`);
+    if (!reasons.length) return undefined;
+    const relationships = [...outgoing, ...incoming].slice(0, 8).map((rel) => ({ sourceId: rel.sourceId, targetId: rel.targetId, relationship: rel.kind, sourceLabel: label(graph.byId.get(rel.sourceId)), targetLabel: label(graph.byId.get(rel.targetId)) }));
+    return { score, candidate: operationItem(unit, "existing implementation candidate", snapshot, score), whyItMatches: [...new Set(reasons)], whereUsed: usedBy, relationships, evidence: evidenceFor([...unit.provenance.evidenceIds, ...outgoing.flatMap((rel) => rel.provenance.evidenceIds), ...incoming.flatMap((rel) => rel.provenance.evidenceIds)], graph.evidence) };
+  }).filter((candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate)).sort((a, b) => b.score - a.score || a.candidate.label.localeCompare(b.candidate.label)).slice(0, limit).map(({ score: _score, ...candidate }) => candidate);
+  return { operation: "reuse", intent, candidates, warnings: candidates.length ? ["Candidates are evidence-backed suggestions; reuse still requires engineering judgment."] : ["No existing implementation pattern matched the requested concept."] };
 }

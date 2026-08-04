@@ -3,7 +3,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { JsonStorage } from "../platform/storage/jsonStorage";
-import { ContextReservoir } from "./contextReservoir";
+import { GitReadOnly } from "../platform/git/gitReadOnly";
+import { ContextReservoir, type ContextObservation, type ContextSavingsEvent, type ContextSavingsCategory } from "./contextReservoir";
 import type {
   CodeSymbol,
   ContextPack,
@@ -18,6 +19,7 @@ import type {
 import { buildIntentContextPack, type ContextBuildOptions } from "./intentContextBuilder";
 import { estimateTokens, type TokenEstimatorCapability } from "./tokenEstimator";
 import { selectCanonicalContext } from "../intelligence/okf/canonicalContext";
+import { executeOkfOperation, type OkfReuseResult } from "../intelligence/okf/queryEngine";
 import {
   compressConversationHistory,
   compressDiagnostics,
@@ -26,6 +28,7 @@ import {
   compressSourceCode,
   compressStructuredData
 } from "./taskAwareCompression";
+import { SignalCompressor } from "./signalCompressor";
 import type { IntentState } from "../intent/intentState";
 
 export type ContextOperation =
@@ -112,6 +115,8 @@ export interface ContextProvenance {
   readonly sourceRevision: string;
   readonly capturedAt: string;
   readonly ranges: readonly ContextEvidenceReference[];
+  /** Other sources collapsed into this candidate; the primary origin remains authoritative. */
+  readonly related?: readonly ContextProvenance[];
 }
 
 /** A retrievable unit of context known to Keystone. Bodies are only retained when selected. */
@@ -180,6 +185,8 @@ export interface ContextPackage {
   readonly sections: readonly ContextPackageSection[];
   readonly content: string;
   readonly metadata: ContextPackageMetadata;
+  /** Revision tuple used to reconcile this package with the live workspace. */
+  readonly workspaceRevision?: ContextWorkspaceRevision;
 }
 
 export interface ContextPackageSection {
@@ -208,9 +215,13 @@ export interface ContextPackageMetadata {
   readonly evidenceReferences: readonly ContextEvidenceReference[];
   readonly sourceRevision: ContextSourceRevision;
   readonly compressionDecisions: readonly ContextCompressionDecision[];
+  readonly savingsEvents: readonly ContextSavingsEvent[];
   readonly estimator: "character-four" | "capability-adjusted";
   readonly model?: string;
   readonly contextWindowTokens?: number;
+  /** Local feedback-loop measurements; raw history is not part of the package. */
+  readonly transmittedHistoryTokens: number;
+  readonly retainedHistoryCandidates: number;
 }
 
 export interface ContextPackageSummary {
@@ -227,6 +238,7 @@ export interface ContextPackageSummary {
   readonly sourceCounts: readonly ContextSourceCount[];
   readonly candidates: readonly ContextCandidateSummary[];
   readonly retainedCandidates: readonly ContextCandidateSummary[];
+  readonly savingsEvents: readonly ContextSavingsEvent[];
   readonly inspector: ContextInspectorSummary;
 }
 
@@ -251,6 +263,7 @@ export interface ContextCandidateSummary {
   readonly contextReference: string;
   readonly provenance: ContextProvenance;
   readonly reason: string;
+  readonly compression?: Pick<ContextCompressionMetadata, "strategy" | "originalBytes" | "compressedBytes" | "originalHash" | "derived">;
 }
 
 export interface ContextInspectorSummary {
@@ -278,7 +291,18 @@ export interface ContextStaleSource {
   readonly path: string;
   readonly expectedHash?: string;
   readonly currentHash?: string;
+  readonly sourceType?: ContextCandidateSourceType | "repository";
   readonly message: string;
+}
+
+/** Repository state observed while an active Intent context was prepared. */
+export interface ContextWorkspaceRevision {
+  readonly head?: string;
+  readonly branch?: string;
+  readonly diffHash?: string;
+  readonly statusHash?: string;
+  readonly intelligenceRevision?: string;
+  readonly capturedAt: string;
 }
 
 export interface ContextPreparationRequest {
@@ -361,7 +385,9 @@ export interface ContextCompressionMetadata {
     | "diff"
     | "diagnostics"
     | "documentation"
-    | "structured-data";
+    | "structured-data"
+    | "signal";
+  readonly originalReference?: string;
   readonly strategy: string;
   readonly deterministic: boolean;
   readonly derived: boolean;
@@ -392,6 +418,7 @@ export interface ContextPreparation {
 }
 
 const PACKAGE_DIRECTORY = ".keystone/context/packages";
+const signalCompressor = new SignalCompressor();
 
 /**
  * Orchestrates context preparation over Keystone's existing repository retrieval and
@@ -431,10 +458,28 @@ export class ContextEngine {
       contextPack,
       sourceRevisionFor(request, contextPack)
     );
-    const contextPackage = this.createPackage(request, contextPack, candidates);
+    const workspaceRevision = await captureWorkspaceRevision(
+      this.workspaceRoot,
+      sourceRevisionFor(request, contextPack).value
+    );
+    const contextPackage = this.createPackage(request, contextPack, candidates, workspaceRevision);
     const finalContextPack = applyPackageToContextPack(contextPack, contextPackage);
     this.packages.set(contextPackage.id, contextPackage);
     await this.reservoir.save(contextPackage.id, request.intent.id, candidates);
+    const observation: ContextObservation = {
+      packageId: contextPackage.id,
+      observedAt: contextPackage.createdAt,
+      estimatedTransmittedTokens: contextPackage.estimatedTransmittedTokens,
+      estimatedOriginalCandidateTokens: contextPackage.metadata.estimatedOriginalCandidateTokens,
+      allCandidateCount: contextPackage.allCandidateCount,
+      transmittedCandidateCount: contextPackage.transmittedContext.length,
+      retainedCandidateCount: contextPackage.retainedContext.length,
+      omittedContextCount: contextPackage.omittedContext.length,
+      transmittedHistoryTokens: contextPackage.metadata.transmittedHistoryTokens,
+      retainedHistoryCandidates: contextPackage.metadata.retainedHistoryCandidates
+      , savingsEvents: contextPackage.metadata.savingsEvents
+    };
+    await this.reservoir.recordObservation(request.intent.id, observation);
     await this.packageStorage(contextPackage.id).write(contextPackage);
     this.log(
       "candidates-collected",
@@ -524,6 +569,29 @@ export class ContextEngine {
     return this.loadPackage(contextId.split(":packet:")[0]);
   }
 
+  async recordCopilotInteraction(
+    intentId: string,
+    interaction: {
+      packageId?: string;
+      recordedAt?: string;
+      structuredStatus: "complete" | "partial" | "absent";
+      summary?: string;
+      acceptedDecisionIds: readonly string[];
+      rawHistory?: readonly string[];
+    },
+    state: IntentState
+  ): Promise<void> {
+    await this.reservoir.recordInteraction(
+      intentId,
+      { ...interaction, recordedAt: interaction.recordedAt ?? new Date().toISOString() },
+      state
+    );
+  }
+
+  async readContextObservability(intentId: string) {
+    return this.reservoir.readObservability(intentId);
+  }
+
   /** Delegation is fail-closed when any transmitted source has changed since capture. */
   async getFreshDelegationPrompt(contextId: string): Promise<string> {
     const contextPackage = await this.getContextPackage(contextId);
@@ -540,7 +608,11 @@ export class ContextEngine {
   async getContextStaleSources(contextId: string): Promise<ContextStaleSource[]> {
     const contextPackage = await this.getContextPackage(contextId);
     if (!contextPackage) throw new Error(`Context package ${contextId} is not available.`);
-    return staleSourcesForCandidates(this.workspaceRoot, contextPackage.transmittedContext);
+    return staleSourcesForPackage(this.workspaceRoot, contextPackage);
+  }
+
+  async markContextEvidenceStale(contextId: string, paths: readonly string[]): Promise<void> {
+    await this.reservoir.markStaleForPaths(contextId, paths);
   }
 
   summarize(contextPackage: ContextPackage): ContextPackageSummary {
@@ -550,7 +622,8 @@ export class ContextEngine {
   private createPackage(
     request: ContextPreparationRequest,
     contextPack: ContextPack,
-    candidates: readonly ContextCandidate[]
+    candidates: readonly ContextCandidate[],
+    workspaceRevision?: ContextWorkspaceRevision
   ): ContextPackage {
     const sourceRevision = makeRevision(
       request.sourceRevision ??
@@ -591,7 +664,8 @@ export class ContextEngine {
       contextPackId: contextPack.id,
       sections: Object.freeze(assembly.sections),
       content: assembly.content,
-      metadata: Object.freeze(assembly.metadata)
+      metadata: Object.freeze(assembly.metadata),
+      workspaceRevision
     });
   }
 
@@ -865,7 +939,23 @@ function assemblePackage(
           )
       )
     ),
+    savingsEvents: Object.freeze(
+      savingsEventsFor(
+        contextPack.id,
+        request.operation,
+        candidates,
+        decisions,
+        transmitted,
+        capability,
+        new Date().toISOString()
+      )
+    ),
     estimator: capability?.charactersPerToken ? "capability-adjusted" : "character-four",
+    transmittedHistoryTokens: transmitted
+      .filter((candidate) => candidate.category === "history")
+      .reduce((sum, candidate) => sum + transmittedCost(candidate, capability), 0),
+    retainedHistoryCandidates: retainedContext.filter((candidate) => candidate.category === "history")
+      .length,
     ...(capability?.model ? { model: capability.model } : {}),
     ...(capability?.contextWindowTokens
       ? { contextWindowTokens: capability.contextWindowTokens }
@@ -885,6 +975,71 @@ function assemblePackage(
     estimatedTransmittedTokens: metadata.estimatedTransmittedTokens,
     metadata
   };
+}
+
+function savingsEventsFor(
+  contextPackageId: string,
+  operation: ContextOperation,
+  candidates: readonly ContextCandidate[],
+  decisions: ReadonlyMap<string, ContextCompressionDecision>,
+  transmitted: readonly ContextCandidate[],
+  capability: TokenEstimatorCapability | undefined,
+  timestamp: string
+): ContextSavingsEvent[] {
+  const transmittedById = new Map(transmitted.map((candidate) => [candidate.id, candidate]));
+  const grouped = new Map<ContextSavingsCategory, {
+    category: ContextSavingsCategory;
+    originalEstimatedTokens: number;
+    transmittedEstimatedTokens: number;
+    avoidedEstimatedTokens: number;
+    reductionStrategy: string;
+    contextPackageId: string;
+    operation: string;
+    timestamp: string;
+    ids: string[];
+  }>();
+  for (const candidate of candidates) {
+    const decision = decisions.get(candidate.id);
+    const original = originalCandidateTokens(candidate, capability);
+    const sent = transmittedById.get(candidate.id);
+    const transmittedTokens = sent ? transmittedCost(sent, capability) : 0;
+    const avoided = Math.max(0, original - transmittedTokens);
+    if (!avoided) continue;
+    const category = savingsCategory(candidate, decision);
+    const strategy = decision?.strategy ?? (candidate.compression?.strategy ?? "bounded candidate selection");
+    const previous = grouped.get(category);
+    if (previous) {
+      previous.originalEstimatedTokens += original;
+      previous.transmittedEstimatedTokens += transmittedTokens;
+      previous.avoidedEstimatedTokens += avoided;
+      previous.ids.push(candidate.id);
+      if (!previous.reductionStrategy.includes(strategy)) previous.reductionStrategy += `; ${strategy}`;
+    } else {
+      grouped.set(category, {
+        category,
+        originalEstimatedTokens: original,
+        transmittedEstimatedTokens: transmittedTokens,
+        avoidedEstimatedTokens: avoided,
+        reductionStrategy: strategy,
+        contextPackageId,
+        operation,
+        timestamp,
+        ids: [candidate.id]
+      });
+    }
+  }
+  return [...grouped.values()].map(({ ids, ...event }) => ({ ...event, candidateIds: ids }));
+}
+
+function savingsCategory(
+  candidate: ContextCandidate,
+  decision: ContextCompressionDecision | undefined
+): ContextSavingsCategory {
+  if (/duplicate|dedup/i.test(decision?.reason ?? "")) return "Deduplication";
+  if (candidate.compression?.derived) return "Semantic Compression";
+  if (["changes", "diagnostics"].includes(candidate.category)) return "Tool/Runtime Output";
+  if (["history", "intent", "decisions"].includes(candidate.category)) return "Conversation/Intent History";
+  return "Repository Exploration";
 }
 
 function priorityBand(candidate: ContextCandidate): ContextPriorityBand {
@@ -1376,6 +1531,7 @@ export function summarizeContextPackage(contextPackage: ContextPackage): Context
           candidateReason(candidate, decisionReasons.get(candidate.id), "available")
         )
       ),
+    savingsEvents: contextPackage.metadata.savingsEvents ?? [],
     inspector
   };
 }
@@ -1399,6 +1555,7 @@ function summarizeCandidate(
     contextReference: `${contextId}#${candidate.id}`,
     provenance: candidate.provenance,
     reason
+    , ...(candidate.compression ? { compression: candidate.compression } : {})
   };
 }
 
@@ -1546,6 +1703,7 @@ async function collectCandidates(
     add(serviceCandidate(service, sourceRevision, fileHashes.get(service.filePath)));
   for (const candidate of intelligenceCandidates(request, contextPack, sourceRevision))
     add(candidate);
+  for (const candidate of reuseCandidates(request, sourceRevision)) add(candidate);
   if (contextPack.boundedIntelligence)
     add({
       id: stableId("bounded-intelligence", contextPack.id),
@@ -1801,7 +1959,7 @@ function workspaceCandidates(
   const workspace = request.workspace;
   if (!workspace) return [];
   const label = workspace.currentFile ? `Active file: ${workspace.currentFile}` : "Workspace state";
-  const compact = compressStructuredData(workspace);
+  const compact = signalCompressor.compress({ kind: "structured", value: workspace, tokenBudget: 900 });
   return [
     basicCandidate(
       "workspace",
@@ -1836,22 +1994,27 @@ function changeCandidates(
       ? crypto.createHash("sha256").update(changes.diff).digest("hex")
       : undefined
   };
-  const diffCompression = changes.diff ? compressDiff(changes.diff, 1_000) : undefined;
-  const compactSummary = compressStructuredData(summary);
+  const diffCompression = changes.diff
+    ? signalCompressor.compress({ kind: "git-diff", value: changes.diff, tokenBudget: 1_000 })
+    : undefined;
+  const statusCompression = changes.status
+    ? signalCompressor.compress({ kind: "git-status", value: changes.status, tokenBudget: 700 })
+    : undefined;
+  const compactSummary = signalCompressor.compress({ kind: "structured", value: summary, tokenBudget: 700 });
   return [
     basicCandidate(
       "changes",
       "workspace-changes",
       "Current workspace changes",
       "Workspace changes",
-      diffCompression?.content ?? compactSummary.content,
-      diffCompression?.content ?? compactSummary.content,
+      [statusCompression?.content, diffCompression?.content ?? compactSummary.content].filter(Boolean).join("\n\n"),
+      compactSummary.content,
       sourceRevision,
       0.8,
       0.7,
       undefined,
       undefined,
-      diffCompression?.metadata ?? compactSummary.metadata
+      diffCompression?.metadata ?? statusCompression?.metadata ?? compactSummary.metadata
     ),
     ...paths
       .slice(0, 24)
@@ -1878,17 +2041,24 @@ function diagnosticCandidates(
   request: ContextPreparationRequest,
   sourceRevision: ContextSourceRevision
 ): ContextCandidate[] {
-  const entries = [...(request.diagnostics ?? []), ...(request.logs ?? [])];
-  if (!entries.length) return [];
-  const compact = compressDiagnostics(entries, 1_200);
+  const diagnostics = request.diagnostics ?? [];
+  const logs = request.logs ?? [];
+  if (!diagnostics.length && !logs.length) return [];
+  const diagnosticSignal = diagnostics.length
+    ? signalCompressor.compress({ kind: "diagnostics", value: diagnostics, tokenBudget: 1_200 })
+    : undefined;
+  const buildSignal = logs.length
+    ? signalCompressor.compress({ kind: "build", value: logs.map((entry) => entry.message), tokenBudget: 1_200 })
+    : undefined;
+  const compact = diagnosticSignal ?? buildSignal!;
   return [
     basicCandidate(
       "diagnostics",
       "diagnostics-and-logs",
       "Diagnostics and logs",
       "Diagnostic",
-      compact.content,
-      compact.content,
+      [diagnosticSignal?.content, buildSignal?.content].filter(Boolean).join("\n\n"),
+      JSON.stringify({ diagnostics, logs }),
       sourceRevision,
       0.88,
       0.76,
@@ -1935,6 +2105,68 @@ function userContextCandidates(
         compact.metadata
       );
     });
+}
+
+/** Targeted pre-implementation lookup; trivial operations do not invoke REUSE. */
+function reuseCandidates(
+  request: ContextPreparationRequest,
+  sourceRevision: ContextSourceRevision
+): ContextCandidate[] {
+  if (request.operation !== "IMPLEMENT") return [];
+  const text = `${request.intent.text} ${request.objective}`.toLowerCase();
+  if (/\b(typo|spelling|format|formatting|rename-only|documentation-only)\b/.test(text)) return [];
+  if (!/\b(helper|abstraction|integration|retry|cache|cach(e|ing)|auth|validation|framework|extension|error[- ]handling|repository|service|dependency|implement|feature|add|create|change|refactor)\b/.test(text)) return [];
+  const snapshot = request.buildOptions?.okfSnapshot;
+  if (!snapshot) return [];
+  const result = executeOkfOperation(snapshot, {
+    operation: "reuse",
+    query: `${request.intent.text}\n${request.objective}`,
+    limit: 6
+  }) as OkfReuseResult;
+  return result.candidates.map((candidate, index) => reuseCandidate(candidate, index, sourceRevision));
+}
+
+function reuseCandidate(
+  reuse: OkfReuseResult["candidates"][number],
+  index: number,
+  sourceRevision: ContextSourceRevision
+): ContextCandidate {
+  const item = reuse.candidate;
+  const whereUsed = reuse.whereUsed.length
+    ? `\nWhere used: ${reuse.whereUsed.map((value) => `${value.label}${value.path ? ` (${value.path}${value.line ? `:${value.line}` : ""})` : ""}`).join(", ")}.`
+    : "";
+  const relationships = reuse.relationships.length
+    ? `\nRelated flow/relationships: ${reuse.relationships.slice(0, 4).map((value) => `${value.relationship} ${value.sourceLabel} → ${value.targetLabel}`).join("; ")}.`
+    : "";
+  const content = [
+    `Existing implementation candidate: ${item.label}${item.path ? ` (${item.path}${item.line ? `:${item.line}` : ""})` : ""}.`,
+    `Why it matches: ${reuse.whyItMatches.join("; ")}.`,
+    `Repository summary: ${item.summary}${whereUsed}${relationships}`,
+    "Reuse this pattern only if it is compatible with the accepted Intent; otherwise explain the mismatch before introducing a new approach."
+  ].join("\n");
+  const evidence = reuse.evidence.evidenceIds.map((evidenceId) => ({
+    kind: "reuse-pattern",
+    label: item.label,
+    ...(item.path ? { path: item.path } : {}),
+    ...(item.line !== undefined ? { startLine: item.line, endLine: item.line } : {}),
+    entityId: item.id,
+    evidenceId
+  }));
+  return {
+    id: stableId("reuse-pattern", `${item.id}-${index}`),
+    category: "intelligence",
+    sourceType: "intelligence-unit",
+    content,
+    payload: { label: `Existing pattern: ${item.label}`, kind: "reuse pattern", path: item.path, entityId: item.id, summary: item.summary },
+    priority: 0.84,
+    relevance: Math.min(0.98, 0.78 + item.confidence * 0.2),
+    estimatedTokenCost: estimateTokens(content),
+    sourceRevision,
+    confidence: item.confidence,
+    evidence,
+    provenance: makeProvenance("intelligence", item.path, undefined, sourceRevision.value, evidence),
+    expandable: true
+  };
 }
 
 function intelligenceCandidates(
@@ -2635,7 +2867,17 @@ function deduplicateCandidates(values: readonly ContextCandidate[]): ContextCand
       )
       .sort()
       .join(";");
-    const key = evidenceKey || `${candidate.sourceType}|${candidate.id}`;
+    const semanticValue = String(
+      candidate.payload.value ?? candidate.payload.label ?? candidate.content ?? ""
+    )
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, " ");
+    // Durable Intent facts win over repository projections when the same fact is
+    // emitted by both sources. The related provenance ledger keeps the losing
+    // source traceable without transmitting it twice.
+    const semanticKey = semanticValue.length >= 12 ? `semantic|${semanticValue}` : "";
+    const key = evidenceKey || semanticKey || `${candidate.sourceType}|${candidate.id}`;
     const existing = deduplicated.get(key);
     if (!existing) {
       deduplicated.set(key, candidate);
@@ -2643,16 +2885,37 @@ function deduplicateCandidates(values: readonly ContextCandidate[]): ContextCand
     }
     const mergedEvidence = dedupeEvidence([...existing.evidence, ...candidate.evidence]);
     const preferred = candidate.content && !existing.content ? candidate : existing;
+    const mergedProvenance = preferred.provenance === candidate.provenance
+      ? preferred.provenance
+      : {
+          ...preferred.provenance,
+          related: dedupeProvenance([
+            ...(preferred.provenance.related ?? []),
+            existing.provenance,
+            candidate.provenance
+          ])
+        };
     deduplicated.set(key, {
       ...preferred,
       priority: Math.max(existing.priority, candidate.priority),
       relevance: Math.max(existing.relevance, candidate.relevance),
       estimatedTokenCost: Math.min(existing.estimatedTokenCost, candidate.estimatedTokenCost),
       evidence: mergedEvidence,
+      provenance: mergedProvenance,
       expandable: existing.expandable || candidate.expandable
     });
   }
   return [...deduplicated.values()];
+}
+
+function dedupeProvenance(values: readonly ContextProvenance[]): ContextProvenance[] {
+  const seen = new Set<string>();
+  return values.filter((value) => {
+    const key = `${value.origin}|${value.authoritativePath ?? ""}|${value.sourceRevision}|${value.ranges.map(summarizeEvidence).join(",")}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function sourceRevisionFor(
@@ -2806,6 +3069,7 @@ async function staleSourcesForCandidates(
       stale.push({
         path: sourcePath,
         expectedHash,
+        sourceType: candidate.sourceType,
         currentHash,
         message: source.exists
           ? "The authoritative source changed after this package was prepared."
@@ -2814,6 +3078,99 @@ async function staleSourcesForCandidates(
     }
   }
   return stale;
+}
+
+async function staleSourcesForPackage(
+  root: string,
+  contextPackage: ContextPackage
+): Promise<ContextStaleSource[]> {
+  const allRelevantCandidates = [
+    ...contextPackage.transmittedContext,
+    ...contextPackage.retainedContext
+  ];
+  const stale = await staleSourcesForCandidates(root, allRelevantCandidates);
+  const revision = contextPackage.workspaceRevision;
+  if (!revision) return stale;
+
+  const current = await captureWorkspaceRevision(root);
+  const hasChanges = allRelevantCandidates.some(
+    (candidate) => candidate.category === "changes" || candidate.category === "workspace"
+  );
+  if (revision.branch && revision.branch !== current.branch) {
+    stale.push({
+      path: "repository",
+      sourceType: "repository",
+      message: "The repository branch changed after this context was prepared."
+    });
+  }
+  if (
+    hasChanges &&
+    (revision.diffHash !== current.diffHash || revision.statusHash !== current.statusHash)
+  )
+    stale.push({
+      path: "repository",
+      sourceType: "repository",
+      message: "The repository changed after this context was prepared."
+    });
+
+  const intelligenceCandidates = allRelevantCandidates.filter(
+    (candidate) => candidate.category === "intelligence"
+  );
+  if (
+    intelligenceCandidates.length &&
+    revision.intelligenceRevision &&
+    current.intelligenceRevision &&
+    revision.intelligenceRevision !== current.intelligenceRevision
+  ) {
+    stale.push({
+      path: "repository intelligence",
+      sourceType: "intelligence-unit",
+      message:
+        "Architecture Intelligence was refreshed after this context was prepared."
+    });
+  }
+  return dedupeStaleSources(stale);
+}
+
+async function captureWorkspaceRevision(
+  root: string,
+  intelligenceRevision?: string
+): Promise<ContextWorkspaceRevision> {
+  const git = new GitReadOnly(root);
+  const [head, branch, diff, status, manifest] = await Promise.all([
+    git.run("rev-parse", ["HEAD"]).catch(() => ""),
+    git.branch().catch(() => ""),
+    git.diff().catch(() => ""),
+    git.status().catch(() => ""),
+    readJsonSafe(root, ".keystone/intelligence/okf/manifest.json")
+  ]);
+  const manifestValue = manifest && typeof manifest === "object" ? (manifest as { digests?: { snapshot?: string }; extractionRunId?: string }) : undefined;
+  return {
+    head: head || undefined,
+    branch: branch || undefined,
+    diffHash: hashContent(diff),
+    // Keystone's own persisted packages and intelligence artifacts must not
+    // make their containing Intent stale as a side effect of being written.
+    statusHash: hashContent(
+      status
+        .split(/\r?\n/)
+        .filter((line) => !/(?:^|\s)(?:\.keystone|\.keystone\/)/.test(line.slice(3)))
+        .join("\n")
+    ),
+    intelligenceRevision:
+      intelligenceRevision ?? manifestValue?.digests?.snapshot ?? manifestValue?.extractionRunId,
+    capturedAt: new Date().toISOString()
+  };
+}
+
+function dedupeStaleSources(values: readonly ContextStaleSource[]): ContextStaleSource[] {
+  const seen = new Set<string>();
+  return values.filter((value) => {
+    const key = `${value.sourceType ?? ""}:${value.path}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function truncate(value: string, maxCharacters: number): string {

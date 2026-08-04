@@ -8,8 +8,10 @@ import {
   projectCpgBindings,
   projectOkfGraph,
   projectOkfSearch,
+  projectOkfStructuralAnalysis,
   type OkfCpgBinding,
-  type OkfGraphProjection
+  type OkfGraphProjection,
+  type OkfStructuralProjection
 } from "./projections";
 import { writePortableOkfBundle } from "./bundle";
 
@@ -20,6 +22,8 @@ export interface OkfSnapshotSummaryProjection {
 }
 export interface OkfSnapshotWriteOptions {
   readonly onProgress?: (message: string) => void;
+  /** Reuse structural metadata when the incremental plan proves graph shape is unchanged. */
+  readonly structuralAnalysis?: OkfStructuralProjection;
 }
 async function readJsonLines<T>(file: string): Promise<T[]> {
   try {
@@ -96,6 +100,15 @@ export class OkfSnapshotStore {
       return undefined;
     }
   }
+  async readStructuralProjection(): Promise<OkfStructuralProjection | undefined> {
+    try {
+      return JSON.parse(
+        await fs.readFile(path.join(this.root, "projections/structural-analysis.json"), "utf8")
+      ) as OkfStructuralProjection;
+    } catch {
+      return undefined;
+    }
+  }
   async readSummaryProjection(
     evidenceLimit = 20
   ): Promise<OkfSnapshotSummaryProjection | undefined> {
@@ -127,12 +140,17 @@ export class OkfSnapshotStore {
     }
     options.onProgress?.("Writing OKF graph, search, and CPG projections...");
     const graph = projectOkfGraph(snapshot),
+      structuralAnalysis = options.structuralAnalysis ?? projectOkfStructuralAnalysis(snapshot),
       search = projectOkfSearch(snapshot),
       bindings = projectCpgBindings(snapshot);
     await fs.mkdir(path.join(candidate, "projections"), { recursive: true });
     await fs.writeFile(
       path.join(candidate, "projections", "graph.json"),
       `${JSON.stringify(graph)}\n`
+    );
+    await fs.writeFile(
+      path.join(candidate, "projections", "structural-analysis.json"),
+      `${JSON.stringify(structuralAnalysis)}\n`
     );
     await fs.writeFile(
       path.join(candidate, "projections", "search.jsonl"),
