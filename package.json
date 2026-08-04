@@ -7,7 +7,7 @@
   "private": true,
   "packageManager": "npm@11.12.1",
   "engines": {
-    "vscode": "^1.92.0",
+    "vscode": "^1.95.0",
     "node": ">=20"
   },
   "categories": [
@@ -23,7 +23,8 @@
     "onCommand:keystone.openBrowserView",
     "onCommand:keystone.configureValueEdge",
     "onCommand:keystone.importValueEdgeFeature",
-    "onCommand:keystone.publishValueEdgeStories"
+    "onCommand:keystone.publishValueEdgeStories",
+    "onLanguageModelTool:keystone_get_context"
   ],
   "contributes": {
     "commands": [
@@ -61,6 +62,76 @@
         "command": "keystone.publishValueEdgeStories",
         "title": "Keystone: Publish Approved Stories to ValueEdge",
         "category": "Keystone"
+      }
+    ],
+    "languageModelTools": [
+      {
+        "name": "keystone_get_context",
+        "displayName": "Keystone Context",
+        "toolReferenceName": "keystoneContext",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(library)",
+        "userDescription": "Retrieve targeted repository intelligence from Keystone's prepared context.",
+        "modelDescription": "Use this single coherent Keystone retrieval tool only when the provided ContextPackage is insufficient. Start with the compressed package, use existing context first, and request the smallest useful repository-specific information. Operations are get_intelligence, get_symbols, get_relationships, get_flows, get_impact, get_intent, and expand_context. Never use it to broadly rediscover the repository and never assume missing facts.",
+        "tags": [
+          "keystone",
+          "repository-intelligence",
+          "context"
+        ],
+        "inputSchema": {
+          "type": "object",
+          "required": [
+            "packageId",
+            "operation"
+          ],
+          "properties": {
+            "packageId": {
+              "type": "string",
+              "description": "The ContextPackage ID supplied by Keystone in the delegation prompt."
+            },
+            "operation": {
+              "type": "string",
+              "enum": [
+                "get_intelligence",
+                "get_symbols",
+                "get_relationships",
+                "get_flows",
+                "get_impact",
+                "get_intent",
+                "expand_context"
+              ],
+              "description": "The smallest targeted retrieval operation needed for correctness."
+            },
+            "query": {
+              "type": "string",
+              "description": "A narrow repository-specific query, symbol, component, or flow name."
+            },
+            "contextReference": {
+              "type": "string",
+              "description": "A stable ContextPackage reference such as packageId#candidateId for expand_context."
+            },
+            "level": {
+              "type": "string",
+              "enum": [
+                "L0",
+                "L1",
+                "L2",
+                "L3",
+                "L4",
+                "summary",
+                "standard",
+                "full"
+              ],
+              "description": "The smallest expansion level needed; defaults to standard."
+            },
+            "limit": {
+              "type": "number",
+              "minimum": 1,
+              "maximum": 48,
+              "description": "Maximum bounded result count."
+            }
+          }
+        }
       }
     ],
     "configuration": {

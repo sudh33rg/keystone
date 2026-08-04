@@ -24,6 +24,8 @@ import type {
   ContextPacketPayload,
   ContextPacketSegmentKind,
   ContextFragment,
+  ContextInspectorItem,
+  IntentLifecycle,
   SdlcPlan,
   Story,
   TaskResult
@@ -54,6 +56,8 @@ interface AppState {
   collapsedGraphNodeIds: string[];
   loadedContextPackets: Record<string, ContextPacketPayload>;
   expandedContext?: ContextFragment;
+  contextInspectorOpen: boolean;
+  expandingContextReference?: string;
   cpg?: IntelligenceCpgResult;
   cpgPath: string;
   cpgEdgeKind: string;
@@ -64,6 +68,8 @@ interface AppState {
   valueEdgeFeatureId: string;
   evidenceText: string;
   selectedCriteria: Record<string, boolean>;
+  intentQuestion: string;
+  intentBlocker: string;
   selectedStoryId?: string;
 }
 
@@ -90,6 +96,20 @@ const graphModes: IntelligenceGraphMode[] = [
   "tests",
   "impact"
 ];
+const intentLifecycleTransitions: Record<IntentLifecycle, IntentLifecycle[]> = {
+  DRAFT: ["UNDERSTANDING"],
+  UNDERSTANDING: ["READY", "DRAFT", "BLOCKED"],
+  READY: ["IN_PROGRESS", "UNDERSTANDING", "BLOCKED"],
+  IN_PROGRESS: ["BLOCKED", "REVIEW", "READY"],
+  BLOCKED: ["IN_PROGRESS"],
+  REVIEW: ["COMPLETE", "IN_PROGRESS"],
+  COMPLETE: ["REVIEW"]
+};
+const intentLifecycleLabel = (lifecycle: IntentLifecycle): string =>
+  lifecycle
+    .toLowerCase()
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 
 export class App extends React.Component<Record<string, never>, AppState> {
   state: AppState = {
@@ -110,6 +130,8 @@ export class App extends React.Component<Record<string, never>, AppState> {
     graphRelationshipKind: "all",
     collapsedGraphNodeIds: [],
     loadedContextPackets: {},
+    contextInspectorOpen: false,
+    expandingContextReference: undefined,
     cpgPath: "",
     cpgEdgeKind: "all",
     agent: "GitHub Copilot",
@@ -118,7 +140,9 @@ export class App extends React.Component<Record<string, never>, AppState> {
       "Follow the approved specification and repository instructions. Use only the supplied evidence. Do not perform Git write operations.",
     valueEdgeFeatureId: "",
     evidenceText: "",
-    selectedCriteria: {}
+    selectedCriteria: {},
+    intentQuestion: "",
+    intentBlocker: ""
   };
   private readonly onMessage = (event: MessageEvent): void =>
     this.handle(event.data as { type?: string; [key: string]: unknown });
@@ -160,6 +184,8 @@ export class App extends React.Component<Record<string, never>, AppState> {
         task: message.result as TaskResult,
         loadedContextPackets: {},
         expandedContext: undefined,
+        contextInspectorOpen: false,
+        expandingContextReference: undefined,
         notice: "Intent R&D is ready. Review evidence and create the SDLC plan."
       });
     } else if (message.type === "SDLC_PLAN_RESULT") {
@@ -361,6 +387,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
     } else if (message.type === "CONTEXT_FRAGMENT_RESULT") {
       this.setState({
         expandedContext: message.fragment as ContextFragment,
+        expandingContextReference: undefined,
         notice: `Expanded ${String((message.fragment as ContextFragment).candidates.length)} retained context candidate(s).`
       });
     } else if (message.type === "VALIDATION_RESULT") {
@@ -385,6 +412,32 @@ export class App extends React.Component<Record<string, never>, AppState> {
             ? "Copilot response was captured by Keystone and linked to the active SDLC story."
             : "Copilot delegation opened externally; Keystone is waiting for concrete returned evidence."
           : String(result.error ?? "Delegation failed.")
+      }));
+    } else if (message.type === "COPILOT_ACTIVITY") {
+      this.setState({ notice: String(message.message) });
+    } else if (message.type === "COPILOT_STREAM") {
+      const stream = message as {
+        contextPackageId?: string;
+        storyId?: string;
+        text?: string;
+      };
+      this.setState((previous) => ({
+        application: {
+          ...previous.application,
+          delegationResult: {
+            ...(previous.application.delegationResult ?? {
+              success: true,
+              captured: true,
+              mode: "Copilot Chat",
+              startedAt: new Date().toISOString(),
+              completedAt: new Date().toISOString()
+            }),
+            contextPackageId: stream.contextPackageId,
+            storyId: stream.storyId,
+            streaming: true,
+            text: `${previous.application.delegationResult?.text ?? ""}${stream.text ?? ""}`
+          }
+        }
       }));
     } else if (message.type === "TASK_HANDOFF_CREATED") {
       this.setState({
@@ -430,7 +483,8 @@ export class App extends React.Component<Record<string, never>, AppState> {
               version: previous.application.version + 1
             }
           : previous.application,
-        notice: notification
+        notice: notification,
+        expandingContextReference: undefined
       }));
     }
   }
@@ -826,6 +880,12 @@ export class App extends React.Component<Record<string, never>, AppState> {
             />
           </Panel>
         </div>
+        <Panel
+          title="Context"
+          subtitle="A focused view of what Keystone prepared for the active intent and what can be retrieved if needed."
+        >
+          {this.contextExperience(this.state.task)}
+        </Panel>
         {this.state.task && !plan && this.prePlanResearch(this.state.task)}
         <Panel
           title="ValueEdge feature"
@@ -1529,7 +1589,16 @@ export class App extends React.Component<Record<string, never>, AppState> {
         <div className="page-title">
           <div>
             <p className="eyebrow">WORK</p>
-            <h1>{plan?.intent ?? (this.state.intent || "Active intent")}</h1>
+            <div className="active-intent-heading">
+              <h1>{plan?.intent ?? (this.state.intent || "Active intent")}</h1>
+              {this.state.application.intentState && (
+                <span
+                  className={`status intent-header-lifecycle ${this.state.application.intentState.lifecycle.toLowerCase()}`}
+                >
+                  ● {intentLifecycleLabel(this.state.application.intentState.lifecycle)}
+                </span>
+              )}
+            </div>
             <p>{task.reason}</p>
           </div>
           <div className="actions">
@@ -1571,6 +1640,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
             detail="security / performance"
           />
         </div>
+        {this.intentWorkspace(task, current)}
         {!plan && this.prePlanResearch(task)}
         {plan && this.researchAndSpecification(plan)}
         {plan && this.sdlcExecution(plan, current)}
@@ -1664,6 +1734,281 @@ export class App extends React.Component<Record<string, never>, AppState> {
         </div>
       </section>
     );
+  }
+
+  private intentWorkspace(task: TaskResult, current: Story | undefined): JSX.Element {
+    const intent = this.state.application.intentState;
+    if (!intent) return <></>;
+    const operation = this.state.application.operations?.find(
+      (item) => item.id === "copilot-delegation"
+    );
+    const running = operation?.status === "running";
+    const proposed = intent.decisions.filter((decision) => decision.status === "PROPOSED");
+    const activeBlockers = intent.blockers.filter((blocker) => !blocker.resolvedAt);
+    const scopeChange = this.state.application.delegationResult?.structured?.scopeChange;
+    const primary = this.primaryIntentAction(intent.lifecycle, running, current, intent.goal);
+    return (
+      <Panel
+        title="Intent state"
+        subtitle="Durable engineering state stays separate from the Copilot conversation."
+      >
+        <div className="intent-header-row">
+          <span className={`status ${intent.lifecycle.toLowerCase()}`}>
+            {intentLifecycleLabel(intent.lifecycle)}
+          </span>
+          <span className="intent-objective">Current objective: {intent.currentObjective}</span>
+          <select
+            className="intent-lifecycle-control"
+            value=""
+            aria-label="Correct Intent lifecycle"
+            onChange={(event: React.FormEvent<HTMLSelectElement>) => {
+              const next = event.currentTarget.value as IntentLifecycle;
+              if (next) vscode.postMessage({ type: "SET_INTENT_LIFECYCLE", lifecycle: next });
+            }}
+          >
+            <option value="" disabled>
+              Correct lifecycle…
+            </option>
+            {intentLifecycleTransitions[intent.lifecycle]
+              .filter((next) => next !== "BLOCKED")
+              .map((next) => (
+                <option value={next} key={next}>
+                  Move to {intentLifecycleLabel(next)}
+                </option>
+              ))}
+          </select>
+          {intent.latestCopilotInteraction?.contextPackageId && (
+            <small>ContextPackage {intent.latestCopilotInteraction.contextPackageId}</small>
+          )}
+        </div>
+        <div className="intent-summary-grid">
+          <div>
+            <span>Understanding</span>
+            <strong>{intent.understanding.at(-1) ?? "Not captured yet"}</strong>
+          </div>
+          <div>
+            <span>Completed</span>
+            <strong>{intent.completedWork.length} durable item(s)</strong>
+          </div>
+          <div>
+            <span>Questions</span>
+            <strong>{intent.openQuestions.length}</strong>
+          </div>
+          <div>
+            <span>Blockers</span>
+            <strong>{activeBlockers.length}</strong>
+          </div>
+        </div>
+        <div className="intent-primary-row">
+          <div>
+            <strong>{running ? "Copilot working" : primary.label}</strong>
+            <small>
+              {running ? (operation?.message ?? "Streaming a response…") : primary.description}
+            </small>
+          </div>
+          <button
+            className={running ? "danger" : "primary"}
+            onClick={() =>
+              running ? vscode.postMessage({ type: "CANCEL_COPILOT" }) : primary.run()
+            }
+            disabled={!running && !primary.enabled}
+          >
+            {running ? "Stop" : primary.label}
+          </button>
+        </div>
+        {proposed.length > 0 && (
+          <div className="decision-list">
+            <strong>Decision candidates</strong>
+            {proposed.map((decision) => (
+              <div className="decision-item" key={decision.id}>
+                <div>
+                  <b>{decision.title}</b>
+                  <span>{decision.recommendation}</span>
+                  {decision.reason && <small>{decision.reason}</small>}
+                </div>
+                <div className="actions">
+                  <button
+                    className="primary"
+                    onClick={() =>
+                      vscode.postMessage({
+                        type: "ACCEPT_INTENT_DECISION",
+                        decisionId: decision.id
+                      })
+                    }
+                  >
+                    Accept
+                  </button>
+                  <button
+                    onClick={() =>
+                      vscode.postMessage({
+                        type: "REJECT_INTENT_DECISION",
+                        decisionId: decision.id
+                      })
+                    }
+                  >
+                    Reject
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {activeBlockers.length > 0 && (
+          <div className="callout warning">
+            <strong>Blocked</strong>
+            {activeBlockers.map((blocker) => (
+              <div className="blocker-row" key={blocker.id}>
+                <span>{blocker.summary}</span>
+                <button
+                  onClick={() =>
+                    vscode.postMessage({ type: "RESOLVE_INTENT_BLOCKER", blockerId: blocker.id })
+                  }
+                >
+                  Resolve
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="add-blocker-row">
+          <input
+            value={this.state.intentBlocker}
+            onChange={(event: React.FormEvent<HTMLInputElement>) =>
+              this.setState({ intentBlocker: event.currentTarget.value })
+            }
+            placeholder="Describe a real blocker…"
+          />
+          <button
+            disabled={!this.state.intentBlocker.trim()}
+            onClick={() => {
+              vscode.postMessage({
+                type: "ADD_INTENT_BLOCKER",
+                summary: this.state.intentBlocker.trim()
+              });
+              this.setState({ intentBlocker: "" });
+            }}
+          >
+            Mark blocked
+          </button>
+        </div>
+        {scopeChange && (
+          <div className="callout warning">
+            <strong>Scope change recommended</strong>
+            <span>{scopeChange.summary}</span>
+            <small>Affected: {scopeChange.affectedAreas.join(", ")}</small>
+            <div className="actions">
+              <button
+                className="primary"
+                onClick={() =>
+                  vscode.postMessage({
+                    type: "EXPAND_INTENT_SCOPE",
+                    areas: scopeChange.affectedAreas,
+                    reason: scopeChange.reason
+                  })
+                }
+              >
+                Expand scope
+              </button>
+              <button
+                onClick={() =>
+                  vscode.postMessage({ type: "KEEP_INTENT_SCOPE", reason: scopeChange.reason })
+                }
+              >
+                Keep current scope
+              </button>
+            </div>
+          </div>
+        )}
+        <div className="ask-intent-row">
+          <input
+            value={this.state.intentQuestion}
+            onChange={(event: React.FormEvent<HTMLInputElement>) =>
+              this.setState({ intentQuestion: event.currentTarget.value })
+            }
+            placeholder="Ask about this Intent…"
+          />
+          <button
+            disabled={!this.state.intentQuestion.trim() || running}
+            onClick={() => {
+              vscode.postMessage({
+                type: "ASK_ABOUT_INTENT",
+                question: this.state.intentQuestion.trim()
+              });
+              this.setState({ intentQuestion: "" });
+            }}
+          >
+            Ask
+          </button>
+        </div>
+      </Panel>
+    );
+  }
+
+  private primaryIntentAction(
+    lifecycle: IntentLifecycle,
+    running: boolean,
+    current: Story | undefined,
+    goal: string
+  ): { label: string; description: string; enabled: boolean; run: () => void } {
+    const noOp = (): void => undefined;
+    if (running)
+      return {
+        label: "Stop",
+        description: "Stop the active Copilot operation.",
+        enabled: true,
+        run: noOp
+      };
+    if (lifecycle === "DRAFT" || lifecycle === "UNDERSTANDING") {
+      return {
+        label: "Understand Intent",
+        description: "Prepare repository-backed understanding.",
+        enabled: true,
+        run: () =>
+          vscode.postMessage({
+            type: "ANALYZE_INTENT",
+            text: this.state.intent.trim() || goal
+          })
+      };
+    }
+    if (lifecycle === "BLOCKED")
+      return {
+        label: "Resolve Blocker",
+        description: "Resolve an active blocker before continuing.",
+        enabled: false,
+        run: noOp
+      };
+    if (lifecycle === "REVIEW")
+      return {
+        label: "Review Changes",
+        description: "Run validation and inspect the current result.",
+        enabled: true,
+        run: () =>
+          vscode.postMessage({ type: "RUN_VALIDATION", scope: "impacted", storyId: current?.id })
+      };
+    if (lifecycle === "COMPLETE")
+      return {
+        label: "Follow Up",
+        description: "The accepted Intent is complete.",
+        enabled: false,
+        run: noOp
+      };
+    if (current && (current.status === "in-progress" || current.status === "awaiting-validation")) {
+      const hasResult = Boolean(this.state.application.delegationResult?.captured);
+      return {
+        label: "Continue with Copilot",
+        description: hasResult
+          ? "Continue the current objective using distilled Intent state."
+          : "Delegate the current objective using the prepared ContextPackage.",
+        enabled: true,
+        run: () => (hasResult ? this.continueWithCopilot(current) : this.delegate(current))
+      };
+    }
+    return {
+      label: "Continue with Copilot",
+      description: "Approve the prepared repository context to continue.",
+      enabled: Boolean(current),
+      run: current ? () => this.delegate(current) : noOp
+    };
   }
 
   private prePlanResearch(task: TaskResult): JSX.Element {
@@ -1882,9 +2227,14 @@ export class App extends React.Component<Record<string, never>, AppState> {
                     Start story
                   </button>
                 )}
-                {current.status === "in-progress" && (
+                {(current.status === "in-progress" ||
+                  (current.status === "delegated" &&
+                    current.delegation?.status === "delegated" &&
+                    !current.delegation.completedAt)) && (
                   <button onClick={() => this.delegate(current)}>
-                    Prepare & approve Copilot delegation
+                    {current.status === "delegated"
+                      ? "Retry Copilot delegation"
+                      : "Prepare & approve Copilot delegation"}
                   </button>
                 )}
                 {["in-progress", "delegated", "awaiting-validation", "review-required"].includes(
@@ -2074,203 +2424,34 @@ export class App extends React.Component<Record<string, never>, AppState> {
     );
   }
 
-  private contextAndDelegation(task: TaskResult, current: Story | undefined): JSX.Element {
+  private contextAndDelegation(taskResult: TaskResult, current: Story | undefined): JSX.Element {
+    const task = {
+      ...taskResult,
+      contextSummary: {
+        ...taskResult.contextSummary!,
+        retainedCandidates: taskResult.contextSummary?.retainedCandidates ?? []
+      },
+      contextPackets: taskResult.contextPackets!,
+      omittedContext: taskResult.omittedContext!
+    } as TaskResult & {
+      contextSummary: NonNullable<TaskResult["contextSummary"]> & {
+        retainedCandidates: NonNullable<
+          NonNullable<TaskResult["contextSummary"]>["retainedCandidates"]
+        >;
+      };
+      contextPackets: NonNullable<TaskResult["contextPackets"]>;
+      omittedContext: NonNullable<TaskResult["omittedContext"]>;
+    };
+    const delegationResult = this.state.application.delegationResult;
+    const structured = delegationResult?.structured;
+    const details = structured?.details;
     return (
       <div className="two-column">
         <Panel
-          title="Context Engineering"
-          subtitle="See exactly what survived compression, why it was selected, what was omitted and how much token budget it consumed."
+          title="Context"
+          subtitle="Inspect the focused context prepared for this intent before handing work to Copilot."
         >
-          <div className="metric-grid compact">
-            <Metric
-              label="Raw"
-              value={String(task.contextTokens?.raw ?? 0)}
-              detail="estimated tokens"
-            />
-            <Metric
-              label="Selected"
-              value={String(task.contextTokens?.selected ?? 0)}
-              detail="pre-prompt context"
-            />
-            <Metric
-              label="Prompt"
-              value={String(task.contextTokens?.prompt ?? 0)}
-              detail="delegated tokens"
-            />
-            <Metric
-              label="Reduction"
-              value={`${task.tokenReduction ?? 0}%`}
-              detail={task.contextTokens?.tier ?? "standard"}
-            />
-            <Metric
-              label="Packets"
-              value={String(task.contextTokens?.packets ?? task.contextPackets?.length ?? 1)}
-              detail="ordered context segments"
-            />
-          </div>
-          {task.contextSummary && (
-            <div className="callout context-summary">
-              <strong>
-                {task.contextSummary.operation} · {task.contextSummary.transmittedCandidateCount}{" "}
-                transmitted
-              </strong>
-              <span>
-                {task.contextSummary.allCandidateCount} known ·{" "}
-                {task.contextSummary.selectedCandidateCount} relevant ·{" "}
-                {task.contextSummary.retainedCandidateCount} retained ·{" "}
-                {task.contextSummary.omittedContextCount} retrievable
-              </span>
-              <small>Source revision {task.contextSummary.sourceRevision.slice(0, 16)}…</small>
-              <div className="context-sources">
-                <span>Context Sources</span>
-                {task.contextSummary.sourceCounts.map((source) => (
-                  <span key={source.category} className={source.included ? "included" : "muted"}>
-                    {source.label} {source.included ? `${source.count} included` : "not available"}
-                  </span>
-                ))}
-              </div>
-              {task.contextSummary.candidates.length ? (
-                <details className="context-candidates">
-                  <summary>Inspect selected candidates ({task.contextSummary.candidates.length})</summary>
-                  {task.contextSummary.candidates.slice(0, 12).map((candidate) => (
-                    <article key={candidate.id}>
-                      <div>
-                        <b>{candidate.label}</b>
-                        <span>{candidate.category} · {candidate.sourceType} · {candidate.estimatedTokenCost} tokens</span>
-                      </div>
-                      {candidate.path ? (
-                        <button className="link-button" onClick={() => this.openSource(candidate.path!)}>
-                          {candidate.path}
-                        </button>
-                      ) : null}
-                      <small>
-                        {candidate.evidence.map((evidence) =>
-                          [evidence.entityId, evidence.relationshipId, evidence.evidenceId, evidence.id]
-                            .filter(Boolean)
-                            .join(" · ") || evidence.label
-                        ).join(" | ")}
-                      </small>
-                    </article>
-                  ))}
-                </details>
-              ) : null}
-              <div className="actions">
-                <button
-                  onClick={() =>
-                    vscode.postMessage({
-                      type: "EXPAND_CONTEXT",
-                      contextId: task.contextSummary!.id,
-                      focus: task.researchDocument.problemStatement || this.state.intent,
-                      level: "standard"
-                    })
-                  }
-                >
-                  Expand retained context
-                </button>
-              </div>
-            </div>
-          )}
-          {this.state.expandedContext && (
-            <details className="context-expansion" open>
-              <summary>
-                Expanded retained context ({this.state.expandedContext.candidates.length}{" "}
-                candidates, {this.state.expandedContext.estimatedTokens} tokens)
-              </summary>
-              <pre>{this.state.expandedContext.content}</pre>
-            </details>
-          )}
-          <div className="context-sections">
-            {(task.contextSections ?? []).map((section) => (
-              <article key={section.path}>
-                <div>
-                  <button className="link-button" onClick={() => this.openSource(section.path)}>
-                    {section.path}
-                  </button>
-                  <span>{section.estimatedTokens} tokens</span>
-                </div>
-                <p>{section.reason}</p>
-                <pre>{section.preview}</pre>
-                {section.evidence?.length ? (
-                  <EvidenceList
-                    items={section.evidence}
-                    empty=""
-                    onOpen={(path, line) => this.openSource(path, line)}
-                  />
-                ) : null}
-              </article>
-            ))}
-          </div>
-          {task.contextPackets?.length ? (
-            <details open>
-              <summary>Ordered context packets ({task.contextPackets.length})</summary>
-              <div className="context-packets">
-                {task.contextPackets.map((packet) => (
-                  <article key={packet.id}>
-                    <div>
-                      <b>
-                        Packet {packet.sequence}/{packet.total}
-                      </b>
-                      <span>{packet.estimatedTokens} tokens</span>
-                    </div>
-                    <p>{packet.segmentKinds.join(" · ")}</p>
-                    <small>{packet.paths.join(" · ") || "Canonical summary only"}</small>
-                    {packet.continuationToken && (
-                      <code>continuation: {packet.continuationToken.slice(0, 16)}…</code>
-                    )}
-                    <div className="actions packet-actions">
-                      <button onClick={() => this.loadContextPacket(packet.id)}>
-                        {this.state.loadedContextPackets[packet.id]
-                          ? "Reload full packet"
-                          : `Load packet ${packet.sequence}`}
-                      </button>
-                      {packet.segmentKinds.some((kind) =>
-                        ["summary", "selected-intelligence"].includes(kind)
-                      ) && (
-                        <button
-                          onClick={() =>
-                            this.loadContextPacket(packet.id, ["summary", "selected-intelligence"])
-                          }
-                        >
-                          Load summary
-                        </button>
-                      )}
-                      {packet.segmentKinds.includes("source-excerpts") && (
-                        <button
-                          onClick={() => this.loadContextPacket(packet.id, ["source-excerpts"])}
-                        >
-                          Load source excerpts
-                        </button>
-                      )}
-                    </div>
-                    {this.state.loadedContextPackets[packet.id] && (
-                      <details open>
-                        <summary>
-                          Loaded {this.state.loadedContextPackets[packet.id].estimatedTokens} token
-                          segment
-                          {this.state.loadedContextPackets[packet.id].estimatedTokens === 1
-                            ? ""
-                            : "s"}
-                        </summary>
-                        <pre className="context-packet-content">
-                          {this.state.loadedContextPackets[packet.id].content}
-                        </pre>
-                      </details>
-                    )}
-                  </article>
-                ))}
-              </div>
-            </details>
-          ) : null}
-          {task.omittedContext?.length ? (
-            <details>
-              <summary>Omitted context ({task.omittedContext.length})</summary>
-              {task.omittedContext.map((item) => (
-                <p key={item.path}>
-                  <code>{item.path}</code> — {item.reason} ({item.estimatedTokens} tokens)
-                </p>
-              ))}
-            </details>
-          ) : null}
+          {this.contextExperience(taskResult)}
         </Panel>
         <Panel
           title="Copilot delegation"
@@ -2372,12 +2553,199 @@ export class App extends React.Component<Record<string, never>, AppState> {
                 {this.state.application.delegationResult.model?.name ??
                   this.state.application.delegationResult.mode}
               </p>
+              {this.state.application.delegationResult.contextPackageId && (
+                <small>
+                  ContextPackage received:{" "}
+                  {this.state.application.delegationResult.contextPackageId}
+                </small>
+              )}
+              {this.state.application.delegationResult.contextUsage && (
+                <small>
+                  Prepared context:{" "}
+                  {this.state.application.delegationResult.contextUsage.estimatedTransmittedTokens}{" "}
+                  estimated tokens ·{" "}
+                  {this.state.application.delegationResult.contextUsage.transmittedCandidateCount}{" "}
+                  transmitted ·{" "}
+                  {this.state.application.delegationResult.contextUsage.omittedContextCount}{" "}
+                  retrievable/omitted
+                </small>
+              )}
               {this.state.application.delegationResult.artifactPath && (
                 <code>{this.state.application.delegationResult.artifactPath}</code>
+              )}
+              {structured && (
+                <div className="structured-result">
+                  <span
+                    className={`status ${this.state.application.delegationResult.structuredStatus ?? "complete"}`}
+                  >
+                    Structured result{" "}
+                    {this.state.application.delegationResult.structuredStatus ?? "complete"}
+                  </span>
+                  {structured.summary && <p>{structured.summary}</p>}
+                  <small>
+                    {structured.findings?.length ?? 0} finding(s) ·{" "}
+                    {structured.decisionsProposed?.length ?? 0} decision candidate(s) ·{" "}
+                    {structured.evidenceReferences?.length ?? 0} evidence reference(s)
+                  </small>
+                  {delegationResult.structuredSource && (
+                    <small>
+                      Captured through{" "}
+                      {delegationResult.structuredSource === "language-model-tool"
+                        ? "Copilot's structured response tool"
+                        : "safe JSON recovery"}
+                      .
+                    </small>
+                  )}
+                  {(structured.recommendation ||
+                    structured.risks?.length ||
+                    structured.blockers?.length ||
+                    structured.proposedActions?.length ||
+                    details) && (
+                    <div className="structured-fields">
+                      {structured.recommendation && (
+                        <div>
+                          <b>Recommendation</b>
+                          <p>{structured.recommendation}</p>
+                        </div>
+                      )}
+                      {structured.risks?.length ? (
+                        <div>
+                          <b>Risks</b>
+                          <ul>
+                            {structured.risks.map((item) => (
+                              <li key={item}>{item}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                      {structured.blockers?.length ? (
+                        <div>
+                          <b>Blockers</b>
+                          <ul>
+                            {structured.blockers.map((item) => (
+                              <li key={item}>{item}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                      {structured.proposedActions?.length ? (
+                        <div>
+                          <b>Proposed actions</b>
+                          <ul>
+                            {structured.proposedActions.map((item) => (
+                              <li key={item}>{item}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                      {structured.affectedAreas?.length ? (
+                        <div>
+                          <b>Affected areas</b>
+                          <p>{structured.affectedAreas.join(" · ")}</p>
+                        </div>
+                      ) : null}
+                      {structured.questions?.length ? (
+                        <div>
+                          <b>Questions</b>
+                          <ul>
+                            {structured.questions.map((item) => (
+                              <li key={item}>{item}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                      {structured.findings?.length ? (
+                        <div>
+                          <b>Findings</b>
+                          <ul>
+                            {structured.findings.map((finding, index) => (
+                              <li key={`${finding.summary}-${index}`}>
+                                {finding.severity ? `${finding.severity}: ` : ""}
+                                {finding.summary}
+                                {finding.evidence?.length
+                                  ? ` · ${finding.evidence.length} evidence link(s)`
+                                  : ""}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                      {details && (
+                        <div>
+                          <b>{details.operation} details</b>
+                          {details.understanding && <p>{details.understanding}</p>}
+                          {details.approach && (
+                            <p>
+                              <b>Approach:</b> {details.approach}
+                            </p>
+                          )}
+                          {details.nextAction && (
+                            <p>
+                              <b>Next action:</b> {details.nextAction}
+                            </p>
+                          )}
+                          {details.likelyScope?.length ? (
+                            <p>
+                              <b>Likely scope:</b> {details.likelyScope.join(" · ")}
+                            </p>
+                          ) : null}
+                          {details.changedAreas?.length ? (
+                            <p>
+                              <b>Changed areas:</b> {details.changedAreas.join(" · ")}
+                            </p>
+                          ) : null}
+                          {details.unresolvedIssues?.length ? (
+                            <p>
+                              <b>Unresolved:</b> {details.unresolvedIssues.join(" · ")}
+                            </p>
+                          ) : null}
+                          {details.constraintsDetected?.length ? (
+                            <p>
+                              <b>Constraints:</b> {details.constraintsDetected.join(" · ")}
+                            </p>
+                          ) : null}
+                          {details.dependencies?.length ? (
+                            <p>
+                              <b>Dependencies:</b> {details.dependencies.join(" · ")}
+                            </p>
+                          ) : null}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {structured.evidenceReferences?.length ? (
+                    <div className="evidence-trace">
+                      <b>Evidence trace</b>
+                      {structured.evidenceReferences.map((reference) => (
+                        <span key={`${reference.label}-${reference.path ?? ""}`}>
+                          {reference.verifiedAgainstContext ? "Source fact" : "Copilot assertion"}:{" "}
+                          {reference.label}
+                          {reference.path ? ` · ${reference.path}` : ""}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                  <small className="callout subtle">
+                    Structured content is a Copilot recommendation until you accept a decision;
+                    matched ContextPackage evidence remains separately identified as source fact.
+                  </small>
+                </div>
+              )}
+              {this.state.application.delegationResult.structuredWarning && (
+                <div className="callout warning">
+                  {this.state.application.delegationResult.structuredWarning}
+                </div>
               )}
               {this.state.application.delegationResult.text && (
                 <pre>{this.state.application.delegationResult.text}</pre>
               )}
+              {this.state.application.delegationResult.captured &&
+                this.state.application.delegationResult.contextPackageId &&
+                current && (
+                  <button className="primary" onClick={() => this.continueWithCopilot(current)}>
+                    Continue with Copilot
+                  </button>
+                )}
             </details>
           )}
           {this.state.application.correctionPacket ? (
@@ -2463,6 +2831,278 @@ export class App extends React.Component<Record<string, never>, AppState> {
     );
   }
 
+  private contextExperience(task?: TaskResult): JSX.Element {
+    const operation = this.state.application.operations?.find(
+      (item) => item.kind === "analysis" && item.status === "running"
+    );
+    if (operation || this.state.application.status === "analyzing") {
+      return (
+        <div className="context-preparing" aria-live="polite">
+          <div className="context-preparing-heading">
+            <span className="context-status-dot preparing" />
+            <div>
+              <strong>Preparing context</strong>
+              <span>{operation?.message ?? "Selecting relevant repository evidence."}</span>
+            </div>
+            <span className="context-progress-value">{Math.round(operation?.progress ?? 5)}%</span>
+          </div>
+          <div className="progress" aria-label="Context preparation progress">
+            <i style={{ width: `${Math.max(5, Math.min(100, operation?.progress ?? 5))}%` }} />
+          </div>
+          <small>Research continues in the background. You can keep working in the panel.</small>
+        </div>
+      );
+    }
+    const summary = task?.contextSummary;
+    if (!summary) {
+      return (
+        <div className="context-empty-state">
+          <span className="context-status-dot" />
+          <div>
+            <strong>Context not prepared</strong>
+            <span>Research an intent to see what Keystone will tell Copilot.</span>
+          </div>
+        </div>
+      );
+    }
+    const inspector = summary.inspector ?? {
+      estimatedPreparedTokens: summary.estimatedTransmittedTokens,
+      estimatedAvoidedTokens: Math.max(
+        0,
+        (task.contextTokens?.raw ?? 0) - summary.estimatedTransmittedTokens
+      ),
+      mustPreserve: summary.candidates.filter((item) =>
+        ["intent", "decisions"].includes(item.category)
+      ),
+      included: summary.candidates.filter(
+        (item) => !["intent", "decisions"].includes(item.category)
+      ),
+      availableOnDemand: summary.retainedCandidates ?? [],
+      excluded: []
+    };
+    return (
+      <div className="context-experience">
+        <div className="context-ready-summary">
+          <div className="context-ready-heading">
+            <span className="context-status-dot ready" />
+            <div>
+              <strong>Context ready</strong>
+              <span>Focused for the current intent · estimates, not exact token accounting</span>
+            </div>
+          </div>
+          <div className="context-estimate-grid">
+            <div>
+              <span>Prepared</span>
+              <strong>{formatContextTokens(inspector.estimatedPreparedTokens)}</strong>
+            </div>
+            <div>
+              <span>Avoided</span>
+              <strong>{formatContextTokens(inspector.estimatedAvoidedTokens)}</strong>
+            </div>
+          </div>
+          <div className="context-counts" aria-label="Context coverage">
+            <span>{inspector.mustPreserve.length} must preserve</span>
+            <span>{inspector.included.length} included</span>
+            <span>{inspector.availableOnDemand.length} available on demand</span>
+            <span>{inspector.excluded.length} excluded</span>
+          </div>
+          <small className="context-package-id">
+            ContextPackage {summary.id} · this is the exact package available to Copilot
+          </small>
+          <button
+            className="primary context-inspect-button"
+            onClick={() =>
+              this.setState((previous) => ({
+                contextInspectorOpen: !previous.contextInspectorOpen
+              }))
+            }
+            aria-expanded={this.state.contextInspectorOpen}
+          >
+            {this.state.contextInspectorOpen ? "Close Context Inspector" : "Inspect Context"}
+          </button>
+        </div>
+        {this.state.contextInspectorOpen && (
+          <div className="context-inspector">
+            <div className="context-inspector-intro">
+              <div>
+                <strong>What Copilot is being told</strong>
+                <span>
+                  Keystone keeps the active objective and decisions visible, adds relevant
+                  repository evidence, and leaves supporting material retrievable.
+                </span>
+              </div>
+              <small>
+                {formatContextTokens(inspector.estimatedPreparedTokens)} prepared ·{" "}
+                {formatContextTokens(inspector.estimatedAvoidedTokens)} avoided
+              </small>
+            </div>
+            {this.contextGroup(
+              "MUST PRESERVE",
+              "The objective, constraints and decisions that should remain visible.",
+              inspector.mustPreserve
+            )}
+            {this.contextGroup(
+              "INCLUDED",
+              "Relevant repository facts and existing implementation patterns in the prepared context.",
+              inspector.included
+            )}
+            {this.contextGroup(
+              "AVAILABLE ON DEMAND",
+              "Supporting context retained locally and expandable when the work needs more detail.",
+              inspector.availableOnDemand,
+              true
+            )}
+            {this.contextGroup(
+              "EXCLUDED",
+              "Known material intentionally left out because it is unrelated to this operation or duplicates included facts.",
+              inspector.excluded
+            )}
+            <details className="context-advanced">
+              <summary>Advanced details</summary>
+              <p>
+                Context references are tied to the repository revision used during preparation.
+                Source files remain authoritative; an expansion is marked stale if that source has
+                changed.
+              </p>
+              <small>
+                Operation {summary.operation} · {summary.allCandidateCount} candidate(s) considered
+                · revision {summary.sourceRevision.slice(0, 12)}…
+              </small>
+            </details>
+          </div>
+        )}
+        {this.state.expandedContext && this.expandedContextView()}
+      </div>
+    );
+  }
+
+  private contextGroup(
+    title: string,
+    description: string,
+    items: readonly ContextInspectorItem[],
+    expandable = false
+  ): JSX.Element {
+    return (
+      <section className={`context-group ${items.length ? "" : "empty-group"}`}>
+        <div className="context-group-heading">
+          <div>
+            <h3>{title}</h3>
+            <p>{description}</p>
+          </div>
+          <span className="context-group-count">{items.length}</span>
+        </div>
+        {items.length ? (
+          <div className="context-group-items">
+            {items.map((item) => (
+              <article className="context-item" key={`${title}-${item.id}`}>
+                <div className="context-item-main">
+                  <strong>{item.label}</strong>
+                  {item.reason && <span>{item.reason}</span>}
+                </div>
+                {item.path && (
+                  <button
+                    className="link-button context-source"
+                    onClick={() => this.openSource(item.path!)}
+                  >
+                    {item.path}
+                  </button>
+                )}
+                {item.evidence
+                  .filter((evidence) => evidence.path)
+                  .slice(0, 3)
+                  .map((evidence, index) => (
+                    <button
+                      className="link-button context-evidence-link"
+                      key={`${item.id}-evidence-${index}`}
+                      onClick={() =>
+                        this.openSource(evidence.path!, evidence.line ?? evidence.startLine)
+                      }
+                    >
+                      Evidence · {evidence.path}
+                      {(evidence.line ?? evidence.startLine)
+                        ? `:${evidence.line ?? evidence.startLine}`
+                        : ""}
+                    </button>
+                  ))}
+                <div className="context-item-meta">
+                  {item.expandable && <em className="expandable-badge">Expandable</em>}
+                  {item.compressed && <span>Prepared as a concise fact</span>}
+                  {expandable && item.expandable && (
+                    <button
+                      className="context-expand-button"
+                      disabled={this.state.expandingContextReference === item.contextReference}
+                      onClick={() => this.expandContext(item)}
+                    >
+                      {this.state.expandingContextReference === item.contextReference
+                        ? "Preparing…"
+                        : "Expand"}
+                    </button>
+                  )}
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="context-group-empty">None for this intent.</div>
+        )}
+      </section>
+    );
+  }
+
+  private expandContext(item: ContextInspectorItem): void {
+    this.setState({ expandingContextReference: item.contextReference, contextInspectorOpen: true });
+    vscode.postMessage({
+      type: "EXPAND_CONTEXT",
+      contextReference: item.contextReference,
+      focus: item.label,
+      level: "L2"
+    });
+  }
+
+  private expandedContextView(): JSX.Element {
+    const expansion = this.state.expandedContext!;
+    return (
+      <details className="context-expansion" open>
+        <summary>Expanded context · {expansion.candidates.length} item(s)</summary>
+        {expansion.stale && (
+          <div className="callout warning context-stale-callout">
+            <strong>This expansion is stale</strong>
+            <span>
+              The source changed after context was prepared. Inspect the current source before
+              relying on it.
+            </span>
+            {expansion.staleSources.map((source) => (
+              <button
+                className="link-button"
+                key={source.path}
+                onClick={() => this.openSource(source.path)}
+              >
+                Inspect current source · {source.path}
+              </button>
+            ))}
+          </div>
+        )}
+        {expansion.candidates.map((candidate) => {
+          const path = candidate.provenance?.authoritativePath;
+          return (
+            <div className="expansion-provenance" key={candidate.id}>
+              <span>
+                {candidate.stale ? "Stale · " : ""}
+                {String(candidate.payload.label ?? candidate.payload.path ?? candidate.id)}
+              </span>
+              {path && (
+                <button className="link-button" onClick={() => this.openSource(path)}>
+                  Inspect source · {path}
+                </button>
+              )}
+            </div>
+          );
+        })}
+        <pre>{expansion.content}</pre>
+      </details>
+    );
+  }
+
   private useRepositorySkills(task: TaskResult): void {
     const names = (task.copilotCustomizations?.skills ?? task.repoSkills ?? []).map(
       (skill) => skill.name
@@ -2518,7 +3158,29 @@ export class App extends React.Component<Record<string, never>, AppState> {
         .split(/\r?\n/)
         .map((value) => value.trim())
         .filter(Boolean),
-      contextPackId: task.taskWorkspace?.id
+      contextPackId: task.contextSummary?.id
+    });
+  }
+  private continueWithCopilot(story: Story): void {
+    const task = this.state.task;
+    const contextPackageId = this.state.application.delegationResult?.contextPackageId;
+    if (!task || !contextPackageId) return;
+    vscode.postMessage({
+      type: "APPROVE_DELEGATION",
+      mode: "Copilot Chat",
+      prompt: "",
+      storyId: story.id,
+      agent: this.state.agent.trim() || "GitHub Copilot",
+      skills: this.state.skills
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean),
+      instructions: this.state.instructions
+        .split(/\r?\n/)
+        .map((value) => value.trim())
+        .filter(Boolean),
+      contextPackId: contextPackageId,
+      continuation: true
     });
   }
   private delegateCorrection(story: Story, packet: CorrectionPacket): void {
@@ -2542,7 +3204,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
         .split(/\r?\n/)
         .map((value) => value.trim())
         .filter(Boolean),
-      contextPackId: task.taskWorkspace?.id
+      contextPackId: packet.contextPackageId ?? task.contextSummary?.id
     });
   }
   private openHandoff(): void {
@@ -2784,6 +3446,12 @@ function Status({ value }: { value: string }): JSX.Element {
 }
 function Empty({ text }: { text: string }): JSX.Element {
   return <div className="empty">{text}</div>;
+}
+function formatContextTokens(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return "~0";
+  if (value >= 1_000_000) return `~${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `~${(value / 1_000).toFixed(value >= 10_000 ? 0 : 1)}K`;
+  return `~${Math.round(value)}`;
 }
 function WorkerInsights({
   worker,

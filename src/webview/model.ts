@@ -28,6 +28,9 @@ export interface EvidenceItem {
   confidence?: number;
   summary?: string;
   reason?: string;
+  provenance?: string;
+  source?: "context-package" | "copilot-assertion";
+  verifiedAgainstContext?: boolean;
   score?: number;
   evidenceIds?: string[];
   relationshipPath?: string[];
@@ -134,21 +137,75 @@ export interface ContextPackageSummary {
     relevance: number;
     estimatedTokenCost: number;
     evidence: EvidenceItem[];
+    expandable: boolean;
+    compressed: boolean;
+    contextReference: string;
+    reason: string;
+    provenance?: {
+      authoritativePath?: string;
+      sourceHash?: string;
+      sourceRevision: string;
+      ranges: EvidenceItem[];
+    };
   }>;
+  retainedCandidates?: Array<{
+    id: string;
+    category: string;
+    sourceType: string;
+    label: string;
+    path?: string;
+    relevance: number;
+    estimatedTokenCost: number;
+    evidence: EvidenceItem[];
+    expandable: boolean;
+    compressed: boolean;
+    contextReference: string;
+    reason: string;
+    provenance?: {
+      authoritativePath?: string;
+      sourceHash?: string;
+      sourceRevision: string;
+      ranges: EvidenceItem[];
+    };
+  }>;
+  inspector?: {
+    estimatedPreparedTokens: number;
+    estimatedAvoidedTokens: number;
+    mustPreserve: ContextInspectorItem[];
+    included: ContextInspectorItem[];
+    availableOnDemand: ContextInspectorItem[];
+    excluded: ContextInspectorItem[];
+  };
 }
+export type ContextInspectorItem = ContextPackageSummary["candidates"][number];
 export interface ContextFragment {
   contextId: string;
+  reference?: string;
   focus: string;
-  level: "summary" | "standard" | "full";
+  level: "L0" | "L1" | "L2" | "L3" | "L4" | "summary" | "standard" | "full";
   candidates: Array<{
     id: string;
     category?: string;
     sourceType: string;
     payload: Record<string, unknown>;
     content?: string;
+    stale?: boolean;
+    provenance?: {
+      authoritativePath?: string;
+      sourceHash?: string;
+      sourceRevision: string;
+      ranges: EvidenceItem[];
+    };
   }>;
   estimatedTokens: number;
   content: string;
+  stale: boolean;
+  staleSources: Array<{
+    path: string;
+    expectedHash?: string;
+    currentHash?: string;
+    message: string;
+  }>;
 }
 export type ContextPacketSegmentKind = "summary" | "selected-intelligence" | "source-excerpts";
 export interface ContextPacketSegment {
@@ -193,6 +250,7 @@ export interface CorrectionPacket {
   resolvedAt?: string;
   resolvedByValidation?: string[];
   selectedPaths: string[];
+  contextPackageId?: string;
   prompt: string;
 }
 export interface TaskResult {
@@ -426,6 +484,7 @@ export interface Story {
     agent: string;
     skills: string[];
     instructions: string[];
+    completedAt?: string;
   };
 }
 export interface SdlcPlan {
@@ -446,9 +505,137 @@ export interface CopilotDelegationResult {
   text?: string;
   artifactPath?: string;
   storyId?: string;
+  contextPackageId?: string;
+  streaming?: boolean;
   startedAt: string;
   completedAt: string;
   error?: string;
+  cancellation?: "requested" | "cancelled";
+  structured?: CopilotResponseEnvelope;
+  structuredStatus?: "complete" | "partial" | "absent";
+  structuredSource?: "language-model-tool" | "json-recovery";
+  structuredWarning?: string;
+  observability?: {
+    intentId: string;
+    operation: string;
+    contextPackageId?: string;
+    contextUsage?: CopilotDelegationResult["contextUsage"];
+    model?: CopilotDelegationResult["model"];
+    startState: "started";
+    endState: "completed" | "cancelled" | "failed";
+    errorCode?: string;
+  };
+  contextUsage?: {
+    estimatedTransmittedTokens: number;
+    allCandidateCount: number;
+    transmittedCandidateCount: number;
+    retainedCandidateCount: number;
+    omittedContextCount: number;
+  };
+}
+export type IntentLifecycle =
+  "DRAFT" | "UNDERSTANDING" | "READY" | "IN_PROGRESS" | "BLOCKED" | "REVIEW" | "COMPLETE";
+export interface IntentDecision {
+  id: string;
+  title: string;
+  recommendation: string;
+  reason?: string;
+  status: "PROPOSED" | "ACCEPTED" | "REJECTED" | "SUPERSEDED";
+  provenance: string;
+  createdAt: string;
+  resolvedAt?: string;
+}
+export interface IntentState {
+  id: string;
+  goal: string;
+  understanding: string[];
+  scope: { included: string[]; excluded: string[]; boundaries: string[]; followUps: string[] };
+  constraints: string[];
+  decisions: IntentDecision[];
+  currentObjective: string;
+  completedWork: string[];
+  openQuestions: string[];
+  blockers: Array<{ id: string; summary: string; provenance: string; resolvedAt?: string }>;
+  risks: string[];
+  affectedAreas: string[];
+  changes: string[];
+  artifacts: string[];
+  outcomes: Array<{
+    id: string;
+    category: string;
+    text: string;
+    provenance: string;
+    evidence?: EvidenceItem[];
+    createdAt: string;
+  }>;
+  contextReferences: string[];
+  latestCopilotInteraction?: {
+    summary?: string;
+    contextPackageId?: string;
+    structuredStatus: string;
+    recordedAt: string;
+    provenance: string;
+  };
+  provenance: Array<{
+    field: string;
+    value: string;
+    provenance: string;
+    recordedAt: string;
+    sourceId?: string;
+  }>;
+  lifecycle: IntentLifecycle;
+  updatedAt: string;
+}
+export interface CopilotResponseEnvelope {
+  summary?: string;
+  findings?: Array<{
+    summary: string;
+    severity?: string;
+    evidence?: EvidenceItem[];
+    provenance: string;
+    claimedProvenance?: string;
+  }>;
+  recommendation?: string;
+  affectedAreas?: string[];
+  risks?: string[];
+  blockers?: string[];
+  decisionsProposed?: Array<{
+    title: string;
+    recommendation: string;
+    reason?: string;
+    evidence?: EvidenceItem[];
+    provenance: string;
+  }>;
+  questions?: string[];
+  proposedActions?: string[];
+  scopeChange?: { summary: string; affectedAreas: string[]; reason?: string; options: string[] };
+  artifacts?: string[];
+  evidenceReferences?: EvidenceItem[];
+  userVisibleResponse: string;
+  provenance: string;
+  claimedProvenance?: string;
+  structuredStatus: string;
+  operation?: string;
+  details?: {
+    operation: string;
+    understanding?: string;
+    likelyScope?: string[];
+    constraintsDetected?: string[];
+    repositoryEvidence?: EvidenceItem[];
+    approach?: string;
+    affectedAreas?: string[];
+    dependencies?: string[];
+    risks?: string[];
+    proposedActions?: string[];
+    workPerformed?: string[];
+    changedAreas?: string[];
+    unresolvedIssues?: string[];
+    nextAction?: string;
+    findings?: CopilotResponseEnvelope["findings"];
+    severity?: string;
+    evidence?: EvidenceItem[];
+    recommendation?: string;
+  };
 }
 export interface IntelligenceQueryResult {
   query: string;
@@ -624,6 +811,7 @@ export interface ApplicationState {
   intelligence?: IntelligenceSummary;
   taskAnalysis?: TaskResult;
   delegationResult?: CopilotDelegationResult;
+  intentState?: IntentState;
   correctionPacket?: CorrectionPacket;
   sdlc?: SdlcPlan;
   ingestion?: IngestionState;

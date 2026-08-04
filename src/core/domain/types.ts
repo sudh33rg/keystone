@@ -1,4 +1,4 @@
-import type { ContextPackage } from "../context/contextEngine";
+import type { ContextCompressionMetadata, ContextPackage } from "../context/contextEngine";
 
 export type IntentType =
   | "feature"
@@ -407,6 +407,7 @@ export interface CorrectionPacket {
   resolvedAt?: string;
   resolvedByValidation?: string[];
   selectedPaths: string[];
+  contextPackageId?: string;
   prompt: string;
 }
 
@@ -446,6 +447,7 @@ export interface ContextPack {
       startLine?: number;
       endLine?: number;
     }>;
+    compression?: ContextCompressionMetadata;
   }>;
   /** Compact OKF/graph intelligence digest passed to Copilot with the selected excerpts. */
   boundedIntelligence?: string;

@@ -27,6 +27,7 @@ import type {
   RouteDecision
 } from "../domain/types";
 import { estimateTokens } from "./tokenEstimator";
+import { compressIntelligence, compressSourceCode } from "./taskAwareCompression";
 
 export type ContextBuildOptions = {
   compressionTier?: "off" | "standard" | "aggressive";
@@ -187,12 +188,10 @@ export async function buildIntentContextPack(
     options.delegationTokenBudget ??
       (tier === "aggressive" ? 6_000 : tier === "off" ? 24_000 : 12_000)
   );
-  const reservedForInstructions = Math.min(1_800, Math.floor(delegationTokenBudget * 0.18));
-  const reservedForIntelligence = Math.min(1_800, Math.floor(delegationTokenBudget * 0.16));
-  const contentBudget = Math.max(
-    1_000,
-    delegationTokenBudget - reservedForInstructions - reservedForIntelligence
-  );
+  // This builder creates the candidate reservoir. The ContextEngine performs
+  // the final budget decision after all candidate families are known, so this
+  // phase does not reserve fixed instruction/intelligence percentages.
+  const contentBudget = delegationTokenBudget;
   let usedTokens = 0;
   let cpgFiles = 0;
   let cpgSymbols = 0;
@@ -232,7 +231,9 @@ export async function buildIntentContextPack(
       continue;
     }
     const accepted =
-      protectedFile && usedTokens + tokens > contentBudget
+      protectedFile && usedTokens + tokens > contentBudget && !excerpt.compression
+        ? compressed
+        : protectedFile && usedTokens + tokens > contentBudget && excerpt.compression?.type !== "source-code"
         ? truncateToTokens(compressed, Math.max(180, contentBudget - usedTokens))
         : compressed;
     const acceptedTokens = estimateTokens(accepted);
@@ -261,7 +262,8 @@ export async function buildIntentContextPack(
       estimatedTokens: acceptedTokens,
       sourceHash: item.file.contentHash,
       score: item.result.score,
-      evidence: refs
+      evidence: refs,
+      compression: excerpt.compression
     });
     usedTokens += acceptedTokens;
   }
@@ -537,6 +539,7 @@ function semanticExcerpt(
   tokenBudget: number
 ): {
   text: string;
+  compression?: import("./contextEngine").ContextCompressionMetadata;
   refs: Array<{
     okfId?: string;
     kind: string;
@@ -547,7 +550,6 @@ function semanticExcerpt(
 } {
   const normalized = content.replace(/\r\n/g, "\n");
   if (tier === "off") return { text: truncateToTokens(normalized, tokenBudget), refs: [] };
-  const lines = normalized.split("\n");
   const terms = new Set(
     query
       .toLowerCase()
@@ -567,59 +569,36 @@ function semanticExcerpt(
       return { node, score: matches * 3 + declaration + flow };
     })
     .sort((a, b) => b.score - a.score || a.node.location.startLine - b.node.location.startLine);
-  const selectedRanges: Array<{
-    start: number;
-    end: number;
-    score: number;
-    node: (typeof nodes)[number]["node"];
-  }> = [];
-  for (const item of nodes.slice(0, tier === "aggressive" ? 10 : 24)) {
-    const radius = tier === "aggressive" ? 1 : 3;
-    selectedRanges.push({
-      start: Math.max(1, item.node.location.startLine - radius),
-      end: Math.min(lines.length, item.node.location.endLine + radius),
-      score: item.score,
-      node: item.node
-    });
-  }
-  if (!selectedRanges.length) {
-    const fallback = normalized
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/^\s*\/\/.*$/gm, "")
-      .replace(/\n{3,}/g, "\n\n");
-    return { text: truncateToTokens(fallback, tokenBudget), refs: [] };
-  }
-  const merged = mergeRanges(selectedRanges);
-  const chunks: string[] = [];
-  const refs: Array<{
-    okfId?: string;
-    kind: string;
-    label: string;
-    startLine?: number;
-    endLine?: number;
-  }> = [];
-  for (const range of merged) {
-    const numbered = lines
-      .slice(range.start - 1, range.end)
-      .map((line, index) => `${range.start + index}: ${line}`)
-      .join("\n");
-    const chunk = `// lines ${range.start}-${range.end}\n${numbered}`;
-    if (estimateTokens([...chunks, chunk].join("\n\n")) > tokenBudget) break;
-    chunks.push(chunk);
-    for (const item of selectedRanges.filter(
-      (value) => value.start <= range.end && value.end >= range.start
-    ))
-      refs.push({
-        okfId: item.node.okfId,
-        kind: item.node.syntaxKind,
-        label: item.node.name ?? item.node.syntaxKind,
-        startLine: item.node.location.startLine,
-        endLine: item.node.location.endLine
-      });
-  }
+  const deterministic = compressSourceCode(normalized, {
+    query,
+    tokenBudget,
+    aggressive: tier === "aggressive",
+    relevantRanges: nodes.slice(0, tier === "aggressive" ? 10 : 24).map(({ node }) => ({
+      startLine: node.location.startLine,
+      endLine: node.location.endLine,
+      label: node.name ?? node.syntaxKind,
+      kind: node.syntaxKind
+    }))
+  });
+  const refs = nodes.slice(0, tier === "aggressive" ? 10 : 24).map(({ node }) => ({
+    okfId: node.okfId,
+    kind: node.syntaxKind,
+    label: node.name ?? node.syntaxKind,
+    startLine: node.location.startLine,
+    endLine: node.location.endLine
+  }));
   return {
-    text: truncateToTokens(chunks.join("\n\n… omitted unrelated lines …\n\n"), tokenBudget),
-    refs: dedupeRefs(refs)
+    text: deterministic.content,
+    compression: deterministic.metadata,
+    refs: dedupeRefs([
+      ...refs,
+      ...deterministic.metadata.evidence.map((item) => ({
+        kind: "source-range",
+        label: item.label,
+        startLine: item.startLine,
+        endLine: item.endLine
+      }))
+    ])
   };
 }
 function mergeRanges(
@@ -706,7 +685,13 @@ function buildContextPackets(
   packets: NonNullable<ContextPack["contextPackets"]>;
   payloads: NonNullable<ContextPack["contextPacketPayloads"]>;
 } {
-  const packetBudget = Math.max(1_600, Math.min(5_000, Math.floor(delegationTokenBudget * 0.42)));
+  const summaryAndIntelligenceBudget = estimateTokens(
+    `${intentText}\n${boundedIntelligence}`
+  );
+  const packetBudget = Math.max(
+    1_600,
+    Math.min(5_000, Math.max(summaryAndIntelligenceBudget, delegationTokenBudget - summaryAndIntelligenceBudget))
+  );
   type Draft = {
     segmentKinds: ContextPacket["segmentKinds"];
     paths: string[];
@@ -801,6 +786,37 @@ function buildBoundedIntelligence(input: {
   okfQuery?: OkfQueryResult;
   canonicalSelection?: CanonicalContextSelection;
 }): string {
+  const projectedGraph = input.canonicalSelection?.graph;
+  return compressIntelligence({
+    task: input.intent,
+    indexedAt: input.indexedAt,
+    selectedFiles: input.selectedFiles as unknown as Record<string, unknown>[],
+    okfItems: (input.okfQuery?.items ?? []).filter(
+      (item) => !item.path || input.selectedPaths.has(item.path)
+    ) as unknown as Record<string, unknown>[],
+    graphNodes: (projectedGraph?.nodes ?? []) as unknown as Record<string, unknown>[],
+    graphEdges: (projectedGraph?.edges ?? []) as unknown as Record<string, unknown>[],
+    relationships: [
+      ...input.dependencies,
+      ...(input.calls ?? []),
+      ...(input.controlFlows ?? []),
+      ...(input.dataFlows ?? []),
+      ...(input.typeRelationships ?? []),
+      ...(input.okfQuery?.traversals ?? [])
+    ] as unknown as Record<string, unknown>[],
+    facts: [
+      ...input.selectedSymbols,
+      ...input.relatedApis,
+      ...input.impactedServices,
+      ...input.relatedTests
+    ] as unknown as Record<string, unknown>[],
+    findings: input.findings as unknown as Record<string, unknown>[],
+    retrievalBasis: input.retrieval.results as unknown as Record<string, unknown>[],
+    tokenBudget: 1_800
+  }).content;
+
+  /* The original field-by-field renderer remains below as a compatibility
+   * reference for the projection inputs. The return above is authoritative. */
   const lines = [
     "Source: persisted Keystone repository intelligence (not a fresh repository search).",
     `Indexed at: ${input.indexedAt}`,
@@ -836,21 +852,21 @@ function buildBoundedIntelligence(input: {
   if (canonicalGraph) {
     lines.push(
       "",
-      `Canonical OKF graph neighborhood (${canonicalGraph.mode}; ${canonicalGraph.nodes.length} nodes, ${canonicalGraph.edges.length} edges):`
+      `Canonical OKF graph neighborhood (${canonicalGraph!.mode}; ${canonicalGraph!.nodes.length} nodes, ${canonicalGraph!.edges.length} edges):`
     );
     lines.push(
-      ...canonicalGraph.nodes.slice(0, 32).map((node) => {
+      ...canonicalGraph!.nodes.slice(0, 32).map((node) => {
         const location = node.path ? ` — ${node.path}${node.line ? `:${node.line}` : ""}` : "";
         return `- ${node.kind} ${node.label}${location}; confidence ${Math.round(node.confidence * 100)}%; evidence ${node.evidenceIds.length}`;
       })
     );
     lines.push(
-      ...canonicalGraph.edges
+      ...canonicalGraph!.edges
         .slice(0, 48)
         .map((edge) => `- ${edge.kind}: ${edge.sourceId} → ${edge.targetId}`)
     );
   }
-  if (input.okfQuery?.answer) lines.push(`- Query answer: ${input.okfQuery.answer}`);
+  if (input.okfQuery?.answer) lines.push(`- Query answer: ${input.okfQuery?.answer}`);
 
   const selectedOkfIds = new Set(okfItems.map((item) => item.id));
   const traversalLines = (input.okfQuery?.traversals ?? [])

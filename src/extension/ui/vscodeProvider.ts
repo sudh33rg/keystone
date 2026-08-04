@@ -47,6 +47,19 @@ import {
   type ValueEdgeConnection,
   type ValueEdgeFeature
 } from "@core/integration/valueedge";
+import { KEYSTONE_CONTEXT_TOOL_NAME, KeystoneContextTool } from "../copilot/keystoneContextTool";
+import {
+  CopilotDelegationService,
+  type CopilotDelegationRequest,
+  type DelegationContext,
+  type DelegationOperation
+} from "../copilot/copilotDelegationService";
+import {
+  IntentStateEngine,
+  IntentStateStore,
+  type IntentLifecycle,
+  type IntentState
+} from "@core/intent/intentState";
 
 /**
  * Implements VS Code's WebviewViewProvider interface for the Keystone VSCode UI.
@@ -73,13 +86,38 @@ export class VscodeProvider {
   private sdlcPlan?: SDLCPlan;
   private browserView?: BrowserViewHandle;
   private valueEdgeFeature?: ValueEdgeFeature;
+  private readonly copilotDelegationService: CopilotDelegationService;
+  private intentStateEngine?: IntentStateEngine;
+  private intentStateRoot?: string;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
     private readonly statusBar: vscode.StatusBarItem,
     private readonly output: vscode.LogOutputChannel,
     private readonly extensionContext: vscode.ExtensionContext
-  ) {}
+  ) {
+    this.copilotDelegationService = new CopilotDelegationService((request, token) =>
+      this.resolveDelegationContext(request, token)
+    );
+  }
+
+  registerLanguageModelTools(): vscode.Disposable {
+    if (typeof vscode.lm.registerTool !== "function") return { dispose: () => undefined };
+    return vscode.lm.registerTool(
+      KEYSTONE_CONTEXT_TOOL_NAME,
+      new KeystoneContextTool(
+        async (input, token) => {
+          const root = this.workspaceRoot();
+          if (!root) throw new Error("Open a workspace before requesting Keystone context.");
+          if (token.isCancellationRequested)
+            throw new Error("Keystone context retrieval was cancelled.");
+          return this.getService(root).retrieveCopilotContext(input);
+        },
+        (input) =>
+          `Keystone ${input.operation.replaceAll("_", " ")} ${input.query ? `for ${input.query}` : ""}`.trim()
+      )
+    );
+  }
 
   /** Shows a "vscode ready" message to the user. */
   async showHome(): Promise<void> {
@@ -327,6 +365,10 @@ export class VscodeProvider {
         this.refreshQueued = false;
         const refreshPaths = this.takeAffectedPaths(root);
         void this.indexWorkspace(root, refreshPaths);
+      } else if (isVisibleRoot() && this.panel) {
+        // Initial activation may have returned before automatic indexing completed.
+        // Rehydrate the persisted task and SDLC state once the live snapshot is ready.
+        await this.loadIntelligence();
       }
     }
     return true;
@@ -438,6 +480,8 @@ export class VscodeProvider {
       });
       return;
     }
+    const intentId = `task-${Date.now()}`;
+    this.startIntentUnderstanding(root, intentId, text.trim());
     this.post({ type: "STATE_UPDATE", state: { status: "analyzing" } });
     const operationId = `intent-analysis-${generation}`;
     this.applicationStore.mergeOperation({
@@ -460,8 +504,7 @@ export class VscodeProvider {
       const diagnostics = active
         ? vscode.languages.getDiagnostics(active).map((diagnostic) => ({
             path: currentFile ?? active.fsPath,
-            code:
-              typeof diagnostic.code === "object" ? diagnostic.code.value : diagnostic.code,
+            code: typeof diagnostic.code === "object" ? diagnostic.code.value : diagnostic.code,
             message: diagnostic.message,
             source: diagnostic.source,
             severity: String(diagnostic.severity),
@@ -471,14 +514,29 @@ export class VscodeProvider {
             endColumn: diagnostic.range.end.character
           }))
         : [];
-      const result = await this.getService(root).analyze(text.trim(), {
-        currentFile,
-        languageId: editor?.document.languageId,
-        selection: editor
-          ? { startLine: editor.selection.start.line, endLine: editor.selection.end.line }
-          : undefined,
-        diagnostics
-      });
+      const result = await this.getService(root).analyze(
+        text.trim(),
+        {
+          currentFile,
+          languageId: editor?.document.languageId,
+          selection: editor
+            ? { startLine: editor.selection.start.line, endLine: editor.selection.end.line }
+            : undefined,
+          diagnostics
+        },
+        (progress, message) => {
+          this.applicationStore.mergeOperation({
+            id: operationId,
+            kind: "analysis",
+            status: "running",
+            progress,
+            message,
+            updatedAt: new Date().toISOString()
+          });
+          this.post({ type: "APPLICATION_STATE", state: this.applicationStore.snapshot() });
+        },
+        intentId
+      );
       if (generation !== this.analysisGeneration) {
         if (result.taskWorkspace)
           await this.getService(root).discardTaskWorkspace(result.taskWorkspace);
@@ -491,7 +549,8 @@ export class VscodeProvider {
       this.applicationStore.update({
         taskAnalysis: result,
         activeTask: result.taskWorkspace,
-        status: "ready"
+        status: "ready",
+        intentState: this.createIntentState(root, result)
       });
       this.applicationStore.mergeOperation({
         id: operationId,
@@ -518,6 +577,140 @@ export class VscodeProvider {
       this.post({ type: "ERROR", operation: "analysis", message });
       this.post({ type: "APPLICATION_STATE", state: this.applicationStore.snapshot() });
     }
+  }
+
+  private createIntentState(root: string, result: KeystoneTaskResult): IntentState {
+    const engine = IntentStateEngine.create(
+      result.intentId,
+      result.researchDocument.problemStatement,
+      new Date().toISOString(),
+      {
+        constraints: [
+          ...(result.architectureConstraints ?? []),
+          ...(result.securityConstraints ?? []),
+          ...(result.performanceConstraints ?? [])
+        ],
+        affectedAreas: result.relevantFiles
+      }
+    );
+    this.intentStateEngine = engine;
+    this.intentStateRoot = root;
+    engine.startUnderstanding("derived-keystone-state");
+    engine.markReady("derived-keystone-state");
+    const state = engine.snapshot();
+    void this.persistIntentStateSnapshot(root, state);
+    return state;
+  }
+
+  private startIntentUnderstanding(root: string, intentId: string, goal: string): IntentState {
+    const engine = IntentStateEngine.create(intentId, goal);
+    this.intentStateEngine = engine;
+    this.intentStateRoot = root;
+    const state = engine.startUnderstanding();
+    void this.persistIntentStateSnapshot(root, state);
+    this.applicationStore.update({ intentState: state });
+    this.post({ type: "STATE_UPDATE", state: { intentState: state } });
+    return state;
+  }
+
+  private async mutateIntentState(
+    message: Extract<
+      WebviewToExtensionMessage,
+      | { type: "ACCEPT_INTENT_DECISION" }
+      | { type: "REJECT_INTENT_DECISION" }
+      | { type: "ADD_INTENT_BLOCKER" }
+      | { type: "RESOLVE_INTENT_BLOCKER" }
+      | { type: "SET_INTENT_LIFECYCLE" }
+      | { type: "EXPAND_INTENT_SCOPE" }
+      | { type: "KEEP_INTENT_SCOPE" }
+    >
+  ): Promise<void> {
+    const engine = this.intentStateEngine;
+    if (!engine) throw new Error("Analyze an Intent before changing its durable state.");
+    let state: IntentState;
+    switch (message.type) {
+      case "ACCEPT_INTENT_DECISION":
+        state = engine.acceptDecision(message.decisionId);
+        break;
+      case "REJECT_INTENT_DECISION":
+        state = engine.rejectDecision(message.decisionId, message.reason);
+        break;
+      case "ADD_INTENT_BLOCKER":
+        state = engine.addBlocker(message.summary);
+        break;
+      case "RESOLVE_INTENT_BLOCKER":
+        state = engine.resolveBlocker(message.blockerId);
+        break;
+      case "SET_INTENT_LIFECYCLE":
+        state = engine.transition(message.lifecycle);
+        break;
+      case "EXPAND_INTENT_SCOPE":
+        state = engine.updateScope({ included: message.areas }, "copilot-recommendation");
+        break;
+      case "KEEP_INTENT_SCOPE":
+        state = engine.updateScope(
+          { boundaries: [message.reason ?? "Keep the accepted scope boundary."] },
+          "user"
+        );
+        break;
+    }
+    const root = this.intentStateRoot ?? this.workspaceRoot();
+    if (!root) throw new Error("Open a workspace before changing Intent state.");
+    await this.persistIntentStateSnapshot(root, state);
+    this.applicationStore.update({ intentState: state });
+    this.post({ type: "STATE_UPDATE", state: { intentState: state } });
+    if (
+      message.type === "ACCEPT_INTENT_DECISION" ||
+      message.type === "REJECT_INTENT_DECISION" ||
+      message.type === "EXPAND_INTENT_SCOPE" ||
+      message.type === "KEEP_INTENT_SCOPE"
+    ) {
+      await this.refreshPreparedIntentContext(root, state);
+    }
+  }
+
+  private async refreshPreparedIntentContext(root: string, state: IntentState): Promise<void> {
+    const task = this.applicationStore.snapshot().taskAnalysis as KeystoneTaskResult | undefined;
+    if (!task || task.intentId !== state.id) return;
+    const refreshed = await this.getService(root).refreshIntentContext(state, task);
+    this.applicationStore.update({ taskAnalysis: refreshed });
+    this.post({ type: "TASK_RESULT", result: refreshed });
+    this.post({
+      type: "NOTIFICATION",
+      level: "info",
+      message: "Context preparation refreshed from the accepted Intent state."
+    });
+  }
+
+  private async askAboutIntent(question: string): Promise<void> {
+    const root = this.workspaceRoot();
+    const task = this.applicationStore.snapshot().taskAnalysis as KeystoneTaskResult | undefined;
+    const contextPackageId = task?.contextSummary?.id;
+    if (!root || !task || !contextPackageId)
+      throw new Error("Prepare Intent context before asking a question.");
+    const basePrompt = await this.getService(root).getDelegationPrompt(contextPackageId);
+    await this.getService(root).approveDelegation("Copilot Chat", basePrompt);
+    const result = await this.delegateApprovedPrompt(root, "Copilot Chat", basePrompt, {
+      contextPackageId,
+      continuation: true,
+      mutateIntentState: false,
+      skipApproval: true,
+      userInput: `Answer this question about the active Intent. Do not mutate the Intent state from the question alone: ${question.trim()}`,
+      operation: "CONTINUE"
+    });
+    this.post({ type: "DELEGATION_RESULT", ...result });
+  }
+
+  private async persistIntentStateSnapshot(root: string, state: IntentState): Promise<void> {
+    await new IntentStateStore(root, state.id).write(state);
+  }
+
+  private async loadIntentState(root: string, taskId: string): Promise<IntentState | undefined> {
+    const value = await new IntentStateStore(root, taskId).read();
+    if (!value) return undefined;
+    this.intentStateEngine = IntentStateEngine.from(value);
+    this.intentStateRoot = root;
+    return this.intentStateEngine.snapshot();
   }
 
   private handleMessage(message: WebviewToExtensionMessage): void {
@@ -627,7 +820,7 @@ export class VscodeProvider {
       const root = this.workspaceRoot();
       if (root)
         void this.getService(root)
-          .expandContext(message.contextId, message.focus, message.level)
+          .expandContext(message.contextId, message.contextReference, message.focus, message.level)
           .then((fragment) => this.post({ type: "CONTEXT_FRAGMENT_RESULT", fragment }))
           .catch((error) =>
             this.post({
@@ -684,8 +877,34 @@ export class VscodeProvider {
       this.post({ type: "NOTIFICATION", level: "info", message: "Task analysis cancelled." });
       return;
     }
+    if (message.type === "CANCEL_COPILOT") {
+      this.copilotDelegationService.cancel();
+      this.emitCopilotActivity("cancelled", "Copilot operation stopped", 100);
+      this.post({
+        type: "NOTIFICATION",
+        level: "info",
+        message: "Copilot operation stopped. The accepted Intent state is unchanged."
+      });
+      return;
+    }
     if (message.type === "ANALYZE_INTENT") {
       void this.analyzeIntent(message.text);
+      return;
+    }
+    if (
+      message.type === "ACCEPT_INTENT_DECISION" ||
+      message.type === "REJECT_INTENT_DECISION" ||
+      message.type === "ADD_INTENT_BLOCKER" ||
+      message.type === "RESOLVE_INTENT_BLOCKER" ||
+      message.type === "SET_INTENT_LIFECYCLE"
+    ) {
+      void this.mutateIntentState(message).catch((error) =>
+        this.post({
+          type: "NOTIFICATION",
+          level: "error",
+          message: error instanceof Error ? error.message : String(error)
+        })
+      );
       return;
     }
     if (message.type === "APPROVE_INTENT_RESEARCH") {
@@ -782,6 +1001,7 @@ export class VscodeProvider {
               captured: false,
               mode: message.mode,
               storyId: message.storyId,
+              contextPackageId: message.contextPackId,
               startedAt: now,
               completedAt: now,
               error: error instanceof Error ? error.message : String(error)
@@ -1472,7 +1692,42 @@ export class VscodeProvider {
     root: string,
     message: Extract<WebviewToExtensionMessage, { type: "APPROVE_DELEGATION" }>
   ): Promise<CopilotDelegationResult> {
+    const contextPackageId = message.contextPackId;
+    if (!contextPackageId)
+      throw new Error(
+        "Delegation requires the prepared ContextPackage ID. Regenerate the intent context."
+      );
+    const authoritativePrompt = message.continuation
+      ? await this.getService(root).getContinuationPrompt(contextPackageId)
+      : await this.getService(root).getDelegationPrompt(contextPackageId);
+    this.emitCopilotActivity(
+      "context-ready",
+      "Understanding current architecture",
+      10,
+      message.storyId,
+      contextPackageId
+    );
+    if (this.intentStateEngine) {
+      const currentLifecycle = this.intentStateEngine.snapshot().lifecycle;
+      if (currentLifecycle === "READY") {
+        const state = this.intentStateEngine.beginWork();
+        await this.persistIntentStateSnapshot(root, state);
+        this.applicationStore.update({ intentState: state });
+        this.post({ type: "STATE_UPDATE", state: { intentState: state } });
+      }
+    }
     let storyId = message.storyId;
+    const task = this.applicationStore.snapshot().taskAnalysis as KeystoneTaskResult | undefined;
+    const contextSummary = task?.contextSummary;
+    const contextUsage = contextSummary
+      ? {
+          estimatedTransmittedTokens: contextSummary.estimatedTransmittedTokens,
+          allCandidateCount: contextSummary.allCandidateCount,
+          transmittedCandidateCount: contextSummary.transmittedCandidateCount,
+          retainedCandidateCount: contextSummary.retainedCandidateCount,
+          omittedContextCount: contextSummary.omittedContextCount
+        }
+      : undefined;
     const correctionPacket = message.correctionPacketId
       ? (this.applicationStore.snapshot().correctionPacket as
           { id: string; snapshotDigest?: string } | undefined)
@@ -1485,6 +1740,25 @@ export class VscodeProvider {
         : this.sdlcPlan.stories.find((item) => item.status === "in-progress");
       if (story) {
         storyId = story.id;
+        if (
+          story.status === "delegated" &&
+          story.delegation?.status === "delegated" &&
+          !story.delegation.completedAt
+        ) {
+          this.sdlcPlan = this.sdlcEngine.transition(this.sdlcPlan, story.id, "in-progress", {
+            evidence: [
+              "Previous Copilot delegation produced no captured result; the story was reopened for user-approved retry."
+            ]
+          });
+        }
+        if (
+          message.continuation &&
+          (story.status === "awaiting-validation" || story.status === "review-required")
+        ) {
+          this.sdlcPlan = this.sdlcEngine.transition(this.sdlcPlan, story.id, "in-progress", {
+            decision: "User continued the Copilot interaction from the captured result."
+          });
+        }
         if (message.correctionPacketId) {
           if (story.status === "review-required") {
             this.sdlcPlan = this.sdlcEngine.transition(this.sdlcPlan, story.id, "in-progress", {
@@ -1502,8 +1776,8 @@ export class VscodeProvider {
           agent: message.agent ?? "GitHub Copilot",
           skills: message.skills,
           instructions: message.instructions,
-          prompt: message.prompt,
-          contextPackId: message.contextPackId,
+          prompt: authoritativePrompt,
+          contextPackId: contextPackageId,
           correctionPacketId: message.correctionPacketId
         });
         this.sdlcPlan = this.sdlcEngine.approveDelegation(this.sdlcPlan, story.id);
@@ -1512,12 +1786,22 @@ export class VscodeProvider {
         this.post({ type: "SDLC_PLAN_RESULT", plan: this.sdlcPlan });
       }
     }
-    const result = await this.delegateApprovedPrompt(root, message.mode, message.prompt, {
+    const operation = message.continuation
+      ? "CONTINUE"
+      : delegationOperationForStory(
+          storyId ? this.sdlcPlan?.stories.find((story) => story.id === storyId) : undefined,
+          task
+        );
+    const result = await this.delegateApprovedPrompt(root, message.mode, authoritativePrompt, {
       storyId,
       agent: message.agent,
       skills: message.skills,
       instructions: message.instructions,
-      correctionPacketId: message.correctionPacketId
+      correctionPacketId: message.correctionPacketId,
+      contextPackageId,
+      continuation: message.continuation,
+      contextUsage,
+      operation
     });
     if (result.captured && result.success && this.sdlcPlan && storyId) {
       const story = this.sdlcPlan.stories.find((item) => item.id === storyId);
@@ -1540,7 +1824,7 @@ export class VscodeProvider {
         this.post({ type: "SDLC_PLAN_RESULT", plan: this.sdlcPlan });
       }
     }
-    if (!result.success) {
+    if (!result.success && result.cancellation !== "cancelled") {
       try {
         const packet = await this.getService(root).createCorrectionPacket({
           reason: "delegation-failure",
@@ -1562,6 +1846,21 @@ export class VscodeProvider {
         });
       }
     }
+    if (!result.success && this.sdlcPlan && storyId) {
+      const story = this.sdlcPlan.stories.find((item) => item.id === storyId);
+      if (story?.status === "delegated") {
+        this.sdlcPlan = this.sdlcEngine.transition(this.sdlcPlan, storyId, "in-progress", {
+          evidence: [
+            result.cancellation === "cancelled"
+              ? "Copilot operation was cancelled; the story remains available for retry."
+              : `Copilot delegation failed; the story remains available for retry: ${result.error ?? "unknown error"}.`
+          ]
+        });
+        await this.persistSdlcPlan(this.sdlcPlan);
+        this.applicationStore.update({ sdlc: this.sdlcPlan });
+        this.post({ type: "SDLC_PLAN_RESULT", plan: this.sdlcPlan });
+      }
+    }
     this.applicationStore.update({ delegationResult: result });
     return result;
   }
@@ -1576,133 +1875,109 @@ export class VscodeProvider {
       skills?: readonly string[];
       instructions?: readonly string[];
       correctionPacketId?: string;
+      contextPackageId?: string;
+      continuation?: boolean;
+      mutateIntentState?: boolean;
+      skipApproval?: boolean;
+      contextUsage?: CopilotDelegationResult["contextUsage"];
+      userInput?: string;
+      operation?: DelegationOperation;
     } = {}
   ): Promise<CopilotDelegationResult> {
     const startedAt = new Date().toISOString();
-    await this.getService(root).approveDelegation(mode, prompt, options.correctionPacketId);
-    if (mode === "Manual Copy Prompt") {
-      await vscode.env.clipboard.writeText(prompt);
-      const result: CopilotDelegationResult = {
-        success: true,
-        captured: false,
+    const task = this.applicationStore.snapshot().taskAnalysis as KeystoneTaskResult | undefined;
+    if (!options.skipApproval)
+      await this.getService(root).approveDelegation(
         mode,
-        storyId: options.storyId,
-        startedAt,
-        completedAt: new Date().toISOString()
-      };
-      result.artifactPath = await this.getService(root).recordDelegationResult(result);
-      this.post({
-        type: "NOTIFICATION",
-        level: "info",
-        message:
-          "Delegation approved, recorded, and copied. The response remains external until evidence is attached."
-      });
-      return result;
-    }
-    if (mode === "Copilot Inline Edit") {
-      await vscode.env.clipboard.writeText(prompt);
-      await vscode.commands.executeCommand("inlineChat.start");
-      const result: CopilotDelegationResult = {
-        success: true,
-        captured: false,
-        mode,
-        storyId: options.storyId,
-        startedAt,
-        completedAt: new Date().toISOString()
-      };
-      result.artifactPath = await this.getService(root).recordDelegationResult(result);
-      this.post({
-        type: "NOTIFICATION",
-        level: "info",
-        message:
-          "Inline Chat opened; the approved prompt is on the clipboard. Keystone will not claim a returned result until evidence is captured."
-      });
-      return result;
-    }
-
-    // Prefer VS Code's Language Model API so a user-approved Copilot request is sent and
-    // the streamed response is captured back into the active Keystone task. If the API is
-    // unavailable or the user has not granted model access, fall back to Copilot Chat UI
-    // without pretending that Keystone captured a result.
-    try {
-      const models = await vscode.lm.selectChatModels({ vendor: "copilot" });
-      const model = models[0];
-      if (model) {
-        const selectedAgent = options.agent?.trim() || "GitHub Copilot";
-        const skills = (options.skills ?? []).filter(Boolean);
-        const instructions = (options.instructions ?? []).filter(Boolean);
-        const delegation = [
-          "You are GitHub Copilot executing a user-approved Keystone SDLC delegation inside VS Code.",
-          "Keystone has already completed repository intelligence and intent R&D. The approved packet below is the bounded source of truth for this task.",
-          "Do not search, crawl, enumerate, or retrieve the entire repository. Use only the selected paths and intelligence supplied in the packet; report a missing-evidence gap instead of widening the search.",
-          `Selected agent/role: ${selectedAgent}`,
-          skills.length ? `Selected skills: ${skills.join(", ")}` : "",
-          instructions.length
-            ? `Instructions:\n${instructions.map((item) => `- ${item}`).join("\n")}`
-            : "",
-          "Use the supplied context as evidence. Do not perform Git write or remote merge-request operations.",
-          "",
-          "Approved Keystone context packet:",
-          prompt
-        ]
-          .filter(Boolean)
-          .join("\n");
-        const cancellation = new vscode.CancellationTokenSource();
-        try {
-          const response = await model.sendRequest(
-            [vscode.LanguageModelChatMessage.User(delegation)],
-            {},
-            cancellation.token
-          );
-          let text = "";
-          for await (const fragment of response.text) text += fragment;
-          const result: CopilotDelegationResult = {
-            success: true,
-            captured: true,
-            mode,
-            storyId: options.storyId,
-            startedAt,
-            completedAt: new Date().toISOString(),
-            text,
-            model: {
-              id: model.id,
-              vendor: model.vendor,
-              family: model.family,
-              version: model.version,
-              name: model.name
-            }
-          };
-          result.artifactPath = await this.getService(root).recordDelegationResult(result);
-          this.post({
-            type: "NOTIFICATION",
-            level: "info",
-            message: `Copilot response captured in Keystone${result.artifactPath ? ` (${result.artifactPath})` : ""}. Review the changes before validation.`
-          });
-          return result;
-        } finally {
-          cancellation.dispose();
-        }
-      }
-    } catch (error) {
-      this.logWarn(
-        `Copilot Language Model API was unavailable; falling back to Copilot Chat UI: ${error instanceof Error ? error.message : String(error)}`
+        prompt,
+        options.correctionPacketId,
+        options.continuation
       );
-    }
+    this.emitCopilotActivity(
+      "delegation-started",
+      "Finding existing pattern",
+      20,
+      options.storyId,
+      options.contextPackageId
+    );
 
-    await vscode.commands.executeCommand("workbench.action.chat.open", { query: prompt });
+    // The delegation service owns context resolution, prompt construction, model selection,
+    // streaming, cancellation, and response parsing. This method only adapts UI/Intent state.
+    const response = await this.copilotDelegationService.delegate(
+      {
+        intentId: task?.intentId ?? "unknown",
+        operation:
+          options.operation ?? (options.continuation ? "CONTINUE" : delegationOperation(task)),
+        objective:
+          task?.researchDocument.problemStatement ??
+          "Complete the current Keystone Intent objective.",
+        userInput: options.userInput,
+        expectedResponseType:
+          "Readable response plus one keystone_record_structured_response tool call using the operation-specific Keystone envelope.",
+        contextPackageId: options.contextPackageId
+      },
+      {
+        onText: (value) =>
+          this.post({
+            type: "COPILOT_STREAM",
+            storyId: options.storyId,
+            contextPackageId: options.contextPackageId,
+            text: value
+          }),
+        onContextExpansion: (input, turn) =>
+          this.emitCopilotActivity(
+            "context-retrieval",
+            copilotToolActivity(input),
+            Math.min(80, 30 + turn * 8),
+            options.storyId,
+            options.contextPackageId
+          ),
+        onActivity: (stage, message, progress) =>
+          this.emitCopilotActivity(
+            stage,
+            message,
+            progress,
+            options.storyId,
+            options.contextPackageId
+          )
+      }
+    );
     const result: CopilotDelegationResult = {
-      success: true,
-      captured: false,
+      ...response,
       mode,
       storyId: options.storyId,
-      startedAt,
-      completedAt: new Date().toISOString()
+      contextPackageId: response.contextPackageId ?? options.contextPackageId,
+      startedAt: response.startedAt || startedAt,
+      completedAt: response.completedAt || new Date().toISOString()
     };
+    if (this.intentStateEngine && options.mutateIntentState !== false) {
+      const nextState = result.structured
+        ? this.intentStateEngine.applyCopilotResult(result.structured, result.contextPackageId)
+        : this.intentStateEngine.recordCopilotInteraction(
+            result.text,
+            result.contextPackageId,
+            result.structuredStatus ?? "absent"
+          );
+      await this.persistIntentStateSnapshot(root, nextState);
+      this.applicationStore.update({ intentState: nextState });
+      this.post({ type: "STATE_UPDATE", state: { intentState: nextState } });
+    }
+    this.post({
+      type: "COPILOT_STREAM",
+      storyId: options.storyId,
+      contextPackageId: result.contextPackageId,
+      text: "",
+      done: true
+    });
     result.artifactPath = await this.getService(root).recordDelegationResult(result);
     this.post({
       type: "NOTIFICATION",
-      level: "info",
-      message: `${mode} opened with the approved Keystone context. The result remains external; Keystone will not mark delegation complete until evidence is captured.`
+      level: result.success ? "info" : "error",
+      message: result.success
+        ? `Copilot response captured in Keystone${result.artifactPath ? ` (${result.artifactPath})` : ""}. Review the changes before validation.`
+        : result.cancellation === "cancelled"
+          ? "Copilot operation stopped. The accepted Intent state is unchanged."
+          : (result.error ?? "Copilot delegation failed. Review the Intent guidance and try again.")
     });
     return result;
   }
@@ -1742,6 +2017,7 @@ export class VscodeProvider {
       }
       const results = await this.getService(root).runValidation(scope);
       const passed = results.length > 0 && results.every((result) => result.status === "passed");
+      await this.updateIntentAfterValidation(root, passed, results);
       if (this.sdlcPlan && activeStory) {
         const evidence = results.flatMap((result) => [
           `${result.command}: ${result.status}`,
@@ -1799,6 +2075,32 @@ export class VscodeProvider {
     }
   }
 
+  private async updateIntentAfterValidation(
+    root: string,
+    passed: boolean,
+    results: readonly { command: string; status: string }[]
+  ): Promise<void> {
+    const engine = this.intentStateEngine;
+    if (!engine) return;
+    const lifecycle = engine.snapshot().lifecycle;
+    let state: IntentState | undefined;
+    if (passed && lifecycle === "IN_PROGRESS") {
+      state = engine.submitForReview();
+    } else if (!passed && (lifecycle === "IN_PROGRESS" || lifecycle === "BLOCKED")) {
+      const failedCommands = results
+        .filter((result) => result.status !== "passed")
+        .map((result) => result.command);
+      state = engine.addBlocker(
+        `Validation failed${failedCommands.length ? `: ${failedCommands.join(", ")}` : "."}`,
+        "workspace-observation"
+      );
+    }
+    if (!state) return;
+    await this.persistIntentStateSnapshot(root, state);
+    this.applicationStore.update({ intentState: state });
+    this.post({ type: "STATE_UPDATE", state: { intentState: state } });
+  }
+
   private async loadIntelligence(): Promise<void> {
     const root = this.workspaceRoot();
     if (!root) return;
@@ -1807,16 +2109,83 @@ export class VscodeProvider {
       return;
     }
     this.sdlcPlan = await new SDLCPlanStore(root).read();
+    this.logInfo(
+      `Restored persisted workflow state for ${root}: ${this.sdlcPlan ? `Intent ${this.sdlcPlan.intentId} with ${this.sdlcPlan.stories.length} stories` : "no active SDLC plan"}.`
+    );
     if (this.sdlcPlan) this.applicationStore.update({ sdlc: this.sdlcPlan });
     const state = await this.getService(root).loadState();
+    this.logInfo(
+      `Restored task workspace: ${state.activeTask?.ref?.id ?? "none"}; task analysis projection: ${state.activeTask?.task ? "available" : "missing"}.`
+    );
     // The initial persisted-state read can overlap automatic recovery indexing.
     // Never let that stale idle/ready snapshot replace the live progress state.
     if (this.indexing && this.activeIndexRoot === root) return;
-    this.applicationStore.update({ correctionPacket: state.correctionPacket });
-    this.post({
-      type: "STATE_UPDATE",
-      state: { ...state, correctionPacket: state.correctionPacket }
+    const restoredTask = state.activeTask?.task as
+      | {
+          intentId?: string;
+          researchStatus?: "ready" | "approved";
+          reason?: string;
+          relevantFiles?: string[];
+          relevantSymbols?: string[];
+          relatedTests?: string[];
+          missingTests?: string[];
+          qaChecklist?: string[];
+          securityRisk?: string;
+          performanceRisk?: string;
+          modernizationNotes?: string[];
+          validationCommands?: string[];
+          contextManifest?: KeystoneTaskResult["contextManifest"];
+        }
+      | undefined;
+    const restoredTaskId = state.activeTask?.ref?.id;
+    const intentState = restoredTaskId
+      ? await this.loadIntentState(root, restoredTask?.intentId ?? restoredTaskId)
+      : undefined;
+    const restoredTaskAnalysis = restoredTask?.intentId
+      ? ({
+          ...restoredTask,
+          intentId: restoredTask.intentId,
+          researchStatus: restoredTask.researchStatus ?? "approved",
+          researchDocument:
+            this.sdlcPlan?.researchDocument ?? ({} as KeystoneTaskResult["researchDocument"]),
+          reason:
+            restoredTask.reason ??
+            state.activeTask?.progress?.current ??
+            "Restored repository-backed Intent work.",
+          relevantFiles:
+            restoredTask.relevantFiles ?? state.activeTask?.context?.relevantFiles ?? [],
+          relevantSymbols: restoredTask.relevantSymbols ?? [],
+          relatedTests: restoredTask.relatedTests ?? [],
+          missingTests: restoredTask.missingTests ?? [],
+          qaChecklist: restoredTask.qaChecklist ?? [],
+          securityRisk: restoredTask.securityRisk ?? "medium",
+          performanceRisk: restoredTask.performanceRisk ?? "medium",
+          modernizationNotes: restoredTask.modernizationNotes ?? [],
+          validationCommands: restoredTask.validationCommands ?? [],
+          copilotPrompt: state.activeTask?.delegationPrompt ?? "",
+          contextManifest: restoredTask.contextManifest
+        } as KeystoneTaskResult)
+      : undefined;
+    this.applicationStore.update({
+      activeTask: state.activeTask,
+      correctionPacket: state.correctionPacket,
+      intentState,
+      taskAnalysis: restoredTaskAnalysis
     });
+    if (intentState && restoredTaskAnalysis) {
+      try {
+        const refreshed = await this.getService(root).refreshIntentContext(
+          intentState,
+          restoredTaskAnalysis
+        );
+        this.applicationStore.update({ taskAnalysis: refreshed });
+      } catch (error) {
+        this.logInfo(
+          `Persisted Intent state loaded; context refresh deferred: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+    }
+    this.post({ type: "APPLICATION_STATE", state: this.applicationStore.snapshot() });
     if (this.sdlcPlan) this.post({ type: "SDLC_PLAN_RESULT", plan: this.sdlcPlan });
   }
 
@@ -2090,6 +2459,52 @@ export class VscodeProvider {
     return service;
   }
 
+  private async resolveDelegationContext(
+    request: CopilotDelegationRequest,
+    token: vscode.CancellationToken
+  ): Promise<DelegationContext> {
+    const root = this.workspaceRoot();
+    const task = this.applicationStore.snapshot().taskAnalysis as KeystoneTaskResult | undefined;
+    const contextPackageId = request.contextPackageId ?? task?.contextSummary?.id;
+    if (!root || !task || task.intentId !== request.intentId || !contextPackageId)
+      throw new Error(
+        "The active Intent has no prepared ContextPackage. Regenerate Intent context before delegating."
+      );
+    if (token.isCancellationRequested) throw new Error("Context preparation was cancelled.");
+    const service = this.getService(root);
+    const contextPackage = await service.getContextPackage(contextPackageId);
+    if (!contextPackage)
+      throw new Error(`Context package ${contextPackageId} is not available for this Intent.`);
+    // Freshness is checked at the Context Engine boundary immediately before model access.
+    await service.getDelegationPrompt(contextPackage.id);
+    return {
+      contextPackage,
+      continuationPrompt:
+        request.operation === "CONTINUE"
+          ? await service.getContinuationPrompt(contextPackage.id)
+          : undefined
+    };
+  }
+
+  private emitCopilotActivity(
+    stage: string,
+    message: string,
+    progress: number,
+    storyId?: string,
+    contextPackageId?: string
+  ): void {
+    this.post({
+      type: "COPILOT_ACTIVITY",
+      stage,
+      message,
+      progress,
+      storyId,
+      contextPackageId
+    });
+    const root = this.workspaceRoot();
+    if (root) void this.getService(root).recordCopilotActivity(message);
+  }
+
   private post(message: ExtensionToWebviewMessage): void {
     if (message.type === "STATE_UPDATE") this.applicationStore.update(message.state);
     if (message.type === "INDEX_PROGRESS") {
@@ -2121,8 +2536,55 @@ export class VscodeProvider {
         taskAnalysis: message.result,
         activeTask: message.result.taskWorkspace
       });
-    if (message.type === "DELEGATION_RESULT")
+    if (message.type === "DELEGATION_RESULT") {
       this.applicationStore.update({ delegationResult: message });
+      this.applicationStore.mergeOperation({
+        id: "copilot-delegation",
+        kind: "delegation",
+        status:
+          message.cancellation === "cancelled"
+            ? "cancelled"
+            : message.success
+              ? "completed"
+              : "failed",
+        progress: 100,
+        message:
+          message.cancellation === "cancelled"
+            ? "Copilot operation stopped"
+            : message.success
+              ? "Copilot result captured"
+              : (message.error ?? "Copilot delegation failed"),
+        updatedAt: new Date().toISOString()
+      });
+    }
+    if (message.type === "COPILOT_ACTIVITY")
+      this.applicationStore.mergeOperation({
+        id: "copilot-delegation",
+        kind: "delegation",
+        status: "running",
+        progress: message.progress,
+        message: message.message,
+        updatedAt: new Date().toISOString()
+      });
+    if (message.type === "COPILOT_STREAM") {
+      const previous = this.applicationStore.snapshot().delegationResult as
+        CopilotDelegationResult | undefined;
+      this.applicationStore.update({
+        delegationResult: {
+          ...(previous ?? {
+            success: true,
+            captured: true,
+            mode: "Copilot Chat",
+            startedAt: new Date().toISOString(),
+            completedAt: new Date().toISOString()
+          }),
+          contextPackageId: message.contextPackageId,
+          storyId: message.storyId,
+          streaming: true,
+          text: `${previous?.text ?? ""}${message.text}`
+        }
+      });
+    }
     if (message.type === "VALIDATION_RESULT")
       this.applicationStore.mergeOperation({
         id: "validation",
@@ -2500,6 +2962,70 @@ function authoritativeHandoffInput(
       definitionOfCompletion: current?.acceptanceCriteria ?? acceptance
     }
   };
+}
+
+function copilotToolActivity(input: unknown): string {
+  const operation =
+    typeof input === "object" && input !== null && "operation" in input
+      ? String((input as { operation?: unknown }).operation ?? "context")
+      : "context";
+  const query =
+    typeof input === "object" && input !== null && "query" in input
+      ? String((input as { query?: unknown }).query ?? "")
+      : "";
+  if (operation === "get_flows" && /auth|login|identity|session/i.test(query))
+    return "Expanding authentication flow";
+  if (operation === "get_impact") return "Inspecting affected components";
+  if (operation === "get_relationships" || operation === "get_symbols")
+    return "Inspecting affected components";
+  if (operation === "expand_context") return "Expanding retained context";
+  return "Inspecting affected components";
+}
+
+function delegationOperation(task: KeystoneTaskResult | undefined): DelegationOperation {
+  switch (task?.intentType) {
+    case "explain":
+      return "EXPLAIN";
+    case "bugfix":
+      return "DEBUG";
+    case "security-review":
+      return "SECURITY_ANALYSIS";
+    case "performance-review":
+      return "PERFORMANCE_ANALYSIS";
+    case "refactor":
+    case "modernization":
+      return "PLAN_CHANGE";
+    case "test":
+    case "qa-analysis":
+      return "REVIEW_CHANGE";
+    default:
+      return "IMPLEMENT";
+  }
+}
+
+function delegationOperationForStory(
+  story: { type?: string } | undefined,
+  task: KeystoneTaskResult | undefined
+): DelegationOperation {
+  switch (story?.type) {
+    case "research":
+      return "UNDERSTAND_INTENT";
+    case "specification":
+    case "design":
+    case "modernization-review":
+      return "PLAN_CHANGE";
+    case "development":
+      return "IMPLEMENT";
+    case "code-review":
+    case "pr-review":
+    case "security-review":
+    case "performance-review":
+    case "existing-test-analysis":
+    case "test-impact-analysis":
+      return "REVIEW_CHANGE";
+    default:
+      return delegationOperation(task);
+  }
 }
 function handoffImplementationPath(value: string): boolean {
   const normalized = value.replace(/\\/g, "/").toLowerCase();

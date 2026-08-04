@@ -42,13 +42,20 @@ export function activate(context: vscode.ExtensionContext): void {
     coordinator: BackgroundWorkerCoordinator,
     indexed?: boolean
   ): Promise<void> => {
-    const indexedSuccessfully = indexed ?? (await provider.indexWorkspace(root));
+    // Startup consumes the promoted snapshot. Only the first run (or an
+    // explicit UI refresh) is allowed to invoke the indexing pipeline.
+    let indexedSuccessfully = indexed ?? true;
+    let input = await provider.getBackgroundWorkerInput(root);
+    if (!input && indexed === undefined) {
+      await provider.ensureWorkspaceIntelligence(root);
+      input = await provider.getBackgroundWorkerInput(root);
+      indexedSuccessfully = Boolean(input);
+    }
     if (!indexedSuccessfully) {
       output.warn(
         `Intelligence refresh did not promote a new snapshot for ${root}; attempting worker recovery from the last validated OKF snapshot.`
       );
     }
-    const input = await provider.getBackgroundWorkerInput(root);
     if (!input) {
       output.warn(
         `Background workers were not started because ${root} has no validated OKF input.`
@@ -58,12 +65,19 @@ export function activate(context: vscode.ExtensionContext): void {
     coordinator.start(root, reportBackgroundWorker, input);
   };
 
-  context.subscriptions.push(statusBar, output, qaService, provider.attachQaService(qaService), {
-    dispose: () => {
-      for (const coordinator of backgroundWorkers.values()) coordinator.dispose();
-      backgroundWorkers.clear();
+  context.subscriptions.push(
+    statusBar,
+    output,
+    qaService,
+    provider.attachQaService(qaService),
+    provider.registerLanguageModelTools(),
+    {
+      dispose: () => {
+        for (const coordinator of backgroundWorkers.values()) coordinator.dispose();
+        backgroundWorkers.clear();
+      }
     }
-  });
+  );
   indexCommands(context, provider);
 
   statusBar.text = "Keystone: Ready | Intelligence cached in .keystone";
@@ -71,7 +85,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const startWorkspace = (folder: vscode.WorkspaceFolder): void => {
     const root = folder.uri.fsPath;
-    output.info(`Workspace opened; starting automatic intelligence for ${root}.`);
+    output.info(`Workspace opened; using the promoted intelligence snapshot for ${root}.`);
     const coordinator = backgroundWorkers.get(root) ?? createBackgroundWorkerCoordinator();
     backgroundWorkers.set(root, coordinator);
     const startBackgroundWorkers = async (): Promise<void> => {
@@ -95,85 +109,13 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
-  const refreshTimers = new Map<string, NodeJS.Timeout>();
-  const refreshPaths = new Map<string, Set<string>>();
-  const recoveryTimers = new Map<string, NodeJS.Timeout>();
-  const queueIntelligenceRefresh = (uri: vscode.Uri): void => {
-    const relative = vscode.workspace.asRelativePath(uri, false).replace(/\\/g, "/");
-    if (
-      /(^|\/)(\.keystone|\.git|node_modules|dist|out|build|coverage|cache|\.cache|__pycache__|env|\.env|venv|\.venv|site-packages|vendor|target|\.next|\.nuxt|\.gradle|\.idea)(\/|$)/.test(
-        relative
-      )
-    )
-      return;
-    if (/\.(log|tmp|swp|class|jar|png|jpe?g|gif|ico|woff2?)$/i.test(relative)) return;
-    const folder = vscode.workspace.getWorkspaceFolder(uri);
-    if (!folder) return;
-    const root = folder.uri.fsPath;
-    if (!provider.shouldQueueAutomaticRefresh(root)) return;
-    const pendingPaths = refreshPaths.get(root) ?? new Set<string>();
-    pendingPaths.add(relative);
-    refreshPaths.set(root, pendingPaths);
-    const existingTimer = refreshTimers.get(root);
-    if (existingTimer) clearTimeout(existingTimer);
-    output.debug(`Repository change detected: ${relative}. Intelligence refresh scheduled.`);
-    refreshTimers.set(
-      root,
-      setTimeout(() => {
-        refreshTimers.delete(root);
-        const changedPaths = [...(refreshPaths.get(root) ?? [])];
-        refreshPaths.delete(root);
-        if (!provider.shouldQueueAutomaticRefresh(root)) return;
-        const coordinator = backgroundWorkers.get(root) ?? createBackgroundWorkerCoordinator();
-        backgroundWorkers.set(root, coordinator);
-        coordinator.dispose("superseded");
-        void provider
-          .indexWorkspace(root, changedPaths)
-          .then((indexed) => launchBackgroundWorkers(root, coordinator, indexed))
-          .catch((error) =>
-            output.error(
-              `Background workers could not restart for ${root}: ${error instanceof Error ? error.message : String(error)}`
-            )
-          );
-      }, 2_000)
-    );
-  };
-  const queueIntelligenceRecovery = (uri: vscode.Uri): void => {
-    const relative = vscode.workspace.asRelativePath(uri, false).replace(/\\/g, "/");
-    if (relative !== ".keystone" && !relative.startsWith(".keystone/")) return;
-    const folder = vscode.workspace.getWorkspaceFolder(uri);
-    if (!folder) return;
-    const root = folder.uri.fsPath;
-    backgroundWorkers.get(root)?.dispose("superseded");
-    const existingTimer = recoveryTimers.get(root);
-    if (existingTimer) clearTimeout(existingTimer);
-    recoveryTimers.set(
-      root,
-      setTimeout(() => {
-        recoveryTimers.delete(root);
-        void provider.ensureWorkspaceIntelligence(root);
-      }, 750)
-    );
-  };
-  const watcher = vscode.workspace.createFileSystemWatcher("**/*");
+  // Indexing is intentionally user-controlled after the first promoted
+  // snapshot. Repository file events do not start background refreshes.
+  // Use the UI's Index / refresh action for an explicit refresh.
   context.subscriptions.push(
-    watcher,
-    watcher.onDidCreate(queueIntelligenceRefresh),
-    watcher.onDidChange(queueIntelligenceRefresh),
-    watcher.onDidDelete(queueIntelligenceRefresh),
-    watcher.onDidDelete(queueIntelligenceRecovery),
     vscode.window.onDidChangeActiveTextEditor(() => {
       void provider.activeWorkspaceChanged();
-    }),
-    {
-      dispose: () => {
-        for (const timer of refreshTimers.values()) clearTimeout(timer);
-        refreshTimers.clear();
-        refreshPaths.clear();
-        for (const timer of recoveryTimers.values()) clearTimeout(timer);
-        recoveryTimers.clear();
-      }
-    }
+    })
   );
 }
 

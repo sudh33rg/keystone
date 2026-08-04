@@ -1,4 +1,5 @@
 import type { OkfCanonicalEvidenceEnvelope } from "../intelligence/okf/types";
+import type { IntentState } from "../intent/intentState";
 
 export interface KeystoneOperation {
   id: string;
@@ -61,6 +62,7 @@ export interface KeystoneApplicationState {
   taskAnalysis?: unknown;
   delegationResult?: unknown;
   correctionPacket?: unknown;
+  intentState?: IntentState;
   sdlc?: unknown;
   valueEdgeFeature?: unknown;
   handoffs: unknown[];

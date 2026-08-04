@@ -40,6 +40,7 @@ import type {
   KeystoneTaskResult,
   KeystoneWebviewState,
   TaskIntelligenceSignal,
+  CopilotContextToolInput,
   WorkspaceSummary
 } from "./messageRouter";
 import { RepositoryModelBuilder } from "../../intelligence/repository/model-builder";
@@ -72,17 +73,25 @@ import type { GapAnalysisResult } from "../../workflow/quality/qaGapAnalysis";
 import type { SemanticEnrichmentProvider } from "../../intelligence/languages/semanticEnrichment";
 import {
   discoverCopilotCustomizations,
+  ensureManagedCopilotInstructions,
   type CopilotCustomizationInventory
 } from "../../context/copilotCustomizations";
 import {
   ContextEngine,
+  operationForIntentType,
   type ContextEngineLogEvent,
   type ContextExpansionLevel,
   type ContextFragment,
+  type ContextCandidate,
+  type ContextPackage,
   summarizeContextPackage,
   type ContextDiagnostic,
   type ContextWorkspaceState
 } from "../../context/contextEngine";
+import { compressConversationHistory } from "../../context/taskAwareCompression";
+import { classifyIntent } from "../../context/IntentClassifier";
+import { routeIntent } from "../../context/routing/intentRouter";
+import type { IntentState } from "../../intent/intentState";
 import { CpgShardStore } from "../../intelligence/cpg";
 import {
   buildCpgExplorerResult,
@@ -507,10 +516,13 @@ export class CockpitService {
       languageId?: string;
       selection?: { startLine: number; endLine: number };
       diagnostics?: readonly ContextDiagnostic[];
-    } = {}
+    } = {},
+    onProgress?: (progress: number, message: string) => void,
+    intentId?: string
   ): Promise<KeystoneTaskResult> {
+    onProgress?.(10, "Loading the latest repository intelligence.");
     const intent: DeveloperIntent = {
-      id: `task-${Date.now()}`,
+      id: intentId?.trim() || `task-${Date.now()}`,
       text,
       workspaceRoot: this.workspaceRoot,
       createdAt: new Date().toISOString()
@@ -525,11 +537,13 @@ export class CockpitService {
       throw new Error(
         "Repository intelligence is not ready. Wait for background indexing to finish."
       );
+    onProgress?.(18, "Preparing context from the active intent and repository evidence.");
     const canonicalSnapshot = await this.readOkfSnapshot();
     if (!canonicalSnapshot)
       throw new Error(
         "The canonical OKF snapshot is not ready. Wait for intelligence promotion to finish."
       );
+    onProgress?.(24, "Selecting relevant facts, implementation patterns and constraints.");
     const git = new GitReadOnly(this.workspaceRoot);
     const [gitDiff, gitStatus, gitBranch, activePlan] = await Promise.all([
       this.gitDiff(),
@@ -537,6 +551,7 @@ export class CockpitService {
       git.branch().catch(() => ""),
       this.readJson<SDLCPlan>(".keystone/state/sdlc/active-plan.json")
     ]);
+    await ensureManagedCopilotInstructions(this.workspaceRoot);
     const copilotCustomizations = await discoverCopilotCustomizations(this.workspaceRoot);
     const customizationFingerprint = createHash("sha256")
       .update(JSON.stringify(copilotCustomizations))
@@ -625,46 +640,58 @@ export class CockpitService {
       const okfSnapshot = canonicalSnapshot;
       return new CaptainAgent((event) => {
         void this.recordContextEngineEvent(event);
-      }).run(intent, intelligence, {
-        compressionTier: settings?.compressionTier ?? "standard",
-        codingStandards: settings?.codingStandards,
-        thingsToAvoid: settings?.thingsToAvoid,
-        retrievalText,
-        semanticEvidence: snapshot?.stages.find((stage) => stage.id === "code-property-graph")
-          ?.items,
-        currentFile: editorContext.currentFile,
-        gitDiff,
-        preferredPaths: learnedFeedback
-          .filter((entry) => entry.score > 0)
-          .map((entry) => entry.path),
-        excludedPaths: learnedFeedback
-          .filter((entry) => entry.score < 0)
-          .map((entry) => entry.path),
-        okfSnapshot
-      }, {
-        decisions: activePlan?.stories
-          .flatMap((story) => story.decisions)
-          .filter((decision) => decision.trim())
-          .slice(-24),
-        workspace: {
+      }).run(
+        intent,
+        intelligence,
+        {
+          compressionTier: settings?.compressionTier ?? "standard",
+          codingStandards: settings?.codingStandards,
+          thingsToAvoid: settings?.thingsToAvoid,
+          retrievalText,
+          semanticEvidence: snapshot?.stages.find((stage) => stage.id === "code-property-graph")
+            ?.items,
           currentFile: editorContext.currentFile,
-          languageId: editorContext.languageId,
-          selection: editorContext.selection,
-          branch: gitBranch,
-          statusEntries: gitStatus ? gitStatus.split(/\r?\n/).filter(Boolean).length : 0
-        } satisfies ContextWorkspaceState,
-        changes: { branch: gitBranch, status: gitStatus, diff: gitDiff },
-        diagnostics: editorContext.diagnostics,
-        userContext: [
-          ...(settings?.codingStandards
-            ? [{ label: "Coding standards", content: settings.codingStandards, source: "settings" }]
-            : []),
-          ...(settings?.thingsToAvoid
-            ? [{ label: "Things to avoid", content: settings.thingsToAvoid, source: "settings" }]
-            : [])
-        ]
-      });
+          gitDiff,
+          preferredPaths: learnedFeedback
+            .filter((entry) => entry.score > 0)
+            .map((entry) => entry.path),
+          excludedPaths: learnedFeedback
+            .filter((entry) => entry.score < 0)
+            .map((entry) => entry.path),
+          okfSnapshot
+        },
+        {
+          decisions: activePlan?.stories
+            .flatMap((story) => story.decisions)
+            .filter((decision) => decision.trim())
+            .slice(-24),
+          workspace: {
+            currentFile: editorContext.currentFile,
+            languageId: editorContext.languageId,
+            selection: editorContext.selection,
+            branch: gitBranch,
+            statusEntries: gitStatus ? gitStatus.split(/\r?\n/).filter(Boolean).length : 0
+          } satisfies ContextWorkspaceState,
+          changes: { branch: gitBranch, status: gitStatus, diff: gitDiff },
+          diagnostics: editorContext.diagnostics,
+          userContext: [
+            ...(settings?.codingStandards
+              ? [
+                  {
+                    label: "Coding standards",
+                    content: settings.codingStandards,
+                    source: "settings"
+                  }
+                ]
+              : []),
+            ...(settings?.thingsToAvoid
+              ? [{ label: "Things to avoid", content: settings.thingsToAvoid, source: "settings" }]
+              : [])
+          ]
+        }
+      );
     })();
+    onProgress?.(58, "Context is prepared. Linking evidence to the research artifact.");
     await this.record(
       "context-generated",
       `Intent context generated from ${run.contextPack.relevantFiles.length} ranked files: ${run.contextPack.estimatedRawTokens} raw → ${run.contextPack.estimatedPackedTokens} prompt tokens.`
@@ -675,6 +702,7 @@ export class CockpitService {
       snapshot ?? { findings: [], intelligence },
       run
     );
+    onProgress?.(70, "Checking impacted tests and repository risks.");
     const testGeneration = await generateTests({
       feature: text,
       sourceCode:
@@ -688,6 +716,7 @@ export class CockpitService {
       businessRules: run.contextPack.acceptanceCriteria
     });
     const detected = await detectValidationCommands(this.workspaceRoot);
+    onProgress?.(88, "Finishing the reviewable intent research.");
     const result = ensureTaskResearch(text, {
       ...normalizeRunResult(run, settings, analysisEvidence, copilotCustomizations),
       validationCommands: detected.all,
@@ -711,6 +740,98 @@ export class CockpitService {
       contextPackId: run.contextPack.id,
       contextSnapshotDigest: run.contextPack.contextManifest?.snapshotDigest
     });
+  }
+
+  /** Rebuilds only the bounded ContextPackage after a durable Intent mutation. */
+  async refreshIntentContext(
+    intentState: IntentState,
+    task: KeystoneTaskResult
+  ): Promise<KeystoneTaskResult> {
+    const snapshot = await this.readJson<RepositoryIntelligenceSnapshot>(
+      `${INTELLIGENCE_DIR}/snapshot.json`
+    );
+    const canonicalSnapshot = await this.readOkfSnapshot();
+    if (!snapshot?.intelligence || !canonicalSnapshot)
+      throw new Error("Repository intelligence is not ready; Intent context cannot be refreshed.");
+    const settings = await this.readJson<CockpitSettings>(SETTINGS_PATH);
+    const intent: DeveloperIntent = {
+      id: intentState.id,
+      text: intentState.goal,
+      workspaceRoot: this.workspaceRoot,
+      createdAt: intentState.updatedAt
+    };
+    const analysis = await classifyIntent(intent);
+    const git = new GitReadOnly(this.workspaceRoot);
+    const [gitDiff, gitStatus, gitBranch] = await Promise.all([
+      this.gitDiff(),
+      git.status().catch(() => ""),
+      git.branch().catch(() => "")
+    ]);
+    const customizations = await discoverCopilotCustomizations(this.workspaceRoot);
+    const preparation = await this.contextEngine.prepareContext({
+      intent,
+      objective: intentState.currentObjective,
+      operation: operationForIntentType(analysis.intentType),
+      tokenBudget: 6_000,
+      intelligence: snapshot.intelligence,
+      routeDecision: routeIntent(analysis),
+      skills: customizations.skills,
+      buildOptions: {
+        compressionTier: settings?.compressionTier ?? "standard",
+        codingStandards: settings?.codingStandards,
+        thingsToAvoid: settings?.thingsToAvoid,
+        gitDiff,
+        okfSnapshot: canonicalSnapshot,
+        preferredPaths: [...intentState.affectedAreas, ...intentState.scope.included]
+      },
+      sourceRevision:
+        canonicalSnapshot.manifest.digests.snapshot ?? canonicalSnapshot.manifest.extractionRunId,
+      intentState,
+      workspace: {
+        branch: gitBranch,
+        statusEntries: gitStatus.split(/\r?\n/).filter(Boolean).length
+      },
+      changes: { branch: gitBranch, status: gitStatus, diff: gitDiff },
+      userContext: [
+        ...(settings?.codingStandards
+          ? [{ label: "Coding standards", content: settings.codingStandards, source: "settings" }]
+          : []),
+        ...(settings?.thingsToAvoid
+          ? [{ label: "Things to avoid", content: settings.thingsToAvoid, source: "settings" }]
+          : [])
+      ]
+    });
+    const contextPack = preparation.contextPack;
+    const refreshed: KeystoneTaskResult = {
+      ...task,
+      copilotPrompt: preparation.contextPackage.content,
+      contextSummary: summarizeContextPackage(preparation.contextPackage),
+      contextTokens: {
+        raw: contextPack.estimatedRawTokens,
+        selected: preparation.contextPackage.estimatedTransmittedTokens,
+        prompt: preparation.contextPackage.estimatedTransmittedTokens,
+        packets: contextPack.contextPackets?.length ?? 1,
+        tier: contextPack.compressionTier ?? "standard"
+      },
+      contextPackets: contextPack.contextPackets,
+      boundedIntelligence: contextPack.boundedIntelligence,
+      omittedContext: contextPack.omittedContext,
+      contextManifest: contextPack.contextManifest,
+      contextSections: contextPack.contextSections?.map((section) => ({
+        path: section.path,
+        reason: section.reason,
+        preview: section.content.slice(0, 500),
+        estimatedTokens: section.estimatedTokens,
+        sourceHash: section.sourceHash,
+        score: section.score,
+        evidence: section.evidence
+      }))
+    };
+    await this.record(
+      "intent-context-refreshed",
+      `Prepared ContextPackage ${preparation.contextPackage.id} from the updated durable Intent state.`
+    );
+    return refreshed;
   }
 
   private async loadTaskAnalysisEvidence(
@@ -1219,11 +1340,204 @@ export class CockpitService {
   }
 
   async expandContext(
-    contextId: string,
+    contextId: string | undefined,
+    contextReference: string | undefined,
     focus: string,
     level: ContextExpansionLevel
   ): Promise<ContextFragment> {
-    return this.contextEngine.expandContext({ contextId, focus, level });
+    return this.contextEngine.expandContext({ contextId, contextReference, focus, level });
+  }
+
+  async getContextPackage(contextId: string): Promise<ContextPackage | undefined> {
+    return this.contextEngine.getContextPackage(contextId);
+  }
+
+  async getDelegationPrompt(contextId: string): Promise<string> {
+    return this.contextEngine.getFreshDelegationPrompt(contextId);
+  }
+
+  async getContinuationPrompt(contextId: string): Promise<string> {
+    await this.contextEngine.getFreshDelegationPrompt(contextId);
+    const contextPackage = await this.getContextPackage(contextId);
+    if (!contextPackage) throw new Error(`Context package ${contextId} is not available.`);
+    const active = await this.ensureActiveTask();
+    const activeSnapshot = await this.taskWorkspaces.snapshot(active);
+    const durableState = await this.readJson<{
+      summary?: string;
+      interactionCount?: number;
+      constraints?: string[];
+      currentObjective?: string;
+      decisions?: Array<{ title?: string; recommendation?: string; status?: string }>;
+      blockers?: Array<{ summary?: string; resolvedAt?: string }>;
+      openQuestions?: string[];
+    }>(`.keystone/tasks/${active.id}/intent-state.json`);
+    const fallback = await this.latestCopilotResult(active.id);
+    const durableStateSummary = durableState
+      ? [
+          durableState.currentObjective
+            ? `Current objective: ${durableState.currentObjective}`
+            : "",
+          durableState.constraints?.length
+            ? `Constraints:\n- ${durableState.constraints.join("\n- ")}`
+            : "",
+          durableState.decisions?.filter((item) => item.status === "ACCEPTED").length
+            ? `Accepted decisions:\n- ${durableState.decisions
+                .filter((item) => item.status === "ACCEPTED")
+                .map((item) => `${item.title ?? "Decision"}: ${item.recommendation ?? ""}`)
+                .join("\n- ")}`
+            : "",
+          durableState.blockers?.filter((item) => !item.resolvedAt).length
+            ? `Open blockers:\n- ${durableState.blockers
+                .filter((item) => !item.resolvedAt)
+                .map((item) => item.summary ?? "")
+                .join("\n- ")}`
+            : "",
+          durableState.openQuestions?.length
+            ? `Open questions:\n- ${durableState.openQuestions.join("\n- ")}`
+            : "",
+          durableState.summary ?? ""
+        ]
+          .filter(Boolean)
+          .join("\n")
+      : undefined;
+    const summary =
+      durableStateSummary ??
+      compressConversationHistory(
+        [
+          { artifact: "Intent", value: contextPackage.intent },
+          { artifact: "Task progress", value: activeSnapshot.progress },
+          ...(fallback?.text
+            ? [
+                {
+                  artifact: "Latest Copilot result",
+                  value: { result: fallback.text.slice(0, 12_000) }
+                }
+              ]
+            : [])
+        ],
+        1_200
+      ).content;
+    return [
+      `Continue the approved Intent ${contextPackage.intent.id} using ContextPackage ${contextPackage.id}.`,
+      "Use the durable Intent state below as the conversation memory; do not ask the user to resend the prior conversation.",
+      "Start with the existing package and use Keystone targeted retrieval only for a missing repository fact.",
+      `Prior Copilot interactions compressed to approximately ${Math.max(1, Math.ceil(summary.length / 4))} tokens; the raw conversation is not included.`,
+      "Durable Intent state:",
+      summary,
+      "Return the next concrete recommendation or implementation step, preserving the recorded constraints and decisions."
+    ].join("\n");
+  }
+
+  async retrieveCopilotContext(input: CopilotContextToolInput): Promise<string> {
+    const contextPackage = await this.getContextPackage(input.packageId);
+    if (!contextPackage)
+      throw new Error(
+        `Keystone context package ${input.packageId} is not available. Ask Keystone to prepare a new context package.`
+      );
+    const query = input.query?.trim() || contextPackage.objective;
+    const limit = Math.max(1, Math.min(input.limit ?? 24, 48));
+    const staleSources = await this.contextEngine.getContextStaleSources(contextPackage.id);
+    let result: Record<string, unknown>;
+    switch (input.operation) {
+      case "get_intelligence": {
+        const intelligence = input.query ? await this.queryIntelligence(query) : undefined;
+        result = {
+          packageId: contextPackage.id,
+          sourceRevision: contextPackage.sourceRevision,
+          knownContext: contextPackage.knownContext,
+          transmittedContext: contextPackage.transmittedContext.map(compactCandidate),
+          retainedContext: contextPackage.retainedContext.slice(0, limit).map(compactCandidate),
+          ...(intelligence ? { query: compactQuery(intelligence, limit) } : {})
+        };
+        break;
+      }
+      case "get_symbols": {
+        const packageSymbols = contextPackage.selectedContext
+          .concat(contextPackage.retainedContext)
+          .filter(
+            (candidate, index, candidates) =>
+              candidate.sourceType === "symbol" &&
+              candidates.findIndex((item) => item.id === candidate.id) === index &&
+              candidateMatches(candidate, query)
+          )
+          .slice(0, limit);
+        const queried = packageSymbols.length ? undefined : await this.queryIntelligence(query);
+        result = {
+          packageId: contextPackage.id,
+          operation: "relevant symbols",
+          symbols: packageSymbols.length
+            ? packageSymbols.map(compactCandidate)
+            : queried?.items
+                .filter((item) => /symbol|class|function|method|component/i.test(item.kind))
+                .slice(0, limit)
+        };
+        break;
+      }
+      case "get_relationships":
+      case "get_flows":
+      case "get_impact": {
+        const mode =
+          input.operation === "get_flows"
+            ? "flows"
+            : input.operation === "get_impact"
+              ? "impact"
+              : "repository";
+        const graph = await this.graphIntelligence(mode, query);
+        result = {
+          packageId: contextPackage.id,
+          operation: input.operation,
+          query,
+          seedIds: graph.seedIds,
+          nodes: graph.nodes.slice(0, limit),
+          edges: graph.edges.slice(0, Math.min(limit * 2, 80)),
+          warnings: graph.warnings
+        };
+        break;
+      }
+      case "get_intent": {
+        const active = await this.loadState();
+        result = {
+          packageId: contextPackage.id,
+          intent: contextPackage.intent,
+          objective: contextPackage.objective,
+          operation: contextPackage.operation,
+          activeTask: active.activeTask,
+          sdlc: await this.readJson<SDLCPlan>(".keystone/state/sdlc/active-plan.json")
+        };
+        break;
+      }
+      case "expand_context": {
+        const fragment = await this.contextEngine.expandContext({
+          contextId: input.packageId,
+          contextReference: input.contextReference,
+          focus: input.query?.trim() || contextPackage.objective,
+          level: input.level ?? "standard"
+        });
+        result = {
+          packageId: fragment.contextId,
+          operation: "expanded context",
+          reference: fragment.reference,
+          focus: fragment.focus,
+          level: fragment.level,
+          estimatedTokens: fragment.estimatedTokens,
+          stale: fragment.stale,
+          staleSources: fragment.staleSources,
+          provenance: fragment.candidates.map((candidate) => candidate.provenance),
+          content: fragment.content
+        };
+        break;
+      }
+    }
+    result = { ...result, staleSources };
+    await this.recordBestEffort(
+      "copilot-context-retrieval",
+      `${input.operation} requested from context package ${contextPackage.id}${input.query ? ` for ${input.query}` : ""}.`
+    );
+    return JSON.stringify(result);
+  }
+
+  async recordCopilotActivity(message: string): Promise<void> {
+    await this.recordBestEffort("copilot-activity", message);
   }
 
   async recordContextFeedback(
@@ -1482,12 +1796,16 @@ export class CockpitService {
   async approveDelegation(
     mode: string,
     prompt: string,
-    correctionPacketId?: string
+    correctionPacketId?: string,
+    continuation = false
   ): Promise<void> {
     const active = await this.ensureActiveTask();
     const expected = await this.taskWorkspaces.delegationPrompt(active);
     const matchesTaskPrompt = normalizePrompt(prompt) === normalizePrompt(expected);
-    if (!matchesTaskPrompt && correctionPacketId) {
+    if (continuation) {
+      if (!prompt.includes("Durable Intent state:") || !prompt.includes("ContextPackage"))
+        throw new Error("The continuation prompt is missing durable Intent state.");
+    } else if (!matchesTaskPrompt && correctionPacketId) {
       const packet = await this.taskWorkspaces.latestCorrectionPacket(active);
       if (
         packet?.id !== correctionPacketId ||
@@ -1526,36 +1844,86 @@ export class CockpitService {
       .slice(0, 20);
     const relative = `.keystone/copilot/results/${result.startedAt.replace(/[:.]/g, "-")}-${id}.json`;
     await this.writeJson(relative, { ...result, taskWorkspaceId: active.id });
+    await this.persistIntentState(active.id, result);
     const completed = [
       "Repository intelligence gathered",
       "Specification reviewed",
       "Delegation approved"
     ];
     if (result.captured && result.success) completed.push("Copilot response captured by Keystone");
+    const cancelled = result.cancellation === "cancelled";
     this.activeTaskWorkspace = await this.taskWorkspaces.update(
       active,
-      result.success ? "in-progress" : "blocked",
+      cancelled ? "in-progress" : result.success ? "in-progress" : "blocked",
       {
-        percent: result.captured && result.success ? 55 : result.success ? 40 : 30,
-        current:
-          result.captured && result.success
+        percent: cancelled ? 30 : result.captured && result.success ? 55 : result.success ? 40 : 30,
+        current: cancelled
+          ? "Copilot operation stopped; Intent remains usable"
+          : result.captured && result.success
             ? "Copilot result captured; review changes and validate"
             : result.success
               ? "Copilot opened externally; capture evidence before validation"
               : "Copilot delegation failed",
         completed,
-        blockers: result.success ? [] : [result.error ?? "Copilot delegation failed"]
+        blockers: cancelled
+          ? []
+          : result.success
+            ? []
+            : [result.error ?? "Copilot delegation failed"]
       }
     );
     await this.record(
-      result.success ? "delegation-result" : "delegation-failed",
-      result.captured && result.success
-        ? `Captured Copilot response using ${result.model?.name ?? result.model?.id ?? "language model"}; artifact=${relative}.`
+      cancelled
+        ? "delegation-cancelled"
         : result.success
-          ? `${result.mode} opened externally; response was not captured.`
-          : `${result.mode} failed: ${result.error ?? "unknown error"}.`
+          ? "delegation-result"
+          : "delegation-failed",
+      cancelled
+        ? "Copilot operation was cancelled by the user; accepted Intent state was preserved."
+        : result.captured && result.success
+          ? `Captured Copilot response using ${result.model?.name ?? result.model?.id ?? "language model"}; artifact=${relative}.`
+          : result.success
+            ? `${result.mode} opened externally; response was not captured.`
+            : `${result.mode} failed: ${result.error ?? "unknown error"}.`
     );
     return relative;
+  }
+
+  private async persistIntentState(taskId: string, result: CopilotDelegationResult): Promise<void> {
+    const previous = await this.readJson<Record<string, unknown>>(
+      `.keystone/tasks/${taskId}/intent-state.json`
+    );
+    const previousSummaries = Array.isArray(previous?.summaries)
+      ? previous.summaries.filter((value): value is string => typeof value === "string")
+      : [];
+    const summary = compressConversationHistory(
+      [
+        ...previousSummaries.map((value, index) => ({
+          artifact: `Previous compressed Copilot interaction ${index + 1}`,
+          value: { result: value }
+        })),
+        {
+          artifact: "Latest Copilot interaction",
+          value: {
+            status: result.success ? "completed" : "failed",
+            outcome: result.text?.slice(0, 12_000) ?? result.error ?? "No captured response",
+            contextPackageId: result.contextPackageId
+          }
+        }
+      ],
+      1_200
+    );
+    await this.writeJson(`.keystone/tasks/${taskId}/intent-state.json`, {
+      ...previous,
+      version: 1,
+      contextPackageId: result.contextPackageId,
+      interactionCount:
+        (typeof previous?.interactionCount === "number" ? previous.interactionCount : 0) + 1,
+      summary: summary.content,
+      summaries: [summary.content, ...previousSummaries].slice(0, 4),
+      compression: summary.metadata,
+      updatedAt: new Date().toISOString()
+    });
   }
 
   async createCorrectionPacket(
@@ -1663,6 +2031,53 @@ export class CockpitService {
             `- ${traversal.sourceLabel} -[${traversal.relationship}]-> ${traversal.targetLabel}`
         )
     ];
+    const repositorySnapshot = await this.readJson<RepositoryIntelligenceSnapshot>(
+      `${INTELLIGENCE_DIR}/snapshot.json`
+    );
+    if (!repositorySnapshot?.intelligence)
+      throw new Error("Cannot prepare correction context without repository intelligence.");
+    const correctionIntent: DeveloperIntent = {
+      id: String(task.task.intentId ?? active.id),
+      text: intent,
+      workspaceRoot: this.workspaceRoot,
+      createdAt: String(task.task.createdAt ?? new Date().toISOString())
+    };
+    const correctionAnalysis = await classifyIntent(correctionIntent);
+    const correctionCustomizations = await discoverCopilotCustomizations(this.workspaceRoot);
+    const correctionPreparation = await this.contextEngine.prepareContext({
+      intent: correctionIntent,
+      objective: `${intent} — correct the latest validation failures using the selected evidence`,
+      operation: operationForIntentType(correctionAnalysis.intentType),
+      tokenBudget: 6_000,
+      intelligence: repositorySnapshot.intelligence,
+      routeDecision: routeIntent(correctionAnalysis),
+      skills: correctionCustomizations.skills,
+      buildOptions: {
+        compressionTier: "standard",
+        gitDiff,
+        preferredPaths: selectedPaths,
+        okfSnapshot: snapshot,
+        thingsToAvoid: "Do not broaden the correction beyond the reported validation failures."
+      },
+      sourceRevision: snapshotDigest,
+      decisions: remediations,
+      changes: { diff: gitDiff, status: gitStatus },
+      diagnostics: failures.map((message) => ({
+        path: selectedPaths[0] ?? "validation",
+        message,
+        severity: "error"
+      })),
+      userContext: [
+        { label: "Canonical OKF evidence", content: canonicalEvidence.join("\n") },
+        ...sourceExcerpts.map((content, index) => ({
+          label: `Selected correction source ${index + 1}`,
+          content
+        })),
+        ...(latestCopilot?.text
+          ? [{ label: "Previous Copilot result", content: truncate(latestCopilot.text, 4_000) }]
+          : [])
+      ]
+    });
     const packet: CorrectionPacket = {
       id: createHash("sha256")
         .update(
@@ -1695,27 +2110,8 @@ export class CockpitService {
       affectedPaths,
       diffHash,
       selectedPaths,
-      prompt: [
-        "You are GitHub Copilot performing a user-approved Keystone correction pass.",
-        "Keystone has reselected the current repository evidence from the promoted OKF snapshot.",
-        "Do not search, crawl, enumerate, or retrieve the entire repository. Use only the selected evidence below and report a missing-evidence gap instead of widening scope.",
-        `\n# Intent\n${intent}`,
-        `\n# Validation failures\n${failures.map((failure) => `- ${failure}`).join("\n") || "- No structured failure text was captured; inspect the listed commands."}`,
-        `\n# Validation commands\n${commands.map((command) => `- ${command}`).join("\n") || "- None recorded."}`,
-        `\n# Changed-file evidence\n${changedPaths.map((value) => `- ${value}`).join("\n") || "- No Git working-tree changes were detected."}`,
-        `\n# OKF affected paths\n${
-          affectedPaths
-            .slice(0, 120)
-            .map((value) => `- ${value}`)
-            .join("\n") || "- No affected path was selected."
-        }`,
-        `Diff SHA-256: ${diffHash}`,
-        `\n# Remediation guidance\n${remediations.map((item) => `- ${item}`).join("\n") || "- Classify the failure before changing product or test behavior."}`,
-        `\n# Previous Copilot result\n${latestCopilot?.text ? truncate(latestCopilot.text, 4_000) : "No captured Copilot response is available; use the validation evidence as the source of truth."}`,
-        `\n# Canonical OKF evidence\n${canonicalEvidence.join("\n")}`,
-        `\n# Current selected source excerpts\n${sourceExcerpts.join("\n\n") || "No selected source body could be read; report the evidence gap."}`,
-        "\nExecution boundary: propose the smallest correction, preserve the stated intent and tests, return changed files plus validation results, and do not perform Git write or remote merge operations."
-      ].join("\n")
+      contextPackageId: correctionPreparation.contextPackage.id,
+      prompt: correctionPreparation.contextPackage.content
     };
     await this.taskWorkspaces.appendCorrectionPacket(active, packet);
     if (packet.validation.failures.length) {
@@ -2934,16 +3330,10 @@ function normalizeRunResult(
     level,
     detail
   });
-  const policy = [
-    settings?.codingStandards && `Coding standards:\n${settings.codingStandards}`,
-    settings?.thingsToAvoid && `Additional things to avoid:\n${settings.thingsToAvoid}`
-  ]
-    .filter(Boolean)
-    .join("\n\n");
-  const promptWithPolicy = policy
-    ? `${run.contextPack.copilotPrompt}\n\nWorkspace policy:\n${policy}`
-    : run.contextPack.copilotPrompt;
-  const copilotPrompt = promptWithPolicy;
+  // The ContextPackage is the only source for the delegated context. Workspace policy was
+  // already supplied to ContextEngine as intent context candidates and must not be appended as
+  // a second, independently assembled prompt.
+  const copilotPrompt = run.contextPackage.content;
   return {
     intentType: run.intentAnalysis.intentType,
     matchedRule: run.intentAnalysis.keywords[0],
@@ -3061,5 +3451,51 @@ function normalizeRunResult(
       )
     },
     excludedPaths: excluded
+  };
+}
+
+function compactCandidate(candidate: ContextCandidate): Record<string, unknown> {
+  return {
+    id: candidate.id,
+    sourceType: candidate.sourceType,
+    label: candidate.payload.label ?? candidate.payload.path ?? candidate.id,
+    path: candidate.payload.path,
+    kind: candidate.payload.kind,
+    summary: candidate.payload.summary ?? candidate.payload.value,
+    content: candidate.content,
+    relevance: candidate.relevance,
+    evidence: candidate.evidence.slice(0, 6),
+    provenance: candidate.provenance
+  };
+}
+
+function candidateMatches(candidate: ContextCandidate, query: string): boolean {
+  const terms = query
+    .toLowerCase()
+    .match(/[a-z0-9_./-]+/g)
+    ?.filter((term) => term.length > 1);
+  if (!terms?.length) return true;
+  const haystack = [
+    candidate.id,
+    candidate.sourceType,
+    candidate.content ?? "",
+    ...Object.values(candidate.payload).map((value) => String(value))
+  ]
+    .join(" ")
+    .toLowerCase();
+  return terms.some((term) => haystack.includes(term));
+}
+
+function compactQuery(
+  result: Awaited<ReturnType<CockpitService["queryIntelligence"]>>,
+  limit: number
+): Record<string, unknown> {
+  return {
+    intent: result.intent,
+    confidence: result.confidence,
+    traversedRelationships: result.traversedRelationships,
+    warnings: result.warnings,
+    items: result.items.slice(0, limit),
+    traversals: result.traversals.slice(0, Math.min(limit, 24))
   };
 }

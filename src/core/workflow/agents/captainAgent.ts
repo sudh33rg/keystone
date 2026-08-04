@@ -9,6 +9,7 @@ import {
   operationForIntentType,
   type ContextEngineLogger,
   type ContextDiagnostic,
+  type ContextLogEntry,
   type ContextUserContext,
   type ContextWorkspaceState,
   type ContextChangesState
@@ -19,6 +20,7 @@ import { MetricsStore } from "../../platform/metrics/metricsStore";
 import type { DeveloperIntent, KeystoneRunResult, RepoIntelligence } from "../../domain/types";
 import { discoverCopilotCustomizations } from "../../context/copilotCustomizations";
 import { selectCanonicalContext } from "../../intelligence/okf/canonicalContext";
+import type { IntentState } from "../../intent/intentState";
 
 /**
  * Orchestrates one intent analysis from deterministic repository intelligence to a
@@ -50,7 +52,7 @@ export class CaptainAgent {
         ? 6_000
         : contextOptions.compressionTier === "off"
           ? 24_000
-          : 12_000);
+          : 6_000);
     const contextPreparation = await stage("context engineering", () =>
       new ContextEngine(intent.workspaceRoot, this.contextLogger).prepareContext({
         intent,
@@ -63,9 +65,11 @@ export class CaptainAgent {
         buildOptions: contextOptions,
         sourceRevision: contextOptions.okfSnapshot?.manifest.digests.snapshot,
         decisions: contextInputs.decisions,
+        intentState: contextInputs.intentState,
         workspace: contextInputs.workspace,
         changes: contextInputs.changes,
         diagnostics: contextInputs.diagnostics,
+        logs: contextInputs.logs,
         userContext: [
           ...(contextInputs.userContext ?? []),
           ...customizations.instructions.flatMap((instruction) =>
@@ -141,9 +145,11 @@ export class CaptainAgent {
 
 export interface ContextPreparationInputs {
   readonly decisions?: readonly string[];
+  readonly intentState?: IntentState;
   readonly workspace?: ContextWorkspaceState;
   readonly changes?: ContextChangesState;
   readonly diagnostics?: readonly ContextDiagnostic[];
+  readonly logs?: readonly ContextLogEntry[];
   readonly userContext?: readonly ContextUserContext[];
 }
 

@@ -133,11 +133,25 @@ declare module "vscode" {
     readonly content: readonly unknown[];
   }
   export namespace LanguageModelChatMessage {
-    function User(content: string, name?: string): LanguageModelChatMessage;
-    function Assistant(content: string, name?: string): LanguageModelChatMessage;
+    function User(content: string | readonly unknown[], name?: string): LanguageModelChatMessage;
+    function Assistant(
+      content: string | readonly unknown[],
+      name?: string
+    ): LanguageModelChatMessage;
+  }
+  export interface LanguageModelChatTool {
+    readonly name: string;
+    readonly description: string;
+    readonly inputSchema?: object;
+  }
+  export interface LanguageModelChatRequestOptions {
+    tools?: readonly LanguageModelChatTool[];
+    justification?: string;
+    toolMode?: number;
   }
   export interface LanguageModelChatResponse {
     readonly text: AsyncIterable<string>;
+    readonly stream: AsyncIterable<unknown>;
   }
   export interface LanguageModelChat {
     readonly id: string;
@@ -148,11 +162,65 @@ declare module "vscode" {
     readonly maxInputTokens: number;
     sendRequest(
       messages: readonly LanguageModelChatMessage[],
-      options: Record<string, unknown>,
+      options: LanguageModelChatRequestOptions,
       token: CancellationToken
     ): Thenable<LanguageModelChatResponse>;
   }
+  export interface LanguageModelToolInvocationOptions<T> {
+    readonly input: T;
+    readonly toolInvocationToken: unknown;
+  }
+  export interface LanguageModelToolInvocationPrepareOptions<T> {
+    readonly input: T;
+  }
+  export interface PreparedToolInvocation {
+    readonly invocationMessage?: string;
+    readonly confirmationMessages?: unknown;
+  }
+  export interface LanguageModelToolResult {
+    readonly content: readonly unknown[];
+  }
+  export interface LanguageModelTool<T> {
+    invoke(
+      options: LanguageModelToolInvocationOptions<T>,
+      token: CancellationToken
+    ): Thenable<LanguageModelToolResult>;
+    prepareInvocation?(
+      options: LanguageModelToolInvocationPrepareOptions<T>,
+      token: CancellationToken
+    ): Thenable<PreparedToolInvocation> | PreparedToolInvocation | undefined;
+  }
+  export class LanguageModelTextPart {
+    constructor(value: string);
+    readonly value: string;
+  }
+  export class LanguageModelToolCallPart {
+    constructor(callId: string, name: string, input: object);
+    readonly callId: string;
+    readonly name: string;
+    readonly input: object;
+  }
+  export class LanguageModelToolResultPart {
+    constructor(callId: string, content: readonly unknown[]);
+    readonly callId: string;
+    readonly content: readonly unknown[];
+  }
+  export class LanguageModelToolResult {
+    constructor(content: readonly unknown[]);
+    readonly content: readonly unknown[];
+  }
   export namespace lm {
+    const tools: readonly {
+      name: string;
+      description: string;
+      inputSchema: object;
+    }[];
+    function registerTool<T>(name: string, tool: LanguageModelTool<T>): Disposable;
+    function invokeTool(
+      name: string,
+      options: LanguageModelToolInvocationOptions<object>,
+      token?: CancellationToken
+    ): Thenable<LanguageModelToolResult>;
     function selectChatModels(selector?: {
       vendor?: string;
       family?: string;

@@ -213,7 +213,7 @@ const transitions: Record<SDLCStoryStatus, readonly SDLCStoryStatus[]> = {
     "handed-off"
   ],
   "awaiting-delegation-approval": ["delegated", "in-progress", "cancelled", "handed-off"],
-  delegated: ["awaiting-validation", "review-required", "blocked", "handed-off"],
+  delegated: ["awaiting-validation", "review-required", "in-progress", "blocked", "handed-off"],
   "awaiting-validation": ["completed", "review-required", "blocked", "in-progress"],
   "review-required": ["in-progress", "completed", "blocked", "handed-off"],
   completed: [],

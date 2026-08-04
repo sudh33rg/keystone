@@ -35,6 +35,11 @@ import type {
 import type { SDLCResearchDocument } from "../../workflow/sdlc/engine";
 import type { OkfCanonicalEvidenceEnvelope } from "../../intelligence/okf/types";
 import type { ContextFragment, ContextPackageSummary } from "../../context/contextEngine";
+import type {
+  CopilotResponseEnvelope,
+  StructuredResponseSource
+} from "../../copilot/responseContract";
+import type { IntentLifecycle, IntentState } from "../../intent/intentState";
 
 export interface CopilotDelegationResult {
   success: boolean;
@@ -44,9 +49,51 @@ export interface CopilotDelegationResult {
   text?: string;
   artifactPath?: string;
   storyId?: string;
+  contextPackageId?: string;
+  streaming?: boolean;
   startedAt: string;
   completedAt: string;
   error?: string;
+  cancellation?: "requested" | "cancelled";
+  structured?: CopilotResponseEnvelope;
+  structuredStatus?: "complete" | "partial" | "absent";
+  structuredSource?: StructuredResponseSource;
+  structuredWarning?: string;
+  observability?: {
+    intentId: string;
+    operation: string;
+    contextPackageId?: string;
+    contextUsage?: CopilotDelegationResult["contextUsage"];
+    model?: CopilotDelegationResult["model"];
+    startState: "started";
+    endState: "completed" | "cancelled" | "failed";
+    errorCode?: string;
+  };
+  contextUsage?: {
+    estimatedTransmittedTokens: number;
+    allCandidateCount: number;
+    transmittedCandidateCount: number;
+    retainedCandidateCount: number;
+    omittedContextCount: number;
+  };
+}
+
+export type CopilotContextToolOperation =
+  | "get_intelligence"
+  | "get_symbols"
+  | "get_relationships"
+  | "get_flows"
+  | "get_impact"
+  | "get_intent"
+  | "expand_context";
+
+export interface CopilotContextToolInput {
+  packageId: string;
+  operation: CopilotContextToolOperation;
+  query?: string;
+  contextReference?: string;
+  level?: "L0" | "L1" | "L2" | "L3" | "L4" | "summary" | "standard" | "full";
+  limit?: number;
 }
 
 export interface CockpitSettings {
@@ -71,9 +118,10 @@ export type WebviewToExtensionMessage =
   | { type: "LOAD_CONTEXT_PACKET"; packetId: string; segmentKinds?: ContextPacketSegmentKind[] }
   | {
       type: "EXPAND_CONTEXT";
-      contextId: string;
+      contextId?: string;
+      contextReference?: string;
       focus: string;
-      level: "summary" | "standard" | "full";
+      level: "L0" | "L1" | "L2" | "L3" | "L4" | "summary" | "standard" | "full";
     }
   | {
       type: "RECORD_CONTEXT_FEEDBACK";
@@ -85,6 +133,7 @@ export type WebviewToExtensionMessage =
   | { type: "REINDEX_AFFECTED_AND_VALIDATE" }
   | { type: "CANCEL_INGESTION" }
   | { type: "CANCEL_ANALYSIS" }
+  | { type: "CANCEL_COPILOT" }
   | { type: "ANALYZE_INTENT"; text: string }
   | { type: "APPROVE_INTENT_RESEARCH"; intentId: string }
   | { type: "RUN_VALIDATION"; scope: "impacted" | "all"; storyId?: string }
@@ -101,6 +150,7 @@ export type WebviewToExtensionMessage =
       instructions?: string[];
       contextPackId?: string;
       correctionPacketId?: string;
+      continuation?: boolean;
     }
   | { type: "COPY_COPILOT_PROMPT"; prompt: string }
   | { type: "COPY_PR_MARKDOWN"; markdown: string }
@@ -147,7 +197,15 @@ export type WebviewToExtensionMessage =
       findingId: string;
       status: "accepted" | "resolved";
     }
-  | { type: "RECORD_DECISION"; category: "task" | "risk"; action: string; subject: string };
+  | { type: "RECORD_DECISION"; category: "task" | "risk"; action: string; subject: string }
+  | { type: "ACCEPT_INTENT_DECISION"; decisionId: string }
+  | { type: "REJECT_INTENT_DECISION"; decisionId: string; reason?: string }
+  | { type: "ADD_INTENT_BLOCKER"; summary: string }
+  | { type: "RESOLVE_INTENT_BLOCKER"; blockerId: string }
+  | { type: "SET_INTENT_LIFECYCLE"; lifecycle: IntentLifecycle }
+  | { type: "EXPAND_INTENT_SCOPE"; areas: string[]; reason?: string }
+  | { type: "KEEP_INTENT_SCOPE"; reason?: string }
+  | { type: "ASK_ABOUT_INTENT"; question: string };
 
 export type ExtensionToWebviewMessage =
   | { type: "STATE_UPDATE"; state: Partial<KeystoneWebviewState> }
@@ -226,6 +284,21 @@ export type ExtensionToWebviewMessage =
   | { type: "MODERNIZATION_PROPOSAL"; proposal: ModernizationProposal }
   | { type: "MODERNIZATION_PLAN"; plan: ModernizationPlan }
   | ({ type: "DELEGATION_RESULT" } & CopilotDelegationResult)
+  | {
+      type: "COPILOT_ACTIVITY";
+      storyId?: string;
+      contextPackageId?: string;
+      stage: string;
+      message: string;
+      progress: number;
+    }
+  | {
+      type: "COPILOT_STREAM";
+      storyId?: string;
+      contextPackageId?: string;
+      text: string;
+      done?: boolean;
+    }
   | { type: "TASK_COMPLETION_RESULT"; success: boolean; error?: string }
   | { type: "TASK_DECISION_RESULT"; success: boolean; action: string; error?: string }
   | {
@@ -426,6 +499,7 @@ export interface KeystoneWebviewState {
   settings?: CockpitSettings;
   activeTask?: TaskWorkspaceSnapshot;
   correctionPacket?: CorrectionPacket;
+  intentState?: IntentState;
 }
 
 export interface RouteEvidence {
