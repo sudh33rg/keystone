@@ -10,7 +10,7 @@
         <h1>Repository-aware story generation</h1>
         <p>ValueEdge feature intent is enriched with Keystone's local repository intelligence before User Stories and Quality Stories are created.</p>
       </div>
-      <div class="scope-pill">No Copilot · Local intelligence · ValueEdge API only</div>
+      <div class="scope-pill">Local intelligence · ValueEdge API</div>
     </header>
 
     <section class="status-grid" aria-label="POC readiness">

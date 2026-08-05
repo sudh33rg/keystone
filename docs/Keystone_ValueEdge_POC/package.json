@@ -1,18 +1,15 @@
 {
-  "name": "keystone-valueedge-poc",
-  "displayName": "Keystone ValueEdge POC",
-  "description": "POC: local repository intelligence enriched ValueEdge User Story and Quality Story generation.",
-  "version": "0.2.0",
+  "name": "keystone",
+  "displayName": "Keystone",
+  "description": "POC: repository-intelligence-enriched ValueEdge User Story and Quality Story generation.",
+  "version": "0.2.2",
   "publisher": "keystone-dev",
   "engines": {
     "vscode": "^1.95.0",
     "node": ">=20"
   },
   "activationEvents": [
-    "onStartupFinished",
-    "onCommand:keystone.poc.open",
-    "onCommand:keystone.poc.generateStories",
-    "onCommand:keystone.index.restart"
+    "onView:keystone.pocView"
   ],
   "main": "./dist/extension/extension.js",
   "scripts": {
@@ -22,28 +19,29 @@
     "build": "npm run clean && npm run build:extension && npm run build:webview",
     "typecheck": "tsc --noEmit",
     "verify:poc": "node --experimental-strip-types scripts/verify-valueedge-poc.mjs",
-    "verify": "npm run typecheck && npm run verify:poc && npm run build",
-    "package": "npm run verify && vsce package --allow-missing-repository --no-dependencies"
+    "verify": "npm run typecheck && npm run verify:scope && npm run verify:poc && npm run build",
+    "package": "npm run verify && vsce package --allow-missing-repository --no-dependencies",
+    "verify:scope": "node scripts/verify-poc-scope.mjs"
   },
   "contributes": {
-    "commands": [
-      {
-        "command": "keystone.poc.open",
-        "title": "Keystone POC: Open ValueEdge Story Generator"
-      },
-      {
-        "command": "keystone.poc.generateStories",
-        "title": "Keystone POC: Generate ValueEdge Stories"
-      },
-      {
-        "command": "keystone.poc.openSettings",
-        "title": "Keystone POC: Open ValueEdge Settings"
-      },
-      {
-        "command": "keystone.index.restart",
-        "title": "Keystone POC: Rebuild Repository Intelligence"
-      }
-    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "keystone",
+          "title": "Keystone",
+          "icon": "resources/keystone.svg"
+        }
+      ]
+    },
+    "views": {
+      "keystone": [
+        {
+          "id": "keystone.pocView",
+          "name": "ValueEdge Story POC",
+          "type": "webview"
+        }
+      ]
+    },
     "configuration": {
       "title": "Keystone ValueEdge POC",
       "properties": {

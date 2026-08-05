@@ -5,15 +5,15 @@
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
-body { margin: 0; min-width: 760px; background: radial-gradient(circle at top right, rgba(70,130,180,.12), transparent 34%), var(--vscode-editor-background, #0f1720); }
+body { margin: 0; min-width: 0; background: radial-gradient(circle at top right, rgba(70,130,180,.12), transparent 34%), var(--vscode-editor-background, #0f1720); }
 button, input { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: default; opacity: .5; }
-.page-shell { max-width: 1320px; margin: 0 auto; padding: 38px 42px 64px; }
+.page-shell { width: 100%; max-width: 1320px; margin: 0 auto; padding: 22px 18px 48px; }
 .hero { display: flex; gap: 32px; align-items: flex-start; justify-content: space-between; padding: 10px 0 28px; border-bottom: 1px solid rgba(148,163,184,.16); }
 .eyebrow { display: inline-block; color: #7fb3dd; font-size: 11px; font-weight: 750; letter-spacing: .15em; margin-bottom: 8px; }
 h1, h2, h3, h4, p { margin-top: 0; }
-h1 { font-size: 32px; letter-spacing: -.025em; margin-bottom: 10px; }
+h1 { font-size: 26px; letter-spacing: -.025em; margin-bottom: 10px; }
 h2 { font-size: 22px; margin-bottom: 8px; }
 h3 { font-size: 16px; margin: 0; }
 h4 { font-size: 16px; margin-bottom: 8px; }
@@ -78,7 +78,7 @@ button.link-button { padding: 3px 0; border: 0; background: none; color: #83b8df
 .publish-bar span { color: var(--vscode-descriptionForeground, #9fb0bf); font-size: 12px; }
 .publish-actions { display: flex; gap: 8px; }
 @media (max-width: 960px) {
-  .page-shell { padding: 28px 24px 56px; }
+  .page-shell { padding: 20px 16px 44px; }
   .hero { flex-direction: column; }
   .scope-pill { white-space: normal; }
   .status-grid, .action-panel { grid-template-columns: 1fr; }
@@ -93,3 +93,27 @@ button.link-button { padding: 3px 0; border: 0; background: none; color: #83b8df
 
 /* POC review actions belong after the generated evidence, never over it. */
 .publish-bar { position: static; }
+
+@media (max-width: 520px) {
+  .page-shell { padding: 16px 12px 36px; }
+  .hero { gap: 14px; padding-bottom: 18px; }
+  h1 { font-size: 22px; margin-bottom: 7px; }
+  h2 { font-size: 18px; }
+  .hero p, .action-copy p, .results-header p { font-size: 12px; }
+  .status-grid { gap: 8px; margin: 14px 0; }
+  .status-card { min-height: 0; padding: 12px 13px; }
+  .status-card strong { font-size: 15px; }
+  .action-panel { min-width: 0; gap: 16px; padding: 14px; }
+  .feature-input-row { flex-direction: column; }
+  .inline-actions { flex-wrap: wrap; gap: 8px 12px; }
+  .results-header { grid-template-columns: 1fr; gap: 10px; padding-bottom: 10px; }
+  .result-summary { min-width: 0; text-align: left; }
+  .result-summary strong { font-size: 24px; }
+  .story-card { grid-template-columns: 34px minmax(0, 1fr); }
+  .story-index { padding-top: 16px; }
+  .story-body { padding: 14px 12px 16px; }
+  .evidence-row { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
+  .evidence-row code, .path, .match { width: 100%; white-space: normal; overflow-wrap: anywhere; }
+  .publish-actions { width: 100%; flex-direction: column; }
+  .publish-actions button { width: 100%; }
+}

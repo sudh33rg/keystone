@@ -22,7 +22,7 @@ import { VsCodeLanguageServiceAdapter } from "./adapters/LanguageServiceAdapter"
 import { VsCodeWorkspaceAdapter } from "./adapters/WorkspaceAdapter";
 import { VsCodeRepositoryMonitor } from "./intelligence/VsCodeRepositoryMonitor";
 import { ValueEdgePoc } from "../poc/ValueEdgePoc";
-import { PocPanel } from "./PocPanel";
+import { PocViewProvider } from "./PocViewProvider";
 
 let logger: KeystoneLogger | undefined;
 
@@ -31,11 +31,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const configuration = new ConfigurationService();
   const output = vscode.window.createOutputChannel("Keystone ValueEdge POC");
   logger = new KeystoneLogger(output, () => configuration.read().logging.level);
+  context.subscriptions.push(output);
 
   const repositoryUri = vscode.workspace.workspaceFolders?.find((folder) => folder.uri.scheme === "file")?.uri;
   if (!repositoryUri) {
-    context.subscriptions.push(output);
-    void vscode.window.showWarningMessage("Keystone ValueEdge POC requires an open local repository.");
+    const viewProvider = new PocViewProvider(context.extensionUri);
+    context.subscriptions.push(
+      viewProvider,
+      vscode.window.registerWebviewViewProvider(PocViewProvider.viewType, viewProvider, {
+        webviewOptions: { retainContextWhenHidden: false },
+      }),
+    );
+    logger.info("poc.activate", "POC view registered. Open a local repository to enable intelligence and story generation.");
     return;
   }
 
@@ -51,21 +58,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const intelligenceStore = new IntelligenceStore(storageRoot, undefined, workers, indexingConfiguration.retainedGenerations);
 
   const repositoryIndex = new RepositoryIndexService(
-    workspace,
-    git,
-    language,
-    ignorePolicy,
-    intelligenceStore,
-    logger,
-    workers,
-    undefined,
-    undefined,
-    semanticWorker,
-    undefined,
-    undefined,
-    new TreeSitterExtractionAdapter(),
-    new TechnologyDetectionService(),
-    new SchemaSurfaceExtractor(),
+    workspace, git, language, ignorePolicy, intelligenceStore, logger, workers,
+    undefined, undefined, semanticWorker, undefined, undefined,
+    new TreeSitterExtractionAdapter(), new TechnologyDetectionService(), new SchemaSurfaceExtractor(),
   );
   const monitor = new VsCodeRepositoryMonitor(workspace, git, ignorePolicy, logger);
   const startup = new StartupReconciler(workspace, git, intelligenceStore, {
@@ -76,20 +71,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const intelligenceRuntime = new IntelligenceRuntime(workspace, git, intelligenceStore, repositoryIndex, workers, monitor, logger, startup);
   const intelligenceQuery = new IntelligenceQueryService(intelligenceStore, intelligenceRuntime, new CpgQueryService(intelligenceStore));
   const poc = new ValueEdgePoc(intelligenceQuery);
-  const panel = new PocPanel(context.extensionUri, poc, () => intelligenceRuntime.start());
+  const viewProvider = new PocViewProvider(context.extensionUri, poc, () => intelligenceRuntime.start());
 
   context.subscriptions.push(
-    output,
-    panel,
-    vscode.commands.registerCommand("keystone.poc.open", () => panel.show()),
-    vscode.commands.registerCommand("keystone.poc.generateStories", () => panel.show()),
-    vscode.commands.registerCommand("keystone.poc.openSettings", () => poc.openSettings()),
-    vscode.commands.registerCommand("keystone.index.restart", () => intelligenceRuntime.start()),
+    viewProvider,
+    vscode.window.registerWebviewViewProvider(PocViewProvider.viewType, viewProvider, {
+      webviewOptions: { retainContextWhenHidden: false },
+    }),
     { dispose: () => intelligenceRuntime.dispose() },
   );
 
-  logger.info("poc.activate", "POC activated: Repository Intelligence + ValueEdge story generation only.");
+  logger.info("poc.activate", "POC activated: one Activity Bar view, Repository Intelligence + ValueEdge story generation only.");
   intelligenceRuntime.start();
 }
 
-export function deactivate(): void { logger = undefined; }
+export function deactivate(): void {
+  logger = undefined;
+}

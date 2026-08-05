@@ -7,36 +7,40 @@ interface PublishMessage { type: "publish"; mode: "all" | "story" | "quality_sto
 interface SimpleMessage { type: "ready" | "refresh" | "rebuild" | "openSettings" }
 type UiMessage = GenerateMessage | PublishMessage | SimpleMessage;
 
-export class PocPanel implements vscode.Disposable {
-  private panel?: vscode.WebviewPanel;
+export class PocViewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
+  static readonly viewType = "keystone.pocView";
+
+  private view?: vscode.WebviewView;
   private latest?: PocGenerationResult;
   private readonly disposables: vscode.Disposable[] = [];
 
   constructor(
     private readonly extensionUri: vscode.Uri,
-    private readonly poc: ValueEdgePoc,
-    private readonly rebuildIntelligence: () => void,
+    private readonly poc?: ValueEdgePoc,
+    private readonly rebuildIntelligence?: () => void,
   ) {}
 
-  show(): void {
-    if (this.panel) {
-      this.panel.reveal(vscode.ViewColumn.One);
-      return;
-    }
-    this.panel = vscode.window.createWebviewPanel(
-      "keystoneValueEdgePoc",
-      "Keystone · ValueEdge POC",
-      vscode.ViewColumn.One,
-      { enableScripts: true, retainContextWhenHidden: false, localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, "dist", "webview")] },
+  resolveWebviewView(view: vscode.WebviewView): void {
+    this.view = view;
+    this.latest = undefined;
+    view.webview.options = {
+      enableScripts: true,
+      localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, "dist", "webview")],
+    };
+    view.webview.html = this.html(view.webview);
+    this.disposables.push(
+      view.webview.onDidReceiveMessage((message: UiMessage) => void this.handle(message)),
+      view.onDidDispose(() => {
+        this.view = undefined;
+        this.latest = undefined;
+      }),
     );
-    this.panel.webview.html = this.html(this.panel.webview);
-    this.panel.onDidDispose(() => { this.panel = undefined; this.latest = undefined; }, undefined, this.disposables);
-    this.panel.webview.onDidReceiveMessage((message: UiMessage) => void this.handle(message), undefined, this.disposables);
   }
 
   dispose(): void {
-    this.panel?.dispose();
     vscode.Disposable.from(...this.disposables).dispose();
+    this.view = undefined;
+    this.latest = undefined;
   }
 
   private async handle(message: UiMessage): Promise<void> {
@@ -46,11 +50,13 @@ export class PocPanel implements vscode.Disposable {
         return;
       }
       if (message.type === "openSettings") {
-        await this.poc.openSettings();
+        if (this.poc) await this.poc.openSettings();
+        else await vscode.commands.executeCommand("workbench.action.openSettings", "keystone.poc.valueEdge");
         await this.sendStatus();
         return;
       }
       if (message.type === "rebuild") {
+        if (!this.rebuildIntelligence) throw new Error("Open a local repository before rebuilding intelligence.");
         this.rebuildIntelligence();
         this.post({ type: "notice", level: "info", message: "Repository intelligence rebuild started." });
         await this.sendStatus();
@@ -60,6 +66,7 @@ export class PocPanel implements vscode.Disposable {
         const featureId = message.featureId.trim();
         if (!featureId) throw new Error("Enter a ValueEdge Feature ID.");
         this.post({ type: "busy", value: true, message: "Reading ValueEdge feature and matching repository intelligence…" });
+        if (!this.poc) throw new Error("Open a local repository before generating stories.");
         this.latest = await this.poc.generate(featureId);
         this.post({ type: "generated", payload: this.latest });
         return;
@@ -69,6 +76,7 @@ export class PocPanel implements vscode.Disposable {
         const selected = selectStories(this.latest.stories, message.mode);
         if (!selected.length) throw new Error("There are no stories in the selected category.");
         this.post({ type: "busy", value: true, message: `Publishing ${selected.length} draft stor${selected.length === 1 ? "y" : "ies"} to ValueEdge…` });
+        if (!this.poc) throw new Error("Open a local repository before publishing stories.");
         await this.poc.publish(this.latest.feature.id, selected);
         this.post({ type: "published", count: selected.length, mode: message.mode });
       }
@@ -80,7 +88,32 @@ export class PocPanel implements vscode.Disposable {
   }
 
   private async sendStatus(): Promise<void> {
-    const [overview, config] = await Promise.all([this.poc.overview(), Promise.resolve(this.poc.configurationStatus())]);
+    if (!this.poc) {
+      const cfg = vscode.workspace.getConfiguration("keystone.poc.valueEdge");
+      const raw = {
+        baseUrl: String(cfg.get("baseUrl", "")),
+        sharedSpaceId: String(cfg.get("sharedSpaceId", "")),
+        workspaceId: String(cfg.get("workspaceId", "")),
+        authorization: String(cfg.get("authorization", "")),
+      };
+      const missing = Object.entries(raw).filter(([, value]) => !value.trim()).map(([key]) => key);
+      this.post({
+        type: "status",
+        payload: {
+          config: { configured: missing.length === 0, missing },
+          intelligence: {
+            status: "idle", generation: 0, pendingUpdate: false, repository: undefined, branch: undefined,
+            counts: { files: 0, symbols: 0, relationships: 0, tests: 0 }, phase: "idle",
+          },
+        },
+      });
+      return;
+    }
+
+    const [overview, config] = await Promise.all([
+      this.poc.overview(),
+      Promise.resolve(this.poc.configurationStatus()),
+    ]);
     this.post({
       type: "status",
       payload: {
@@ -99,7 +132,9 @@ export class PocPanel implements vscode.Disposable {
     });
   }
 
-  private post(value: unknown): void { void this.panel?.webview.postMessage(value); }
+  private post(value: unknown): void {
+    void this.view?.webview.postMessage(value);
+  }
 
   private html(webview: vscode.Webview): string {
     const script = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "dist", "webview", "assets", "app.js"));
@@ -113,4 +148,7 @@ function selectStories(stories: GeneratedStory[], mode: PublishMessage["mode"]):
   if (mode === "all") return stories;
   return stories.filter((story) => story.kind === mode);
 }
-function randomNonce(): string { return Array.from({ length: 24 }, () => Math.random().toString(36)[2] ?? "x").join(""); }
+
+function randomNonce(): string {
+  return Array.from({ length: 24 }, () => Math.random().toString(36)[2] ?? "x").join("");
+}
