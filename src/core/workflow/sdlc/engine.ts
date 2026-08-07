@@ -558,6 +558,40 @@ export class SDLCEngine {
     });
   }
 
+  /**
+   * A correction retry may finish without another manual story transition, but
+   * only when the normal completion contract is already satisfied. This never
+   * treats a passing command as approval for unmet acceptance criteria.
+   */
+  finalizePassedCorrection(
+    plan: SDLCPlan,
+    storyId: string
+  ): { plan: SDLCPlan; completed: boolean; reason?: string } {
+    const story = this.storyById(plan, storyId);
+    if (
+      story.status !== "awaiting-validation" ||
+      !story.delegation?.correctionPacketId ||
+      !story.validationRuns.some((run) => run.status === "passed")
+    )
+      return { plan, completed: false };
+    try {
+      return {
+        plan: this.transition(plan, storyId, "completed", {
+          evidence: [
+            `Correction packet ${story.delegation.correctionPacketId} passed post-correction validation.`
+          ]
+        }),
+        completed: true
+      };
+    } catch (error) {
+      return {
+        plan,
+        completed: false,
+        reason: error instanceof Error ? error.message : String(error)
+      };
+    }
+  }
+
   recordFinding(
     plan: SDLCPlan,
     storyId: string,

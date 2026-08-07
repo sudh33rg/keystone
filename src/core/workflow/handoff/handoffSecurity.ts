@@ -164,7 +164,7 @@ export function scanAndRedact<T>(input: T): { value: T; report: RedactionReport 
     removedCategories: [...removed],
     redactedPaths: paths,
     findings,
-    safeToShare: true
+    safeToShare: !findings.some((finding) => finding.confidence === "HIGH")
   };
   return { value, report };
 }

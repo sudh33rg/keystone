@@ -59,7 +59,7 @@ export function detectEngineeringEntities(
     /(?:^|\/)(?:db|database|databases|migrations?|schemas?|models?|entities?)(?:\/|$)/i.test(
       normalizedPath
     ) ||
-    /\b(?:prisma|sequelize|typeorm|drizzle|knex|mongoose|sqlalchemy|hibernate|jdbc)\b/i.test(
+    /\b(?:prisma|sequelize|typeorm|drizzle|knex|mongoose|sqlalchemy|django|hibernate|jdbc)\b/i.test(
       source
     );
 
@@ -179,6 +179,8 @@ export function detectEngineeringEntities(
       0.88
     );
   }
+  if (/(?:^|\/)migrations?\//i.test(normalizedPath))
+    add("migration", stem, 1, { path: normalizedPath, databaseName: databaseNameFor(normalizedPath) }, "filesystem", 0.92);
 
   for (const match of source.matchAll(
     /\bcreate\s+table\s+(?:if\s+not\s+exists\s+)?["'`]?([\w.-]+)["'`]?/gi
@@ -207,13 +209,43 @@ export function detectEngineeringEntities(
       databaseName: databaseNameFor(normalizedPath)
     });
   }
-  if (databaseLike && /(?:^|\/)(?:entities?|models?)(?:\/|$)/i.test(normalizedPath)) {
+  if (
+    databaseLike &&
+    !/\bsqlalchemy\b|\bdeclarative_base\b|\bmapped_column\b|\bdjango\.db\b|\bmodels\.Model\b/i.test(source) &&
+    /(?:^|\/)(?:entities?|models?)(?:\/|$)/i.test(normalizedPath)
+  ) {
     for (const match of source.matchAll(/\bclass\s+([A-Za-z_]\w*)/g))
       add("orm-entity", match[1], lineNumber(match.index), {
         tableName: match[1],
         orm: "class-model",
         databaseName: databaseNameFor(normalizedPath)
       });
+  }
+  if (/\bsqlalchemy\b|\bdeclarative_base\b|\bmapped_column\b/i.test(source)) {
+    for (const match of source.matchAll(
+      /class\s+([A-Za-z_]\w*)\s*\([^)]*\)\s*:\s*[\s\S]{0,600}?__tablename__\s*=\s*["']([^"']+)["']/g
+    )) {
+      const line = lineNumber(match.index);
+      add("orm-entity", match[1], line, {
+        tableName: match[2],
+        orm: "sqlalchemy",
+        databaseName: databaseNameFor(normalizedPath)
+      });
+      add("table", match[2], line, { databaseName: databaseNameFor(normalizedPath) });
+    }
+  }
+  if (/\bdjango\.db\b|\bmodels\.Model\b/i.test(source)) {
+    for (const match of source.matchAll(
+      /class\s+([A-Za-z_]\w*)\s*\([^)]*models\.Model[^)]*\)\s*:\s*[\s\S]{0,1000}?class\s+Meta\s*:\s*[\s\S]{0,300}?db_table\s*=\s*["']([^"']+)["']/g
+    )) {
+      const line = lineNumber(match.index);
+      add("orm-entity", match[1], line, {
+        tableName: match[2],
+        orm: "django",
+        databaseName: databaseNameFor(normalizedPath)
+      });
+      add("table", match[2], line, { databaseName: databaseNameFor(normalizedPath) });
+    }
   }
 
   for (const match of source.matchAll(

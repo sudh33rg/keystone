@@ -108,12 +108,12 @@ Large OKF snapshots are never sent to the webview as an unbounded list. Explorer
 
 The TypeScript/JavaScript compiler worker runs after structural discovery so it can resolve project-wide declarations, calls, inheritance, and implementations. Its cross-file call and type evidence is merged back into `RepoIntelligence`, persisted, and atomically re-promoted through `repoIntelligenceToOkf` before the remaining intelligence stages execute. This keeps CPG semantic evidence and OKF Query/Graph identity aligned. If compiler binding or promotion fails, the pipeline records a warning and continues with the deterministic structural result; it never fabricates a semantic edge.
 
-## Intelligent Caching (Planned / Partially Implemented)
+## Intelligent Caching
 
-Keystone employs a caching system to optimize performance. The following cache layers are **planned** or **partially implemented**:
+Keystone employs a caching system to optimize performance. The following cache layers are implemented with the stated boundaries:
 
 1. **File Hash Caching** (Aligned for structural reuse): File content and structure hashes are persisted in the structural index and used for incremental reuse; the extraction cache independently keys reusable language analysis by content hash.
-2. **Extraction Result Caching** (Partial): Deterministic language-analysis payloads are persisted by file path, content hash, and extractor version under `.keystone/cache/extractions`; semantic compiler enrichment remains project-aware and is recomputed when needed.
+2. **Extraction Result Caching** (Partial): Deterministic language-analysis payloads are persisted by file path, content hash, and extractor version under `.keystone/cache/extractions`; TypeScript/JavaScript compiler enrichment is additionally persisted by source/config hashes and provider version under `.keystone/cache/semantics`.
 3. **Projection Caching** (Partial): Graph, CPG, and search projections are persisted under the authoritative OKF snapshot; bounded graph neighborhoods and query results also survive process restart under digest-keyed cache files.
 4. **Query Result Caching** (Partial): Query results are reused in memory and from `.keystone/cache/query` by normalized request and OKF snapshot digest; the cache-maintenance path prunes old/over-limit entries and reports removal metrics.
 5. **Context Compression Caching** (Partial): Intent context is persisted under `.keystone/context/cache` and keyed with the canonical OKF snapshot digest; cache clearing removes both intelligence and cache trees.
@@ -125,7 +125,7 @@ Persistent cache artifacts are stored in `.keystone/cache/`; digest-keyed entrie
 - OKF snapshot is updated
 - Configuration changes
 
-The initial persistent cache policy retains recent extraction, query, and graph JSON entries for 30 days and within per-family entry limits. This policy is operational cache hygiene only; it never limits repository discovery or canonical ingestion. Semantic-provider and CPG projection invalidation remain tied to their source/content and OKF promotion paths and need a fuller provider-version policy.
+The persistent cache policy retains recent extraction, compiler-semantic, query, and graph JSON entries for 30 days and within per-family entry limits. This policy is operational cache hygiene only; it never limits repository discovery or canonical ingestion. TypeScript/JavaScript semantic invalidation includes source/config hashes and provider version. Host-dependent VS Code language-service output remains session-bound until a provider can supply an equivalent stable fingerprint.
 
 **Gap Analysis**: See [GAP_ANALYSIS.md](./GAP_ANALYSIS.md) and [IMPLEMENTATION_PLANS.md](./IMPLEMENTATION_PLANS.md) for detailed gap analysis and implementation plans for the caching system.
 

@@ -31,11 +31,20 @@ for (const file of files) {
 const tests = walk(path.join(outRoot, "tests/unit"))
   .filter((file) => /\.test\.js$/.test(file))
   .sort();
-const run = spawnSync(process.execPath, ["--test", "--test-reporter=spec", ...tests], {
+if (!tests.length) {
+  console.error("No unit tests found under tests/unit.");
+  process.exit(1);
+}
+const coverage = process.argv.includes("--coverage");
+const run = spawnSync(
+  process.execPath,
+  [...(coverage ? ["--experimental-test-coverage"] : []), "--test", "--test-reporter=spec", ...tests],
+  {
   cwd: root,
   stdio: "inherit",
   env: { ...process.env, NODE_ENV: "test" }
-});
+  }
+);
 process.exit(run.status ?? 1);
 
 function walk(dir) {

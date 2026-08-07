@@ -410,16 +410,6 @@ These events are used for:
 
 The lifecycle system ensures that Keystone's intelligence is always consistent, accurate, and up-to-date, while preserving historical information for audit and analysis purposes.
 
-## Gap Analysis References
+## Active Roadmap
 
-The following gaps identified in [GAP_ANALYSIS.md](./GAP_ANALYSIS.md) affect the Ontology, Graph, Search, and CPG:
-
-| Gap       | Title                                                                                                              | Impact on Ontology/Graph/CPG                                           | Implementation Plan                                                                    |
-| --------- | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| **Gap 1** | [Continuation Packets for Long-Running Tasks](./GAP_ANALYSIS.md#gap-1-continuation-packets-for-long-running-tasks) | Enables unbounded graph/CPG construction for large repositories        | [Plan 1](./IMPLEMENTATION_PLANS.md#plan-1-continuation-packets-for-long-running-tasks) |
-| **Gap 2** | [Context Compression Caching](./GAP_ANALYSIS.md#gap-2-context-compression-caching)                                 | Caches compressed graph/CPG context for faster SDLC evidence retrieval | [Plan 2](./IMPLEMENTATION_PLANS.md#plan-2-context-compression-caching)                 |
-| **Gap 3** | [Query Result Caching](./GAP_ANALYSIS.md#gap-3-query-result-caching)                                               | Caches graph traversal and search query results for faster UI response | [Plan 3](./IMPLEMENTATION_PLANS.md#plan-3-query-result-caching)                        |
-| **Gap 4** | [Adaptive-Segments Delivery Mode](./GAP_ANALYSIS.md#gap-4-adaptive-segments-delivery-mode)                         | Enables progressive loading of large graph/CPG visualizations          | [Plan 4](./IMPLEMENTATION_PLANS.md#plan-4-adaptive-segments-delivery-mode)             |
-| **Gap 5** | [File Hash Caching Persistence](./GAP_ANALYSIS.md#gap-5-file-hash-caching-persistence)                             | Persistent file hashes enable incremental graph/CPG updates            | [Plan 5](./IMPLEMENTATION_PLANS.md#plan-5-file-hash-caching-persistence)               |
-| **Gap 6** | [Extraction Result Caching Persistence](./GAP_ANALYSIS.md#gap-6-extraction-result-caching-persistence)             | Caches extraction results to avoid re-parsing for graph/CPG generation | [Plan 6](./IMPLEMENTATION_PLANS.md#plan-6-extraction-result-caching-persistence)       |
-| **Gap 7** | [Projection Caching Persistence](./GAP_ANALYSIS.md#gap-7-projection-caching-persistence)                           | Caches graph, search, and CPG projections for faster startup           | [Plan 7](./IMPLEMENTATION_PLANS.md#plan-7-projection-caching-persistence)              |
+This document follows the current [Gap Analysis](./GAP_ANALYSIS.md) and [Phased Implementation Plan](./IMPLEMENTATION_PLANS.md). Persistent context, extraction, TypeScript/JavaScript semantic, query, and bounded graph caches are implemented; Explorer virtualization and progressive Graph/CPG segments are implemented. Remaining acceptance depends on live installed language-service behavior, runtime/benchmark evidence, and a user-authorized Copilot session.

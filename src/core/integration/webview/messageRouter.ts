@@ -121,6 +121,7 @@ export type WebviewToExtensionMessage =
   | { type: "WEBVIEW_READY" }
   | { type: "INDEX_REPO"; force?: boolean }
   | { type: "LOAD_INTELLIGENCE" }
+  | { type: "LOAD_ACTIVITY_HISTORY"; workId?: string }
   | { type: "LOAD_RESTORED_TASK_HANDOFF" }
   | { type: "CLEAR_CONTEXT_CACHE" }
   | { type: "ENHANCE_INTENT"; text: string; mode: EnhancementMode; sessionId?: string }
@@ -222,6 +223,73 @@ export type WebviewToExtensionMessage =
   | { type: "KEEP_INTENT_SCOPE"; proposalId?: string; reason?: string }
   | { type: "CREATE_INTENT_FOLLOW_UP"; proposalId?: string; reason?: string }
   | { type: "ASK_ABOUT_INTENT"; question: string };
+
+/**
+ * Runtime counterpart to WebviewToExtensionMessage.
+ *
+ * Browser View must validate command names before dispatching them. Keeping
+ * that allowlist beside the discriminated union prevents its transport from
+ * silently falling behind the VS Code webview protocol.
+ */
+export const WEBVIEW_COMMAND_TYPES = [
+  "WEBVIEW_READY",
+  "INDEX_REPO",
+  "LOAD_INTELLIGENCE",
+  "LOAD_ACTIVITY_HISTORY",
+  "LOAD_RESTORED_TASK_HANDOFF",
+  "CLEAR_CONTEXT_CACHE",
+  "ENHANCE_INTENT",
+  "LOAD_ENHANCEMENT_SESSIONS",
+  "DELETE_ENHANCEMENT_SESSION",
+  "RETRIEVE_CONTEXT_ORIGINAL",
+  "LOAD_CONTEXT_PACKET",
+  "EXPAND_CONTEXT",
+  "RECORD_CONTEXT_FEEDBACK",
+  "REQUEST_CORRECTION_PACKET",
+  "REINDEX_AFFECTED_AND_VALIDATE",
+  "CANCEL_INGESTION",
+  "CANCEL_ANALYSIS",
+  "CANCEL_COPILOT",
+  "ANALYZE_INTENT",
+  "APPROVE_INTENT_RESEARCH",
+  "RUN_VALIDATION",
+  "COMPLETE_TASK",
+  "ANALYZE_MODERNIZATION",
+  "ACCEPT_MODERNIZATION",
+  "APPROVE_DELEGATION",
+  "COPY_COPILOT_PROMPT",
+  "COPY_PR_MARKDOWN",
+  "SAVE_SETTINGS",
+  "OPEN_BROWSER_VIEW",
+  "CONFIGURE_VALUEEDGE",
+  "IMPORT_VALUEEDGE_FEATURE",
+  "PUBLISH_VALUEEDGE_STORIES",
+  "CREATE_TASK_HANDOFF",
+  "RESTORE_TASK_HANDOFF",
+  "CREATE_SDLC_PLAN",
+  "SDLC_TRANSITION",
+  "APPROVE_SPECIFICATION",
+  "QUERY_INTELLIGENCE",
+  "EXPLORE_INTELLIGENCE",
+  "LOAD_INTELLIGENCE_GRAPH",
+  "LOAD_INTELLIGENCE_REUSE",
+  "LOAD_CPG_VIEW",
+  "OPEN_SOURCE_LOCATION",
+  "RESOLVE_SDLC_FINDING",
+  "RECORD_DECISION",
+  "ACCEPT_INTENT_DECISION",
+  "REJECT_INTENT_DECISION",
+  "DISCUSS_INTENT_DECISION",
+  "ADD_INTENT_BLOCKER",
+  "RESOLVE_INTENT_BLOCKER",
+  "SET_INTENT_LIFECYCLE",
+  "EXPAND_INTENT_SCOPE",
+  "KEEP_INTENT_SCOPE",
+  "CREATE_INTENT_FOLLOW_UP",
+  "ASK_ABOUT_INTENT"
+] as const satisfies readonly WebviewToExtensionMessage["type"][];
+
+export const WEBVIEW_COMMAND_TYPE_SET: ReadonlySet<string> = new Set(WEBVIEW_COMMAND_TYPES);
 
 export type ExtensionToWebviewMessage =
   | { type: "STATE_UPDATE"; state: Partial<KeystoneWebviewState> }
@@ -355,6 +423,7 @@ export type ExtensionToWebviewMessage =
       type: "APPLICATION_STATE";
       state: import("../../application/applicationStore").KeystoneApplicationState;
     }
+  | { type: "ACTIVITY_HISTORY_RESULT"; entries: WorkflowHistoryEntry[] }
   | { type: "SDLC_PLAN_RESULT"; plan: import("../../workflow/sdlc/engine").SDLCPlan }
   | { type: "BROWSER_VIEW_OPENED"; url: string }
   | { type: "VALUEEDGE_FEATURE_RESULT"; feature: import("../valueedge/types").ValueEdgeFeature }
@@ -488,6 +557,21 @@ export interface IntelligenceActivityEvent {
   type: string;
   message: string;
   progress?: number;
+}
+
+/** Durable, task-aware audit entry used by the History surface. */
+export interface WorkflowHistoryEntry extends IntelligenceActivityEvent {
+  workId?: string;
+  workName?: string;
+  workflow:
+    | "intelligence"
+    | "context"
+    | "planning"
+    | "delegation"
+    | "validation"
+    | "handoff"
+    | "modernization"
+    | "system";
 }
 
 export interface KeystoneWebviewState {

@@ -18,6 +18,8 @@ export type {
 } from "./typescriptSemantic";
 export { CpgShardStore } from "./shardStore";
 export type { CpgShardManifest, CpgShardManifestEntry } from "./shardStore";
+export { TypeScriptSemanticCache } from "./typescriptSemanticCache";
+export type { SemanticCacheFile, TypeScriptSemanticCacheInput } from "./typescriptSemanticCache";
 
 export { buildUniversalCpg } from "./universalCpgBuilder";
 export type { UniversalCpgInput } from "./universalCpgBuilder";

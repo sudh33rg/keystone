@@ -32,15 +32,8 @@ Dev deps:      @types/node, @types/react, @types/react-dom,
                undici-types, prettier@3.9.6
 ```
 
-**⚠️ TRAP — `README.md` is wrong here.** It says:
-
-> ```bash
-> npm install --offline --ignore-scripts
-> ```
->
-> The npm toolchain required to build the extension is vendored under `vendor/`
-
-There is **no `vendor/` directory** in this repo. Use a plain `npm install`.
+Use a plain `npm install`. The root README is the product-facing installation
+guide; this document covers source-development details.
 
 **⚠️ TRAP — React 16.0.0 is pinned and it matters.** The build copies
 `node_modules/react/umd/react.production.min.js` and the react-dom equivalent
@@ -62,7 +55,7 @@ Real output:
 > keystone@1.0.0 build
 > npm run clean && node scripts/build.mjs
 
-Built 124 extension/core module(s).
+Built extension/core and webview modules.
 Built 5 webview module(s).
 ```
 
@@ -148,8 +141,8 @@ Run all four gates now, before you change anything:
 
 ```bash
 npm run build                            # ✅ passes
-npm run lint                             # ✅ passes — "Linted 132 active source file(s)."
-node scripts/check-active-boundary.mjs   # ✅ passes — 129 reachable files
+npm run lint                             # ✅ passes
+node scripts/check-active-boundary.mjs   # ✅ passes
 npm run typecheck                        # ✅ passes — both projects clean
 ```
 
@@ -162,9 +155,9 @@ npm run verify:source   # clean + typecheck + lint + boundary check
 Real output:
 
 ```
-Linted 132 active source file(s).
-Active boundary verified: 129 reachable monolithic source files, npm lockfile
-present, no legacy engines, no arbitrary ingestion caps, and Git remains read-only.
+Lint verifies active source files. The active-boundary gate verifies the
+reachable source boundary, lockfile, supported engines, no arbitrary ingestion
+caps, and read-only Git behavior.
 ```
 
 **⚠️ This green state is uncommitted.** `git status` shows ~74 modified files

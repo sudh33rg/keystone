@@ -784,6 +784,14 @@ export class VscodeProvider {
       void this.loadIntelligence();
       return;
     }
+    if (message.type === "LOAD_ACTIVITY_HISTORY") {
+      const root = this.workspaceRoot();
+      if (root)
+        void this.getService(root)
+          .workflowHistory(message.workId)
+          .then((entries) => this.post({ type: "ACTIVITY_HISTORY_RESULT", entries }));
+      return;
+    }
     if (message.type === "LOAD_RESTORED_TASK_HANDOFF") {
       void this.loadRestoredTaskHandoff();
       return;
@@ -2264,6 +2272,25 @@ export class VscodeProvider {
           commands: results.map((result) => result.command),
           evidence
         });
+        if (passed) {
+          const finalized = this.sdlcEngine.finalizePassedCorrection(
+            this.sdlcPlan,
+            activeStory.id
+          );
+          this.sdlcPlan = finalized.plan;
+          if (finalized.completed)
+            this.post({
+              type: "NOTIFICATION",
+              level: "info",
+              message: "Post-correction validation passed and the SDLC story was completed."
+            });
+          else if (finalized.reason)
+            this.post({
+              type: "NOTIFICATION",
+              level: "info",
+              message: `Post-correction validation passed; remaining completion criteria still need review: ${finalized.reason}`
+            });
+        }
         await this.persistSdlcPlan(this.sdlcPlan);
         this.applicationStore.update({ sdlc: this.sdlcPlan });
         this.post({ type: "SDLC_PLAN_RESULT", plan: this.sdlcPlan });
@@ -2403,6 +2430,12 @@ export class VscodeProvider {
         } as KeystoneTaskResult)
       : undefined;
     this.applicationStore.update({
+      status: state.status,
+      intelligence: state.intelligence,
+      intelligenceManifest: state.intelligenceManifest,
+      intelligenceActivity: state.intelligenceActivity ?? [],
+      ingestion: state.ingestion,
+      backgroundWorkers: state.backgroundWorkers,
       activeTask: state.activeTask,
       correctionPacket: state.correctionPacket,
       intentState,

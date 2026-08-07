@@ -1,7 +1,10 @@
 import { SECURITY_KEYWORDS } from "../../platform/config/defaults";
 
 export function detectSecuritySensitiveArea(filePath: string, text: string): string[] {
-  return matchKeywords(`${filePath}\n${text}`, SECURITY_KEYWORDS);
+  const matches = matchKeywords(`${filePath}\n${text}`, SECURITY_KEYWORDS);
+  if (/@(PreAuthorize|RolesAllowed|UseGuards|login_required)\b|\b(?:Depends|authorize|requireAuth)\s*\(/.test(text))
+    matches.push("explicit authorization boundary");
+  return [...new Set(matches)];
 }
 
 function matchKeywords(haystack: string, keywords: string[]): string[] {

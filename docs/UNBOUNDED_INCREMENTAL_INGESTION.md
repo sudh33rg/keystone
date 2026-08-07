@@ -20,11 +20,10 @@ Keystone does not impose a repository file-count ceiling, source-file-size ceili
 
 **Current Caching State (Gap Analysis)**:
 
-- **File Hash Caching**: In-memory only during a single run; not persisted across restarts. See [GAP_ANALYSIS.md](./GAP_ANALYSIS.md#gap-5-file-hash-caching-not-persisted-across-restarts).
-- **Extraction Result Caching**: Not implemented. See [GAP_ANALYSIS.md](./GAP_ANALYSIS.md#gap-6-extraction-result-caching-not-persisted).
-- **Projection Caching**: No in-memory cache layer; always loads from disk. See [GAP_ANALYSIS.md](./GAP_ANALYSIS.md#gap-7-projection-caching-not-persisted).
-- **Query Result Caching**: Not implemented. See [GAP_ANALYSIS.md](./GAP_ANALYSIS.md#gap-3-query-result-caching-not-implemented).
-- **Context Compression Caching**: Not implemented. See [GAP_ANALYSIS.md](./GAP_ANALYSIS.md#gap-2-context-compression-caching-not-implemented).
+- **File identity and extraction caching**: Content hashes and deterministic language-analysis payloads persist across restarts under `.keystone/cache/extractions`, keyed by file path, content hash, and extractor version.
+- **Semantic caching**: TypeScript/JavaScript compiler results persist under `.keystone/cache/semantics`, keyed by eligible source/config hashes and the TypeScript provider version. Host-dependent VS Code language-service results remain session-bound unless a future provider supplies a stable provider/configuration fingerprint.
+- **Query and graph caching**: Snapshot-digest-keyed memory and persistent caches reuse authoritative query and bounded graph results; entries are age/count-pruned.
+- **Context caching**: Context reuse is persisted under `.keystone/context/cache` and includes the canonical OKF snapshot digest in its key.
 
 Implementation plans for these gaps are documented in [IMPLEMENTATION_PLANS.md](./IMPLEMENTATION_PLANS.md).
 

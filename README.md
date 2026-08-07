@@ -1,82 +1,112 @@
 # Keystone
 
-Keystone is a local-first VS Code engineering intelligence and SDLC orchestration extension. It deterministically understands the active repository, persists that knowledge in an OKF-compatible model, exposes graph/CPG/flow exploration and evidence-backed querying, turns an engineering intent into reviewable repository R&D and an implementation specification, compresses the relevant context for user-approved GitHub Copilot delegation, validates the SDLC, and preserves task continuity through encrypted Task Handoff.
+Keystone is a local-first VS Code extension for understanding an unfamiliar repository before changing it. It indexes the workspace deterministically, keeps the resulting engineering knowledge on disk in the workspace, and uses that evidence to guide planning, review, validation, and optional GitHub Copilot delegation.
 
-Keystone is not another coding model. **Keystone understands, plans, retrieves, compresses, coordinates, and validates. GitHub Copilot generates.**
+Keystone does not write to Git. It never stages, commits, pushes, pulls, checks out, creates branches, or mutates pull requests.
 
-## Product flow
+## What you can do
 
-```text
-Repository
-  → deterministic incremental intelligence
-  → OKF + Graph + CPG + control/data/call flows
-  → Intelligence Explorer / Graph / CPG / Flows / Query
-  → Intent
-  → repository R&D
-  → user approval
-  → implementation specification + user/quality stories
-  → 16-stage SDLC
-  → bounded context compression
-  → user-approved Copilot delegation
-  → QA / security / performance / modernization / review evidence
-  → read-only PR review
-  → completion or encrypted Task Handoff
-```
+- Index a repository into an evidence-backed knowledge model (OKF), graph, CPG, and query surface.
+- Explore files, symbols, APIs, persistence, framework signals, dependencies, calls, and flows.
+- Start an engineering intent and produce repository R&D, a specification, user stories, and quality stories.
+- Build a small, evidence-backed context package for a user-approved Copilot delegation.
+- Run QA, security, performance, modernization, and read-only review workflows against the active intent.
+- Resume work through an encrypted Task Handoff package.
+- Open the same live Keystone state in a browser view.
 
-Git access is strictly read-only. Keystone never stages, commits, pushes, pulls, checks out, creates branches, creates/updates/approves/merges a remote merge request, or performs any other Git mutation.
+## Install
 
-## Run Keystone from source
+Install the `.vsix` package from VS Code:
 
-Requirements: VS Code 1.92+ and Node.js 20+.
+1. Open **Extensions**.
+2. Select **…** → **Install from VSIX…**.
+3. Choose `keystone-<version>.vsix`.
+4. Reload VS Code if prompted.
 
-```bash
-npm install --offline --ignore-scripts
-npm run build
-```
+For development, see [Developer documentation](docs/dev/README.md). The extension requires VS Code `^1.95.0` and Node.js 20+ only when building from source.
 
-Then open this folder in VS Code and press **F5**. The included `.vscode/launch.json` starts an Extension Development Host with Keystone loaded from the current source tree.
+## Quick start
 
-In the Extension Development Host:
+1. Open the repository you want to understand in VS Code.
+2. Run **Keystone: Open Application** from the Command Palette.
+3. Select **Index Repository** (or run **Keystone: Index Repository**).
+4. Wait for the status to show **Ready**. If it shows **Needs attention**, inspect the ingestion warning before relying on results.
+5. Explore the repository in **Intelligence**, or open **Work** and describe the change you want to make.
 
-1. Open a repository.
-2. Run **Keystone: Open Application**.
-3. Choose **Index Repository** or run **Keystone: Index Repository**.
-4. Use **Intelligence** to inspect Overview, Explorer, Graph, CPG, Flows, and Query.
-5. Use **Work** to enter an intent, review/approve repository R&D, create the specification/stories, and progress the SDLC.
-6. Use **Open Browser View** when you want the same active application state in the browser surface.
-7. Use **Task Handoff** on the active task when continuity needs to move to another developer.
+Keystone stores its local intelligence under `.keystone/` in the repository. This state is derived, can be regenerated, and is not source code.
 
-The npm toolchain required to build the extension is vendored under `vendor/`, so the source can be installed in an offline environment.
+## Intelligence guide
 
-## Source structure
+### Overview
 
-```text
-src/
-├── core/
-│   ├── application/     # shared application state
-│   ├── intelligence/    # ingestion, languages, OKF, graph, CPG, query, flows
-│   ├── context/         # retrieval, ranking, compression, prompt context
-│   ├── workflow/        # intent/SDLC, QA, validation, modernization, handoff
-│   ├── platform/        # storage, read-only Git, configuration, metrics
-│   ├── integration/     # UI contract and ValueEdge boundary
-│   └── domain/
-├── extension/           # VS Code activation, workers, Browser View, UI bridge
-├── webview/             # shared React UI used by VS Code and Browser View
-└── types/
-```
+Use **Overview** to check the snapshot freshness, indexed languages, evidence counts, background-worker state, warnings, and the current capability level. A completed index indicates that the pipeline finished; it does not mean every relationship has compiler-level certainty.
 
-## Intelligence
+### Explorer
 
-Repository ingestion does not require an LLM. Keystone discovers repository artifacts, language/framework/build/test characteristics, semantic symbols, relationships, architecture boundaries, tests, APIs, persistence, configuration and engineering flows. The canonical persisted knowledge is represented through the Keystone OKF profile and projected into Graph, CPG, search/query and task-context views.
+Use **Explorer** to search and filter indexed knowledge units. Results link to their source evidence. Large result sets load in snapshot-bound pages and render only the visible rows.
 
-TypeScript/JavaScript receive compiler-semantic enrichment. Other registered languages receive deterministic structural analysis and universal CPG representation, with optional enrichment from installed VS Code language services where available. Unknown probable-text languages are still indexed through the deterministic universal frontend rather than silently ignored.
+### Graph, CPG, and Flows
 
-Repository knowledge is not capped merely to fit an AI prompt. **Only the Copilot context pack is bounded and compressed.**
+- **Graph** shows repository, architecture, dependency, call, test-impact, and flow relationships. Expand from selected nodes to keep investigation bounded.
+- **CPG** shows per-artifact structural control/data/call information, with richer compiler evidence for TypeScript and JavaScript.
+- **Flows** is useful for following the available API, call, persistence, and dependency evidence around a selected area.
 
-## Context and Copilot
+These views are evidence navigation tools, not proof of runtime behavior or a security source-to-sink analysis.
 
-For an active story, Keystone selects only relevant files, symbols, graph/CPG/flow evidence, tests, constraints, prior decisions and validation requirements. Repository Copilot agents, skills and instructions are discovered separately and remain user-selectable. Delegation requires explicit user approval. Keystone never fabricates a Copilot result when an authorized VS Code Copilot model is unavailable.
+### Query
 
-## Documentation
+Use **Query** for questions such as “where is this API implemented?”, “what uses this table?”, or “what tests may be affected?”. Use **Show in Graph** from a result to inspect its relationship path and source locations.
 
-Start with [`docs/KEYSTONE_PRODUCT_SPEC.md`](docs/KEYSTONE_PRODUCT_SPEC.md), then see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/ONTOLOGY_AND_GRAPH.md`](docs/ONTOLOGY_AND_GRAPH.md), [`docs/SDLC.md`](docs/SDLC.md), [`docs/TASK_HANDOFF.md`](docs/TASK_HANDOFF.md), and [`docs/BROWSER_VIEW.md`](docs/BROWSER_VIEW.md).
+## Work and Copilot guide
+
+1. In **Work**, enter a concrete engineering intent.
+2. Review the repository R&D and approve it when it matches the requested scope.
+3. Review the generated specification and stories.
+4. Progress the SDLC stages, attaching decisions and validation evidence as you go.
+5. When ready, explicitly approve a Copilot delegation. Keystone provides bounded context; GitHub Copilot produces code only when a user-authorized VS Code model is available.
+
+Keystone never invents a Copilot response. If Copilot is unavailable, you can still use the R&D, specification, stories, query, review, and handoff features.
+
+## Configuration
+
+Open VS Code Settings and search for `Keystone`.
+
+| Setting | Default | Purpose |
+| --- | ---: | --- |
+| `keystone.enabled` | `true` | Enables Keystone commands. |
+| `keystone.intelligence.maxWorkers` | `5` | Maximum concurrent intelligence-stage workers (1–16). |
+| `keystone.intelligence.maxFileSizeMb` | `3` | Largest file admitted to ingestion; larger files are skipped with a warning. |
+| `keystone.intelligence.workerRetries` | `2` | Retry limit for failed background workers (0–5). |
+| `keystone.valueEdge.*` | empty | Optional ValueEdge tenant and workspace configuration. The client secret is stored in VS Code SecretStorage. |
+
+Use **Keystone: Reclaim Intelligence Cache** to prune retained cache entries, or **Keystone: Clear Intelligence Cache** to remove derived caches and re-index.
+
+## Language and framework support
+
+Keystone indexes 44 programming-language and artifact categories, plus unknown text-like files through a safe structural fallback. TypeScript and JavaScript receive compiler-backed semantic enrichment. Other non-artifact languages use deterministic structural analysis and can add evidence from the active VS Code language service when one is installed and available.
+
+Common framework and ORM forms are recognized deterministically, including FastAPI, Flask, Spring, ASP.NET, Ktor, Actix, Prisma, TypeORM, Entity Framework, SQLAlchemy, Django, GORM, Eloquent, Active Record, Sequelize, Mongoose, Drizzle, Knex, SQLx, and JPA `EntityManager`.
+
+See [Language support](docs/LANGUAGE_SUPPORT.md) for the capability tiers and exact limits.
+
+## Browser View and Task Handoff
+
+- Run **Keystone: Open Browser View** to open the same active Keystone state in a browser. The browser view uses authenticated, same-origin communication with the extension host.
+- Use **Task Handoff** in an active task to create an encrypted, integrity-protected handoff package for another developer. The recipient opens and synchronizes their repository independently; Keystone does not change Git state.
+
+## Troubleshooting
+
+- **No workspace / command unavailable:** open a folder or workspace, then run **Keystone: Open Application**.
+- **Needs attention:** open the ingestion activity or warning; the last validated snapshot may still be available, but it is not presented as current.
+- **No Copilot response:** sign in and authorize a compatible GitHub Copilot model in VS Code. Keystone does not use an external fallback model.
+- **Missing semantic detail for a language:** install/enable that language’s VS Code extension. Keystone will retain deterministic structural results when no provider responds.
+- **Large generated/vendor files:** adjust `keystone.intelligence.maxFileSizeMb` only when the file is valuable to analysis; generated output is normally better excluded.
+
+## Further documentation
+
+- [Product specification](docs/KEYSTONE_PRODUCT_SPEC.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Language support](docs/LANGUAGE_SUPPORT.md)
+- [Browser View](docs/BROWSER_VIEW.md)
+- [Task Handoff](docs/TASK_HANDOFF.md)
+- [Developer documentation](docs/dev/README.md)

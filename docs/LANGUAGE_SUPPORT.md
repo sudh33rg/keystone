@@ -56,9 +56,9 @@ This approach allows Keystone to provide intelligence on any text file, even tho
 
 ## Semantic Enrichment
 
-For languages with available VS Code language extensions, Keystone performs semantic enrichment:
+TypeScript and JavaScript currently receive compiler-backed semantic enrichment. For non-artifact registered languages, Keystone also asks the active VS Code language service for document symbols and available definition, reference, implementation, and call-hierarchy evidence. A missing or unavailable provider falls back to deterministic-structural analysis; it is never reported as semantic success. Language-service queries are bounded to 96 symbols per document and record an explicit warning when that boundary truncates enrichment.
 
-1. **Language Service Integration**: Keystone detects and integrates with installed VS Code language extensions
+1. **Language Service Integration**: Future providers may integrate installed VS Code language extensions through the same canonical binding contract
 2. **Semantic Extraction**: Extracts additional semantic information from language services:
    - Definitions and declarations
    - References and usages
@@ -71,7 +71,7 @@ For languages with available VS Code language extensions, Keystone performs sema
 
 When semantic enrichment is available:
 
-- The UI shows "semantic-enriched" status for the language
+- The UI reports the actual provider and semantic-enriched status for the language
 - The language support level is marked as "compiler-backed" or "semantic"
 - More detailed information is available in the intelligence UI
 - CPGs include semantic relationships
@@ -99,24 +99,21 @@ Keystone uses a multi-stage language detection algorithm:
    - Build files (e.g., Makefile, pom.xml)
    - Test files (e.g., _.test.js, Test_.java)
    - Documentation files (e.g., README.md, *.md)
-4. **Machine Learning-Based Detection**: Uses lightweight statistical models trained on known language samples
-   - Character n-gram analysis
-   - Token frequency analysis
-   - Structural pattern recognition
+4. **Fallback Classification**: Unknown probable-text files are assigned to the universal frontend when extension and filename rules do not identify a registered language.
 
 The detection algorithm is designed to be:
 
 - **Fast**: Returns results in milliseconds
-- **Accurate**: High precision and recall for common languages
+- **Predictable**: Registered-language decisions are rule-based and inspectable
 - **Extensible**: Easy to add new detection rules
 - **Resilient**: Works with malformed or incomplete files
 - **Transparent**: Logs detection decisions and confidence scores
 
-The system maintains a database of language detection rules for 43 known languages and can be extended with custom rules.
+The system maintains a database of language detection rules for 44 known languages and artifacts and can be extended with custom rules.
 
 ## Explicit Conformance Categories
 
-Keystone registers and executes fixtures for 43 categories:
+Keystone registers and executes fixtures for 44 categories:
 
 - Programming: TypeScript, JavaScript, Python, Java, C#, Go, Rust, Kotlin, C, C++, PHP, Ruby, Swift, Scala, Dart, Objective-C, Lua, Groovy, Elixir, Erlang, Haskell, R, Julia, Perl, Shell, PowerShell.
 - Schemas/data/contracts: SQL, GraphQL, Protocol Buffers, JSON, YAML, TOML, XML.
@@ -127,8 +124,24 @@ Keystone registers and executes fixtures for 43 categories:
 
 - TypeScript and JavaScript use the TypeScript compiler frontend for AST, symbol binding, configured project resolution, calls, inheritance, and compiler-backed CPG construction.
 - Every other registered category uses a deterministic structural frontend and structural CPG.
-- When a VS Code language extension supplies document symbols, definitions, references, implementations, or call hierarchy, Keystone merges that semantic evidence into the same canonical intelligence model.
-- If a language service is absent or fails, deterministic intelligence remains available and the UI records the measured provider and warning rather than dropping the file.
+- Active VS Code language services merge their available document symbols, definitions, references, implementations, and call hierarchy into the same canonical intelligence model. Their output remains session-bound until a provider can supply a stable persistence fingerprint.
+- Until then, deterministic intelligence remains available and the UI records the measured structural/semantic provider rather than dropping the file.
+
+## Framework Recognition
+
+Framework recognition is deterministic evidence extraction, not a claim of compiler-level framework semantics. Keystone currently recognizes source or manifest signals for:
+
+- TypeScript/JavaScript: NestJS, Express, Fastify, Next.js, React, Vue, Angular, Svelte, React Native, TypeORM, Prisma.
+- Java/Kotlin: Spring, Quarkus, Ktor, Hibernate.
+- C#/VB.NET: ASP.NET, Entity Framework.
+- Python: FastAPI, Flask, Django, SQLAlchemy.
+- Go: Gin, GORM.
+- Rust: Axum, Actix Web, SQLx.
+- PHP/Ruby/Elixir: Laravel, Symfony, Rails, Phoenix.
+- Dart: Flutter.
+- Cross-language infrastructure/contracts: Kafka, RabbitMQ, GraphQL, gRPC.
+
+For these ecosystems, the model can surface bounded framework, route, middleware, component, persistence, or messaging signals supported by the detected evidence. Direct FastAPI/Flask decorators, Spring mapping annotations, named ASP.NET minimal-API mappings, Ktor route blocks, and Actix Web attributes create source-located route/handler facts for their supported forms. Prisma, TypeORM, Entity Framework, SQLAlchemy, Django ORM, GORM, Eloquent, Active Record, Sequelize, Mongoose, Drizzle, Knex, SQLx typed queries, and direct JPA `EntityManager` operations produce deterministic query facts with read/write relationships when a model target is explicit; links resolve across files only when a matching extracted table is available. Cross-file framework resolution, runtime reflection, dependency-injection resolution beyond the supported forms, and source-to-sink flow remain semantic-provider work rather than guaranteed deterministic output.
 
 ## Capability Reporting
 
@@ -144,16 +157,13 @@ The Intelligence UI reports, per language:
 
 The conformance suite also indexes every category plus an unknown future-language fixture through OKF and CPG end to end.
 
-## Gap Analysis References
+## Remaining Language-Support Work
 
-The following gaps identified in [GAP_ANALYSIS.md](./GAP_ANALYSIS.md) affect Language Support:
+The relevant active roadmap items are recorded in [GAP_ANALYSIS.md](./GAP_ANALYSIS.md) and [IMPLEMENTATION_PLANS.md](./IMPLEMENTATION_PLANS.md):
 
-| Gap       | Title                                                                                                              | Impact on Language Support                                                                                                         | Implementation Plan                                                                    |
-| --------- | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| **Gap 1** | [Continuation Packets for Long-Running Tasks](./GAP_ANALYSIS.md#gap-1-continuation-packets-for-long-running-tasks) | Large language analysis tasks (e.g., full repo TypeScript analysis) may exceed token limits; continuation packets enable streaming | [Plan 1](./IMPLEMENTATION_PLANS.md#plan-1-continuation-packets-for-long-running-tasks) |
-| **Gap 2** | [Context Compression Caching](./GAP_ANALYSIS.md#gap-2-context-compression-caching)                                 | Compressed language-specific context (ASTs, symbols, CPGs) could benefit from persistent caching to avoid recompression            | [Plan 2](./IMPLEMENTATION_PLANS.md#plan-2-context-compression-caching)                 |
-| **Gap 3** | [Query Result Caching](./GAP_ANALYSIS.md#gap-3-query-result-caching)                                               | Language-specific query results (symbol lookups, call hierarchies, type queries) could be cached for faster responses              | [Plan 3](./IMPLEMENTATION_PLANS.md#plan-3-query-result-caching)                        |
-| **Gap 4** | [Adaptive-Segments Delivery Mode](./GAP_ANALYSIS.md#gap-4-adaptive-segments-delivery-mode)                         | Large language intelligence data (full CPGs, symbol tables) could use adaptive segmentation for progressive disclosure             | [Plan 4](./IMPLEMENTATION_PLANS.md#plan-4-adaptive-segments-delivery-mode)             |
-| **Gap 5** | [File Hash Caching Persistence](./GAP_ANALYSIS.md#gap-5-file-hash-caching-persistence)                             | File hashes for language file detection and change tracking could be cached persistently                                           | [Plan 5](./IMPLEMENTATION_PLANS.md#plan-5-file-hash-caching-persistence)               |
-| **Gap 6** | [Extraction Result Caching Persistence](./GAP_ANALYSIS.md#gap-6-extraction-result-caching-persistence)             | Language extraction results (ASTs, symbols, structural entities) could be cached to avoid re-extraction                            | [Plan 6](./IMPLEMENTATION_PLANS.md#plan-6-extraction-result-caching-persistence)       |
-| **Gap 7** | [Projection Caching Persistence](./GAP_ANALYSIS.md#gap-7-projection-caching-persistence)                           | Language-specific projections (graph, search, CPG) could be cached for faster loading                                              | [Plan 7](./IMPLEMENTATION_PLANS.md#plan-7-projection-caching-persistence)              |
+| Active gap | Impact on language support | Current direction |
+| --- | --- | --- |
+| P0-2 canonical entities and P1-2 polyglot semantic depth | TypeScript/JavaScript are compiler-backed; other languages use honest deterministic structural adapters. | Add language-service adapters and framework-specific semantic providers where a deterministic provider is unavailable. |
+| P0-3 security/performance depth | Pattern-led findings can carry scoped API, call, persistence, and dependency context, but are not proven data-flow results. | Add source-to-sink, authorization-boundary, call-path, runtime, and benchmark evidence. |
+| P0-4 large intelligence navigation | Explorer cursor pagination, viewport virtualization, and progressive graph/CPG segments protect the UI. | Preserve scale behavior and add only evidence-backed navigation enhancements. |
+| P1-1 persistent caching | Extraction, TypeScript/JavaScript compiler-semantic, query, graph, and context caches are persistent and retained; VS Code language-service output is session-bound. | Persist an additional provider only when it supplies a stable provider/configuration fingerprint. |

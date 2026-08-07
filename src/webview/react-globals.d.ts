@@ -8,6 +8,7 @@ declare namespace React {
   interface FormEvent<T = Element> extends SyntheticEvent<T> {}
   interface ComponentLifecycle<P, S> {
     componentDidMount?(): void;
+    componentDidUpdate?(previousProps: Readonly<P>, previousState: Readonly<S>): void;
     componentWillUnmount?(): void;
   }
   class Component<

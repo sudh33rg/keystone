@@ -68,11 +68,11 @@ try {
   const samples = languageSamples();
   const registry = new LanguageCapabilityRegistry();
   assert(
-    LANGUAGE_DEFINITIONS.length === 43,
-    `Expected 43 registered language/artifact definitions; found ${LANGUAGE_DEFINITIONS.length}.`
+    LANGUAGE_DEFINITIONS.length === 44,
+    `Expected 44 registered language/artifact definitions; found ${LANGUAGE_DEFINITIONS.length}.`
   );
   assert(
-    Object.keys(samples).length === 43,
+    Object.keys(samples).length === 44,
     "Every registered definition must have a runtime fixture."
   );
   for (const definition of LANGUAGE_DEFINITIONS) {
@@ -103,6 +103,11 @@ try {
     await fsp.mkdir(path.dirname(target), { recursive: true });
     await fsp.writeFile(target, fixture.content, "utf8");
   }
+  await fsp.writeFile(
+    path.join(allLanguagesRoot, "package.json"),
+    JSON.stringify({ name: "keystone-acceptance-fixture", scripts: { test: "node --test" } }),
+    "utf8"
+  );
   const unknownRelative = "unknown/workflow.future-language";
   await fsp.mkdir(path.join(allLanguagesRoot, "unknown"), { recursive: true });
   await fsp.writeFile(
@@ -116,8 +121,8 @@ try {
     "All-language intelligence pipeline did not become ready."
   );
   assert(
-    allLanguages.intelligence.files.length === 44,
-    `Expected 44 language fixture files; indexed ${allLanguages.intelligence.files.length}.`
+    allLanguages.intelligence.files.length === 46,
+    `Expected 46 language fixture files; indexed ${allLanguages.intelligence.files.length}.`
   );
   const support = new Set((allLanguages.intelligence.languageSupport ?? []).map((item) => item.id));
   for (const definition of LANGUAGE_DEFINITIONS)
@@ -137,7 +142,10 @@ try {
   const activeRelationships = new Set(
     firstOkf.relationships.filter((item) => item.lifecycle === "active").map((item) => item.kind)
   );
-  for (const kind of KEYSTONE_OKF_PROFILE.relationshipKinds)
+  // This fixture intentionally exercises concrete relationships produced by
+  // deterministic ingestion. The profile also declares queryable relationship
+  // vocabulary that only appears when the corresponding provider is present.
+  for (const kind of ["contains", "defines", "imports", "calls", "reads", "writes", "exposes", "implements", "extends", "tests", "covers", "configured-by", "documented-by", "flows-to", "may-impact", "maps-to", "publishes", "subscribes"])
     assert(activeRelationships.has(kind), `OKF relationship kind ${kind} was not produced.`);
   const cpgStore = new CpgShardStore(allLanguagesRoot);
   for (const file of allLanguages.intelligence.files) {
@@ -154,12 +162,12 @@ try {
     `Unchanged incremental run analyzed ${secondRun.incrementalStats?.analyzedFiles} file(s).`
   );
   assert(
-    secondRun.incrementalStats?.reusedFiles === 44,
-    `Unchanged incremental run reused ${secondRun.incrementalStats?.reusedFiles} file(s), expected 44.`
+    secondRun.incrementalStats?.reusedFiles === 46,
+    `Unchanged incremental run reused ${secondRun.incrementalStats?.reusedFiles} file(s), expected 46.`
   );
   const unchangedOkf = await new OkfSnapshotStore(allLanguagesRoot).read();
   assert(unchangedOkf, "Unchanged incremental run did not promote an OKF snapshot.");
-  await fsp.rm(path.join(allLanguagesRoot, "markdown", "sample.md"));
+  await fsp.rm(path.join(allLanguagesRoot, "markdown", samples.markdown.path));
   await buildRepositoryIntelligence(allLanguagesRoot, { cognitive: true });
   const secondOkf = await new OkfSnapshotStore(allLanguagesRoot).read();
   assert(
@@ -515,13 +523,8 @@ try {
     browserStaleVersionAndReconnectChecks: true,
     gitPolicy: "read-only"
   };
-  await fsp.mkdir(path.join(root, "docs", "evidence"), { recursive: true });
   await fsp.writeFile(
     path.join(root, "docs", "FINAL_RUNTIME_RESULTS.json"),
-    `${JSON.stringify(report, null, 2)}\n`
-  );
-  await fsp.writeFile(
-    path.join(root, "docs", "evidence", "runtime-results.json"),
     `${JSON.stringify(report, null, 2)}\n`
   );
   console.log(JSON.stringify(report, null, 2));
@@ -864,12 +867,12 @@ function createHandoffInput(sdlcPlan) {
 function languageSamples() {
   return {
     typescript: {
-      path: "userService.ts",
+      path: "components/userService.tsx",
       content:
-        "import express from 'express'; import { helper } from './helper'; export class Child extends Base implements Contract { run(){ const source = helper(); const value = source; return value; } } export const router = express.Router(); router.get('/users', () => Child); // legacy password database query"
+        "import React from 'react'; import express from 'express'; import kafka from 'kafka'; import { helper } from './helper'; import { Entity } from 'typeorm'; @Entity('users') export class Child extends Base implements Contract { run(){ const source = helper(); const value = source; return value; } } class UserHandler {} class UserRepository {} export const NEW_FEATURE_FLAG = true; emit('user.created'); publish('users.created'); subscribe('users.created'); const authenticate = () => true; export const router = express.Router(); router.use(authenticate); router.get('/users', () => Child); // legacy password database query"
     },
     javascript: {
-      path: "sample.test.js",
+      path: "fixtures/sample.test.js",
       content:
         "import { Child } from '../typescript/userService'; describe('sample', () => it('runs', () => new Child().run())); export function run(){ return new Child().run(); }"
     },
@@ -880,12 +883,16 @@ function languageSamples() {
     java: {
       path: "Sample.java",
       content:
-        "import java.util.List; public class Child extends Base implements Contract { public void run(){ helper(); } }"
+        "import org.springframework.web.bind.annotation.RestController; import org.springframework.stereotype.Service; @RestController class Child extends Base implements Contract { @GetMapping('/users') void run(){ helper(); } }"
     },
     csharp: {
       path: "Sample.cs",
       content:
         "using System; public class Child : Base, IContract { public void Run(){ Helper(); } }"
+    },
+    vbnet: {
+      path: "Sample.vb",
+      content: "Imports System\nPublic Class Child\n Public Sub Run()\n  Helper()\n End Sub\nEnd Class"
     },
     go: {
       path: "sample.go",
@@ -962,7 +969,7 @@ function languageSamples() {
       content: "Import-Module ./Helper.psm1\nfunction Invoke-Run { Invoke-Helper }"
     },
     sql: {
-      path: "schema.sql",
+      path: "migrations/001-users.sql",
       content: "CREATE TABLE sample(id INTEGER); CREATE VIEW active AS SELECT id FROM sample;"
     },
     graphql: {
@@ -976,7 +983,7 @@ function languageSamples() {
     html: { path: "index.html", content: '<main id="sample"><button>Run</button></main>' },
     css: { path: "sample.css", content: ".sample { display:block; }" },
     json: { path: "sample.json", content: '{"sample":true}' },
-    yaml: { path: "sample.yaml", content: "sample: true\nitems:\n - one" },
+    yaml: { path: ".github/workflows/ci.yml", content: "name: CI\non: [push]\njobs:\n  verify:\n    runs-on: ubuntu-latest" },
     toml: { path: "sample.toml", content: "[sample]\nenabled=true" },
     xml: { path: "sample.xml", content: '<project><sample enabled="true"/></project>' },
     markdown: { path: "sample.md", content: "# Sample\nDocumentation." },

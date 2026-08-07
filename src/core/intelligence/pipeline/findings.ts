@@ -82,7 +82,9 @@ export function buildIntelligenceFindings(
     "medium",
     0.55,
     "Security-sensitive code",
-    "Review authentication, authorization, secret handling, and input trust boundaries."
+    "Review authentication, authorization, secret handling, and input trust boundaries.",
+    intelligence,
+    graph
   );
   addSignals(
     findings,
@@ -91,7 +93,9 @@ export function buildIntelligenceFindings(
     "low",
     0.5,
     "Performance-sensitive code",
-    "Validate complexity and measure the path with a representative benchmark."
+    "Validate complexity and measure the path with a representative benchmark.",
+    intelligence,
+    graph
   );
   addSignals(
     findings,
@@ -148,7 +152,9 @@ function addSignals(
   severity: FindingSeverity,
   confidence: number,
   title: string,
-  remediation: string
+  remediation: string,
+  intelligence?: RepoIntelligence,
+  graph?: RepositoryGraphAnalysis
 ): void {
   const grouped = new Map<string, string[]>();
   for (const signal of signals) {
@@ -158,28 +164,92 @@ function addSignals(
     values.push(signal);
     grouped.set(filePath, values);
   }
-  for (const [filePath, evidence] of grouped)
+  for (const [filePath, evidence] of grouped) {
+    const hasMarker = (marker: string) => evidence.some((item) => item === marker || item.endsWith(`: ${marker}`));
+    const explicitAuthorization = category === "security" && hasMarker("explicit authorization boundary");
+    const databaseInLoop = category === "performance" && hasMarker("database operation inside loop");
+    const effectiveTitle = explicitAuthorization
+      ? "Explicit authorization boundary"
+      : databaseInLoop
+        ? "Database operation inside loop"
+        : title;
+    const effectiveSeverity: FindingSeverity = databaseInLoop ? "medium" : severity;
+    const signalConfidence = explicitAuthorization || databaseInLoop ? Math.max(confidence, 0.7) : confidence;
+    const structural =
+      intelligence && graph && filePath !== "workspace"
+        ? structuralEvidence(intelligence, graph, filePath)
+        : { details: [], evidence: [] };
     target.push(
       finding(
         category,
-        severity,
-        confidence,
-        title,
-        `${filePath} has ${evidence.length} ${category} signal(s).`,
+        effectiveSeverity,
+        structural.details.length ? Math.min(0.85, signalConfidence + 0.15) : signalConfidence,
+        effectiveTitle,
+        `${filePath} has ${evidence.length} ${category} signal(s).${structural.details.length ? ` Structural context: ${structural.details.join("; ")}.` : ""}`,
         filePath === "workspace" ? undefined : filePath,
-        evidence,
+        [...evidence, ...structural.details],
         remediation,
         [
+          ...structural.evidence,
           pipelineEvidence(
             "heuristic",
-            confidence,
+            structural.details.length ? Math.min(0.85, signalConfidence + 0.15) : signalConfidence,
             filePath === "workspace" ? undefined : filePath,
             undefined,
-            [`${category} signals are keyword/path based.`]
+            [
+              structural.details.length
+                ? `${category} finding retains keyword/path detection plus scoped structural context; it is not a proven source-to-sink path.`
+                : `${category} signals are keyword/path based; no scoped structural context was available.`,
+              ...(explicitAuthorization
+                ? ["Explicit guard/decorator presence does not prove complete authorization coverage."]
+                : []),
+              ...(databaseInLoop
+                ? ["Database work inside a loop is a review signal, not a measured performance regression."]
+                : [])
+            ]
           )
         ]
       )
     );
+  }
+}
+
+function structuralEvidence(
+  intelligence: RepoIntelligence,
+  graph: RepositoryGraphAnalysis,
+  filePath: string
+): { details: string[]; evidence: EvidenceMetadata[] } {
+  const details: string[] = [];
+  const evidence: EvidenceMetadata[] = [];
+  const apis = intelligence.apis.filter((api) => api.filePath === filePath);
+  if (apis.length) {
+    details.push(`API boundaries: ${apis.slice(0, 3).map((api) => `${api.method} ${api.path}`).join(", ")}`);
+    evidence.push(...apis.flatMap((api) => (api.evidence ? [api.evidence] : [])));
+  }
+  const calls = (intelligence.calls ?? []).filter(
+    (call) => call.filePath === filePath || call.targetFilePath === filePath
+  );
+  if (calls.length) {
+    details.push(`call evidence: ${calls.slice(0, 3).map((call) => call.callee).join(", ")}`);
+    evidence.push(...calls.flatMap((call) => (call.evidence ? [call.evidence] : [])));
+  }
+  const persistence = (intelligence.engineeringEntities ?? []).filter(
+    (entity) =>
+      entity.filePath === filePath &&
+      ["repository", "dao", "query", "database", "table", "orm-entity", "migration"].includes(entity.kind)
+  );
+  if (persistence.length) {
+    details.push(`persistence entities: ${persistence.slice(0, 3).map((entity) => entity.name).join(", ")}`);
+    evidence.push(...persistence.flatMap((entity) => (entity.evidence ? [entity.evidence] : [])));
+  }
+  const dependencies = graph.localEdges.filter(
+    (edge) => edge.from === filePath || edge.to === filePath
+  );
+  if (dependencies.length) {
+    details.push(`local dependency edges: ${dependencies.length}`);
+    evidence.push(...dependencies.flatMap((edge) => (edge.evidence ? [edge.evidence] : [])));
+  }
+  return { details, evidence };
 }
 
 function finding(

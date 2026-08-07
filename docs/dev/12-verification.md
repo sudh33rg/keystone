@@ -1,11 +1,10 @@
 # 12 — Verification
 
-There is **no test framework** in this repo. No vitest, no jest, no mocha, no
-`tests/` directory. `scripts/test.mjs` exists but there is nothing for it to run.
-
-Verification is done by **standalone Node scripts** that `require()` the built
-output under `dist/app/`. This works because `core/` never imports `vscode`
-([`03-architecture.md`](03-architecture.md)) — the domain logic runs in plain Node.
+Focused tests live under [`tests/`](../../tests) and run through the dependency-free
+Node test runner (`npm test`). Broader verification is done by standalone Node
+scripts that `require()` built output under `dist/app/`. This works because
+`core/` never imports `vscode` ([`03-architecture.md`](03-architecture.md)) —
+the domain logic runs in plain Node.
 
 Every result below is real output captured from an actual run.
 
@@ -22,8 +21,8 @@ npm run verify:source
 > tsc -p tsconfig.json --noEmit
 > tsc -p tsconfig.webview.json --noEmit
 > node scripts/lint.mjs
-Linted 132 active source file(s).
-Active boundary verified: 129 reachable monolithic source files, npm lockfile
+Linted 147 active source file(s).
+Active boundary verified: 144 reachable monolithic source files, npm lockfile
 present, no legacy engines, no arbitrary ingestion caps, and Git remains read-only.
 ```
 
@@ -31,7 +30,7 @@ present, no legacy engines, no arbitrary ingestion caps, and Git remains read-on
 npm run build
 ```
 ```
-Built 124 extension/core module(s).
+Built extension/core and webview modules.
 Built 5 webview module(s).
 ```
 
@@ -39,13 +38,14 @@ Built 5 webview module(s).
 |---|---|
 | `npm run build` | ✅ |
 | `npm run typecheck` (extension + webview) | ✅ |
+| `npm test` | ✅ — focused Node test suites |
 | `npm run lint` | ✅ |
 | `node scripts/check-active-boundary.mjs` | ✅ |
 | `npm run verify:core` | ✅ |
 | `npm run verify:okf` | ✅ |
 
-**⚠️ This is the state of the *working tree*, which has ~74 uncommitted modified
-files.** See [KI-00](14-known-issues.md#ki-00).
+The exact counts change as the extension evolves; rerun the listed commands
+instead of using this historical output as an acceptance result.
 
 ### Reconciling the file counts
 

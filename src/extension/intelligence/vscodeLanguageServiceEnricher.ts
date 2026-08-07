@@ -6,6 +6,7 @@ import type {
   SemanticEnrichmentRequest,
   SemanticEnrichmentResult
 } from "@core/intelligence/languages/semanticEnrichment";
+import { boundSemanticSymbols } from "@core/intelligence/languages/semanticSymbolBudget";
 
 /**
  * Uses whatever language service is active in VS Code for the document. This
@@ -31,15 +32,18 @@ export class VscodeLanguageServiceEnricher implements SemanticEnrichmentProvider
     // a noisy semantic warning or claim that the file was semantically enriched.
     if (!flattened.length) return undefined;
 
+    const bounded = boundSemanticSymbols(flattened);
     let definitions = false;
     let references = false;
     let implementations = false;
     let callHierarchy = false;
     let referenceCount = 0;
     const calls: SemanticCall[] = [];
-    const warnings: string[] = [];
+    const warnings: string[] = bounded.truncated
+      ? [`Language-service enrichment queried ${bounded.symbols.length} of ${flattened.length} symbols; ${bounded.truncated} were not queried.`]
+      : [];
 
-    for (const item of flattened) {
+    for (const item of bounded.symbols) {
       request.signal?.throwIfAborted();
       const position = new vscode.Position(
         Math.max(item.line - 1, 0),

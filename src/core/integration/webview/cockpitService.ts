@@ -36,6 +36,7 @@ import type {
   CockpitSettings,
   CopilotDelegationResult,
   IntelligenceActivityEvent,
+  WorkflowHistoryEntry,
   IntelligenceManifest,
   KeystoneTaskResult,
   KeystoneWebviewState,
@@ -130,6 +131,7 @@ const INTELLIGENCE_DIR = ".keystone/intelligence";
 const SUMMARY_PATH = `${INTELLIGENCE_DIR}/summary.json`;
 const MANIFEST_PATH = `${INTELLIGENCE_DIR}/manifest.json`;
 const ACTIVITY_PATH = `${INTELLIGENCE_DIR}/activity.json`;
+const WORKFLOW_HISTORY_PATH = ".keystone/history/activity.json";
 const SETTINGS_PATH = ".keystone/settings.json";
 const CONTEXT_CACHE_DIR = ".keystone/context/cache";
 const CONTEXT_PACKET_VERSION = 5;
@@ -1590,6 +1592,12 @@ export class CockpitService {
     await this.recordBestEffort("copilot-activity", message);
   }
 
+  /** Returns the durable audit journal, optionally limited to one work item. */
+  async workflowHistory(workId?: string): Promise<WorkflowHistoryEntry[]> {
+    const entries = (await this.readJson<WorkflowHistoryEntry[]>(WORKFLOW_HISTORY_PATH)) ?? [];
+    return workId ? entries.filter((entry) => entry.workId === workId) : entries;
+  }
+
   async recordContextFeedback(
     intent: string,
     pathValue: string | undefined,
@@ -2607,15 +2615,31 @@ export class CockpitService {
   }
   private async record(type: string, message: string, progress?: number): Promise<void> {
     const write = this.activityWrite.then(async () => {
+      const now = new Date().toISOString();
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
       const events = await this.activity();
       events.unshift({
-        id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-        timestamp: new Date().toISOString(),
+        id,
+        timestamp: now,
         type,
         message,
         progress
       });
-      await this.writeJson(ACTIVITY_PATH, events.slice(0, 100));
+      const history = await this.workflowHistory();
+      history.unshift({
+        id,
+        timestamp: now,
+        type,
+        message,
+        progress,
+        workId: this.activeTaskWorkspace?.id,
+        workName: this.activeTaskWorkspace?.name,
+        workflow: workflowForActivity(type)
+      });
+      await Promise.all([
+        this.writeJson(ACTIVITY_PATH, events.slice(0, 100)),
+        this.writeJson(WORKFLOW_HISTORY_PATH, history.slice(0, 1_000))
+      ]);
     });
     this.activityWrite = write.catch(() => undefined);
     return write;
@@ -2651,6 +2675,17 @@ export class CockpitService {
     await fs.writeFile(temporary, value, "utf8");
     await fs.rename(temporary, target);
   }
+}
+
+function workflowForActivity(type: string): WorkflowHistoryEntry["workflow"] {
+  if (/index|ingest|intelligence|graph|query|cpg/.test(type)) return "intelligence";
+  if (/context|intent|research/.test(type)) return "context";
+  if (/sdlc|plan|specification|story|decision/.test(type)) return "planning";
+  if (/copilot|delegat/.test(type)) return "delegation";
+  if (/validation|test|qa/.test(type)) return "validation";
+  if (/handoff/.test(type)) return "handoff";
+  if (/modernization/.test(type)) return "modernization";
+  return "system";
 }
 
 function cpgFileScore(file: {

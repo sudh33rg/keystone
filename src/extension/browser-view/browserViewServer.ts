@@ -3,7 +3,10 @@ import { randomBytes, timingSafeEqual } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { ApplicationStore } from "@core/application/applicationStore";
-import type { WebviewToExtensionMessage } from "@core/integration/webview/messageRouter";
+import {
+  WEBVIEW_COMMAND_TYPE_SET,
+  type WebviewToExtensionMessage
+} from "@core/integration/webview/messageRouter";
 
 const SESSION_COOKIE = "keystone-browser";
 const BOOTSTRAP_TTL_MS = 60_000;
@@ -202,54 +205,6 @@ export async function startBrowserViewServer(options: {
   };
 }
 
-const WEBVIEW_COMMAND_TYPES = new Set<string>([
-  "WEBVIEW_READY",
-  "INDEX_REPO",
-  "LOAD_INTELLIGENCE",
-  "LOAD_RESTORED_TASK_HANDOFF",
-  "CLEAR_CONTEXT_CACHE",
-  "ENHANCE_INTENT",
-  "LOAD_ENHANCEMENT_SESSIONS",
-  "DELETE_ENHANCEMENT_SESSION",
-  "RETRIEVE_CONTEXT_ORIGINAL",
-  "LOAD_CONTEXT_PACKET",
-  "EXPAND_CONTEXT",
-  "RECORD_CONTEXT_FEEDBACK",
-  "REQUEST_CORRECTION_PACKET",
-  "REINDEX_AFFECTED_AND_VALIDATE",
-  "CANCEL_INGESTION",
-  "CANCEL_ANALYSIS",
-  "ANALYZE_INTENT",
-  "APPROVE_INTENT_RESEARCH",
-  "RUN_VALIDATION",
-  "COMPLETE_TASK",
-  "ANALYZE_MODERNIZATION",
-  "ACCEPT_MODERNIZATION",
-  "APPROVE_DELEGATION",
-  "COPY_COPILOT_PROMPT",
-  "COPY_PR_MARKDOWN",
-  "SAVE_SETTINGS",
-  "OPEN_BROWSER_VIEW",
-  "CREATE_TASK_HANDOFF",
-  "RESTORE_TASK_HANDOFF",
-  "CREATE_SDLC_PLAN",
-  "SDLC_TRANSITION",
-  "APPROVE_SPECIFICATION",
-  "QUERY_INTELLIGENCE",
-  "EXPLORE_INTELLIGENCE",
-  "LOAD_INTELLIGENCE_GRAPH",
-  "LOAD_CPG_VIEW",
-  "OPEN_SOURCE_LOCATION",
-  "RESOLVE_SDLC_FINDING",
-  "RECORD_DECISION",
-  "ACCEPT_INTENT_DECISION",
-  "REJECT_INTENT_DECISION",
-  "DISCUSS_INTENT_DECISION",
-  "CONFIGURE_VALUEEDGE",
-  "IMPORT_VALUEEDGE_FEATURE",
-  "PUBLISH_VALUEEDGE_STORIES"
-]);
-
 function parseCommandEnvelope(
   value: unknown
 ): { message: WebviewToExtensionMessage; expectedStateVersion: number } | undefined {
@@ -260,7 +215,7 @@ function parseCommandEnvelope(
   const message = record.message;
   if (!message || typeof message !== "object" || Array.isArray(message)) return undefined;
   const type = (message as Record<string, unknown>).type;
-  if (typeof type !== "string" || !WEBVIEW_COMMAND_TYPES.has(type)) return undefined;
+  if (typeof type !== "string" || !WEBVIEW_COMMAND_TYPE_SET.has(type)) return undefined;
   return {
     message: message as WebviewToExtensionMessage,
     expectedStateVersion: Number(record.expectedStateVersion)

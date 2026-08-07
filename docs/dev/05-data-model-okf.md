@@ -272,7 +272,7 @@ Rules enforced by `validatePortableOkfBundle()`:
 - Root `index.md` must declare `okf_version: "<PORTABLE_OKF_VERSION>"`.
 - **Only** the bundle-root `index.md` may contain frontmatter.
 - Each unit page carries tags `["keystone", kind, confidence.level, lifecycle]`
-  and relationship links rendered as `**kind** → [name](relative/path.md)`.
+  and relationship links rendered as `kind → name (relative/path.md)`.
 
 This is the "share your repo's knowledge without shipping the tool" format.
 

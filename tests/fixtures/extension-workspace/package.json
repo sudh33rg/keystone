@@ -1,0 +1,7 @@
+{
+  "name": "keystone-extension-workspace-fixture",
+  "private": true,
+  "scripts": {
+    "test": "node --test"
+  }
+}

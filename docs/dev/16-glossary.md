@@ -190,8 +190,8 @@ real tokenizer. Budget numbers are approximate. See
 **ValueEdge** — the only outbound network client (`core/integration/valueedge/`).
 Optional; secret in `SecretStorage`. See [`10-workflow-sdlc.md`](10-workflow-sdlc.md).
 
-**Verification** — the standalone `verify-*.mjs` harness suite ([`12-verification.md`](12-verification.md)).
-This repo has **no test framework**.
+**Verification** — focused dependency-free Node tests (`npm test`) plus the
+standalone `verify-*.mjs` harness suite ([`12-verification.md`](12-verification.md)).
 
 ### W
 

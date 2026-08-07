@@ -181,6 +181,8 @@ export const KEYSTONE_OKF_PROFILE: KeystoneOkfProfileDefinition = Object.freeze(
         "package-manager"
       ],
       targets: [
+        "module",
+        "package",
         "symbol",
         "api",
         "data-entity",
@@ -198,7 +200,18 @@ export const KEYSTONE_OKF_PROFILE: KeystoneOkfProfileDefinition = Object.freeze(
         "component",
         "event",
         "build-system",
-        "package-manager"
+        "package-manager",
+        "route",
+        "controller",
+        "middleware",
+        "handler",
+        "repository",
+        "entity",
+        "migration",
+        "contract",
+        "message",
+        "consumer",
+        "producer"
       ]
     },
     imports: {
@@ -247,8 +260,8 @@ export const KEYSTONE_OKF_PROFILE: KeystoneOkfProfileDefinition = Object.freeze(
       ]
     },
     exposes: {
-      sources: ["file", "service", "module", "component"],
-      targets: ["api", "event", "component"]
+      sources: ["file", "service", "module", "component", "controller"],
+      targets: ["api", "event", "component", "route"]
     },
     implements: { sources: ["symbol", "service"], targets: ["symbol", "architecture-boundary"] },
     extends: { sources: ["symbol"], targets: ["symbol"] },

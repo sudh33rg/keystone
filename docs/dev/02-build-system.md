@@ -35,7 +35,7 @@ configure are not in `node_modules`.
 | `vite.config.ts` | Vite + `@vitejs/plugin-react` webview build | ❌ no vite | **dead** |
 | `eslint.config.js` | ESLint flat config, `@typescript-eslint` | ❌ no eslint | **dead** |
 | `tsconfig.eslint.json` | project for the dead ESLint config | — | **dead** |
-| `tsconfig.extension-test.json` | compiles `tests/integration/**` | no `tests/` dir | **dead** |
+| `tsconfig.extension-test.json` | compiles extension-test sources when present | focused Node tests run through `scripts/test.mjs` | compatibility configuration |
 
 Verified: `ls node_modules` returns 25 packages, none of which is eslint, vite,
 esbuild, or vitest.
@@ -223,7 +223,7 @@ you from the regex-rewrite trap described above.
 Real output:
 
 ```
-Linted 132 active source file(s).
+Linted active source files.
 ```
 
 ---
@@ -237,12 +237,12 @@ node scripts/check-active-boundary.mjs
 Real output:
 
 ```
-Active boundary verified: 129 reachable monolithic source files, npm lockfile
-present, no legacy engines, no arbitrary ingestion caps, and Git remains read-only.
+Active boundary verified: reachable source files, npm lockfile, supported
+engines, no arbitrary ingestion caps, and read-only Git behavior.
 ```
 
-It is part of `npm run verify:source`. Note **129 reachable** vs **132 linted** —
-the difference is unreachable/orphan files (see [`14-known-issues.md`](14-known-issues.md)).
+It is part of `npm run verify:source`. The exact reachable/linted counts change
+as source files are added; rerun the gate rather than relying on a historic count.
 
 ---
 

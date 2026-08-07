@@ -39,7 +39,7 @@ export interface RepositoryGraphAnalysis {
 /** Shared, bounded graph projection consumed by downstream intelligence stages. */
 export function analyzeRepositoryGraph(intelligence: RepoIntelligence): RepositoryGraphAnalysis {
   const files = new Set(intelligence.files.map((file) => file.path));
-  const localEdges = intelligence.dependencies
+  const dependencyEdges = intelligence.dependencies
     .filter(
       (edge) =>
         (edge.kind === "local" || edge.kind === "import") &&
@@ -47,6 +47,26 @@ export function analyzeRepositoryGraph(intelligence: RepoIntelligence): Reposito
         files.has(edge.to)
     )
     .map((edge) => ({ from: edge.from, to: edge.to, evidence: edge.evidence }));
+  // Calls and promoted semantic relationships are already evidence-backed
+  // local links. Include them in the shared graph so impact analysis can find
+  // tests that exercise a file without importing it directly.
+  const callEdges = (intelligence.calls ?? [])
+    .filter((call) => call.targetFilePath && files.has(call.filePath) && files.has(call.targetFilePath))
+    .map((call) => ({ from: call.filePath, to: call.targetFilePath!, evidence: call.evidence }));
+  const semanticEdges = (intelligence.semanticRelationships ?? [])
+    .filter(
+      (relationship): relationship is typeof relationship & { sourcePath: string; targetPath: string } =>
+        typeof relationship.sourcePath === "string" &&
+        typeof relationship.targetPath === "string" &&
+        files.has(relationship.sourcePath) &&
+        files.has(relationship.targetPath)
+    )
+    .map((relationship) => ({
+      from: relationship.sourcePath,
+      to: relationship.targetPath,
+      evidence: relationship.evidence
+    }));
+  const localEdges = uniqueEdges([...dependencyEdges, ...callEdges, ...semanticEdges]);
   const edgesByNode = edgeAdjacency(localEdges);
   const outgoing = adjacency(localEdges, "from", "to");
   const incoming = adjacency(localEdges, "to", "from");
@@ -87,6 +107,15 @@ export function analyzeRepositoryGraph(intelligence: RepoIntelligence): Reposito
     flows,
     impactedBy: createGraphImpactAnalyzer([...files], localEdges, intelligence.tests)
   };
+}
+
+function uniqueEdges(edges: readonly RepositoryGraphEdge[]): RepositoryGraphEdge[] {
+  const byKey = new Map<string, RepositoryGraphEdge>();
+  for (const edge of edges) {
+    const key = `${edge.from}\0${edge.to}`;
+    if (!byKey.has(key)) byKey.set(key, edge);
+  }
+  return [...byKey.values()];
 }
 
 export function createGraphImpactAnalyzer(

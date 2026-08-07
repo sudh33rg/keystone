@@ -2046,17 +2046,21 @@ select {
   font-size: 12px;
 }
 .explorer-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
-  gap: 9px;
   margin-top: 12px;
   max-height: 700px;
   overflow: auto;
+}
+.explorer-virtual-list {
+  display: block;
 }
 .explorer-row {
   display: grid;
   gap: 7px;
   padding: 12px;
+  height: 166px;
+  box-sizing: border-box;
+  overflow: hidden;
+  margin-bottom: 9px;
   border: 1px solid #284f61;
   border-radius: 8px;
   background: #071f2a;
@@ -2071,6 +2075,10 @@ select {
   color: #afc6d0;
   font-size: 12px;
   line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .explorer-row small {
   color: #7899a7;
@@ -2660,4 +2668,150 @@ select {
 }
 .document-section li {
   overflow-wrap: anywhere;
+}
+
+/* Product shell refresh: shared primitives intentionally style every surface consistently. */
+:root {
+  --bg: #07111f;
+  --surface: #0c1a2b;
+  --surface2: #101f33;
+  --line: #23364e;
+  --line2: #38516d;
+  --border: #293e58;
+  --panel-alt: #0a1828;
+  --text: #edf4ff;
+  --muted: #9cadc2;
+  --accent: #78a9ff;
+  --accent2: #4d7cdb;
+  --good: #4ed1a2;
+  --warn: #f5bd66;
+  --bad: #fb7d8a;
+}
+body {
+  background:
+    radial-gradient(circle at 88% -12%, #375fbe36, transparent 29rem),
+    radial-gradient(circle at 8% 100%, #1767751f, transparent 26rem),
+    var(--bg);
+  letter-spacing: -0.01em;
+}
+.shell {
+  grid-template-columns: 238px minmax(0, 1fr);
+  grid-template-rows: 72px minmax(0, 1fr);
+}
+.topbar {
+  padding: 0 28px;
+  border-color: color-mix(in srgb, var(--line) 82%, transparent);
+  background: #091525e8;
+  box-shadow: 0 8px 28px #02071436;
+}
+.brand { gap: 13px; }
+.brand strong { font-size: 18px; letter-spacing: -0.03em; }
+.brand span { color: #8396ad; font-size: 10px; }
+.mark { width: 34px; height: 34px; background: linear-gradient(135deg, #9cc4ff, #4f76e8); box-shadow: 0 8px 24px #557ce34f; }
+.header-actions { gap: 10px; }
+.surface-pill, .workspace-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid #2c405c;
+  border-radius: 999px;
+  background: #111f32;
+  color: #aebed0;
+  font-size: 11px;
+}
+.workspace-status { text-transform: capitalize; color: #b7c8df; }
+.workspace-status i { width: 7px; height: 7px; border-radius: 50%; background: #7e91aa; }
+.workspace-status.ready i { background: var(--good); box-shadow: 0 0 0 4px #4ed1a220; }
+.workspace-status.indexing i, .workspace-status.analyzing i { background: var(--accent); box-shadow: 0 0 0 4px #78a9ff22; }
+.workspace-status.error i { background: var(--bad); }
+.nav {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 21px 12px 14px;
+  border-color: #1e3048;
+  background: linear-gradient(180deg, #091727 0%, #081421 100%);
+}
+.nav-label {
+  padding: 0 11px 8px;
+  color: #70839c;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+}
+.nav button { position: relative; gap: 11px; margin: 2px 0; padding: 10px 11px; border-radius: 9px; font-size: 13px; }
+.nav button:hover { background: #12243a; }
+.nav button.active { background: linear-gradient(100deg, #253e67, #172b46); box-shadow: inset 2px 0 #88b2ff, 0 6px 18px #02091730; }
+.nav-icon { display: grid; place-items: center; width: 19px; color: #8ea5c7; font-size: 17px; line-height: 1; }
+.nav button.active .nav-icon { color: #d8e7ff; }
+.nav button em { margin-left: auto; padding: 1px 6px; border-radius: 99px; background: #354f79; color: #dce8ff; font-size: 10px; font-style: normal; }
+.nav-footer { margin-top: auto; padding: 13px 11px 2px; color: #94a6be; font-size: 11px; border-top: 1px solid #1c2e45; }
+.nav-footer span, .nav-footer small { display: block; }
+.nav-footer small { margin-top: 3px; color: #647890; font-size: 10px; }
+main { padding: 32px 40px 64px; max-width: 1780px; width: 100%; margin: 0 auto; }
+.page-title { margin-bottom: 26px; }
+.page-title h1 { margin: 3px 0 8px; font-size: clamp(26px, 2.2vw, 34px); letter-spacing: -0.04em; }
+.page-title p { max-width: 780px; color: #a9b8c9; }
+.eyebrow { color: #91b7ff !important; font-size: 10px !important; }
+.notice { border-radius: 11px; border-color: #3d5f91; background: linear-gradient(110deg, #12294a, #10243f); box-shadow: 0 8px 20px #02081724; }
+.metric-grid { gap: 14px; margin-bottom: 20px; }
+.metric, .panel { border-color: #293e58; background: linear-gradient(145deg, #101f33, #0c192a); box-shadow: 0 12px 32px #0208142b; }
+.metric { min-height: 116px; padding: 17px; border-radius: 13px; }
+.metric:hover, .panel:hover { border-color: #3b5678; }
+.metric > span { color: #91a4bc; }
+.metric strong { font-size: 24px; letter-spacing: -0.04em; }
+.metric small { color: #8093aa; line-height: 1.35; }
+.panel { padding: 20px; margin-top: 16px; border-radius: 13px; }
+.panel-title { margin-bottom: 17px; }
+.panel-title h2 { font-size: 16px; letter-spacing: -0.02em; }
+.panel-title p { color: #91a2b7; }
+.two-column { gap: 16px; }
+button { border-color: #3b5270; border-radius: 8px; background: #172a42; padding: 8px 12px; font-size: 12px; font-weight: 600; }
+button:focus-visible { outline: 2px solid #9bc0ff; outline-offset: 2px; }
+button:hover:not(:disabled) { border-color: #7da9f6; background: #213a5c; box-shadow: 0 4px 14px #020a183d; }
+.primary { background: linear-gradient(135deg, #6397f6, #426bc5) !important; border-color: #8ab5ff !important; color: #f8fbff !important; box-shadow: 0 6px 16px #315ba550; }
+input, textarea, select { border-color: #344b68; border-radius: 9px; background: #091727; }
+input:focus, textarea:focus, select:focus { border-color: #78a9ff; box-shadow: 0 0 0 3px #78a9ff26; }
+textarea { min-height: 128px; line-height: 1.5; }
+.subnav { gap: 4px; padding: 5px; border-color: #2a405d; border-radius: 11px; background: #0b192a; }
+.subnav button { border: 0; border-radius: 7px; color: #a2b1c5; }
+.subnav button.active { background: #294675; border-color: transparent; color: #fff; box-shadow: 0 4px 12px #07122370; }
+.timeline { gap: 10px; }
+.timeline > div { padding: 12px; border-color: #2a405b; border-radius: 10px; background: #0a1828; transition: border-color .15s, transform .15s; }
+.timeline > div:hover { border-color: #45658d; transform: translateY(-1px); }
+.timeline p { color: #b5c3d3; line-height: 1.45; }
+.timeline small { color: #8497b0; }
+.progress { height: 5px; background: #1a2c44; }
+.progress i { background: linear-gradient(90deg, #5e96ff, #72c7eb); }
+.empty { min-height: 130px; border-color: #38526f; border-radius: 10px; background: #0a1828; color: #91a5bd; }
+.evidence-stack > div, .language, .backlog, .context-sections article, .context-packets article { border-color: #2b415d; border-radius: 10px; background: #0a1828; }
+.evidence-stack > div { padding: 11px; }
+.kind { border-color: #42628a; color: #a5c7ff; }
+.status { border-radius: 999px; font-size: 9px; font-weight: 700; }
+.filter-row { display: flex; flex-wrap: wrap; gap: 12px; margin: 0 0 16px; padding: 12px; border: 1px solid #2a405d; border-radius: 10px; background: #0a1828; }
+.filter-row label { flex: 1; min-width: 190px; margin: 0; color: #9fb0c4; }
+.filter-row select { width: 100%; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
+}
+@media (max-width: 900px) {
+  .shell { grid-template-columns: 200px minmax(0, 1fr); }
+  main { padding: 26px 24px 52px; }
+  .surface-pill { display: none; }
+}
+@media (max-width: 720px) {
+  .shell { grid-template-columns: 1fr; }
+  .topbar { padding: 11px 14px; }
+  .workspace-status, .header-actions > button:not(.primary) { display: none; }
+  .nav { flex-direction: row; align-items: center; padding: 7px 8px; overflow-x: auto; }
+  .nav-label, .nav-footer { display: none; }
+  .nav button { flex: 0 0 auto; padding: 8px 10px; }
+  .nav-icon { font-size: 14px; }
+  main { padding: 20px 14px 40px; }
+  .page-title { display: grid; gap: 14px; }
+  .page-title h1 { font-size: 27px; }
+  .metric-grid, .two-column { grid-template-columns: 1fr; }
+  .metric { min-height: auto; }
 }

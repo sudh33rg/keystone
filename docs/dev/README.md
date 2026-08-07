@@ -1,12 +1,12 @@
 # Keystone Developer Documentation
 
 > **Audience:** a developer who has never seen this codebase and needs to become
-> productive without reading all 37,700 lines first.
+> productive without reading the entire codebase first.
 >
-> **Status of this folder:** every statement here was verified against the source
-> tree and against real tool output on `main` (commit `107e103`). Where the code
-> disagrees with the older marketing-flavoured docs in `docs/*.md`, **this folder
-> wins** and the discrepancy is called out explicitly.
+> **Status of this folder:** developer-oriented reference material. Verify
+> commands, counts, and source paths against the current code and the current
+> verification reports before relying on historical examples. Product-facing
+> installation and usage guidance belongs in the root [`README.md`](../../README.md).
 
 ---
 
@@ -66,38 +66,27 @@ ingestion, and it never performs a Git write (see [`13-conventions.md`](13-conve
 1. **`npm run build` does not typecheck.** The build transpiles file-by-file with
    `ts.transpileModule` and cannot fail on type errors. Type safety is a
    *separate* gate: `npm run typecheck`. See [`02-build-system.md`](02-build-system.md).
-2. **The working tree is green, but it is not committed.** `build`, `typecheck`,
-   `lint`, and `verify:source` all pass — against ~74 uncommitted modified files.
-   The last three commits are `gdfg`, `sdfgsdf`, `fdsfdsf`. See
-   [`14-known-issues.md`](14-known-issues.md#ki-00).
-3. **`eslint.config.js`, `vite.config.ts`, and `esbuild.config.mjs` are dead
-   files.** None of those tools are installed. Linting is a ~50-line custom script.
-4. **There is no test framework.** No `tests/` directory, no vitest, no jest.
-   Verification is done by standalone Node scripts under `scripts/verify-*.mjs`.
-5. **`.keystone/` gets very large.** A 1,081-file repository produced ~2.4 GB of
-   state. Budget for it; see [`08-storage-layout.md`](08-storage-layout.md).
-6. **OKF is the only canonical model.** An older `intelligence/graph/` model was
+2. **Tests are first-class verification.** Focused Node test suites live under
+   [`tests/`](../../tests); run `npm test`, then use the source and runtime gates
+   described in [`12-verification.md`](12-verification.md).
+3. **The build, typecheck, and lint gates are separate.** Run `npm run
+   verify:source` before treating a build as accepted.
+4. **`.keystone/` is derived workspace state.** It can grow on large repositories;
+   cache maintenance is available from the Keystone commands.
+5. **OKF is the only canonical model.** An older `intelligence/graph/` model was
    deleted. If you find a type that looks like a graph node, check whether it is
    an OKF projection before assuming it is live.
 
 ---
 
-## Where the older docs stand
+## Documentation roles
 
-`docs/*.md` (outside this folder) are **product/specification** documents. They
-describe intent and are useful for understanding *why*. They are not maintained
-against the code and contain claims that are currently false (e.g. `README.md`
-references a `vendor/` directory that does not exist).
-
-| Older doc | Use it for | Do not trust it for |
-|-----------|-----------|---------------------|
-| `KEYSTONE_PRODUCT_SPEC.md` | product intent | current behaviour |
-| `ARCHITECTURE.md` | conceptual layering | file paths, module names |
-| `OKF_PROFILE.md` | OKF concept design | exact counts/versions |
-| `STORAGE_FORMAT.md` | storage intent | actual on-disk layout |
-| `NON_GOALS.md` | scope boundaries | — (still broadly accurate) |
-| `TASK_HANDOFF.md` | handoff design | — (largely accurate) |
-| `FINAL_VERIFICATION.md`, `EXECUTION_EVIDENCE.md` | historical run records | current state |
+| Documentation | Use it for |
+| --- | --- |
+| [`README.md`](../../README.md) | installation, configuration, usage, and troubleshooting |
+| `docs/*.md` | product contracts, architecture, storage, language support, and workflows |
+| `docs/dev/*.md` | source layout, implementation conventions, and change recipes |
+| `FINAL_VERIFICATION.md`, `EXECUTION_EVIDENCE.md` | recorded verification commands and results; re-run them for current state |
 
 ---
 

@@ -47,12 +47,6 @@ The acceptance suite verifies a repository-derived R&D document, dynamic small b
 
 ---
 
-## Gap Analysis References
+## Active Roadmap
 
-The following gaps identified in [GAP_ANALYSIS.md](./GAP_ANALYSIS.md) relate to SDLC functionality:
-
-- **Gap 1: Continuation Packets** - Large SDLC context packets (research documents, specifications, evidence) cannot be split into ordered packets for Copilot consumption. See [IMPLEMENTATION_PLANS.md#gap-1](./IMPLEMENTATION_PLANS.md#gap-1-continuation-packets-not-implemented).
-- **Gap 2: Context Compression Caching** - SDLC context packets (research, specifications, evidence) are recomputed on every request without caching. See [IMPLEMENTATION_PLANS.md#gap-2](./IMPLEMENTATION_PLANS.md#gap-2-context-compression-caching-not-implemented).
-- **Gap 4: adaptive-segments Delivery Mode** - SDLC context delivery doesn't support progressive segment loading for large artifacts. See [IMPLEMENTATION_PLANS.md#gap-4](./IMPLEMENTATION_PLANS.md#gap-4-adaptive-segments-delivery-mode-not-implemented).
-
-All gaps are marked as **PLANNED** with detailed implementation plans in [IMPLEMENTATION_PLANS.md](./IMPLEMENTATION_PLANS.md).
+This document follows the current [Gap Analysis](./GAP_ANALYSIS.md) and [Phased Implementation Plan](./IMPLEMENTATION_PLANS.md). Persistent context, extraction, TypeScript/JavaScript semantic, query, and bounded graph caches are implemented; Explorer virtualization and progressive Graph/CPG segments are implemented. Remaining acceptance depends on live installed language-service behavior, runtime/benchmark evidence, and a user-authorized Copilot session.

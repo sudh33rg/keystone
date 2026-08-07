@@ -29,10 +29,12 @@ import {
   buildTypeScriptCpg,
   buildUniversalCpg,
   CpgShardStore,
+  TypeScriptSemanticCache,
   type TypeScriptSemanticResult
 } from "../cpg";
 import { OkfSnapshotStore } from "../okf/store";
 import { repoIntelligenceToOkf } from "../okf/fromRepoIntelligence";
+import type { KeystoneOkfSnapshot } from "../okf/types";
 import {
   analyzeRepositoryGraph,
   createGraphImpactAnalyzer,
@@ -169,6 +171,7 @@ export async function buildRepositoryIntelligence(
     }
   }
   const previousSnapshot = await readSnapshot(root, reportWarning);
+  const previousOkf = await new OkfSnapshotStore(root).read();
   if (options.persist !== false) {
     try {
       await fs.rm(path.join(root, STORE, "stages"), { recursive: true, force: true });
@@ -262,6 +265,21 @@ export async function buildRepositoryIntelligence(
   const semanticPaths = intelligence.files
     .filter((file) => /\.(?:[cm]?js|jsx|ts|tsx)$/i.test(file.path) && !file.isGenerated)
     .map((file) => file.path);
+  const semanticSourceFiles = intelligence.files.filter((file) => semanticPaths.includes(file.path));
+  const semanticConfigFiles = intelligence.files
+    // These configuration files determine compiler program construction. Their
+    // hashes are part of the cache key so an unchanged source tree never uses
+    // semantic facts produced with an outdated tsconfig/jsconfig.
+    .filter((file) => /(?:^|\/)(?:tsconfig|jsconfig)(?:\.[^/]+)?\.json$/i.test(file.path));
+  const semanticCacheInput =
+    semanticSourceFiles.every((file) => typeof file.contentHash === "string") &&
+    semanticConfigFiles.every((file) => typeof file.contentHash === "string")
+      ? {
+          sourceFiles: semanticSourceFiles.map((file) => ({ path: file.path, contentHash: file.contentHash! })),
+          configFiles: semanticConfigFiles.map((file) => ({ path: file.path, contentHash: file.contentHash! }))
+        }
+      : undefined;
+  const semanticCache = new TypeScriptSemanticCache(root);
   options.onProgress?.({
     stage: "structural",
     order: 1,
@@ -272,19 +290,35 @@ export async function buildRepositoryIntelligence(
   const semanticStartedAt = Date.now();
   let semantic: TypeScriptSemanticResult;
   try {
-    semantic = await analyzeTypeScriptProjectIsolated(
-      root,
-      semanticPaths,
-      options.signal,
-      (message) =>
-        options.onProgress?.({
-          stage: "structural",
-          order: 1,
-          total: STAGES.length,
-          progress: message.includes("complete") ? 8 : 7,
-          message
-        })
-    );
+    const cachedSemantic = semanticCacheInput ? await semanticCache.read(semanticCacheInput) : undefined;
+    if (cachedSemantic) {
+      semantic = cachedSemantic;
+      options.onProgress?.({
+        stage: "structural",
+        order: 1,
+        total: STAGES.length,
+        progress: 8,
+        message: `Reused compiler semantics for ${semanticPaths.length} TypeScript/JavaScript files.`
+      });
+    } else {
+      semantic = await analyzeTypeScriptProjectIsolated(
+        root,
+        semanticPaths,
+        options.signal,
+        (message) =>
+          options.onProgress?.({
+            stage: "structural",
+            order: 1,
+            total: STAGES.length,
+            progress: message.includes("complete") ? 8 : 7,
+            message
+          })
+      );
+      if (semanticCacheInput)
+        await semanticCache
+          .write(semanticCacheInput, semantic)
+          .catch((error) => reportWarning(`Could not persist compiler semantic cache: ${errorMessage(error)}.`));
+    }
   } catch (error) {
     if (isAbortError(error, options.signal))
       throw new IntelligencePipelineCancelledError("structural");
@@ -556,7 +590,8 @@ export async function buildRepositoryIntelligence(
         runId,
         options,
         reportWarning,
-        false
+        false,
+        previousOkf
       );
     } catch (error) {
       if (isAbortError(error, options.signal))
@@ -762,7 +797,8 @@ async function promoteProjectSemanticEvidence(
   extractionRunId: string,
   options: IntelligencePipelineOptions,
   reportWarning: (message: string) => void,
-  showProgress = true
+  showProgress = true,
+  priorOkf?: KeystoneOkfSnapshot
 ): Promise<void> {
   options.signal?.throwIfAborted();
   const onProgress = showProgress ? options.onProgress : undefined;
@@ -782,9 +818,8 @@ async function promoteProjectSemanticEvidence(
   }
   options.signal?.throwIfAborted();
   const okfStore = new OkfSnapshotStore(root);
-  const previousSnapshot = await okfStore.read();
   const snapshot = repoIntelligenceToOkf(intelligence, {
-    previousSnapshot,
+    previousSnapshot: priorOkf ?? (await okfStore.read()),
     extractionRunId,
     observedAt: intelligence.indexedAt,
     onWarning: reportWarning

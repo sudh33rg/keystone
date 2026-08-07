@@ -269,7 +269,7 @@ Six families: `repository-structure`, `code-graph`, `build-test-qa`,
 | `package-vsix.mjs` | Stages and zips the VSIX |
 | `package-project.mjs` | Source-only archive |
 | `evidence-browser.mjs` | Browser View evidence capture |
-| `test.mjs` | Present, but no test framework is installed |
+| `test.mjs` | Compiles and runs focused dependency-free Node tests under `tests/` |
 
 ---
 

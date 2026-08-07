@@ -38,6 +38,19 @@ if (
 )
   throw new Error("package-lock.json does not match package.json or is not a modern npm lockfile.");
 
+const declaredCommands = new Set((packageJson.contributes?.commands ?? []).map((item) => item.command));
+const registeredCommands = new Set();
+for (const commandFile of await walk(path.join(root, "src", "extension", "commands"), (file) =>
+  file.endsWith(".ts")
+)) {
+  const content = await fsp.readFile(commandFile, "utf8");
+  for (const match of content.matchAll(/registerCommand\(\s*["']([^"']+)["']/g))
+    registeredCommands.add(match[1]);
+}
+const undeclaredCommands = [...registeredCommands].filter((command) => !declaredCommands.has(command));
+if (undeclaredCommands.length)
+  throw new Error(`Registered VS Code command(s) missing from package.json: ${undeclaredCommands.join(", ")}`);
+
 const sources = await walk(path.join(root, "src"), (file) => /\.tsx?$/.test(file));
 const forbidden = [
   /CREATE_TEAM_SESSION|RESTORE_TEAM_SESSION|TEAM_SESSION_|\bTeamSession\b/,

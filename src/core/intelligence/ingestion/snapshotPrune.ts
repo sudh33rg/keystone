@@ -17,6 +17,7 @@ const SNAPSHOT_RETENTION = 1;
 const CACHE_RETENTION_DAYS = 30;
 const CACHE_ENTRY_LIMITS: Readonly<Record<string, number>> = {
   extractions: 8192,
+  semantics: 128,
   query: 512,
   graph: 512
 };

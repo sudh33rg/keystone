@@ -1,4 +1,15 @@
-export type Nav = "Home" | "Intelligence" | "Work" | "Activity";
+export type Nav = "Home" | "Intelligence" | "Work" | "Activity" | "History";
+
+export interface WorkflowHistoryEntry {
+  id: string;
+  timestamp: string;
+  type: string;
+  message: string;
+  progress?: number;
+  workId?: string;
+  workName?: string;
+  workflow: string;
+}
 export type StoryStatus =
   | "draft"
   | "ready"
@@ -892,6 +903,7 @@ export interface ApplicationState {
     progress?: number;
   }>;
   operations?: Operation[];
+  activityHistory?: WorkflowHistoryEntry[];
   handoffs?: unknown[];
   notification?: { level: string; message: string };
 }

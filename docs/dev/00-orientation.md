@@ -188,7 +188,7 @@ Run this and read the output — it is your baseline:
 npm run build      # passes  → 124 core/extension modules + 5 webview modules
 npm run lint       # passes  → custom gate, 132 files
 npm run typecheck  # passes  → both projects clean
-node scripts/check-active-boundary.mjs   # passes → 129 reachable files
+node scripts/check-active-boundary.mjs   # verifies the active reachable source boundary
 ```
 
 All four are green in the current working tree. If any of them starts failing,

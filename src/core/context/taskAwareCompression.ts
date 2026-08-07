@@ -153,17 +153,20 @@ export function compressSourceCode(
       .filter((item) => item.labels.some((label) => !["call", "literal"].includes(label)))
       .map((item) => item.index)
   );
+  const suffixFor = (omittedLines: number): string =>
+    `\n/* omitted ${omittedLines} unrelated source line(s); expand using the authoritative source ranges */`;
   const ranked = [...selected].filter((index) => !mandatory.has(index)).sort((left, right) => scores[right].score - scores[left].score || left - right);
   const kept = new Set<number>(mandatory);
   for (const index of ranked) {
     const candidate = [...kept, index].sort((left, right) => left - right);
     const candidateText = renderSelectedLines(lines, candidate);
-    if (estimateTokens(candidateText) <= targetTokens) kept.add(index);
+    if (estimateTokens(`${candidateText}${suffixFor(lines.length - candidate.length)}`) <= targetTokens)
+      kept.add(index);
   }
   const keptIndexes = [...kept].sort((left, right) => left - right);
   const compressed = renderSelectedLines(lines, keptIndexes);
   const omitted = lines.length - kept.size;
-  const content = `${compressed}\n/* omitted ${omitted} unrelated source line(s); expand using the authoritative source ranges */`;
+  const content = `${compressed}${suffixFor(omitted)}`;
   return compressionResult(
     "source-code",
     options.aggressive ? "deterministic structural source projection" : "deterministic source projection",
@@ -441,14 +444,31 @@ function truncateDiffByWholeLines(header: readonly string[], lines: readonly str
 }
 
 function fitLines(lines: readonly string[], tokenBudget: number): string {
-  if (estimateTokens(lines.join("\n")) <= tokenBudget) return lines.join("\n").trim();
+  const rendered = lines.join("\n").trim();
+  if (estimateTokens(rendered) <= tokenBudget) return rendered;
+  const marker = "… projection bounded; expand the authoritative evidence for remaining records …";
+  if (estimateTokens(marker) >= tokenBudget) return truncateToTokenBudget(marker, tokenBudget);
   const output: string[] = [];
   for (const line of lines) {
-    const candidate = [...output, line].join("\n");
-    if (estimateTokens(candidate) > tokenBudget && output.length) break;
+    const candidate = [...output, line, marker].join("\n");
+    if (estimateTokens(candidate) > tokenBudget) break;
     output.push(line);
   }
-  return `${output.join("\n").trim()}\n… projection bounded at a whole-line boundary; expand the authoritative evidence for remaining records …`;
+  if (!output.length) return truncateToTokenBudget(lines[0]?.trim() || marker, tokenBudget);
+  return [...output, marker].join("\n");
+}
+
+function truncateToTokenBudget(value: string, tokenBudget: number): string {
+  if (tokenBudget <= 0) return "";
+  if (estimateTokens(value) <= tokenBudget) return value;
+  let lower = 0;
+  let upper = value.length;
+  while (lower < upper) {
+    const middle = Math.ceil((lower + upper) / 2);
+    if (estimateTokens(value.slice(0, middle)) <= tokenBudget) lower = middle;
+    else upper = middle - 1;
+  }
+  return value.slice(0, lower).trimEnd();
 }
 
 function fitLinesPreserving(

@@ -1,6 +1,6 @@
 # Keystone Phased Implementation Plan
 
-**Assessment date:** 2026-08-02
+**Assessment date:** 2026-08-07
 **Source of truth:** [PRODUCT_PLAN_CONFORMANCE.md](./PRODUCT_PLAN_CONFORMANCE.md) and [GAP_ANALYSIS.md](./GAP_ANALYSIS.md)
 
 ## Current delivery status
@@ -64,8 +64,8 @@
 ### Deliverables
 
 - Snapshot-bound cursor pagination for Explorer results (landed: bounded 120-unit pages, matching counts, and append-only UI continuation).
-- Virtualized Explorer results.
-- Progressive graph neighborhoods with bounded expansion and active-frame branch collapse (landed); persisted focus state and virtualized graph segments remain.
+- Virtualized Explorer results (landed: a viewport-windowed renderer mounts only visible/overscanned rows while retaining appended, snapshot-bound cursor pages in state).
+- Progressive graph and CPG neighborhoods with bounded expansion, active-frame branch collapse, and priority-ordered UI segments (landed); graph focus inputs persist locally across view reloads, while shared workspace-level focus remains intentionally out of policy settings.
 - Repository, dependency, call, architecture, API flow, data flow, test impact, and CPG modes.
 - Snapshot-aware in-memory and digest-keyed persistent query/graph-neighborhood reuse keyed by OKF snapshot digest (landed); retention metrics and persistent semantic/CPG projection policy remain.
 
@@ -106,9 +106,9 @@
 ### Deliverables
 
 - Persistent hash/extraction and digest-keyed query/graph/context caches (initial slice landed).
-- Age/count retention and removal metrics for extraction/query/graph caches (initial slice landed); persistent semantic-provider projection invalidation and richer provider-version policy remain. Snapshot locking, stale-run detection, and deletion recovery are implemented for the current ingestion/worker boundary.
+- Age/count retention and removal metrics for extraction/query/graph/TypeScript semantic caches (initial slice landed). The TypeScript semantic cache is invalidated by source/config hashes and provider version. Active VS Code language-service results remain session-bound until a stable provider/configuration fingerprint makes persistence safe. Snapshot locking, stale-run detection, and deletion recovery are implemented for the current ingestion/worker boundary.
 - Clear worker thread/process semantics and richer cross-run worker health reporting. Last-promoted-snapshot fallback recovery after a failed refresh, matching in-flight retry-attempt resume across a host restart, worker run coalescing, cancellation/staleness, late-write protection, promoted-snapshot freshness reporting, and bounded per-role retries are implemented; the current slice reports worker identity, promoted snapshot identity, canonical scope size, attempt/max-attempts, retry timing, duration, and independent timeout/failure state.
-- Freshness and degraded-state indicators across VS Code and Browser View.
+- Freshness and degraded-state indicators across VS Code and Browser View (landed: persisted ingestion state, including degraded snapshots, is restored into the shared application store and rendered as "Needs attention" rather than ready).
 
 ### Exit criteria
 
@@ -116,4 +116,4 @@
 
 ## Working rule
 
-Implement phases in dependency order. Update the conformance, gap, architecture, and relevant feature documentation in the same change whenever behavior or status changes. Do not add tests unless the product direction explicitly changes.
+Implement phases in dependency order. Update the conformance, gap, architecture, and relevant feature documentation in the same change whenever behavior or status changes. Add focused regression and acceptance tests for every behavior change; do not overstate coverage as proof of semantic depth.

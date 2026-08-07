@@ -5,7 +5,7 @@ Keystone is accepted as source only when the clean source tree passes structural
 ## Commands
 
 ```bash
-npm ci --offline --ignore-scripts
+npm ci
 npm run verify:source
 npm run verify:cross-feature
 npm run verify:production
@@ -18,8 +18,8 @@ npm run verify:production
 - strict core/extension type checking: 0 diagnostics
 - strict React webview type checking: 0 diagnostics
 - active-source lint: passed
-- automated unit/integration/production-contract tests: 100 passed, 0 failed
-- explicit language/artifact conformance categories: 43
+- focused automated unit/integration/production-contract tests: 43 passed, 0 failed
+- explicit language/artifact conformance categories: 44
 - unknown/custom probable-text frontend: passed through OKF and CPG
 - language fixture files through authoritative OKF + CPG: 44
 - uncapped discovery fixture: 5,205/5,205 files discovered with the built production scanner
@@ -47,16 +47,6 @@ An actual GitHub Copilot model response requires a real VS Code session with a u
 
 Similarly, package/VSIX generation is not a requirement for this source-only delivery and is excluded from the delivered archive.
 
-## Gap Analysis References
+## Active Roadmap
 
-The following gaps identified in [GAP_ANALYSIS.md](./GAP_ANALYSIS.md) affect Final Verification:
-
-| Gap       | Title                                                                                                              | Impact on Final Verification                                                                                                        | Implementation Plan                                                                    |
-| --------- | ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| **Gap 1** | [Continuation Packets for Long-Running Tasks](./GAP_ANALYSIS.md#gap-1-continuation-packets-for-long-running-tasks) | Required for "uncapped discovery fixture: 5,205/5,205 files discovered" to complete without timeout in verification                 | [Plan 1](./IMPLEMENTATION_PLANS.md#plan-1-continuation-packets-for-long-running-tasks) |
-| **Gap 2** | [Context Compression Caching](./GAP_ANALYSIS.md#gap-2-context-compression-caching)                                 | Improves "OKF/graph/CPG-driven intent retrieval" performance for repeated verification runs                                         | [Plan 2](./IMPLEMENTATION_PLANS.md#plan-2-context-compression-caching)                 |
-| **Gap 3** | [Query Result Caching](./GAP_ANALYSIS.md#gap-3-query-result-caching)                                               | Accelerates "authoritative intelligence query" for repeated verification queries                                                    | [Plan 3](./IMPLEMENTATION_PLANS.md#plan-3-query-result-caching)                        |
-| **Gap 4** | [Adaptive-Segments Delivery Mode](./GAP_ANALYSIS.md#gap-4-adaptive-segments-delivery-mode)                         | Enables progressive verification evidence delivery for large-scale runs                                                             | [Plan 4](./IMPLEMENTATION_PLANS.md#plan-4-adaptive-segments-delivery-mode)             |
-| **Gap 5** | [File Hash Caching Persistence](./GAP_ANALYSIS.md#gap-5-file-hash-caching-persistence)                             | Supports "incremental unchanged-file reuse" with persistent file identity across verification runs                                  | [Plan 5](./IMPLEMENTATION_PLANS.md#plan-5-file-hash-caching-persistence)               |
-| **Gap 6** | [Extraction Result Caching Persistence](./GAP_ANALYSIS.md#gap-6-extraction-result-caching-persistence)             | Accelerates "explicit language/artifact conformance categories: 43" pipeline by avoiding re-extraction                              | [Plan 6](./IMPLEMENTATION_PLANS.md#plan-6-extraction-result-caching-persistence)       |
-| **Gap 7** | [Projection Caching Persistence](./GAP_ANALYSIS.md#gap-7-projection-caching-persistence)                           | Accelerates "authoritative OKF: all profile knowledge/relationship families generated, validated, projected" by caching projections | [Plan 7](./IMPLEMENTATION_PLANS.md#plan-7-projection-caching-persistence)              |
+This document follows the current [Gap Analysis](./GAP_ANALYSIS.md) and [Phased Implementation Plan](./IMPLEMENTATION_PLANS.md). Persistent context, extraction, TypeScript/JavaScript semantic, query, and bounded graph caches are implemented; Explorer virtualization and progressive Graph/CPG segments are implemented. Remaining acceptance depends on live installed language-service behavior, runtime/benchmark evidence, and a user-authorized Copilot session.

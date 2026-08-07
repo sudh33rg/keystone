@@ -103,18 +103,41 @@ const detector = (id: string, languages: string[], category: EcosystemDetector["
 export const ecosystemRegistry = new EcosystemRegistry()
   .register(detector("nestjs", ["typescript", "javascript"], "framework", [/@nestjs\//i, /@(Module|Controller|Injectable|Get|Post|UseGuards)\b/], ["routes", "controllers", "dependency-injection", "guards"]))
   .register(detector("express", ["typescript", "javascript"], "framework", [/\bexpress\b/i, /\b(?:app|router)\.(?:get|post|put|patch|delete)\b/], ["routes", "middleware"]))
+  .register(detector("fastify", ["typescript", "javascript"], "framework", [/\bfastify\b/i, /\b(?:fastify|app)\.(?:get|post|put|patch|delete)\b/], ["routes", "middleware", "plugins"]))
+  .register(detector("nextjs", ["typescript", "javascript"], "framework", [/\bnext(?:\/|\b)/i, /\b(?:getServerSideProps|generateStaticParams|NextRequest)\b/], ["routes", "components", "server-rendering"]))
+  .register(detector("react", ["typescript", "javascript"], "framework", [/\breact(?:\/|\b)/i, /\b(?:useState|useEffect|createRoot)\s*\(/], ["components", "hooks"]))
+  .register(detector("vue", ["typescript", "javascript"], "framework", [/\bvue(?:\/|\b)/i, /\b(?:defineComponent|createApp|ref)\s*\(/], ["components", "composition-api"]))
+  .register(detector("angular", ["typescript", "javascript"], "framework", [/@angular\//i, /@(Component|Injectable|NgModule)\b/], ["components", "dependency-injection", "modules"]))
+  .register(detector("svelte", ["typescript", "javascript"], "framework", [/\bsvelte(?:\/|\b)/i, /<script[^>]*>[^]*?\$:/i], ["components", "reactivity"]))
   .register(detector("spring", ["java"], "framework", [/org\.springframework/i, /@(RestController|Controller|Service|Repository|(?:Get|Post|Put|Delete)Mapping)\b/], ["routes", "controllers", "dependency-injection", "repositories"]))
+  .register(detector("quarkus", ["java", "kotlin"], "framework", [/\bio\.quarkus\b/i, /@Path\s*\(/], ["routes", "dependency-injection", "persistence"]))
+  .register(detector("ktor", ["kotlin"], "framework", [/\bio\.ktor\b/i, /\b(?:routing|route|get|post)\s*\{/], ["routes", "handlers", "plugins"]))
   .register(detector("aspnet", ["csharp", "vbnet"], "framework", [/Microsoft\.AspNetCore/i, /\[(?:Route|HttpGet|HttpPost|HttpPut|HttpDelete)\b/, /\bMap(?:Get|Post|Put|Delete|Group)\b/], ["routes", "controllers", "middleware", "dependency-injection"]))
   .register(detector("fastapi", ["python"], "framework", [/\bFastAPI\b/, /(?:@app|@router)\.(?:get|post|put|patch|delete)\b/, /\bDepends\s*\(/], ["routes", "handlers", "dependency-injection"]))
+  .register(detector("flask", ["python"], "framework", [/\bFlask\b/, /@(?:app|blueprint)\.route\s*\(/], ["routes", "handlers", "blueprints"]))
   .register(detector("django", ["python"], "framework", [/\bdjango\b/i, /\bpath\s*\(/, /\bmodels\.Model\b/], ["routes", "models", "middleware"]))
+  .register(detector("rails", ["ruby"], "framework", [/\brails\b/i, /<\s+ApplicationController\b|\bresources\s*:/], ["routes", "controllers", "models", "active-record"]))
+  .register(detector("phoenix", ["elixir"], "framework", [/\bphoenix\b/i, /\b(?:get|post|live)\s+\"\//], ["routes", "controllers", "liveview"]))
   .register(detector("gin", ["go"], "framework", [/github\.com\/gin-gonic\/gin/, /\.(?:GET|POST|PUT|DELETE)\s*\(/], ["routes", "handlers"]))
   .register(detector("axum", ["rust"], "framework", [/\baxum\b/i, /\broute\s*\(/], ["routes", "handlers"]))
+  .register(detector("actix-web", ["rust"], "framework", [/\bactix_web\b/i, /#\[(?:get|post|put|delete|route)\b/], ["routes", "handlers"]))
+  .register(detector("laravel", ["php"], "framework", [/\blaravel\b/i, /Route::(?:get|post|put|patch|delete)\s*\(/], ["routes", "controllers", "eloquent"]))
+  .register(detector("symfony", ["php"], "framework", [/\bsymfony\b/i, /#\[Route\s*\(/], ["routes", "controllers", "dependency-injection"]))
+  .register(detector("flutter", ["dart"], "framework", [/\bflutter\b/i, /\b(?:MaterialApp|CupertinoApp|StatelessWidget|StatefulWidget)\b/], ["components", "widgets", "navigation"]))
+  .register(detector("react-native", ["typescript", "javascript"], "framework", [/\breact-native\b/i, /\b(?:View|Text|StyleSheet)\b/], ["components", "mobile-ui", "navigation"]))
   .register(detector("typeorm", ["typescript", "javascript"], "persistence", [/\btypeorm\b/i, /@(Entity|Column|OneToMany|ManyToOne)\b/], ["entities", "relations", "repositories"]))
-  .register(detector("prisma", ["typescript", "javascript"], "persistence", [/\b@prisma\/client\b/i, /\bmodel\s+\w+\s*\{/], ["models", "queries"]))
+  .register(detector("prisma", ["typescript", "javascript"], "persistence", [/@prisma\/client\b/i, /\bmodel\s+\w+\s*\{/], ["models", "queries"]))
+  .register(detector("sequelize", ["typescript", "javascript"], "persistence", [/\bsequelize\b/i, /\b(?:Model|DataTypes)\b/], ["models", "queries"]))
+  .register(detector("mongoose", ["typescript", "javascript"], "persistence", [/\bmongoose\b/i, /\b(?:Schema|model)\s*\(/], ["models", "queries"]))
+  .register(detector("drizzle", ["typescript", "javascript"], "persistence", [/\bdrizzle-orm\b/i, /\bpgTable\s*\(/], ["models", "queries"]))
+  .register(detector("knex", ["typescript", "javascript"], "persistence", [/\bknex\b/i, /\bknex\s*\(/], ["models", "queries"]))
   .register(detector("hibernate", ["java"], "persistence", [/jakarta\.persistence|javax\.persistence|\bhibernate\b/i, /@(Entity|Table|Column|OneToMany|ManyToOne)\b/], ["entities", "relations", "repositories"]))
   .register(detector("entity-framework", ["csharp", "vbnet"], "persistence", [/\bEntityFramework\b|\bDbContext\b/i], ["entities", "queries", "migrations"]))
   .register(detector("sqlalchemy", ["python"], "persistence", [/\bsqlalchemy\b/i, /\bdeclarative_base\b|\bmapped_column\b/i], ["models", "queries"]))
+  .register(detector("django-orm", ["python"], "persistence", [/\bdjango\.db\b|\bmodels\.Model\b/i, /\b[A-Za-z_]\w*\.objects\.(?:get|filter|create|update|delete)\b/], ["models", "queries"]))
   .register(detector("gorm", ["go"], "persistence", [/\bgorm\.io\b|\bgorm\.Model\b/i], ["models", "queries"]))
+  .register(detector("eloquent", ["php"], "persistence", [/\bIlluminate\\Database\\Eloquent\\Model\b/i, /\b[A-Z][A-Za-z0-9_]*::(?:where|find|create|update|delete)\s*\(/], ["models", "queries"]))
+  .register(detector("active-record", ["ruby"], "persistence", [/\bActiveRecord::Base\b|\bApplicationRecord\b/, /\b[A-Z][A-Za-z0-9_]*\.(?:where|find|create|update|delete)\s*\(/], ["models", "queries"]))
   .register(detector("sqlx", ["rust"], "persistence", [/\bsqlx\b/i], ["queries", "connections"]))
   .register(detector("kafka", ["*"], "messaging", [/\bkafka\b/i, /\bKafka(?:Template|Consumer|Producer)\b/], ["producers", "consumers", "topics"]))
   .register(detector("rabbitmq", ["*"], "messaging", [/\brabbitmq\b|\bamq[ps]?\b/i], ["producers", "consumers", "queues"]))
@@ -250,17 +273,216 @@ function defaultFacts(
     const routes = context.analysis.apis.map((api) =>
       fact("route", `${api.method} ${api.path}`, context, { framework: id, method: api.method, path: api.path }, confidence)
     );
+    const pythonRoutes = (id === "fastapi" || id === "flask")
+      ? [...context.source.matchAll(
+          id === "fastapi"
+            ? /@(?:app|router)\.(get|post|put|patch|delete)\s*\(\s*["']([^"']+)/gi
+            : /@(?:app|blueprint)\.route\s*\(\s*["']([^"']+)["'](?:\s*,\s*methods\s*=\s*\[\s*["']([A-Z]+)["'])?/gi
+        )].map((match) => {
+          const method = id === "fastapi" ? match[1].toUpperCase() : (match[3] ?? "GET");
+          const routePath = id === "fastapi" ? match[2] : match[1];
+          const line = context.source.slice(0, match.index).split(/\r?\n/).length;
+          const route = fact("route", `${method} ${routePath}`, context, { framework: id, method, path: routePath }, confidence);
+          return {
+            ...route,
+            line,
+            evidence: {
+              source: "heuristic" as const,
+              confidence,
+              evidencePath: context.filePath,
+              evidenceLine: line,
+              extractorVersion: "ecosystem-registry:v3"
+            }
+          };
+        })
+      : [];
+    const pythonHandlers = (id === "fastapi" || id === "flask")
+      ? [...context.source.matchAll(
+          id === "fastapi"
+            ? /@(?:app|router)\.(get|post|put|patch|delete)\s*\(\s*["']([^"']+)[\s\S]*?\)\s*\n\s*(?:async\s+)?def\s+([A-Za-z_]\w*)/gi
+            : /@(?:app|blueprint)\.route\s*\(\s*["']([^"']+)["'](?:\s*,\s*methods\s*=\s*\[\s*["']([A-Z]+)["'])?[\s\S]*?\)\s*\n\s*def\s+([A-Za-z_]\w*)/gi
+        )].map((match) => {
+          const method = id === "fastapi" ? match[1].toUpperCase() : (match[2] ?? "GET");
+          const routePath = id === "fastapi" ? match[2] : match[1];
+          const name = id === "fastapi" ? match[3] : match[3];
+          const line = context.source.slice(0, match.index).split(/\r?\n/).length;
+          const handler = fact("handler", name, context, { framework: id, route: `${method} ${routePath}` }, confidence);
+          return { ...handler, line, evidence: { source: "heuristic" as const, confidence, evidencePath: context.filePath, evidenceLine: line, extractorVersion: "ecosystem-registry:v3" } };
+        })
+      : [];
+    const javaHandlers = (id === "spring" || id === "quarkus")
+      ? [...context.source.matchAll(/@(Get|Post|Put|Patch|Delete)Mapping\s*\(\s*["']([^"']+)["']\s*\)[\s\S]{0,240}?(?:public|private|protected)?\s*(?:[\w<>\[\]]+\s+)+([A-Za-z_]\w*)\s*\(/g)].map((match) => {
+          const method = match[1].toUpperCase();
+          const route = `${method} ${match[2]}`;
+          const line = context.source.slice(0, match.index).split(/\r?\n/).length;
+          const handler = fact("handler", match[3], context, { framework: id, route }, confidence);
+          return {
+            route: { ...fact("route", route, context, { framework: id, method, path: match[2] }, confidence), line, evidence: { source: "heuristic" as const, confidence, evidencePath: context.filePath, evidenceLine: line, extractorVersion: "ecosystem-registry:v3" } },
+            handler: { ...handler, line, evidence: { source: "heuristic" as const, confidence, evidencePath: context.filePath, evidenceLine: line, extractorVersion: "ecosystem-registry:v3" } }
+          };
+        })
+      : [];
+    const aspNetHandlers = id === "aspnet"
+      ? [...context.source.matchAll(/\b(?:app|endpoints)\.Map(Get|Post|Put|Patch|Delete)\s*\(\s*["']([^"']+)["']\s*,\s*([A-Za-z_]\w*)\s*\)/g)].map((match) => {
+          const method = match[1].toUpperCase();
+          const route = `${method} ${match[2]}`;
+          const line = context.source.slice(0, match.index).split(/\r?\n/).length;
+          const evidence = { source: "heuristic" as const, confidence, evidencePath: context.filePath, evidenceLine: line, extractorVersion: "ecosystem-registry:v3" };
+          return {
+            route: { ...fact("route", route, context, { framework: id, method, path: match[2] }, confidence), line, evidence },
+            handler: { ...fact("handler", match[3], context, { framework: id, route }, confidence), line, evidence }
+          };
+        })
+      : [];
+    const ktorRoutes = id === "ktor"
+      ? [...context.source.matchAll(/\b(get|post|put|patch|delete)\s*\(\s*["']([^"']+)["']\s*\)\s*\{/gi)].map((match) => {
+          const method = match[1].toUpperCase();
+          const line = context.source.slice(0, match.index).split(/\r?\n/).length;
+          const route = fact("route", `${method} ${match[2]}`, context, { framework: id, method, path: match[2] }, confidence);
+          return { ...route, line, evidence: { source: "heuristic" as const, confidence, evidencePath: context.filePath, evidenceLine: line, extractorVersion: "ecosystem-registry:v3" } };
+        })
+      : [];
+    const actixHandlers = id === "actix-web"
+      ? [...context.source.matchAll(/#\[\s*(get|post|put|patch|delete)\s*\(\s*["']([^"']+)["']\s*\)\s*\]\s*(?:pub\s+)?async\s+fn\s+([A-Za-z_]\w*)/gi)].map((match) => {
+          const method = match[1].toUpperCase();
+          const route = `${method} ${match[2]}`;
+          const line = context.source.slice(0, match.index).split(/\r?\n/).length;
+          const evidence = { source: "heuristic" as const, confidence, evidencePath: context.filePath, evidenceLine: line, extractorVersion: "ecosystem-registry:v3" };
+          return {
+            route: { ...fact("route", route, context, { framework: id, method, path: match[2] }, confidence), line, evidence },
+            handler: { ...fact("handler", match[3], context, { framework: id, route }, confidence), line, evidence }
+          };
+        })
+      : [];
     const controllers = namedMatches(context.source, /@(Controller|RestController)\s*(?:\([^)]*\))?\s*(?:export\s+)?class\s+(\w+)/g, 2)
       .map((name) => fact("controller", name, context, { framework: id }, confidence));
+    const middleware = namedMatches(
+      context.source,
+      /(?:app|router)\.use\s*\(\s*(?:["'][^"']+["']\s*,\s*)?(\w+)/g,
+      1
+    ).map((name) => fact("middleware", name, context, { framework: id }, confidence));
     const services = namedMatches(context.source, /(?:@(?:Injectable|Service|Component)\s*(?:\([^)]*\))?\s*)?(?:export\s+)?class\s+(\w*(?:Service|Handler))/g, 1)
       .map((name) => fact("handler", name, context, { framework: id, role: "service" }, confidence));
     const repositories = namedMatches(context.source, /(?:@Repository\s*(?:\([^)]*\))?\s*)?(?:export\s+)?class\s+(\w*(?:Repository|Dao|DAO))/g, 1)
       .map((name) => fact("repository", name, context, { framework: id }, confidence));
-    return [...routes, ...controllers, ...services, ...repositories];
+    return [...routes, ...pythonRoutes, ...javaHandlers.map((item) => item.route), ...aspNetHandlers.map((item) => item.route), ...ktorRoutes, ...actixHandlers.map((item) => item.route), ...pythonHandlers, ...javaHandlers.map((item) => item.handler), ...aspNetHandlers.map((item) => item.handler), ...actixHandlers.map((item) => item.handler), ...controllers, ...middleware, ...services, ...repositories];
   }
   if (category === "persistence") {
     const names = namedMatches(context.source, /(?:@Entity\s*(?:\([^)]*\))?\s*(?:export\s+)?class|class|struct)\s+(\w+)/g, 1);
-    return names.slice(0, 100).map((name) => fact("entity", name, context, { persistence: id }, confidence));
+    const entities = names
+      .slice(0, 100)
+      .map((name) => fact("entity", name, context, { persistence: id }, confidence));
+    if (id === "prisma") {
+      const queries = [...context.source.matchAll(
+      /\bprisma\.([A-Za-z_$][\w$]*)\.(findMany|findUnique|findFirst|create|createMany|update|updateMany|delete|deleteMany|upsert)\s*\(/g
+      )].map((match) => ormQueryFact(context, id, match[1], match[2], `prisma.${match[1]}.${match[2]}`, confidence));
+      return [...entities, ...queries];
+    }
+    if (id === "sequelize") {
+      const queries = [...context.source.matchAll(
+        /\b([A-Z][A-Za-z0-9_]*)\.(findAll|findOne|findByPk|findAndCountAll|create|bulkCreate|update|destroy|upsert)\s*\(/g
+      )].map((match) => ormQueryFact(context, id, match[1], match[2], `sequelize.${match[1]}.${match[2]}`, confidence));
+      return [...entities, ...queries];
+    }
+    if (id === "mongoose") {
+      const queries = [...context.source.matchAll(
+        /\b([A-Z][A-Za-z0-9_]*)\.(find|findOne|findById|aggregate|countDocuments|create|insertMany|updateOne|updateMany|findByIdAndUpdate|deleteOne|deleteMany|findByIdAndDelete)\s*\(/g
+      )].map((match) => ormQueryFact(context, id, match[1], match[2], `mongoose.${match[1]}.${match[2]}`, confidence));
+      return [...entities, ...queries];
+    }
+    if (id === "drizzle") {
+      const queries = [
+        ...context.source.matchAll(/\bdb\.select\s*\(\s*\)\s*\.from\s*\(\s*([A-Za-z_$][\w$]*)\s*\)/g)
+      ].map((match) => ormQueryFact(context, id, match[1], "select", `drizzle.select(${match[1]})`, confidence));
+      for (const match of context.source.matchAll(/\bdb\.(insert|update|delete)\s*\(\s*([A-Za-z_$][\w$]*)\s*\)/g))
+        queries.push(ormQueryFact(context, id, match[2], match[1], `drizzle.${match[1]}(${match[2]})`, confidence));
+      return [...entities, ...queries];
+    }
+    if (id === "knex") {
+      const queries = [...context.source.matchAll(
+        /\b(?:knex|db)\s*\(\s*["'`]([A-Za-z_$][\w$]*)["'`]\s*\)\.(select|first|insert|update|del|delete)\s*\(/g
+      )].map((match) => ormQueryFact(context, id, match[1], match[2], `knex.${match[2]}(${match[1]})`, confidence));
+      return [...entities, ...queries];
+    }
+    if (id === "typeorm") {
+      const bindings = [...context.source.matchAll(
+        /@InjectRepository\s*\(\s*([A-Za-z_$][\w$]*)\s*\)[\s\S]{0,180}?(?:private|protected|public|readonly|\s)*(?:readonly\s+)?([A-Za-z_$][\w$]*)\s*:\s*Repository(?:<[^>]+>)?/g
+      )].map((match) => ({ entity: match[1], property: match[2] }));
+      const repositories = bindings.map(({ entity }) => ({
+        ...fact("repository", `${entity}Repository`, context, { persistence: id, entity }, Math.min(confidence, 0.8)),
+        relations: [{ kind: "persists" as const, targetKind: "entity" as const, targetName: entity }]
+      }));
+      const queries = bindings.flatMap(({ entity, property }) =>
+        [...context.source.matchAll(new RegExp(`\\b(?:this\\.)?${escapeRegExp(property)}\\.(find(?:One|AndCount|By)?|save|remove|delete|update|insert)\\s*\\(`, "g"))]
+          .map((match) => ormQueryFact(context, id, entity, match[1], `${property}.${match[1]}`, confidence))
+      );
+      return [...entities, ...repositories, ...queries];
+    }
+    if (id === "entity-framework") {
+      const bindings = [...context.source.matchAll(
+        /\bDbSet\s*<\s*([A-Za-z_$][\w$]*)\s*>\s+([A-Za-z_$][\w$]*)\s*(?:\{|=>|;)/g
+      )].map((match) => ({ entity: match[1], property: match[2] }));
+      const repositories = bindings.map(({ entity }) => ({
+        ...fact("repository", `${entity}DbSet`, context, { persistence: id, entity }, Math.min(confidence, 0.8)),
+        relations: [{ kind: "persists" as const, targetKind: "entity" as const, targetName: entity }]
+      }));
+      const queries = bindings.flatMap(({ entity, property }) =>
+        [...context.source.matchAll(new RegExp(`\\b${escapeRegExp(property)}\\.(Where|FirstOrDefault(?:Async)?|SingleOrDefault(?:Async)?|Find(?:Async)?|Add(?:Async)?|Update|Remove|RemoveRange)\\s*\\(`, "g"))]
+          .map((match) => ormQueryFact(context, id, entity, match[1], `${property}.${match[1]}`, confidence))
+      );
+      return [...entities, ...repositories, ...queries];
+    }
+    if (id === "sqlalchemy") {
+      const reads = [
+        ...context.source.matchAll(/\b(?:session\.)?query\s*\(\s*([A-Za-z_]\w*)\s*\)/g),
+        ...context.source.matchAll(/\bselect\s*\(\s*([A-Za-z_]\w*)\s*\)/g)
+      ].map((match) => ormQueryFact(context, id, match[1], "find", `sqlalchemy.query(${match[1]})`, confidence));
+      const writes = [
+        ...context.source.matchAll(/\bsession\.(add|delete|merge)\s*\(\s*([A-Za-z_]\w*)/g),
+        ...context.source.matchAll(/\bsession\.execute\s*\(\s*(insert|update|delete)\s*\(\s*([A-Za-z_]\w*)/g)
+      ].map((match) => ormQueryFact(context, id, match[2], match[1], `sqlalchemy.${match[1]}(${match[2]})`, confidence));
+      return [...entities, ...reads, ...writes];
+    }
+    if (id === "django-orm") {
+      const queries = [...context.source.matchAll(
+        /\b([A-Za-z_]\w*)\.objects\.(get|filter|all|first|last|create|update|delete)\s*\(/g
+      )].map((match) => ormQueryFact(context, id, match[1], match[2], `django.${match[1]}.${match[2]}`, confidence));
+      return [...entities, ...queries];
+    }
+    if (id === "gorm") {
+      const queries = [...context.source.matchAll(
+        /\b(?:db|tx)\.(Find|First|Take|Last|Where|Create|Save|Updates|Delete)\s*\([^&)]*&?\s*([A-Za-z_]\w*)/g
+      )].map((match) => ormQueryFact(context, id, match[2], match[1], `gorm.${match[1]}(${match[2]})`, confidence));
+      return [...entities, ...queries];
+    }
+    if (id === "eloquent") {
+      const queries = [...context.source.matchAll(
+        /\b([A-Z][A-Za-z0-9_]*)::(where|find|first|all|get|create|update|delete|destroy)\s*\(/g
+      )].map((match) => ormQueryFact(context, id, match[1], match[2], `eloquent.${match[1]}.${match[2]}`, confidence));
+      return [...entities, ...queries];
+    }
+    if (id === "active-record") {
+      const queries = [...context.source.matchAll(
+        /\b([A-Z][A-Za-z0-9_]*)\.(where|find|find_by|first|last|all|create|create!|update|update!|delete|destroy)\s*\(?/g
+      )].map((match) => ormQueryFact(context, id, match[1], match[2], `active-record.${match[1]}.${match[2]}`, confidence));
+      return [...entities, ...queries];
+    }
+    if (id === "sqlx") {
+      const queries = [...context.source.matchAll(
+        /\bsqlx::query_as(?:!?)\s*::<\s*_[^,]*,\s*([A-Za-z_]\w*)\s*>\s*\(/g
+      )].map((match) => ormQueryFact(context, id, match[1], "find", `sqlx.query_as(${match[1]})`, confidence));
+      return [...entities, ...queries];
+    }
+    if (id === "hibernate") {
+      const reads = [...context.source.matchAll(
+        /\b(?:entityManager|em)\.find\s*\(\s*([A-Za-z_]\w*)\.class/g
+      )].map((match) => ormQueryFact(context, id, match[1], "find", `jpa.find(${match[1]})`, confidence));
+      const writes = [...context.source.matchAll(
+        /\b(?:entityManager|em)\.(persist|merge|remove)\s*\(\s*new\s+([A-Za-z_]\w*)/g
+      )].map((match) => ormQueryFact(context, id, match[2], match[1], `jpa.${match[1]}(${match[2]})`, confidence));
+      return [...entities, ...reads, ...writes];
+    }
+    return entities;
   }
   if (category === "contract") {
     const name = path.posix.basename(context.filePath);
@@ -300,6 +522,13 @@ function defaultRelationships(
       targetKind: "handler" as const, targetName: handler.name, targetPath: context.filePath,
       kind: "uses" as const, confidence: Math.min(confidence, 0.82), resolution: "probable" as const, evidence
     })));
+    const routeHandlerEdges = routes.flatMap((route) => handlers
+      .filter((handler) => handler.properties.route === route.name)
+      .map((handler) => ({
+        sourceKind: "route" as const, sourceName: route.name, sourcePath: context.filePath,
+        targetKind: "handler" as const, targetName: handler.name, targetPath: context.filePath,
+        kind: "handles" as const, confidence, resolution: "exact" as const, evidence
+      })));
     const repositoryEdges = handlers.flatMap((handler) => repositories
       .filter((repository) => visibleReference(context.source, repository.name))
       .map((repository) => ({
@@ -307,22 +536,56 @@ function defaultRelationships(
       targetKind: "repository" as const, targetName: repository.name, targetPath: context.filePath,
       kind: "uses" as const, confidence: Math.min(confidence, 0.8), resolution: "probable" as const, evidence
     })));
-    return [...routeEdges, ...handlerEdges, ...repositoryEdges];
+    return [...routeEdges, ...routeHandlerEdges, ...handlerEdges, ...repositoryEdges];
   }
   if (category === "messaging") {
     const producers = facts.filter((item) => item.kind === "producer");
+    const consumers = facts.filter((item) => item.kind === "consumer");
     const messages = facts.filter((item) => item.kind === "message");
-    return producers.flatMap((producer) => messages.map((message) => ({
+    return [
+      ...producers.flatMap((producer) => messages.map((message) => ({
       sourceKind: "producer" as const, sourceName: producer.name, sourcePath: context.filePath,
       targetKind: "message" as const, targetName: message.name, targetPath: context.filePath,
       kind: "publishes" as const, confidence, resolution: "probable" as const, evidence
-    })));
+      }))),
+      ...consumers.flatMap((consumer) => messages.map((message) => ({
+        sourceKind: "consumer" as const, sourceName: consumer.name, sourcePath: context.filePath,
+        targetKind: "message" as const, targetName: message.name, targetPath: context.filePath,
+        kind: "subscribes" as const, confidence, resolution: "probable" as const, evidence
+      })))
+    ];
   }
   return [];
 }
 
 function namedMatches(source: string, expression: RegExp, group: number): string[] {
   return [...source.matchAll(expression)].map((match) => match[group]).filter((name): name is string => Boolean(name));
+}
+function ormQueryFact(
+  context: EnrichmentContext,
+  orm: string,
+  model: string,
+  operation: string,
+  name: string,
+  confidence: number
+): EngineeringEntityFact {
+  const relationship = /(?:create|update|delete|del|destroy|upsert|save|remove|insert|add|merge|persist)/i.test(operation)
+    ? ("writes" as const)
+    : ("reads" as const);
+  const query = fact(
+    "query",
+    name,
+    context,
+    { persistence: orm, orm, operation, tableNames: [model] },
+    Math.min(confidence, 0.82)
+  );
+  return {
+    ...query,
+    relations: [{ kind: relationship, targetKind: "table", targetName: model }]
+  };
+}
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 function visibleReference(source: string, name: string): boolean {
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

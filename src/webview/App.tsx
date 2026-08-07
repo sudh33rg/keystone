@@ -35,7 +35,8 @@ import type {
   SdlcPlan,
   Story,
   TaskResult
-  , ReuseResult
+  , ReuseResult,
+  WorkflowHistoryEntry
 } from "./model.js";
 
 interface AppState {
@@ -65,6 +66,7 @@ interface AppState {
   reuse?: ReuseResult;
   selectedGraphNodeId?: string;
   selectedGraphEdgeId?: string;
+  graphNodeLimit: number;
   collapsedGraphNodeIds: string[];
   loadedContextPackets: Record<string, ContextPacketPayload>;
   expandedContext?: ContextFragment;
@@ -73,6 +75,7 @@ interface AppState {
   cpg?: IntelligenceCpgResult;
   cpgPath: string;
   cpgEdgeKind: string;
+  cpgNodeLimit: number;
   selectedCpgNodeId?: string;
   agent: string;
   skills: string;
@@ -100,7 +103,55 @@ interface AppState {
   rejectingDecisionId?: string;
   rejectionReason: string;
   copilotActivityDetails: boolean;
+  historyWorkflow: string;
+  historyWorkId: string;
 }
+
+type PersistedGraphFocus = Pick<
+  AppState,
+  | "graphMode"
+  | "graphQuery"
+  | "graphRelationshipKind"
+  | "graphScope"
+  | "graphLens"
+  | "selectedGraphNodeId"
+>;
+
+const GRAPH_FOCUS_STORAGE_KEY = "keystone.graph-focus.v1";
+function loadGraphFocus(): Partial<PersistedGraphFocus> {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(GRAPH_FOCUS_STORAGE_KEY) ?? "null") as
+      | Partial<PersistedGraphFocus>
+      | null;
+    if (!parsed) return {};
+    return {
+      graphMode: ["repository", "architecture", "dependencies", "calls", "tests", "impact"].includes(parsed.graphMode as IntelligenceGraphMode)
+        ? parsed.graphMode
+        : undefined,
+      graphQuery: typeof parsed.graphQuery === "string" ? parsed.graphQuery : undefined,
+      graphRelationshipKind:
+        typeof parsed.graphRelationshipKind === "string" ? parsed.graphRelationshipKind : undefined,
+      graphScope: ["1 hop", "2 hops", "community", "related flow"].includes(parsed.graphScope ?? "")
+        ? parsed.graphScope
+        : undefined,
+      graphLens: ["intent", "context", "reuse"].includes(parsed.graphLens ?? "")
+        ? parsed.graphLens
+        : undefined,
+      selectedGraphNodeId:
+        typeof parsed.selectedGraphNodeId === "string" ? parsed.selectedGraphNodeId : undefined
+    };
+  } catch {
+    return {};
+  }
+}
+function saveGraphFocus(focus: PersistedGraphFocus): void {
+  try {
+    window.localStorage.setItem(GRAPH_FOCUS_STORAGE_KEY, JSON.stringify(focus));
+  } catch {
+    // View-state persistence is optional; storage may be disabled by the host.
+  }
+}
+const restoredGraphFocus = loadGraphFocus();
 
 const emptyApplication: ApplicationState = {
   version: 1,
@@ -124,6 +175,13 @@ const graphModes: IntelligenceGraphMode[] = [
   "calls",
   "tests",
   "impact"
+];
+const navItems: Array<{ id: Nav; icon: string; description: string }> = [
+  { id: "Home", icon: "⌂", description: "Workspace overview" },
+  { id: "Intelligence", icon: "◈", description: "Repository intelligence" },
+  { id: "Work", icon: "✓", description: "Intent and delivery" },
+  { id: "Activity", icon: "↻", description: "Live operations" },
+  { id: "History", icon: "◷", description: "Durable journal" }
 ];
 const intentLifecycleTransitions: Record<IntentLifecycle, IntentLifecycle[]> = {
   DRAFT: ["UNDERSTANDING"],
@@ -155,17 +213,20 @@ export class App extends React.Component<Record<string, never>, AppState> {
     intelligenceView: "Overview",
     explorerQuery: "",
     explorerKind: "all",
-    graphMode: "repository",
-    graphQuery: "",
-    graphRelationshipKind: "all",
-    graphScope: "1 hop",
-    graphLens: "intent",
+    graphMode: restoredGraphFocus.graphMode ?? "repository",
+    graphQuery: restoredGraphFocus.graphQuery ?? "",
+    graphRelationshipKind: restoredGraphFocus.graphRelationshipKind ?? "all",
+    graphScope: restoredGraphFocus.graphScope ?? "1 hop",
+    graphLens: restoredGraphFocus.graphLens ?? "intent",
+    selectedGraphNodeId: restoredGraphFocus.selectedGraphNodeId,
+    graphNodeLimit: 48,
     collapsedGraphNodeIds: [],
     loadedContextPackets: {},
     contextInspectorOpen: false,
     expandingContextReference: undefined,
     cpgPath: "",
     cpgEdgeKind: "all",
+    cpgNodeLimit: 48,
     agent: "GitHub Copilot",
     skills: "",
     instructions:
@@ -176,7 +237,9 @@ export class App extends React.Component<Record<string, never>, AppState> {
     intentQuestion: "",
     intentBlocker: "",
     rejectionReason: "",
-    copilotActivityDetails: false
+    copilotActivityDetails: false,
+    historyWorkflow: "all",
+    historyWorkId: "all"
   };
   private readonly onMessage = (event: MessageEvent): void =>
     this.handle(event.data as { type?: string; [key: string]: unknown });
@@ -189,10 +252,30 @@ export class App extends React.Component<Record<string, never>, AppState> {
     vscode.postMessage({ type: "WEBVIEW_READY" });
     vscode.postMessage({ type: "LOAD_INTELLIGENCE" });
     vscode.postMessage({ type: "LOAD_RESTORED_TASK_HANDOFF" });
+    if (this.state.nav === "History") vscode.postMessage({ type: "LOAD_ACTIVITY_HISTORY" });
   }
   componentWillUnmount(): void {
     window.removeEventListener("message", this.onMessage);
     window.removeEventListener("hashchange", this.onHash);
+  }
+  componentDidUpdate(_: Readonly<Record<string, never>>, previous: Readonly<AppState>): void {
+    const focusKeys: Array<keyof PersistedGraphFocus> = [
+      "graphMode",
+      "graphQuery",
+      "graphRelationshipKind",
+      "graphScope",
+      "graphLens",
+      "selectedGraphNodeId"
+    ];
+    if (!focusKeys.some((key) => previous[key] !== this.state[key])) return;
+    saveGraphFocus({
+      graphMode: this.state.graphMode,
+      graphQuery: this.state.graphQuery,
+      graphRelationshipKind: this.state.graphRelationshipKind,
+      graphScope: this.state.graphScope,
+      graphLens: this.state.graphLens,
+      selectedGraphNodeId: this.state.selectedGraphNodeId
+    });
   }
 
   private handle(message: { type?: string; [key: string]: unknown }): void {
@@ -212,6 +295,10 @@ export class App extends React.Component<Record<string, never>, AppState> {
           ...patch,
           version: previous.application.version + 1
         }
+      }));
+    } else if (message.type === "ACTIVITY_HISTORY_RESULT") {
+      this.setState((previous) => ({
+        application: { ...previous.application, activityHistory: message.entries as WorkflowHistoryEntry[] }
       }));
     } else if (message.type === "TASK_RESULT") {
       this.setState({
@@ -395,6 +482,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
       this.setState({
         graph: result,
         graphMode: result.mode,
+        graphNodeLimit: 48,
         graphRelationshipKind: relationshipKind,
         selectedGraphNodeId:
           previous?.nodes.some((node) => node.id === this.state.selectedGraphNodeId) &&
@@ -416,6 +504,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
       this.setState({
         cpg: result,
         cpgPath: result.sourcePath ?? this.state.cpgPath,
+        cpgNodeLimit: 48,
         selectedCpgNodeId: result.nodes[0]?.id,
         notice: result.sourcePath
           ? `CPG loaded for ${result.sourcePath}.`
@@ -671,6 +760,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
     location.hash = nav;
     this.setState({ nav, notice: "" });
     if (nav === "Intelligence") this.loadIntelligenceSurface(this.state.intelligenceView);
+    if (nav === "History") vscode.postMessage({ type: "LOAD_ACTIVITY_HISTORY" });
   }
   private startNewWork(): void {
     this.navigate("Home");
@@ -721,6 +811,8 @@ export class App extends React.Component<Record<string, never>, AppState> {
     if (!ingestion) return null;
     const progress = Math.max(0, Math.min(100, ingestion.progress));
     const pool = ingestion.workerPool;
+    const degraded = ingestion.stage === "degraded" || this.state.application.status === "error";
+    const label = ingestion.active ? "In progress" : degraded ? "Needs attention" : "Ready";
     return (
       <Panel
         title="Repository ingestion"
@@ -728,17 +820,23 @@ export class App extends React.Component<Record<string, never>, AppState> {
       >
         <div className="ingestion-header">
           <div>
-            <strong>{ingestion.active ? "In progress" : "Ready"}</strong>
+            <strong>{label}</strong>
             <small>
               {ingestion.stage} · {progress}%
             </small>
           </div>
-          <Status value={ingestion.active ? "running" : "complete"} />
+          <Status value={ingestion.active ? "running" : degraded ? "failed" : "complete"} />
         </div>
         <div className="progress" aria-label={`Repository ingestion ${progress}%`}>
           <i style={{ width: `${progress}%` }} />
         </div>
         <p className="result-summary">{ingestion.message}</p>
+        {degraded && (
+          <div className="callout warning">
+            This snapshot contains blocking ingestion failures. Refresh the repository after resolving the
+            reported activity errors before relying on its intelligence.
+          </div>
+        )}
         {pool && (
           <div className="worker-pool-summary">
             <div>
@@ -876,6 +974,10 @@ export class App extends React.Component<Record<string, never>, AppState> {
 
   render(): JSX.Element {
     const intel = this.state.application.intelligence;
+    const activeOperations = (this.state.application.operations ?? []).filter((item) =>
+      ["queued", "running", "paused"].includes(item.status)
+    ).length;
+    const historyCount = this.state.application.activityHistory?.length ?? 0;
     return (
       <div className="shell">
         <header className="topbar">
@@ -887,6 +989,9 @@ export class App extends React.Component<Record<string, never>, AppState> {
             </div>
           </div>
           <div className="header-actions">
+            <span className={`workspace-status ${this.state.application.status}`}>
+              <i /> {this.state.application.status}
+            </span>
             <span className="surface-pill">
               {vscode.surface === "browser" ? "Browser View · shared state" : "VS Code Webview"}
             </span>
@@ -899,16 +1004,24 @@ export class App extends React.Component<Record<string, never>, AppState> {
           </div>
         </header>
         <aside className="nav">
-          {(["Home", "Intelligence", "Work", "Activity"] as Nav[]).map((nav) => (
+          <div className="nav-label">Workspace</div>
+          {navItems.map(({ id, icon, description }) => (
             <button
-              key={nav}
-              className={this.state.nav === nav ? "active" : ""}
-              onClick={() => this.navigate(nav)}
+              key={id}
+              className={this.state.nav === id ? "active" : ""}
+              onClick={() => this.navigate(id)}
+              title={description}
             >
-              <span className="nav-dot" />
-              {nav}
+              <span className="nav-icon" aria-hidden="true">{icon}</span>
+              <span>{id}</span>
+              {id === "Activity" && activeOperations > 0 && <em>{activeOperations}</em>}
+              {id === "History" && historyCount > 0 && <em>{historyCount > 99 ? "99+" : historyCount}</em>}
             </button>
           ))}
+          <div className="nav-footer">
+            <span>Local-first</span>
+            <small>Data stays in this workspace</small>
+          </div>
         </aside>
         <main>
           {this.state.notice && (
@@ -932,7 +1045,9 @@ export class App extends React.Component<Record<string, never>, AppState> {
               ? this.intelligence(intel)
               : this.state.nav === "Work"
                 ? this.work()
-                : this.activity()}
+                : this.state.nav === "Activity"
+                  ? this.activity()
+                  : this.history()}
         </main>
       </div>
     );
@@ -1323,16 +1438,15 @@ export class App extends React.Component<Record<string, never>, AppState> {
             {result.totalActive} active in snapshot
           </p>
         )}
-        <div className="explorer-list">
-          {result?.items.map((item) => (
-            <ExplorerRow
-              key={item.id}
-              item={item}
-              onOpen={(path, line) => this.openSource(path, line)}
-              onGraph={(value) => this.showExplorerItemInGraph(value)}
-            />
-          )) ?? <Empty text="Open Explorer to load the promoted OKF snapshot." />}
-        </div>
+        {result ? (
+          <VirtualizedExplorerList
+            items={result.items}
+            onOpen={(path, line) => this.openSource(path, line)}
+            onGraph={(value) => this.showExplorerItemInGraph(value)}
+          />
+        ) : (
+          <Empty text="Open Explorer to load the promoted OKF snapshot." />
+        )}
         {result?.nextCursor && (
           <div className="inline-form explorer-pagination">
             <button onClick={() => this.loadExplorer()}>
@@ -1407,6 +1521,17 @@ export class App extends React.Component<Record<string, never>, AppState> {
         lensRole: visualNode.lensRole ?? (lens === "intent" ? visualNode.seed ? "target" : (degree.get(visualNode.id) ?? 0) > 0 ? "direct" : "available" : undefined)
       };
     });
+    const prioritizedNodes = [...visualNodes].sort(
+      (a, b) =>
+        Number(Boolean(b.seed)) - Number(Boolean(a.seed)) ||
+        (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0) ||
+        a.label.localeCompare(b.label)
+    );
+    const renderedNodes = prioritizedNodes.slice(0, this.state.graphNodeLimit);
+    const renderedNodeIds = new Set(renderedNodes.map((node) => node.id));
+    const renderedEdges = visibleEdges.filter(
+      (edge) => renderedNodeIds.has(edge.sourceId) && renderedNodeIds.has(edge.targetId)
+    );
     return (
       <div className="view-stack">
         <Panel
@@ -1498,10 +1623,27 @@ export class App extends React.Component<Record<string, never>, AppState> {
             <span><i className="legend-swatch origin-INFERRED" /> INFERRED · heuristic</span>
             <span><i className="legend-swatch origin-AMBIGUOUS" /> AMBIGUOUS · verify candidates</span>
           </div>
+          {visualNodes.length > renderedNodes.length && (
+            <div className="inline-form graph-segment-control">
+              <small>
+                Showing {renderedNodes.length} of {visualNodes.length} graph nodes; seeds and the most
+                connected nodes appear first.
+              </small>
+              <button
+                onClick={() =>
+                  this.setState((previous) => ({
+                    graphNodeLimit: Math.min(visualNodes.length, previous.graphNodeLimit + 40)
+                  }))
+                }
+              >
+                Load next {Math.min(40, visualNodes.length - renderedNodes.length)} nodes
+              </button>
+            </div>
+          )}
           <div className="graph-layout">
             <GraphCanvas
-              nodes={visualNodes}
-              edges={visibleEdges as VisualGraphEdge[]}
+              nodes={renderedNodes}
+              edges={renderedEdges as VisualGraphEdge[]}
               selectedId={this.state.selectedGraphNodeId}
               selectedEdgeId={this.state.selectedGraphEdgeId}
               onSelect={(node) => this.selectProjectionNode(node, lens)}
@@ -1511,7 +1653,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
             {lens === "intent" || flowOnly ? <GraphInspector
               node={selected}
               relationshipKinds={result?.relationshipKinds ?? []}
-              edges={visibleEdges as IntelligenceGraphEdge[]}
+              edges={renderedEdges as IntelligenceGraphEdge[]}
               selectedEdge={selectedEdge}
               onOpen={(path, line) => this.openSource(path, line)}
               onFocus={(node) => this.loadGraph(mode, node.label, [node.id])}
@@ -1529,12 +1671,12 @@ export class App extends React.Component<Record<string, never>, AppState> {
                 }))
               }
               onAction={(action, node) => this.runGraphAction(action, node)}
-            /> : <ProjectionInspector lens={lens} node={visualNodes.find((node) => node.id === this.state.selectedGraphNodeId)} reuse={this.state.reuse} onOpen={(path, line) => this.openSource(path, line)} onExpand={(node) => lens === "reuse" ? this.useReuseAsContext(node) : node.lensRole === "retained" && this.expandContextByReference(node.id)} />}
+            /> : <ProjectionInspector lens={lens} node={renderedNodes.find((node) => node.id === this.state.selectedGraphNodeId)} reuse={this.state.reuse} onOpen={(path, line) => this.openSource(path, line)} onExpand={(node) => lens === "reuse" ? this.useReuseAsContext(node) : node.lensRole === "retained" && this.expandContextByReference(node.id)} />}
           </div>
-          {visibleEdges.length > 0 && (
+          {renderedEdges.length > 0 && (
             <details className="graph-evidence" open>
-              <summary>Relationship evidence ({visibleEdges.length})</summary>
-              {visibleEdges.slice(0, 24).map((edge) => {
+              <summary>Relationship evidence ({renderedEdges.length})</summary>
+              {renderedEdges.slice(0, 24).map((edge) => {
                 const source = result?.nodes.find((node) => node.id === edge.sourceId);
                 const target = result?.nodes.find((node) => node.id === edge.targetId);
                 const location = edge.sourceLocation;
@@ -1580,6 +1722,23 @@ export class App extends React.Component<Record<string, never>, AppState> {
   private intelligenceCpg(): JSX.Element {
     const result = this.state.cpg;
     const selected = result?.nodes.find((node) => node.id === this.state.selectedCpgNodeId);
+    const cpgDegree = new Map<string, number>();
+    for (const edge of result?.edges ?? []) {
+      cpgDegree.set(edge.sourceId, (cpgDegree.get(edge.sourceId) ?? 0) + 1);
+      cpgDegree.set(edge.targetId, (cpgDegree.get(edge.targetId) ?? 0) + 1);
+    }
+    const renderedCpgNodes = [...(result?.nodes ?? [])]
+      .sort(
+        (a, b) =>
+          Number(b.id === this.state.selectedCpgNodeId) - Number(a.id === this.state.selectedCpgNodeId) ||
+          (cpgDegree.get(b.id) ?? 0) - (cpgDegree.get(a.id) ?? 0) ||
+          a.line - b.line
+      )
+      .slice(0, this.state.cpgNodeLimit);
+    const renderedCpgNodeIds = new Set(renderedCpgNodes.map((node) => node.id));
+    const renderedCpgEdges = (result?.edges ?? []).filter(
+      (edge) => renderedCpgNodeIds.has(edge.sourceId) && renderedCpgNodeIds.has(edge.targetId)
+    );
     return (
       <Panel
         title="Code Property Graph Explorer"
@@ -1626,16 +1785,33 @@ export class App extends React.Component<Record<string, never>, AppState> {
             ))}
           </div>
         )}
+        {(result?.nodes.length ?? 0) > renderedCpgNodes.length && (
+          <div className="inline-form graph-segment-control">
+            <small>
+              Showing {renderedCpgNodes.length} of {result?.nodes.length} CPG nodes; the selected and
+              most connected nodes appear first.
+            </small>
+            <button
+              onClick={() =>
+                this.setState((previous) => ({
+                  cpgNodeLimit: Math.min(result!.nodes.length, previous.cpgNodeLimit + 40)
+                }))
+              }
+            >
+              Load next {Math.min(40, result!.nodes.length - renderedCpgNodes.length)} nodes
+            </button>
+          </div>
+        )}
         <div className="graph-layout">
           <GraphCanvas
-            nodes={(result?.nodes ?? []).map((node) => ({
+            nodes={renderedCpgNodes.map((node) => ({
               id: node.id,
               label: node.label,
               kind: `${node.kind}:${node.syntaxKind}`,
               path: node.path,
               line: node.line
             }))}
-            edges={result?.edges ?? []}
+            edges={renderedCpgEdges}
             selectedId={this.state.selectedCpgNodeId}
             onSelect={(node) => this.setState({ selectedCpgNodeId: node.id })}
             emptyText="Index the repository, then choose a persisted CPG shard."
@@ -3632,6 +3808,62 @@ export class App extends React.Component<Record<string, never>, AppState> {
     );
   }
 
+  private history(): JSX.Element {
+    const entries = this.state.application.activityHistory ?? [];
+    const workflows = [...new Set(entries.map((entry) => entry.workflow))].sort();
+    const workItems = [...new Map(entries.filter((entry) => entry.workId).map((entry) => [entry.workId!, entry.workName ?? entry.workId!])).entries()];
+    const filtered = entries.filter(
+      (entry) =>
+        (this.state.historyWorkflow === "all" || entry.workflow === this.state.historyWorkflow) &&
+        (this.state.historyWorkId === "all" || entry.workId === this.state.historyWorkId)
+    );
+    return (
+      <section>
+        <div className="page-title">
+          <div>
+            <p className="eyebrow">HISTORY</p>
+            <h1>Work and workflow journal</h1>
+            <p>Durable, chronological records for each work item, including workflow detail and progress.</p>
+          </div>
+          <button onClick={() => vscode.postMessage({ type: "LOAD_ACTIVITY_HISTORY" })}>Refresh</button>
+        </div>
+        <Panel title="Historical activity" subtitle={`${filtered.length} of ${entries.length} retained record(s).`}>
+          <div className="filter-row">
+            <label>
+              Workflow
+              <select value={this.state.historyWorkflow} onChange={(event: { currentTarget: HTMLSelectElement }) => this.setState({ historyWorkflow: event.currentTarget.value })}>
+                <option value="all">All workflows</option>
+                {workflows.map((workflow) => <option key={workflow} value={workflow}>{workflow}</option>)}
+              </select>
+            </label>
+            <label>
+              Work
+              <select value={this.state.historyWorkId} onChange={(event: { currentTarget: HTMLSelectElement }) => this.setState({ historyWorkId: event.currentTarget.value })}>
+                <option value="all">All work</option>
+                {workItems.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+              </select>
+            </label>
+          </div>
+          {filtered.length ? (
+            <div className="timeline">
+              {filtered.map((entry) => (
+                <div key={entry.id}>
+                  <span className="status-dot completed" />
+                  <div>
+                    <b>{entry.type}</b>
+                    <p>{entry.message}</p>
+                    <small>{new Date(entry.timestamp).toLocaleString()} · {entry.workflow}{entry.workName ? ` · ${entry.workName}` : " · workspace"}</small>
+                  </div>
+                  {entry.progress !== undefined && <span>{entry.progress}%</span>}
+                </div>
+              ))}
+            </div>
+          ) : <Empty text="No historical activity matches these filters yet." />}
+        </Panel>
+      </section>
+    );
+  }
+
   private activity(): JSX.Element {
     const activity = this.state.application.intelligenceActivity ?? [];
     const operations = this.state.application.operations ?? [];
@@ -3829,7 +4061,7 @@ function DocumentList({ title, items }: { title: string; items: readonly string[
 
 function navFromHash(): Nav {
   const value = location.hash.replace("#", "");
-  return (["Home", "Intelligence", "Work", "Activity"] as Nav[]).includes(value as Nav)
+  return (["Home", "Intelligence", "Work", "Activity", "History"] as Nav[]).includes(value as Nav)
     ? (value as Nav)
     : "Home";
 }
@@ -4105,6 +4337,83 @@ function ExplorerRow({
       <button onClick={() => onGraph(item)}>Show neighborhood</button>
     </article>
   );
+}
+
+const EXPLORER_ROW_HEIGHT = 175;
+const EXPLORER_OVERSCAN = 6;
+
+/**
+ * Keeps Explorer navigation responsive when cursor pagination accumulates many
+ * pages. The canonical result set remains intact in application state; only
+ * the rows in and immediately around the scroll viewport are mounted.
+ */
+class VirtualizedExplorerList extends React.Component<
+  {
+    items: readonly IntelligenceExplorerItem[];
+    onOpen: (path: string, line?: number) => void;
+    onGraph: (item: IntelligenceExplorerItem) => void;
+  },
+  { scrollTop: number; viewportHeight: number }
+> {
+  private viewport?: HTMLDivElement;
+  private resizeObserver?: ResizeObserver;
+
+  state = { scrollTop: 0, viewportHeight: 700 };
+
+  componentDidMount(): void {
+    this.observeViewport();
+  }
+
+  componentDidUpdate(previous: Readonly<{ items: readonly IntelligenceExplorerItem[] }>): void {
+    if (previous.items !== this.props.items && this.state.scrollTop > 0) {
+      const maximum = Math.max(0, this.props.items.length * EXPLORER_ROW_HEIGHT - this.state.viewportHeight);
+      if (this.state.scrollTop > maximum) {
+        this.viewport?.scrollTo({ top: maximum });
+        this.setState({ scrollTop: maximum });
+      }
+    }
+  }
+
+  componentWillUnmount(): void {
+    this.resizeObserver?.disconnect();
+  }
+
+  private observeViewport(): void {
+    const element = this.viewport;
+    if (!element) return;
+    const resize = (): void => this.setState({ viewportHeight: Math.max(1, element.clientHeight) });
+    resize();
+    this.resizeObserver = new ResizeObserver(resize);
+    this.resizeObserver.observe(element);
+  }
+
+  render(): JSX.Element {
+    const { items, onOpen, onGraph } = this.props;
+    const { scrollTop, viewportHeight } = this.state;
+    const first = Math.max(0, Math.floor(scrollTop / EXPLORER_ROW_HEIGHT) - EXPLORER_OVERSCAN);
+    const last = Math.min(
+      items.length,
+      Math.ceil((scrollTop + viewportHeight) / EXPLORER_ROW_HEIGHT) + EXPLORER_OVERSCAN
+    );
+    return (
+      <div
+        className="explorer-list explorer-virtual-list"
+        ref={(element: HTMLDivElement | null) => {
+          this.viewport = element ?? undefined;
+        }}
+        onScroll={(event: React.SyntheticEvent<HTMLDivElement>) =>
+          this.setState({ scrollTop: event.currentTarget.scrollTop })
+        }
+        aria-label={`Knowledge Explorer results; ${items.length} loaded`}
+      >
+        <div style={{ height: first * EXPLORER_ROW_HEIGHT }} aria-hidden="true" />
+        {items.slice(first, last).map((item) => (
+          <ExplorerRow key={item.id} item={item} onOpen={onOpen} onGraph={onGraph} />
+        ))}
+        <div style={{ height: (items.length - last) * EXPLORER_ROW_HEIGHT }} aria-hidden="true" />
+      </div>
+    );
+  }
 }
 function communityFor(path: string | undefined, kind: string): string {
   const first = path?.split(/[\\/]/).filter(Boolean)[0];

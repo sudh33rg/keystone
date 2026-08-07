@@ -1,6 +1,6 @@
 {
-  "verifiedAt": "2026-08-02T10:06:44.506Z",
-  "registeredLanguageAndArtifactCategories": 43,
+  "verifiedAt": "2026-08-07T14:43:09.301Z",
+  "registeredLanguageAndArtifactCategories": 44,
   "languageConformance": [
     {
       "id": "typescript",
@@ -19,7 +19,7 @@
         "cpg": "deep",
         "tests": "semantic"
       },
-      "fixture": "userService.ts",
+      "fixture": "components/userService.tsx",
       "okf": true,
       "cpg": true
     },
@@ -40,7 +40,7 @@
         "cpg": "deep",
         "tests": "semantic"
       },
-      "fixture": "sample.test.js",
+      "fixture": "fixtures/sample.test.js",
       "okf": true,
       "cpg": true
     },
@@ -104,6 +104,27 @@
         "tests": "structural"
       },
       "fixture": "Sample.cs",
+      "okf": true,
+      "cpg": true
+    },
+    {
+      "id": "vbnet",
+      "label": "VB.NET",
+      "frontend": "brace-grammar",
+      "parser": "deterministic-adapter",
+      "conformance": "deterministic-grammar",
+      "baseline": "deterministic-structural",
+      "capabilities": {
+        "parsing": "structural",
+        "symbols": "structural",
+        "imports": "structural",
+        "calls": "structural",
+        "controlFlow": "structural",
+        "dataFlow": "universal",
+        "cpg": "structural",
+        "tests": "structural"
+      },
+      "fixture": "Sample.vb",
       "okf": true,
       "cpg": true
     },
@@ -565,7 +586,7 @@
         "cpg": "structural",
         "tests": "structural"
       },
-      "fixture": "schema.sql",
+      "fixture": "migrations/001-users.sql",
       "okf": true,
       "cpg": true
     },
@@ -691,7 +712,7 @@
         "cpg": "structural",
         "tests": "structural"
       },
-      "fixture": "sample.yaml",
+      "fixture": ".github/workflows/ci.yml",
       "okf": true,
       "cpg": true
     },
@@ -914,20 +935,20 @@
     "cpg": true
   },
   "universalUnknownTextFrontend": true,
-  "allLanguageFilesIndexed": 44,
-  "allLanguageCpgShards": 44,
+  "allLanguageFilesIndexed": 46,
+  "allLanguageCpgShards": 46,
   "allLanguageOkfValid": true,
   "portableOkfBundle": {
     "valid": true,
-    "concepts": 223,
+    "concepts": 293,
     "format": "OKF",
     "version": "0.2"
   },
-  "okfKnowledgeKindsProduced": 17,
-  "okfRelationshipKindsProduced": 16,
-  "okfObservations": 232,
-  "okfEvidence": 620,
-  "incrementalUnchangedFilesReused": 44,
+  "okfKnowledgeKindsProduced": 40,
+  "okfRelationshipKindsProduced": 30,
+  "okfObservations": 322,
+  "okfEvidence": 746,
+  "incrementalUnchangedFilesReused": 46,
   "okfDeletionLifecycle": true,
   "syntheticUnboundedScaleFixture": {
     "generatedFiles": 5205,
@@ -937,14 +958,14 @@
   },
   "actualProject": {
     "source": "clean copy of current Keystone source/tests/scripts/config; generated state and build outputs excluded",
-    "files": 159,
+    "files": 186,
     "persisted": true,
     "okfValid": true,
-    "indexElapsedMs": 10480,
-    "queryElapsedMs": 247,
-    "intentElapsedMs": 1114,
+    "indexElapsedMs": 15154,
+    "queryElapsedMs": 360,
+    "intentElapsedMs": 4156,
     "queryResults": 50,
-    "queryTraversals": 3304,
+    "queryTraversals": 57,
     "okfIntentRetrieval": "okf-compound+canonical-okf",
     "readOnlyGitEvidence": true,
     "copilotCustomizations": {
@@ -1065,34 +1086,5 @@
   "browserAuthenticationAndOriginChecks": true,
   "browserStaleVersionAndReconnectChecks": true,
   "gitPolicy": "read-only",
-  "workerLifecycle": {
-    "verifiedAt": "2026-08-03T00:36:06+05:30",
-    "ingestionStageWorkerDefaultConcurrency": 5,
-    "backgroundRoleWorkers": 4,
-    "defaultRetriesPerRole": 2,
-    "failedRefreshFallsBackToLastPromotedOkf": true,
-    "workersNeverStartWithoutValidatedOkf": true,
-    "matchingRetryAttemptResumesAfterHostRestart": true,
-    "identicalActiveRunsCoalesced": true,
-    "supersededRunsPersistedStale": true,
-    "cancelledRunsPersistedCancelled": true,
-    "lateWritesRejected": true,
-    "retrySmoke": {
-      "roles": 4,
-      "attemptsPerRole": 2,
-      "retryingFailureEvents": 4,
-      "exhaustedFailureEvents": 4,
-      "finalPersistedStatus": "failed"
-    },
-    "recoveryVisualCheck": {
-      "activityWorkerCards": 4,
-      "lastPromotedOkfMessageVisible": true
-    },
-    "resumeSmoke": {
-      "roles": 4,
-      "initialResumedAttempt": 2,
-      "noAttemptOneWorkers": true
-    }
-  },
-  "productionAcceptanceVerifiedAt": "2026-08-02T19:18:59.873Z"
+  "productionAcceptanceVerifiedAt": "2026-08-07T14:43:31.053Z"
 }
