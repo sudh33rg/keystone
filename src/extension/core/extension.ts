@@ -66,6 +66,14 @@ export function activate(context: vscode.ExtensionContext): void {
     }
     coordinator.start(root, reportBackgroundWorker, input);
   };
+  provider.setBackgroundWorkerController({
+    start: async (root) => {
+      const coordinator = backgroundWorkers.get(root) ?? createBackgroundWorkerCoordinator();
+      backgroundWorkers.set(root, coordinator);
+      await launchBackgroundWorkers(root, coordinator);
+    },
+    stop: (root) => backgroundWorkers.get(root)?.dispose("cancelled")
+  });
 
   context.subscriptions.push(
     statusBar,

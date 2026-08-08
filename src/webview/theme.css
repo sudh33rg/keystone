@@ -312,6 +312,55 @@ main {
   grid-template-columns: 1fr 1fr;
   gap: 14px;
 }
+.knowledge-actions {
+  display: grid;
+  gap: 9px;
+}
+.knowledge-action,
+.service-card {
+  display: grid;
+  gap: 4px;
+  text-align: left;
+  padding: 12px;
+  background: #082633;
+}
+.knowledge-action b { color: #d8f2fa; }
+.knowledge-action span { color: #9bb8c4; font-size: 12px; line-height: 1.35; }
+.human-facts li { align-items: center; }
+.human-facts small { color: var(--muted); font-weight: 400; }
+.service-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 10px;
+}
+.service-card { min-width: 0; }
+.service-card > span { color: #79c5dd; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .7px; }
+.service-card > b { overflow-wrap: anywhere; }
+.service-card small { color: #8caab7; overflow-wrap: anywhere; }
+.service-card em { color: #6fae9d; font-size: 10px; font-style: normal; }
+.valueedge-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 14px; }
+.valueedge-form label { margin: 3px 0; }
+.valueedge-form label small { color: var(--muted); }
+.flow-starters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 12px 0 2px;
+  color: #a9c7d1;
+  font-size: 12px;
+}
+.flow-starters button { padding: 5px 8px; font-size: 11px; }
+.cpg-guidance {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border-left: 3px solid #4b97b4;
+  border-radius: 5px;
+  background: #092a37;
+  color: #b9d3dc;
+  font-size: 12px;
+  line-height: 1.5;
+}
 .primary {
   background: linear-gradient(135deg, #378aac, #256b89) !important;
   border-color: #62b1d0 !important;
@@ -1748,6 +1797,48 @@ label {
   width: auto;
   margin-top: 2px;
 }
+.workflow-stage-picker {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid #1b5369;
+  border-radius: 8px;
+}
+.workflow-stage-picker legend { padding: 0 6px; font-weight: 700; }
+.workflow-stage-picker > small { display: block; margin-bottom: 10px; color: var(--muted); }
+.workflow-stage-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.workflow-stage-option span { display: grid; gap: 3px; }
+.workflow-stage-option small { color: var(--muted); }
+.workflow-plan-summary { display: grid; gap: 4px; padding: 10px; margin-bottom: 12px; border-radius: 6px; background: #0b2a38; }
+.discovery-presentation-actions { margin: 12px 0; }
+.workflow-source-input { margin-bottom: 8px; }
+.workflow-source-help { display: block; color: var(--muted); margin-bottom: 12px; }
+.valueedge-feature-source { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; padding: 7px 10px; border: 1px solid #35638b; border-radius: 8px; color: #b9d4f2; background: #112c45; }
+.valueedge-feature-source span { flex: 1; font-size: 12px; }
+.valueedge-feature-source .icon-button { width: 24px; height: 24px; min-width: 24px; font-size: 16px; }
+.workflow-stage-details { margin: 14px 0; }
+.workflow-stage-details > summary { cursor: pointer; color: #a9c7ef; font-weight: 700; }
+.workflow-stage-details[open] > summary { margin-bottom: 10px; }
+.intent-editor {
+  min-height: clamp(32rem, 68vh, 60rem);
+  resize: vertical;
+  line-height: 1.65;
+}
+.workflow-entry-stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; }
+.header-icon, .icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 18px;
+}
+.intelligence-view-error { border-color: #8b5252; }
+.intelligence-view-error small { display: block; margin: 10px 0; color: var(--muted); }
+.status-icon i { width: 9px; height: 9px; border-radius: 50%; background: var(--good); box-shadow: 0 0 0 4px #60c69d22; }
+.status-icon.indexing i { background: var(--warn); box-shadow: 0 0 0 4px #efbd6d22; }
+.status-icon.error i { background: var(--bad); box-shadow: 0 0 0 4px #ef7b7b22; }
 .timeline {
   display: grid;
   gap: 8px;
@@ -2107,6 +2198,7 @@ select {
   border-radius: 8px;
   background: #04151d;
   overflow: hidden;
+  overscroll-behavior: contain;
 }
 .graph-toolbar {
   display: flex;
@@ -2132,6 +2224,7 @@ select {
   display: block;
   cursor: grab;
   touch-action: none;
+  overscroll-behavior: contain;
   background: radial-gradient(circle at 50% 45%, #153a4b55, transparent 55%);
 }
 .graph-canvas:active {
@@ -2804,7 +2897,7 @@ textarea { min-height: 128px; line-height: 1.5; }
 @media (max-width: 720px) {
   .shell { grid-template-columns: 1fr; }
   .topbar { padding: 11px 14px; }
-  .workspace-status, .header-actions > button:not(.primary) { display: none; }
+  .workspace-status, .header-actions > button:not(.primary):not(.header-icon) { display: none; }
   .nav { flex-direction: row; align-items: center; padding: 7px 8px; overflow-x: auto; }
   .nav-label, .nav-footer { display: none; }
   .nav button { flex: 0 0 auto; padding: 8px 10px; }

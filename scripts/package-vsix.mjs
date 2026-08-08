@@ -14,9 +14,13 @@ try {
   fs.mkdirSync(ext, { recursive: true });
   for (const name of ["package.json", "README.md"])
     fs.copyFileSync(path.join(root, name), path.join(ext, name));
+  fs.mkdirSync(path.join(ext, "media"), { recursive: true });
+  for (const asset of ["keystone.png", "keystone.svg"])
+    fs.copyFileSync(path.join(root, "media", asset), path.join(ext, "media", asset));
   copy(path.join(root, "dist", "app"), path.join(ext, "dist", "app"));
   copy(path.join(root, "dist", "media"), path.join(ext, "dist", "media"));
   copy(path.join(root, "node_modules", "typescript"), path.join(ext, "node_modules", "typescript"));
+  copyRuntimeDependency("pptxgenjs", path.join(root, "node_modules"), path.join(ext, "node_modules"));
   fs.writeFileSync(
     path.join(stage, "[Content_Types].xml"),
     `<?xml version="1.0" encoding="utf-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="json" ContentType="application/json"/><Default Extension="js" ContentType="application/javascript"/><Default Extension="css" ContentType="text/css"/><Default Extension="html" ContentType="text/html"/><Default Extension="map" ContentType="application/json"/><Default Extension="md" ContentType="text/markdown"/><Default Extension="xml" ContentType="text/xml"/><Override PartName="/extension.vsixmanifest" ContentType="text/xml"/></Types>`
@@ -47,6 +51,17 @@ function copy(src, dst) {
     fs.mkdirSync(path.dirname(dst), { recursive: true });
     fs.copyFileSync(src, dst);
   }
+}
+function copyRuntimeDependency(name, sourceModules, destinationModules, copied = new Set()) {
+  if (copied.has(name)) return;
+  copied.add(name);
+  const source = path.join(sourceModules, name);
+  const manifest = path.join(source, "package.json");
+  if (!fs.existsSync(manifest)) throw new Error(`Runtime dependency is missing: ${name}`);
+  const pkg = JSON.parse(fs.readFileSync(manifest, "utf8"));
+  copy(source, path.join(destinationModules, name));
+  for (const dependency of Object.keys(pkg.dependencies ?? {}))
+    copyRuntimeDependency(dependency, sourceModules, destinationModules, copied);
 }
 function escapeXml(value) {
   return String(value).replace(

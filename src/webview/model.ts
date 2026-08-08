@@ -1,4 +1,4 @@
-export type Nav = "Home" | "Intelligence" | "Work" | "Activity" | "History";
+export type Nav = "Home" | "Intelligence" | "Work" | "Activity" | "History" | "Settings";
 
 export interface WorkflowHistoryEntry {
   id: string;
@@ -98,6 +98,12 @@ export interface IntelligenceSummary {
     messaging: string[];
     contracts: string[];
     confidence: number;
+  }>;
+  services?: Array<{
+    name: string;
+    path: string;
+    role: string;
+    hints: string[];
   }>;
   architecture?: string;
   git?: { branch?: string; changedFiles?: string[] };
@@ -510,6 +516,19 @@ export interface BacklogStory {
   dependencies: string[];
   status: string;
   scope?: { files?: string[]; symbols?: string[]; interfaces?: string[] };
+  storyPoints?: 1 | 2 | 3;
+}
+export type WorkflowStage = "discovery" | "planning" | "design" | "development" | "testing" | "deployment";
+export interface DiscoveryDocument {
+  title: string;
+  summary: string;
+  personas: string[];
+  assumptions: string[];
+  questions: string[];
+  proposedSlices: Array<{ title: string; value: string; persona: string; storyPoints: 1 | 2 | 3; evidence: string[] }>;
+  qualityFocus: string[];
+  risks: string[];
+  generatedAt: string;
 }
 export interface Story {
   id: string;
@@ -546,6 +565,10 @@ export interface SdlcPlan {
   intent: string;
   specificationStatus: string;
   source?: { kind: string; featureId?: string; featureName?: string };
+  workflow?: { enabledStages: WorkflowStage[] };
+  discoveryDocument?: DiscoveryDocument;
+  discoveryPresentation?: { outputPath: string; slideCount: number; generatedAt: string };
+  backlogApproval?: { status: "pending" | "approved"; approvedAt?: string };
   researchDocument: ResearchDocument;
   specificationDocument: SpecificationDocument;
   backlogStories: BacklogStory[];
@@ -893,6 +916,7 @@ export interface ApplicationState {
   copilotActivity?: import("@core/copilot/activity").CopilotActivityEvent[];
   correctionPacket?: CorrectionPacket;
   sdlc?: SdlcPlan;
+  valueEdgeFeature?: { id?: string; name?: string; description?: string };
   ingestion?: IngestionState;
   backgroundWorkers?: Partial<Record<BackgroundWorkerId, BackgroundWorkerState>>;
   intelligenceActivity?: Array<{

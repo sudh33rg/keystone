@@ -9,6 +9,7 @@ import type {
   BackgroundWorkerState,
   CopilotDelegationResult,
   CorrectionPacket,
+  DiscoveryDocument,
   EvidenceItem,
   IntelligenceCpgResult,
   IntelligenceExplorerItem,
@@ -36,6 +37,7 @@ import type {
   Story,
   TaskResult
   , ReuseResult,
+  WorkflowStage,
   WorkflowHistoryEntry
 } from "./model.js";
 
@@ -81,8 +83,10 @@ interface AppState {
   skills: string;
   instructions: string;
   valueEdgeFeatureId: string;
+  valueEdgeConfig: { baseUrl: string; sharedSpaceId: string; workspaceId: string; clientId: string; clientSecret: string; aviatorEndpoint: string; requestTimeoutMs: number; secretConfigured: boolean };
   evidenceText: string;
   selectedCriteria: Record<string, boolean>;
+  enabledWorkflowStages: WorkflowStage[];
   intentQuestion: string;
   intentDiscussion?: {
     messages: Array<{
@@ -176,12 +180,21 @@ const graphModes: IntelligenceGraphMode[] = [
   "tests",
   "impact"
 ];
+const workflowStages: Array<{ id: WorkflowStage; label: string; detail: string }> = [
+  { id: "discovery", label: "Discovery", detail: "StoryForge discovery, user stories, and QA stories" },
+  { id: "planning", label: "Planning", detail: "Repository R&D and specification" },
+  { id: "design", label: "Design", detail: "Implementation boundaries" },
+  { id: "development", label: "Development", detail: "Change implementation" },
+  { id: "testing", label: "Testing", detail: "QA, risk, review, and validation" },
+  { id: "deployment", label: "Deployment", detail: "Documentation, PR review, and completion" }
+];
 const navItems: Array<{ id: Nav; icon: string; description: string }> = [
   { id: "Home", icon: "⌂", description: "Workspace overview" },
   { id: "Intelligence", icon: "◈", description: "Repository intelligence" },
   { id: "Work", icon: "✓", description: "Intent and delivery" },
   { id: "Activity", icon: "↻", description: "Live operations" },
-  { id: "History", icon: "◷", description: "Durable journal" }
+  { id: "History", icon: "◷", description: "Durable journal" },
+  { id: "Settings", icon: "⚙", description: "Workspace settings" }
 ];
 const intentLifecycleTransitions: Record<IntentLifecycle, IntentLifecycle[]> = {
   DRAFT: ["UNDERSTANDING"],
@@ -213,7 +226,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
     intelligenceView: "Overview",
     explorerQuery: "",
     explorerKind: "all",
-    graphMode: restoredGraphFocus.graphMode ?? "repository",
+    graphMode: restoredGraphFocus.graphMode ?? "architecture",
     graphQuery: restoredGraphFocus.graphQuery ?? "",
     graphRelationshipKind: restoredGraphFocus.graphRelationshipKind ?? "all",
     graphScope: restoredGraphFocus.graphScope ?? "1 hop",
@@ -232,8 +245,10 @@ export class App extends React.Component<Record<string, never>, AppState> {
     instructions:
       "Follow the approved specification and repository instructions. Use only the supplied evidence. Do not perform Git write operations.",
     valueEdgeFeatureId: "",
+    valueEdgeConfig: { baseUrl: "", sharedSpaceId: "", workspaceId: "", clientId: "", clientSecret: "", aviatorEndpoint: "", requestTimeoutMs: 30000, secretConfigured: false },
     evidenceText: "",
     selectedCriteria: {},
+    enabledWorkflowStages: workflowStages.map((stage) => stage.id),
     intentQuestion: "",
     intentBlocker: "",
     rejectionReason: "",
@@ -455,7 +470,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
         notice: `${result.intent} query traversed ${result.traversedRelationships} relationship(s) and returned ${result.items?.length ?? 0} evidence-backed result(s).`
       });
     } else if (message.type === "INTELLIGENCE_EXPLORER_RESULT") {
-      const result = message.result as IntelligenceExplorerResult;
+      const result = normalizeExplorerResult(message.result);
       const previous = this.state.explorer;
       const isContinuation = Boolean(
         result.cursor &&
@@ -471,7 +486,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
         notice: ""
       });
     } else if (message.type === "INTELLIGENCE_GRAPH_RESULT") {
-      const result = message.result as IntelligenceGraphResult;
+      const result = normalizeGraphResult(message.result);
       const previous = this.state.graph;
       const nodeIds = new Set(result.nodes.map((node) => node.id));
       const relationshipKind =
@@ -498,9 +513,12 @@ export class App extends React.Component<Record<string, never>, AppState> {
       if (graph) this.loadGraph(graph.mode, this.state.graphQuery, graph.seedIds);
     } else if (message.type === "INTELLIGENCE_REUSE_RESULT") {
       const reuse = message.result as ReuseResult;
-      this.setState({ reuse, notice: `Reuse Lens found ${reuse.candidates.length} existing pattern candidate(s).` });
+      this.setState({
+        reuse: { ...reuse, candidates: arrayValue<ReuseResult["candidates"][number]>(reuse.candidates), warnings: arrayValue<string>(reuse.warnings) },
+        notice: `Reuse Lens found ${arrayValue<ReuseResult["candidates"][number]>(reuse.candidates).length} existing pattern candidate(s).`
+      });
     } else if (message.type === "CPG_VIEW_RESULT") {
-      const result = message.result as IntelligenceCpgResult;
+      const result = normalizeCpgResult(message.result);
       this.setState({
         cpg: result,
         cpgPath: result.sourcePath ?? this.state.cpgPath,
@@ -722,10 +740,21 @@ export class App extends React.Component<Record<string, never>, AppState> {
       this.setState({ notice: "The synchronized Browser View is open." });
     } else if (message.type === "VALUEEDGE_FEATURE_RESULT") {
       const feature = message.feature as { id?: string; name?: string; description?: string };
-      this.setState({
-        intent: [feature.name, feature.description].filter(Boolean).join("\n\n"),
-        notice: `Imported ValueEdge feature ${feature.id ?? ""}.`
-      });
+      const featureIntent = [
+        `ValueEdge Feature ${feature.id ?? ""}${feature.name ? ` · ${feature.name}` : ""}`,
+        feature.description
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+      this.setState((previous) => ({
+        intent: [previous.intent.trim(), featureIntent].filter(Boolean).join("\n\n---\n\n"),
+        valueEdgeFeatureId: "",
+        application: { ...previous.application, valueEdgeFeature: feature },
+        notice: `Fetched ValueEdge feature ${feature.id ?? ""} and added it to the intent.`
+      }));
+    } else if (message.type === "VALUEEDGE_CONFIG_RESULT") {
+      const config = recordValue(message.config);
+      this.setState((previous) => ({ valueEdgeConfig: { ...previous.valueEdgeConfig, baseUrl: stringValue(config.baseUrl), sharedSpaceId: stringValue(config.sharedSpaceId), workspaceId: stringValue(config.workspaceId), clientId: stringValue(config.clientId), aviatorEndpoint: stringValue(config.aviatorEndpoint), requestTimeoutMs: numberValue(config.requestTimeoutMs, 30000), secretConfigured: Boolean(config.secretConfigured), clientSecret: "" } }));
     } else if (message.type === "VALUEEDGE_PUBLISH_RESULT") {
       this.setState({
         notice: `Published ${((message.published as unknown[]) ?? []).length} approved stories to ValueEdge.`
@@ -761,16 +790,22 @@ export class App extends React.Component<Record<string, never>, AppState> {
     this.setState({ nav, notice: "" });
     if (nav === "Intelligence") this.loadIntelligenceSurface(this.state.intelligenceView);
     if (nav === "History") vscode.postMessage({ type: "LOAD_ACTIVITY_HISTORY" });
-  }
-  private startNewWork(): void {
-    this.navigate("Home");
-    window.setTimeout(() => this.intentInput?.focus(), 0);
+    if (nav === "Settings") vscode.postMessage({ type: "LOAD_VALUEEDGE_CONFIG" });
   }
   private dismissNotice(): void {
     this.setState({ notice: "" });
   }
   private field(name: keyof AppState, value: string | boolean): void {
     this.setState({ [name]: value } as unknown as Pick<AppState, keyof AppState>);
+  }
+  private toggleWorkflowStage(stage: WorkflowStage): void {
+    this.setState((previous) => ({
+      enabledWorkflowStages: previous.enabledWorkflowStages.includes(stage)
+        ? previous.enabledWorkflowStages.filter((value) => value !== stage)
+        : workflowStages
+            .map((item) => item.id)
+            .filter((value) => previous.enabledWorkflowStages.includes(value) || value === stage)
+    }));
   }
   private toggleCriterion(criterion: string, checked: boolean): void {
     this.setState((previous) => ({
@@ -888,8 +923,9 @@ export class App extends React.Component<Record<string, never>, AppState> {
     return (
       <Panel
         title="Background workers"
-        subtitle="Four independent analysis workers turn indexed repository evidence into findings and next actions."
+        subtitle="They start automatically after a successful intelligence refresh. Run them again after a significant change, or stop the current snapshot analysis."
       >
+        <div className="actions"><button className="primary" onClick={() => vscode.postMessage({ type: "START_BACKGROUND_WORKERS" })}>Run all analyses</button><button onClick={() => vscode.postMessage({ type: "STOP_BACKGROUND_WORKERS" })}>Stop analyses</button></div>
         <div className="background-worker-grid">
           {workers.map((worker) => {
             const state = this.state.application.backgroundWorkers?.[worker];
@@ -989,17 +1025,11 @@ export class App extends React.Component<Record<string, never>, AppState> {
             </div>
           </div>
           <div className="header-actions">
-            <span className={`workspace-status ${this.state.application.status}`}>
-              <i /> {this.state.application.status}
+            <span className={`header-icon status-icon ${this.state.application.status}`} title={`Workspace status: ${this.state.application.status}`} aria-label={`Workspace status: ${this.state.application.status}`}>
+              <i />
             </span>
-            <span className="surface-pill">
-              {vscode.surface === "browser" ? "Browser View · shared state" : "VS Code Webview"}
-            </span>
-            <button className="primary" onClick={() => this.startNewWork()}>
-              Start new work
-            </button>
-            <button onClick={() => vscode.postMessage({ type: "OPEN_BROWSER_VIEW" })}>
-              Open in Browser
+            <button className="header-icon" title="Open synchronized Browser view" aria-label="Open synchronized Browser view" onClick={() => vscode.postMessage({ type: "OPEN_BROWSER_VIEW" })}>
+              ↗
             </button>
           </div>
         </header>
@@ -1047,7 +1077,9 @@ export class App extends React.Component<Record<string, never>, AppState> {
                 ? this.work()
                 : this.state.nav === "Activity"
                   ? this.activity()
-                  : this.history()}
+                  : this.state.nav === "History"
+                    ? this.history()
+                    : this.settings()}
         </main>
       </div>
     );
@@ -1113,12 +1145,59 @@ export class App extends React.Component<Record<string, never>, AppState> {
           />
         </div>
         {this.ingestionStatus()}
-        <div className="two-column">
+        <div className="workflow-entry-stack">
           <Panel
-            title="Start from intent"
-            subtitle="Keystone researches the actual repository first, then hands only relevant intelligence to Copilot for implementation."
+            title="Start workflow"
+            subtitle="Enter a manual intent or a ValueEdge Feature ID. Both start the same repository research, Discovery, approval, and delivery workflow."
           >
+            <div className="inline-form workflow-source-input">
+              <input
+                value={this.state.valueEdgeFeatureId}
+                onChange={(event: React.FormEvent<HTMLInputElement>) =>
+                  this.field("valueEdgeFeatureId", event.currentTarget.value)
+                }
+                placeholder="ValueEdge Feature ID"
+              />
+              <button
+                className="icon-button"
+                title="Fetch ValueEdge Feature"
+                aria-label="Fetch ValueEdge Feature"
+                disabled={!this.state.valueEdgeFeatureId.trim()}
+                onClick={() =>
+                  vscode.postMessage({
+                    type: "IMPORT_VALUEEDGE_FEATURE",
+                    featureId: this.state.valueEdgeFeatureId.trim()
+                  })
+                }
+              >
+                ↓
+              </button>
+            </div>
+            <small className="workflow-source-help">Fetch a ValueEdge Feature to append its ID, title, and description to the intent, or write the intent directly.</small>
+            {this.state.application.valueEdgeFeature && (
+              <div className="valueedge-feature-source">
+                <span>
+                  ValueEdge Feature {this.state.application.valueEdgeFeature.id ?? ""}
+                  {this.state.application.valueEdgeFeature.name
+                    ? ` · ${this.state.application.valueEdgeFeature.name}`
+                    : ""}
+                </span>
+                <button
+                  className="icon-button"
+                  title="Use this as a manual intent instead"
+                  aria-label="Use this as a manual intent instead"
+                  onClick={() =>
+                    this.setState((previous) => ({
+                      application: { ...previous.application, valueEdgeFeature: undefined }
+                    }))
+                  }
+                >
+                  ×
+                </button>
+              </div>
+            )}
             <textarea
+              className="intent-editor"
               ref={(element: HTMLTextAreaElement | null) => {
                 this.intentInput = element ?? undefined;
               }}
@@ -1126,17 +1205,36 @@ export class App extends React.Component<Record<string, never>, AppState> {
               onChange={(event: React.FormEvent<HTMLTextAreaElement>) =>
                 this.field("intent", event.currentTarget.value)
               }
-              placeholder="Describe the feature, defect, modernization, QA, security, or performance intent…"
+              placeholder="Describe the feature, defect, modernization, QA, security, or performance intent. Long-form context, constraints, examples, and acceptance expectations are welcome…"
             />
+            <details className="workflow-stage-details">
+              <summary>Workflow stages · {this.state.enabledWorkflowStages.length} selected</summary>
+              <fieldset className="workflow-stage-picker">
+                <legend>Stages for this intent</legend>
+                <small>Uncheck any phase that is out of scope. These choices apply only to this workflow.</small>
+                <div className="workflow-stage-options">
+                  {workflowStages.map((stage, index) => (
+                    <label className="check workflow-stage-option" key={stage.id}>
+                      <input type="checkbox" checked={this.state.enabledWorkflowStages.includes(stage.id)} onChange={() => this.toggleWorkflowStage(stage.id)} />
+                      <span><b>{String(index + 1).padStart(2, "0")} · {stage.label}</b><small>{stage.detail}</small></span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            </details>
             <div className="actions">
               <button
                 className="primary"
                 disabled={!this.state.intent.trim()}
                 onClick={() =>
-                  vscode.postMessage({ type: "ANALYZE_INTENT", text: this.state.intent.trim() })
+                  vscode.postMessage({
+                    type: "ANALYZE_INTENT",
+                    text: this.state.intent.trim(),
+                    source: this.state.application.valueEdgeFeature ? "valueedge" : "manual"
+                  })
                 }
               >
-                Understand Intent
+                Start workflow
               </button>
               {this.state.task?.researchStatus === "ready" && (
                 <button
@@ -1155,7 +1253,8 @@ export class App extends React.Component<Record<string, never>, AppState> {
                   onClick={() =>
                     vscode.postMessage({
                       type: "CREATE_SDLC_PLAN",
-                      intent: this.state.task!.researchDocument.problemStatement
+                      intent: this.state.task!.researchDocument.problemStatement,
+                      enabledStages: this.state.enabledWorkflowStages
                     })
                   }
                 >
@@ -1182,40 +1281,6 @@ export class App extends React.Component<Record<string, never>, AppState> {
           {this.contextExperience(this.state.task)}
         </Panel>
         {this.state.task && !plan && this.prePlanResearch(this.state.task)}
-        <Panel
-          title="ValueEdge feature"
-          subtitle="Import a Feature, research it locally, approve the plan, then publish draft user and quality stories."
-        >
-          <div className="inline-form">
-            <input
-              value={this.state.valueEdgeFeatureId}
-              onChange={(event: React.FormEvent<HTMLInputElement>) =>
-                this.field("valueEdgeFeatureId", event.currentTarget.value)
-              }
-              placeholder="Feature ID"
-            />
-            <button onClick={() => vscode.postMessage({ type: "CONFIGURE_VALUEEDGE" })}>
-              Configure
-            </button>
-            <button
-              disabled={!this.state.valueEdgeFeatureId.trim()}
-              onClick={() =>
-                vscode.postMessage({
-                  type: "IMPORT_VALUEEDGE_FEATURE",
-                  featureId: this.state.valueEdgeFeatureId.trim()
-                })
-              }
-            >
-              Import
-            </button>
-            <button
-              disabled={plan?.specificationStatus !== "approved"}
-              onClick={() => vscode.postMessage({ type: "PUBLISH_VALUEEDGE_STORIES" })}
-            >
-              Publish approved stories
-            </button>
-          </div>
-        </Panel>
       </section>
     );
   }
@@ -1229,8 +1294,8 @@ export class App extends React.Component<Record<string, never>, AppState> {
             <p className="eyebrow">INTELLIGENCE LAYER</p>
             <h1>Visible, queryable engineering intelligence</h1>
             <p>
-              Canonical OKF is the knowledge contract. Graph, CPG and flow views are live
-              projections of persisted intelligence—not demo counters.
+              Understand how this repository is organised, what each part does, and how changes move
+              through services, modules, and flows. Every view links back to source evidence.
             </p>
           </div>
           <button
@@ -1245,25 +1310,21 @@ export class App extends React.Component<Record<string, never>, AppState> {
           </button>
         </div>
         <div className="metric-grid">
+          <Metric label="Repository modules" value={String(intel?.projectFingerprints?.length ?? 0)} detail="Independently identified project boundaries" />
           <Metric
-            label="OKF units"
-            value={String(okf?.units ?? 0)}
-            detail={`${okf?.active ?? 0} active · ${okf?.deleted ?? 0} lifecycle tombstones`}
+            label="Service components"
+            value={String(intel?.services?.length ?? 0)}
+            detail="Controllers, handlers, clients, repositories and services"
           />
           <Metric
-            label="Relationships"
+            label="Known connections"
             value={String(okf?.relationships ?? 0)}
-            detail={`${okf?.graphEdges ?? 0} graph edges`}
+            detail="Dependencies, calls, data movement, tests and ownership"
           />
           <Metric
-            label="Evidence"
-            value={String(okf?.evidence ?? 0)}
-            detail={`${okf?.observations ?? 0} observations`}
-          />
-          <Metric
-            label="CPG bindings"
-            value={String(okf?.cpgBindings ?? 0)}
-            detail={okf?.validated ? "linked to validated OKF" : "awaiting promoted OKF"}
+            label="Evidence coverage"
+            value={okf?.validated ? "Ready" : "Pending"}
+            detail={okf?.validated ? `${okf.evidence} source observations support this map` : "Refresh intelligence to verify findings"}
           />
         </div>
         <div className="subnav">
@@ -1277,17 +1338,58 @@ export class App extends React.Component<Record<string, never>, AppState> {
             </button>
           ))}
         </div>
-        {this.state.intelligenceView === "Overview"
-          ? this.intelligenceOverview(intel)
-          : this.state.intelligenceView === "Explorer"
-            ? this.intelligenceExplorer()
-            : this.state.intelligenceView === "Graph"
-              ? this.intelligenceGraph(false)
-              : this.state.intelligenceView === "CPG"
-                ? this.intelligenceCpg()
-                : this.state.intelligenceView === "Flows"
-                  ? this.intelligenceGraph(true)
-                  : this.intelligenceQuery()}
+        <IntelligenceViewBoundary
+          key={this.state.intelligenceView}
+          view={this.state.intelligenceView}
+          onRetry={() => {
+            // Drop the incompatible projection before requesting a new one. Otherwise the
+            // boundary would immediately render the same failing payload again.
+            this.setState({ graph: undefined, cpg: undefined, selectedGraphNodeId: undefined, selectedGraphEdgeId: undefined });
+            this.loadIntelligenceSurface(this.state.intelligenceView);
+          }}
+        >
+          {this.state.intelligenceView === "Overview"
+            ? this.intelligenceOverview(intel)
+            : this.state.intelligenceView === "Explorer"
+              ? this.intelligenceExplorer()
+              : this.state.intelligenceView === "Graph"
+                ? this.intelligenceGraph(false)
+                : this.state.intelligenceView === "CPG"
+                  ? this.intelligenceCpg()
+                  : this.state.intelligenceView === "Flows"
+                    ? this.intelligenceGraph(true)
+                    : this.intelligenceQuery()}
+        </IntelligenceViewBoundary>
+      </section>
+    );
+  }
+  private settings(): JSX.Element {
+    const config = this.state.valueEdgeConfig;
+    const update = (field: keyof AppState["valueEdgeConfig"], value: string | boolean | number) => this.setState((previous) => ({ valueEdgeConfig: { ...previous.valueEdgeConfig, [field]: value } }));
+    return (
+      <section>
+        <div className="page-title">
+          <div>
+            <p className="eyebrow">WORKSPACE SETTINGS</p>
+            <h1>Settings</h1>
+            <p>Configure workspace integrations and keep credentials in VS Code SecretStorage.</p>
+          </div>
+        </div>
+        <Panel
+          title="ValueEdge"
+          subtitle="Workspace settings are stored with this project. The client secret is stored only in VS Code SecretStorage."
+        >
+          <div className="valueedge-form">
+            <label>Tenant base URL<input value={config.baseUrl} onChange={(event: React.FormEvent<HTMLInputElement>) => update("baseUrl", event.currentTarget.value)} placeholder="https://valueedge.example.com" /></label>
+            <label>Shared space ID<input value={config.sharedSpaceId} onChange={(event: React.FormEvent<HTMLInputElement>) => update("sharedSpaceId", event.currentTarget.value)} /></label>
+            <label>Workspace ID<input value={config.workspaceId} onChange={(event: React.FormEvent<HTMLInputElement>) => update("workspaceId", event.currentTarget.value)} /></label>
+            <label>API client ID<input value={config.clientId} onChange={(event: React.FormEvent<HTMLInputElement>) => update("clientId", event.currentTarget.value)} /></label>
+            <label>API client secret <small>{config.secretConfigured ? "Stored securely; leave blank to keep it." : "Required to connect."}</small><input type="password" value={config.clientSecret} onChange={(event: React.FormEvent<HTMLInputElement>) => update("clientSecret", event.currentTarget.value)} /></label>
+            <label>Aviator endpoint <small>Optional tenant Smart Assistant endpoint.</small><input value={config.aviatorEndpoint} onChange={(event: React.FormEvent<HTMLInputElement>) => update("aviatorEndpoint", event.currentTarget.value)} placeholder="/api/aviator/ask" /></label>
+            <label>Request timeout (ms)<input type="number" min="1000" value={config.requestTimeoutMs} onChange={(event: React.FormEvent<HTMLInputElement>) => update("requestTimeoutMs", Number(event.currentTarget.value) || 30000)} /></label>
+          </div>
+          <div className="actions"><button className="primary" onClick={() => vscode.postMessage({ type: "SAVE_VALUEEDGE_CONFIG", config })}>Save connection</button><button onClick={() => vscode.postMessage({ type: "TEST_VALUEEDGE_CONFIG" })}>Test connection</button></div>
+        </Panel>
       </section>
     );
   }
@@ -1298,64 +1400,20 @@ export class App extends React.Component<Record<string, never>, AppState> {
     return (
       <div className="view-stack">
         <div className="two-column">
-          <Panel
-            title="OKF validation and projections"
-            subtitle={okf?.profile ?? "No promoted snapshot"}
-          >
-            {okf ? (
-              <ul className="fact-list">
-                <li>
-                  <b>Profile</b>
-                  <span>{okf.version}</span>
-                </li>
-                <li>
-                  <b>Extraction run</b>
-                  <code>{okf.extractionRunId}</code>
-                </li>
-                <li>
-                  <b>Validation</b>
-                  <Status value={okf.validated ? "passed" : "failed"} />
-                </li>
-                <li>
-                  <b>Graph</b>
-                  <span>
-                    {okf.graphNodes} nodes · {okf.graphEdges} edges
-                  </span>
-                </li>
-                <li>
-                  <b>CPG bindings</b>
-                  <span>{okf.cpgBindings}</span>
-                </li>
-                <li>
-                  <b>Portable OKF</b>
-                  <span>{okf.portableBundle?.validated ? "validated" : "not generated"}</span>
-                </li>
-              </ul>
-            ) : (
-              <Empty text="Run repository indexing." />
-            )}
+          <Panel title="Start with a system question" subtitle="Use a focused view instead of reading raw extraction records.">
+            <div className="knowledge-actions">
+              <button className="knowledge-action" onClick={() => { this.setState({ intelligenceView: "Graph", graphMode: "architecture", graphQuery: "", graphLens: "intent" }); this.loadGraph("architecture"); }}><b>Map the architecture</b><span>See modules and the components that connect them.</span></button>
+              <button className="knowledge-action" onClick={() => { this.setState({ intelligenceView: "Flows", graphQuery: "" }); this.loadGraph("flows"); }}><b>Trace a user flow</b><span>Follow calls and data movement through the system.</span></button>
+              <button className="knowledge-action" onClick={() => this.openIntelligenceView("Explorer")}><b>Find a capability</b><span>Search APIs, services, storage, tests and domain concepts.</span></button>
+            </div>
           </Panel>
-          <Panel
-            title="Evidence provenance"
-            subtitle="Source evidence from the promoted OKF snapshot."
-          >
-            {okf?.evidenceSamples?.length ? (
-              <div className="evidence-stack">
-                {okf.evidenceSamples.slice(0, 14).map((item) => (
-                  <div key={item.id}>
-                    <button className="link-button" onClick={() => this.openSource(item.path)}>
-                      {item.path}
-                    </button>
-                    <span>{item.method}</span>
-                    <small>{new Date(item.observedAt).toLocaleString()}</small>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <Empty text="No evidence loaded." />
-            )}
+          <Panel title="What the repository map is based on" subtitle="Keystone verifies findings against source files; confidence and source links stay available when you inspect a component.">
+            {okf ? <ul className="fact-list human-facts"><li><b>Indexed source</b><span>{intel?.fileCount ?? 0} files across {intel?.languageCapabilities?.filter((item) => (item.files ?? 0) > 0).length ?? 0} languages</span></li><li><b>Relationship map</b><span>{okf.graphEdges} connections available to explore</span></li><li><b>Snapshot status</b><Status value={okf.validated ? "verified" : "needs refresh"} /></li></ul> : <Empty text="Run repository indexing to build the system map." />}
           </Panel>
         </div>
+        <Panel title="Services and application components" subtitle="Detected entry points and integration boundaries. Select one to understand its callers, dependencies, and impact.">
+          {intel?.services?.length ? <div className="service-grid">{intel.services.map((service) => <button className="service-card" key={`${service.path}-${service.name}`} onClick={() => { this.setState({ intelligenceView: "Graph", graphMode: "architecture", graphQuery: service.name, graphLens: "intent" }); this.loadGraph("architecture", service.name); }}><span>{humanize(service.role)}</span><b>{humanize(service.name)}</b><small>{service.path}</small><em>{service.hints.map(humanize).join(" · ") || "Application component"}</em></button>)}</div> : <Empty text="No named service boundaries were detected yet. Browse modules below or refresh intelligence." />}
+        </Panel>
         <Panel
           title="Language capability registry"
           subtitle="Every recognized text language receives deterministic discovery, structure, CPG, OKF and evidence; compiler/language-service providers deepen semantics when available."
@@ -1367,14 +1425,14 @@ export class App extends React.Component<Record<string, never>, AppState> {
           </div>
         </Panel>
         <Panel
-          title="Projects and technology fingerprints"
-          subtitle="Manifest- and source-evidence-backed module boundaries."
+          title="Modules and technology boundaries"
+          subtitle="Each module is a separately detected project boundary, with its responsibilities inferred from manifests and source evidence."
         >
           {intel?.projectFingerprints?.length ? (
             <ul className="fact-list">
               {intel.projectFingerprints.map((project) => (
                 <li key={project.projectPath}>
-                  <b>{project.name}</b>
+                  <b>{project.name} <small>· {project.projectPath || "repository root"}</small></b>
                   <span>
                     {[
                       ...project.languages,
@@ -1400,11 +1458,16 @@ export class App extends React.Component<Record<string, never>, AppState> {
 
   private intelligenceExplorer(): JSX.Element {
     const result = this.state.explorer;
-    const kinds = Object.keys(result?.kindCounts ?? {}).sort();
+    const explorerFilters = [
+      ["meaningful", "System knowledge"], ["services", "Services & components"],
+      ["interfaces", "APIs & events"], ["data", "Data & persistence"],
+      ["architecture", "Modules & architecture"], ["risks", "Risks"],
+      ["implementation", "Implementation details"], ["all", "Everything (raw)"]
+    ] as const;
     return (
       <Panel
-        title="Knowledge Explorer"
-        subtitle="Browse the canonical OKF units that drive query, graph, intent retrieval, context compression and SDLC evidence."
+        title="Repository knowledge explorer"
+        subtitle="Start with system-level knowledge. Raw symbols and extraction facts are available only when you explicitly choose implementation details."
       >
         <div className="inline-form">
           <input
@@ -1413,7 +1476,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
             onChange={(event: React.FormEvent<HTMLInputElement>) =>
               this.field("explorerQuery", event.currentTarget.value)
             }
-            placeholder="Symbol, API, service, database, table, query, flag, test…"
+            placeholder="Find a service, capability, API, module, data store, risk or file…"
           />
           <select
             value={this.state.explorerKind}
@@ -1421,10 +1484,9 @@ export class App extends React.Component<Record<string, never>, AppState> {
               this.setState({ explorerKind: event.currentTarget.value, explorer: undefined })
             }
           >
-            <option value="all">All kinds</option>
-            {kinds.map((kind) => (
-              <option key={kind} value={kind}>
-                {kind} ({result?.kindCounts[kind] ?? 0})
+            {explorerFilters.map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
               </option>
             ))}
           </select>
@@ -1434,8 +1496,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
         </div>
         {result && (
           <p className="result-summary">
-            Showing {result.items.length} of {result.totalMatching} matching OKF unit(s) ·{" "}
-            {result.totalActive} active in snapshot
+            Showing {result.items.length} of {result.totalMatching} matching knowledge item(s). Select an item to inspect its source and connections.
           </p>
         )}
         {result ? (
@@ -1470,6 +1531,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
       ? [activeIntent.currentObjective, activeIntent.goal, ...activeIntent.scope.included, ...activeIntent.affectedAreas].filter(Boolean).join(" ")
       : this.state.graphQuery;
     const contextInspector = context?.inspector;
+    const services = this.state.application.intelligence?.services ?? [];
     const contextNodes = contextInspector ? contextProjection(contextInspector, this.state.graph ?? undefined) : undefined;
     const reuseNodes = lens === "reuse" ? reuseProjection(this.state.reuse) : undefined;
     const projected = lens === "context" ? contextNodes : lens === "reuse" ? reuseNodes : undefined;
@@ -1535,12 +1597,12 @@ export class App extends React.Component<Record<string, never>, AppState> {
     return (
       <div className="view-stack">
         <Panel
-          title={flowOnly ? "Engineering Flow Explorer" : `${lens[0].toUpperCase()}${lens.slice(1)} Lens`}
+          title={flowOnly ? "How work moves through the system" : `${lens[0].toUpperCase()}${lens.slice(1)} Lens`}
           subtitle={
             flowOnly
-              ? "Call/data-flow relationships projected from OKF."
+              ? "Trace meaningful paths between entry points, application components, data stores, and tests. Select a component for its role and evidence."
               : lens === "intent"
-                ? "What part of the repository does this Intent touch?"
+                ? "Explore the system around a capability, module, service, or source file."
                 : lens === "context"
                   ? "The active ContextPackage: sent to Copilot, available on demand, or excluded."
                   : "Evidence-backed existing patterns related to the active Intent."
@@ -1567,7 +1629,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
               >
                 {graphModes.map((value) => (
                   <option key={value} value={value}>
-                    {value}
+                    {graphModeLabel(value)}
                   </option>
                 ))}
               </select>
@@ -1581,7 +1643,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
               <option value="all">All relationships</option>
               {(result?.relationshipKinds ?? []).map((kind) => (
                 <option key={kind} value={kind}>
-                  {kind}
+                  {relationshipLabel(kind)}
                 </option>
               ))}
             </select>
@@ -1610,7 +1672,18 @@ export class App extends React.Component<Record<string, never>, AppState> {
             <button className="primary" onClick={() => lens === "reuse" ? this.loadReuse(intentText) : this.loadGraph(mode, lens === "intent" ? intentText : this.state.graphQuery)}>
               Load {flowOnly ? "flows" : lens}
             </button>
+            <button onClick={() => this.clearGraphView(flowOnly)}>Clear filters</button>
           </div>
+          {flowOnly && !this.state.graphQuery.trim() && services.length > 0 && (
+            <div className="flow-starters">
+              <b>Choose a component to trace</b>
+              {services.slice(0, 8).map((service) => (
+                <button key={service.path} onClick={() => { this.setState({ graphQuery: service.name }); this.loadGraph("flows", service.name); }}>
+                  {humanize(service.name)}
+                </button>
+              ))}
+            </div>
+          )}
           {result?.warnings.map((value) => (
             <div className="callout warning" key={value}>
               {value}
@@ -1619,9 +1692,9 @@ export class App extends React.Component<Record<string, never>, AppState> {
           {lens === "context" && context && <div className="projection-summary"><b>ContextPackage {context.id}</b> · {formatContextTokens(context.estimatedTransmittedTokens)} sent · {contextInspector?.availableOnDemand.length ?? 0} expandable · click a retained node to request targeted context.</div>}
           {lens === "reuse" && this.state.reuse?.warnings.map((warning) => <div className="callout warning" key={warning}>{warning}</div>)}
           <div className="graph-legend" aria-label="Relationship provenance legend">
-            <span><i className="legend-swatch origin-EXTRACTED" /> EXTRACTED / RESOLVED · deterministic</span>
-            <span><i className="legend-swatch origin-INFERRED" /> INFERRED · heuristic</span>
-            <span><i className="legend-swatch origin-AMBIGUOUS" /> AMBIGUOUS · verify candidates</span>
+            <span><i className="legend-swatch origin-EXTRACTED" /> Confirmed in source</span>
+            <span><i className="legend-swatch origin-INFERRED" /> Inferred from structure</span>
+            <span><i className="legend-swatch origin-AMBIGUOUS" /> Needs verification</span>
           </div>
           {visualNodes.length > renderedNodes.length && (
             <div className="inline-form graph-segment-control">
@@ -1682,9 +1755,9 @@ export class App extends React.Component<Record<string, never>, AppState> {
                 const location = edge.sourceLocation;
                 return (
                   <div className="graph-evidence-row" key={edge.id}>
-                    <b>{source?.label ?? edge.sourceId} —[{edge.kind}]→ {target?.label ?? edge.targetId}</b>
-                    <Status value={edge.origin ?? "INFERRED"} />
-                    <small>{Math.round((edge.confidence ?? 0) * 100)}% confidence · {(edge.evidenceIds?.length ?? 0)} evidence link(s){location ? ` · ${location.workspaceRelativePath}${location.startLine ? `:${location.startLine}` : ""}` : ""}</small>
+                    <b>{source?.label ?? edge.sourceId} — {relationshipLabel(edge.kind)} → {target?.label ?? edge.targetId}</b>
+                    <Status value={provenanceLabel(edge.origin ?? "INFERRED")} />
+                    <small>{Math.round((edge.confidence ?? 0) * 100)}% confidence · {(edge.evidenceIds?.length ?? 0)} source link(s){location ? ` · ${location.workspaceRelativePath}${location.startLine ? `:${location.startLine}` : ""}` : ""}</small>
                     {edge.resolutionExplanation && <small>{edge.resolutionExplanation}</small>}
                   </div>
                 );
@@ -1741,8 +1814,8 @@ export class App extends React.Component<Record<string, never>, AppState> {
     );
     return (
       <Panel
-        title="Code Property Graph Explorer"
-        subtitle="Inspect persisted AST/EOG/CFG/DFG/CDG/call neighborhoods and their OKF bindings."
+        title="Code behavior explorer"
+        subtitle="Use this when you need to inspect how one source file behaves: calls it makes, data it transforms, and branching paths. It is intentionally source-level, not a repository map."
       >
         <div className="inline-form">
           <select
@@ -1752,8 +1825,8 @@ export class App extends React.Component<Record<string, never>, AppState> {
               this.setState({ cpgPath: event.currentTarget.value })
             }
           >
-            <option value="">Choose source file</option>
-            {(result?.files ?? []).map((file) => (
+            <option value="">Choose a source file to inspect</option>
+            {this.cpgFileOptions().map((file) => (
               <option key={file.sourcePath} value={file.sourcePath}>
                 {file.sourcePath} · {file.nodeCount} nodes
               </option>
@@ -1765,10 +1838,10 @@ export class App extends React.Component<Record<string, never>, AppState> {
               this.setState({ cpgEdgeKind: event.currentTarget.value })
             }
           >
-            <option value="all">All edges</option>
+            <option value="all">Behavior overview</option>
             {(result?.edgeKinds ?? []).map((kind) => (
               <option key={kind} value={kind}>
-                {kind}
+                {cpgEdgeLabel(kind)}
               </option>
             ))}
           </select>
@@ -1785,6 +1858,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
             ))}
           </div>
         )}
+        {result?.sourcePath && <div className="cpg-guidance"><b>Reading this view:</b> nodes are statements or declarations in <code>{result.sourcePath}</code>. Lines show whether execution <em>calls</em> another function, <em>moves data</em>, or <em>branches</em>. Select a node to open the exact source line.</div>}
         {(result?.nodes.length ?? 0) > renderedCpgNodes.length && (
           <div className="inline-form graph-segment-control">
             <small>
@@ -1819,10 +1893,10 @@ export class App extends React.Component<Record<string, never>, AppState> {
           <div className="graph-inspector">
             {selected ? (
               <div className="inspector-content">
-                <p className="eyebrow">CPG NODE</p>
+                <p className="eyebrow">SOURCE BEHAVIOR NODE</p>
                 <h3>{selected.label}</h3>
-                <Status value={selected.kind} />
-                <p>{selected.syntaxKind}</p>
+                <Status value={humanize(selected.kind)} />
+                <p>{humanize(selected.syntaxKind)}</p>
                 <code>
                   {selected.path}:{selected.line}
                 </code>
@@ -1840,7 +1914,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
                     })
                   }
                 >
-                  Focus neighborhood
+                  Show related behavior
                 </button>
               </div>
             ) : (
@@ -1898,7 +1972,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
         </div>
         {result && (
           <div className="query-answer">
-            <b>{result.answer}</b>
+            <b>{queryAnswer(result)}</b>
             <small>
               {result.intent} · {Math.round(result.confidence * 100)}% confidence ·{" "}
               {result.traversedRelationships} traversed relationship(s)
@@ -1917,21 +1991,21 @@ export class App extends React.Component<Record<string, never>, AppState> {
               <summary>How Keystone planned this query</summary>
               <p>{result.plan.strategy}</p>
               <p>
-                <b>Terms:</b> {result.plan.terms.join(" · ") || "none"}
+                <b>Matched terms:</b> {result.plan.terms.join(" · ") || "none"}
               </p>
               <p>
-                <b>Seeds:</b> {result.plan.seedLabels.slice(0, 8).join(" · ") || "none"}
+                <b>Starting points:</b> {result.plan.seedLabels.slice(0, 8).map(humanize).join(" · ") || "none"}
               </p>
               <p>
-                <b>Relationships:</b> {result.plan.relationshipKinds.join(" · ") || "none"} · max
+                <b>Connections followed:</b> {result.plan.relationshipKinds.map(relationshipLabel).join(" · ") || "none"} · max
                 depth {result.plan.maxDepth}
               </p>
               {result.traversals.length > 0 && (
                 <ol>
                   {result.traversals.slice(0, 20).map((step, index) => (
                     <li key={`${step.sourceId}-${step.targetId}-${index}`}>
-                      <code>{step.sourceLabel}</code> —[{step.relationship}]→{" "}
-                      <code>{step.targetLabel}</code>
+                      <code>{humanize(step.sourceLabel)}</code> — {relationshipLabel(step.relationship)} →{" "}
+                      <code>{humanize(step.targetLabel)}</code>
                     </li>
                   ))}
                 </ol>
@@ -2004,6 +2078,30 @@ export class App extends React.Component<Record<string, never>, AppState> {
       edgeKind: this.state.cpgEdgeKind
     });
   }
+  private cpgFileOptions(): Array<{ sourcePath: string; nodeCount: number }> {
+    const loaded = this.state.cpg?.files ?? [];
+    if (loaded.length) return loaded;
+    // The initial CPG response is asynchronous. Offer indexed source files immediately so
+    // the screen is never an empty selector while the persisted shard manifest is loading.
+    return (this.state.application.intelligence?.files ?? [])
+      .filter((file) => /\.(?:ts|tsx|js|jsx|mjs|cjs|py|java|cs|go|rs|rb|php|kt|kts|swift)$/i.test(file.path))
+      .map((file) => ({ sourcePath: file.path, nodeCount: 0 }));
+  }
+  private clearGraphView(flowOnly: boolean): void {
+    const mode: IntelligenceGraphMode = flowOnly ? "flows" : "architecture";
+    this.setState({
+      graphMode: mode,
+      graphQuery: "",
+      graphRelationshipKind: "all",
+      graphScope: "1 hop",
+      graphLens: "intent",
+      selectedGraphNodeId: undefined,
+      selectedGraphEdgeId: undefined,
+      collapsedGraphNodeIds: [],
+      graphNodeLimit: 48
+    });
+    this.loadGraph(mode);
+  }
   private showExplorerItemInGraph(item: IntelligenceExplorerItem): void {
     this.setState({
       intelligenceView: "Graph",
@@ -2058,11 +2156,6 @@ export class App extends React.Component<Record<string, never>, AppState> {
                 Research an intent from Home. Keystone will not invent a plan before repository
                 evidence exists.
               </p>
-            </div>
-            <div className="actions">
-              <button className="primary" onClick={() => this.startNewWork()}>
-                Start new work
-              </button>
             </div>
           </div>
         </section>
@@ -2610,7 +2703,11 @@ export class App extends React.Component<Record<string, never>, AppState> {
             <button
               className="primary"
               onClick={() =>
-                vscode.postMessage({ type: "CREATE_SDLC_PLAN", intent: research.problemStatement })
+                vscode.postMessage({
+                  type: "CREATE_SDLC_PLAN",
+                  intent: research.problemStatement,
+                  enabledStages: this.state.enabledWorkflowStages
+                })
               }
             >
               Create specification and stories
@@ -2631,6 +2728,43 @@ export class App extends React.Component<Record<string, never>, AppState> {
         title="Research → Specification → Backlog"
         subtitle="Implementation starts only after repository R&D and the generated specification have both been reviewed."
       >
+        {plan.workflow && (
+          <div className="workflow-plan-summary">
+            <b>Configured workflow</b>
+            <span>{plan.workflow.enabledStages.map((stage) => workflowStages.find((item) => item.id === stage)?.label ?? stage).join(" → ") || "No stages selected"}</span>
+          </div>
+        )}
+        <div className="workflow-plan-summary">
+          <b>Intent source</b>
+          <span>
+            {plan.source?.kind === "valueedge"
+              ? `ValueEdge Feature ${plan.source.featureId ?? ""}${plan.source.featureName ? ` · ${plan.source.featureName}` : ""}`
+              : "Typed manually in Keystone"}
+          </span>
+        </div>
+        {plan.discoveryDocument && <DiscoveryDocumentView discovery={plan.discoveryDocument} />}
+        {plan.discoveryDocument && (
+          <div className="actions discovery-presentation-actions">
+            <button
+              className="primary"
+              onClick={() => vscode.postMessage({ type: "GENERATE_DISCOVERY_PRESENTATION" })}
+            >
+              Generate Discovery PPT
+            </button>
+            {plan.discoveryPresentation && (
+              <button
+                onClick={() =>
+                  vscode.postMessage({
+                    type: "OPEN_DISCOVERY_PRESENTATION",
+                    path: plan.discoveryPresentation!.outputPath
+                  })
+                }
+              >
+                Open latest PPT · {plan.discoveryPresentation.slideCount} slides
+              </button>
+            )}
+          </div>
+        )}
         <div className="doc-grid">
           <ResearchDocumentView
             research={plan.researchDocument}
@@ -2645,6 +2779,31 @@ export class App extends React.Component<Record<string, never>, AppState> {
             <BacklogCard key={story.id} story={story} />
           ))}
         </div>
+        {plan.backlogStories.length > 0 && (
+          <div className="approval backlog-approval">
+            <span>
+              Generated story approval: <b>{plan.backlogApproval?.status ?? "pending"}</b>
+              {plan.source?.kind === "valueedge"
+                ? " · approving enables posting these stories to the imported ValueEdge Feature."
+                : " · approval records that these generated stories are ready for local delivery."}
+            </span>
+            {plan.backlogApproval?.status !== "approved" ? (
+              <button
+                className="primary"
+                onClick={() => vscode.postMessage({ type: "APPROVE_BACKLOG_STORIES" })}
+              >
+                Approve generated user & QA stories
+              </button>
+            ) : plan.source?.kind === "valueedge" ? (
+              <button
+                className="primary"
+                onClick={() => vscode.postMessage({ type: "PUBLISH_VALUEEDGE_STORIES" })}
+              >
+                Post approved stories to ValueEdge
+              </button>
+            ) : null}
+          </div>
+        )}
         {plan.specificationStatus !== "approved" && (
           <div className="approval">
             <span>
@@ -4042,6 +4201,31 @@ function SpecificationDocumentView({
     </article>
   );
 }
+function DiscoveryDocumentView({ discovery }: { discovery: DiscoveryDocument }): JSX.Element {
+  return (
+    <article className="document-card">
+      <h3>{discovery.title}</h3>
+      <p>{discovery.summary}</p>
+      <div className="document-grid">
+        <DocumentList title="Personas" items={discovery.personas} />
+        <DocumentList title="Quality focus" items={discovery.qualityFocus} />
+        <DocumentList title="Assumptions" items={discovery.assumptions} />
+        <DocumentList title="Open questions" items={discovery.questions} />
+      </div>
+      <h4>Candidate vertical slices</h4>
+      {discovery.proposedSlices.length ? (
+        <ul>
+          {discovery.proposedSlices.map((slice) => (
+            <li key={slice.title}>
+              <b>{slice.title}</b> · {slice.storyPoints} point{slice.storyPoints === 1 ? "" : "s"}<br />
+              <small>{slice.value}</small>
+            </li>
+          ))}
+        </ul>
+      ) : <small>No candidate slice was identified from the available evidence.</small>}
+    </article>
+  );
+}
 function DocumentList({ title, items }: { title: string; items: readonly string[] }): JSX.Element {
   return (
     <section className="document-section">
@@ -4059,9 +4243,142 @@ function DocumentList({ title, items }: { title: string; items: readonly string[
   );
 }
 
+function arrayValue<T>(value: unknown): T[] {
+  return Array.isArray(value) ? (value as T[]) : [];
+}
+function stringValue(value: unknown, fallback = ""): string {
+  return typeof value === "string" ? value : fallback;
+}
+function numberValue(value: unknown, fallback = 0): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+function recordValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+function normalizeExplorerResult(value: unknown): IntelligenceExplorerResult {
+  const raw = recordValue(value);
+  const kindCounts = Object.fromEntries(
+    Object.entries(recordValue(raw.kindCounts)).map(([kind, count]) => [kind, numberValue(count)])
+  );
+  return {
+    query: stringValue(raw.query),
+    kind: typeof raw.kind === "string" ? raw.kind : undefined,
+    cursor: typeof raw.cursor === "string" ? raw.cursor : undefined,
+    nextCursor: typeof raw.nextCursor === "string" ? raw.nextCursor : undefined,
+    pageSize: numberValue(raw.pageSize, 120),
+    totalActive: numberValue(raw.totalActive),
+    totalMatching: numberValue(raw.totalMatching),
+    kindCounts,
+    items: arrayValue<unknown>(raw.items).map((item, index) => {
+      const entry = recordValue(item);
+      return {
+        id: stringValue(entry.id, `explorer-${index}`),
+        label: stringValue(entry.label, "Unnamed knowledge item"),
+        kind: stringValue(entry.kind, "unknown"),
+        path: typeof entry.path === "string" ? entry.path : undefined,
+        line: numberValue(entry.line),
+        description: typeof entry.description === "string" ? entry.description : undefined,
+        confidence: numberValue(entry.confidence),
+        evidenceIds: arrayValue<string>(entry.evidenceIds),
+        incoming: numberValue(entry.incoming),
+        outgoing: numberValue(entry.outgoing)
+      };
+    })
+  };
+}
+function normalizeGraphResult(value: unknown): IntelligenceGraphResult {
+  const raw = recordValue(value);
+  const modes: IntelligenceGraphMode[] = ["repository", "architecture", "dependencies", "calls", "tests", "impact", "flows"];
+  const mode = modes.includes(raw.mode as IntelligenceGraphMode)
+    ? (raw.mode as IntelligenceGraphMode)
+    : "repository";
+  return {
+    mode,
+    query: typeof raw.query === "string" ? raw.query : undefined,
+    seedIds: arrayValue<string>(raw.seedIds),
+    nodes: arrayValue<unknown>(raw.nodes).map((node, index) => {
+      const entry = recordValue(node);
+      return {
+        ...entry,
+        id: stringValue(entry.id, `graph-node-${index}`),
+        label: stringValue(entry.label, "Unnamed graph node"),
+        kind: stringValue(entry.kind, "unknown"),
+        confidence: numberValue(entry.confidence),
+        evidenceIds: arrayValue<string>(entry.evidenceIds),
+        seed: Boolean(entry.seed)
+      } as IntelligenceGraphNode;
+    }),
+    edges: arrayValue<unknown>(raw.edges).map((edge, index) => {
+      const entry = recordValue(edge);
+      return {
+        ...entry,
+        id: stringValue(entry.id, `graph-edge-${index}`),
+        sourceId: stringValue(entry.sourceId),
+        targetId: stringValue(entry.targetId),
+        kind: stringValue(entry.kind, "related"),
+        confidence: numberValue(entry.confidence),
+        evidenceIds: arrayValue<string>(entry.evidenceIds),
+        origin: ["EXTRACTED", "RESOLVED", "INFERRED", "AMBIGUOUS"].includes(String(entry.origin))
+          ? entry.origin
+          : "INFERRED"
+      } as IntelligenceGraphEdge;
+    }),
+    relationshipKinds: arrayValue<string>(raw.relationshipKinds),
+    truncated: Boolean(raw.truncated),
+    warnings: arrayValue<string>(raw.warnings)
+  };
+}
+function normalizeCpgResult(value: unknown): IntelligenceCpgResult {
+  const raw = recordValue(value);
+  return {
+    files: arrayValue<unknown>(raw.files).map((file) => {
+      const entry = recordValue(file);
+      return { sourcePath: stringValue(entry.sourcePath), nodeCount: numberValue(entry.nodeCount), edgeCount: numberValue(entry.edgeCount), capabilities: recordValue(entry.capabilities) as Record<string, boolean> };
+    }),
+    sourcePath: typeof raw.sourcePath === "string" ? raw.sourcePath : undefined,
+    capabilities: recordValue(raw.capabilities) as Record<string, boolean>,
+    nodes: arrayValue<unknown>(raw.nodes).map((node, index) => {
+      const entry = recordValue(node);
+      return { id: stringValue(entry.id, `cpg-node-${index}`), label: stringValue(entry.label, "Unnamed CPG node"), kind: stringValue(entry.kind, "unknown"), syntaxKind: stringValue(entry.syntaxKind, "unknown"), path: stringValue(entry.path), line: numberValue(entry.line), okfId: typeof entry.okfId === "string" ? entry.okfId : undefined };
+    }),
+    edges: arrayValue<unknown>(raw.edges).map((edge, index) => {
+      const entry = recordValue(edge);
+      return { id: stringValue(entry.id, `cpg-edge-${index}`), sourceId: stringValue(entry.sourceId), targetId: stringValue(entry.targetId), kind: stringValue(entry.kind, "related"), okfSourceId: typeof entry.okfSourceId === "string" ? entry.okfSourceId : undefined, okfTargetId: typeof entry.okfTargetId === "string" ? entry.okfTargetId : undefined };
+    }),
+    edgeKinds: arrayValue<string>(raw.edgeKinds),
+    truncated: Boolean(raw.truncated),
+    warnings: arrayValue<string>(raw.warnings)
+  };
+}
+
+class IntelligenceViewBoundary extends React.Component<
+  { view: IntelligenceView; onRetry: () => void; children: React.ReactNode },
+  { error?: string }
+> {
+  state: { error?: string } = {};
+  componentDidCatch(error: Error): void {
+    this.setState({ error: error.message || "Unexpected rendering error." });
+  }
+  render(): React.ReactNode {
+    if (!this.state.error) return this.props.children;
+    return (
+      <section className="panel intelligence-view-error" role="alert">
+        <h2>{this.props.view} could not be displayed</h2>
+        <p>The saved intelligence response was incomplete or incompatible. Retry reloads this view safely.</p>
+        <small>{this.state.error}</small>
+        <div className="actions">
+          <button className="primary" onClick={() => { this.setState({ error: undefined }); this.props.onRetry(); }}>Retry {this.props.view}</button>
+        </div>
+      </section>
+    );
+  }
+}
+
 function navFromHash(): Nav {
   const value = location.hash.replace("#", "");
-  return (["Home", "Intelligence", "Work", "Activity", "History"] as Nav[]).includes(value as Nav)
+  return (["Home", "Intelligence", "Work", "Activity", "History", "Settings"] as Nav[]).includes(value as Nav)
     ? (value as Nav)
     : "Home";
 }
@@ -4220,8 +4537,8 @@ function EvidenceList({
     <div className="evidence-stack">
       {items.map((item, index) => (
         <div key={item.id ?? item.okfId ?? `${item.kind}-${index}`}>
-          <span className="kind">{item.kind}</span>
-          <b>{item.label}</b>
+          <span className="kind">{humanize(item.kind)}</span>
+          <b>{humanize(item.label)}</b>
           {item.path &&
             (onOpen ? (
               <button className="link-button" onClick={() => onOpen(item.path!, item.line)}>
@@ -4231,7 +4548,7 @@ function EvidenceList({
               <code>{item.path}</code>
             ))}
           {item.summary && <small>{item.summary}</small>}
-          {item.reason && <small>{item.reason}</small>}
+          {item.reason && <small>Why it matters: {humanize(item.reason)}</small>}
           {item.relationshipPath?.length ? (
             <small>{item.relationshipPath.slice(-3).join(" → ")}</small>
           ) : null}
@@ -4319,8 +4636,8 @@ function ExplorerRow({
   return (
     <article className="explorer-row">
       <div>
-        <span className="kind">{item.kind}</span>
-        <b>{item.label}</b>
+        <span className="kind">{humanize(item.kind)}</span>
+        <b>{humanize(item.label)}</b>
         <Status value={`${Math.round(item.confidence * 100)}%`} />
       </div>
       {item.description && <p>{item.description}</p>}
@@ -4331,10 +4648,10 @@ function ExplorerRow({
         </button>
       )}
       <small>
-        {item.incoming} incoming · {item.outgoing} outgoing · {item.evidenceIds.length} evidence
+        Used by {item.incoming} · uses {item.outgoing} · {item.evidenceIds.length} source
         link(s)
       </small>
-      <button onClick={() => onGraph(item)}>Show neighborhood</button>
+      <button onClick={() => onGraph(item)}>Understand connections</button>
     </article>
   );
 }
@@ -4420,7 +4737,53 @@ function communityFor(path: string | undefined, kind: string): string {
   return first && !/^(src|lib|app)$/i.test(first) ? first : kind;
 }
 function communityLabel(id: string): string {
-  return id.replace(/[-_]/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+  return humanize(id);
+}
+function humanize(value: string): string {
+  return value
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[-_./]+/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+function relationshipLabel(kind: string): string {
+  const labels: Record<string, string> = {
+    CALLS: "calls", CALL: "calls", DEPENDS_ON: "depends on", DEPENDS_ON_PACKAGE: "uses package",
+    IMPORTS: "imports", CONTAINS: "contains", DEFINES: "defines", READS: "reads from",
+    WRITES: "writes to", FLOWS_TO: "passes data to", DATA_FLOW: "passes data to",
+    CONTROL_FLOW: "continues to", TESTS: "is tested by", IMPLEMENTS: "implements",
+    EXTENDS: "extends", ROUTES_TO: "routes to", USES: "uses"
+  };
+  return labels[kind.toUpperCase()] ?? humanize(kind).toLowerCase();
+}
+function graphModeLabel(mode: IntelligenceGraphMode): string {
+  const labels: Record<IntelligenceGraphMode, string> = { repository: "Repository map", architecture: "Architecture", dependencies: "Dependencies", calls: "Call paths", tests: "Test coverage", impact: "Change impact", flows: "User and data flows" };
+  return labels[mode];
+}
+function cpgEdgeLabel(kind: string): string {
+  const labels: Record<string, string> = { call: "Function calls", dfg: "Data movement", cfg: "Execution order", cdg: "Branch conditions", eog: "Evaluation order", ast: "Code structure", ref: "References" };
+  return labels[kind.toLowerCase()] ?? humanize(kind);
+}
+function provenanceLabel(origin: string): string {
+  return origin === "EXTRACTED" || origin === "RESOLVED" ? "confirmed" : origin === "AMBIGUOUS" ? "needs verification" : "inferred";
+}
+function queryAnswer(result: IntelligenceQueryResult): string {
+  if (!result.items.length) return result.answer;
+  const names = result.items.slice(0, 3).map((item) => humanize(item.label)).join(", ");
+  const remaining = result.items.length > 3 ? ` and ${result.items.length - 3} more` : "";
+  const introductions: Partial<Record<IntelligenceQueryResult["intent"], string>> = {
+    callers: "These components use the selected capability:",
+    callees: "The selected capability reaches:",
+    dependencies: "The selected capability relies on:",
+    dependents: "These components rely on the selected capability:",
+    impact: "A change here could affect:",
+    flow: "The evidence shows this path through the system:",
+    tests: "Relevant test coverage includes:",
+    data: "Relevant data and persistence knowledge includes:",
+    api: "Relevant interfaces and entry points include:",
+    security: "Relevant security evidence includes:",
+    performance: "Relevant performance evidence includes:"
+  };
+  return `${introductions[result.intent] ?? "Repository evidence found:"} ${names}${remaining}.`;
 }
 function contextProjection(
   inspector: NonNullable<NonNullable<ContextPackageSummary["inspector"]>>,
@@ -4524,9 +4887,9 @@ function GraphInspector({
       <div className="graph-inspector">
         <div className="inspector-content">
           <p className="eyebrow">SELECTED RELATIONSHIP</p>
-          <h3>{selectedEdge.kind}</h3>
-          <Status value={selectedEdge.origin} />
-          <p>{Math.round(selectedEdge.confidence * 100)}% confidence · {selectedEdge.evidenceIds.length} evidence link(s)</p>
+          <h3>{relationshipLabel(selectedEdge.kind)}</h3>
+          <Status value={provenanceLabel(selectedEdge.origin)} />
+          <p>{Math.round(selectedEdge.confidence * 100)}% confidence · {selectedEdge.evidenceIds.length} source link(s)</p>
           {selectedEdge.sourceLocation && <small>{selectedEdge.sourceLocation.workspaceRelativePath}{selectedEdge.sourceLocation.startLine ? `:${selectedEdge.sourceLocation.startLine}` : ""}</small>}
           {selectedEdge.resolutionExplanation && <p className="graph-structure-note">{selectedEdge.resolutionExplanation}</p>}
           <button onClick={() => navigator.clipboard?.writeText(selectedEdge.id)}>Copy relationship ID</button>
@@ -4540,15 +4903,15 @@ function GraphInspector({
         <div className="inspector-content">
           <p className="eyebrow">SELECTED NODE</p>
           <h3>{node.label}</h3>
-          <Status value={node.kind} />
+          <Status value={humanize(node.kind)} />
           <p>
             {Math.round(node.confidence * 100)}% confidence · {node.evidenceIds.length} evidence
             link(s)
           </p>
           {node.communityLabel && (
             <p className="graph-structure-note">
-              Community: {node.communityLabel}
-              {node.architectureAnchor ? ` · Architecture Anchor (${node.architectureAnchor.weightedDegree} weighted connectivity)` : ""}
+              Module: {node.communityLabel}
+              {node.architectureAnchor ? ` · Key connector (${node.architectureAnchor.weightedDegree} mapped connections)` : ""}
             </p>
           )}
           {node.architectureAnchor && <small>{node.architectureAnchor.reason}</small>}
@@ -4559,11 +4922,11 @@ function GraphInspector({
             </button>
           )}
           <div className="actions">
-            <button onClick={() => onAction("explain", node)}>Explain</button>
-            <button onClick={() => onAction("callers", node)}>Show callers</button>
-            <button onClick={() => onAction("dependencies", node)}>Show dependencies</button>
-            <button onClick={() => onAction("flow", node)}>Show flow</button>
-            <button onClick={() => onAction("impact", node)}>Impact</button>
+            <button onClick={() => onAction("explain", node)}>What does this do?</button>
+            <button onClick={() => onAction("callers", node)}>Who uses this?</button>
+            <button onClick={() => onAction("dependencies", node)}>What does it need?</button>
+            <button onClick={() => onAction("flow", node)}>Trace its flow</button>
+            <button onClick={() => onAction("impact", node)}>Change impact</button>
             <button onClick={() => onFocus(node)}>Focus neighborhood</button>
             <button onClick={() => onExpand(node)}>Expand neighborhood</button>
             <button onClick={() => onCollapse(node)}>
@@ -4571,14 +4934,14 @@ function GraphInspector({
             </button>
           </div>
           <details>
-            <summary>Visible relationship kinds</summary>
-            <p>{relationshipKinds.join(" · ") || "none"}</p>
+            <summary>Connection types in this view</summary>
+            <p>{relationshipKinds.map(relationshipLabel).join(" · ") || "none"}</p>
           </details>
           <details>
             <summary>Relationships ({edges.filter((edge) => edge.sourceId === node.id || edge.targetId === node.id).length})</summary>
             <div className="graph-mini-list">
               {edges.filter((edge) => edge.sourceId === node.id || edge.targetId === node.id).slice(0, 12).map((edge) => (
-                <span key={edge.id}><Status value={edge.origin} /> {edge.kind}</span>
+                <span key={edge.id}><Status value={provenanceLabel(edge.origin)} /> {relationshipLabel(edge.kind)}</span>
               ))}
             </div>
           </details>

@@ -40,6 +40,7 @@ import type { RepositoryIntelligenceSnapshot } from "@core/intelligence/pipeline
 import { ApplicationStore } from "@core/application/applicationStore";
 import { startBrowserViewServer, type BrowserViewHandle } from "../browser-view/browserViewServer";
 import { SDLCEngine, type SDLCPlan } from "@core/workflow/sdlc/engine";
+import { generateDiscoveryPresentation } from "@core/workflow/sdlc/discoveryPresentation";
 import { SDLCPlanStore } from "@core/workflow/sdlc/store";
 import { VscodeLanguageServiceEnricher } from "../intelligence/vscodeLanguageServiceEnricher";
 import {
@@ -98,6 +99,7 @@ export class VscodeProvider {
   private sdlcPlan?: SDLCPlan;
   private browserView?: BrowserViewHandle;
   private valueEdgeFeature?: ValueEdgeFeature;
+  private backgroundWorkerController?: { start(root: string): Promise<void>; stop(root: string): void };
   private readonly copilotDelegationService: CopilotDelegationService;
   private intentStateEngine?: IntentStateEngine;
   private intentStateRoot?: string;
@@ -164,6 +166,11 @@ export class VscodeProvider {
         retainContextWhenHidden: true,
         localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, "dist", "media")]
       }
+    );
+    (panel as unknown as { iconPath?: vscode.Uri }).iconPath = vscode.Uri.joinPath(
+      this.extensionUri,
+      "media",
+      "keystone.svg"
     );
     this.panel = panel;
     this.configureWebview(panel.webview);
@@ -256,6 +263,10 @@ export class VscodeProvider {
       retryAt: event.retryAt,
       retrying: event.retrying
     });
+  }
+
+  setBackgroundWorkerController(controller: { start(root: string): Promise<void>; stop(root: string): void }): void {
+    this.backgroundWorkerController = controller;
   }
 
   private configureWebview(webview: vscode.Webview): void {
@@ -357,6 +368,10 @@ export class VscodeProvider {
         `Intelligence ${state.status} in ${Date.now() - startedAt}ms; ${indexed} files; persisted to ${state.ingestion?.persistedPath ?? ".keystone/intelligence"}.`
       );
       if (isVisibleRoot()) this.post({ type: "STATE_UPDATE", state });
+      if (state.status === "ready" || state.status === "degraded")
+        void this.backgroundWorkerController?.start(root).catch((error) =>
+          this.logError(`Background workers could not start after ingestion: ${error instanceof Error ? error.message : String(error)}`)
+        );
     } catch (error) {
       if (generation !== this.indexGeneration) return false;
       const message = error instanceof Error ? error.message : String(error);
@@ -942,6 +957,16 @@ export class VscodeProvider {
       this.post({ type: "NOTIFICATION", level: "info", message: "Task analysis cancelled." });
       return;
     }
+    if (message.type === "START_BACKGROUND_WORKERS") {
+      const root = this.workspaceRoot();
+      if (root) void this.backgroundWorkerController?.start(root).catch((error) => this.post({ type: "NOTIFICATION", level: "error", message: error instanceof Error ? error.message : String(error) }));
+      return;
+    }
+    if (message.type === "STOP_BACKGROUND_WORKERS") {
+      const root = this.workspaceRoot();
+      if (root) this.backgroundWorkerController?.stop(root);
+      return;
+    }
     if (message.type === "CANCEL_COPILOT") {
       this.copilotDelegationService.cancel();
       this.emitCopilotActivity("cancelled", "Copilot operation stopped", 100, undefined, undefined, "CANCELLED");
@@ -1003,6 +1028,10 @@ export class VscodeProvider {
       return;
     }
     if (message.type === "ANALYZE_INTENT") {
+      if (message.source !== "valueedge") {
+        this.valueEdgeFeature = undefined;
+        this.applicationStore.update({ valueEdgeFeature: undefined });
+      }
       void this.analyzeIntent(message.text);
       return;
     }
@@ -1160,7 +1189,19 @@ export class VscodeProvider {
       return;
     }
     if (message.type === "CONFIGURE_VALUEEDGE") {
-      void this.configureValueEdge();
+      void this.sendValueEdgeConfig();
+      return;
+    }
+    if (message.type === "LOAD_VALUEEDGE_CONFIG") {
+      void this.sendValueEdgeConfig();
+      return;
+    }
+    if (message.type === "SAVE_VALUEEDGE_CONFIG") {
+      void this.saveValueEdgeConfig(message.config);
+      return;
+    }
+    if (message.type === "TEST_VALUEEDGE_CONFIG") {
+      void this.testValueEdgeConfig();
       return;
     }
     if (message.type === "IMPORT_VALUEEDGE_FEATURE") {
@@ -1291,7 +1332,29 @@ export class VscodeProvider {
       return;
     }
     if (message.type === "CREATE_SDLC_PLAN") {
-      void this.createSdlcPlan(message.intent);
+      void this.createSdlcPlan(message.intent, message.enabledStages);
+      return;
+    }
+    if (message.type === "GENERATE_DISCOVERY_PRESENTATION") {
+      const root = this.workspaceRoot();
+      if (!root || !this.sdlcPlan) {
+        this.post({ type: "NOTIFICATION", level: "error", message: "Create an SDLC plan with Discovery enabled first." });
+        return;
+      }
+      void generateDiscoveryPresentation(root, this.sdlcPlan)
+        .then(async (result) => {
+          this.sdlcPlan = { ...this.sdlcPlan!, discoveryPresentation: result };
+          await this.persistSdlcPlan(this.sdlcPlan);
+          this.applicationStore.update({ sdlc: this.sdlcPlan });
+          this.post({ type: "SDLC_PLAN_RESULT", plan: this.sdlcPlan });
+          this.post({ type: "DISCOVERY_PRESENTATION_RESULT", result });
+          this.post({ type: "NOTIFICATION", level: "info", message: `Discovery PPT generated: ${result.outputPath}` });
+        })
+        .catch((error) => this.post({ type: "NOTIFICATION", level: "error", message: error instanceof Error ? error.message : String(error) }));
+      return;
+    }
+    if (message.type === "OPEN_DISCOVERY_PRESENTATION") {
+      void vscode.env.openExternal(vscode.Uri.file(message.path));
       return;
     }
     if (message.type === "SDLC_TRANSITION") {
@@ -1324,12 +1387,6 @@ export class VscodeProvider {
       }
       try {
         this.sdlcPlan = this.sdlcEngine.approveSpecification(this.sdlcPlan);
-        this.sdlcPlan = {
-          ...this.sdlcPlan,
-          backlogStories: this.sdlcPlan.backlogStories.map((story) =>
-            story.status === "draft" ? { ...story, status: "approved" as const } : story
-          )
-        };
         void this.persistSdlcPlan(this.sdlcPlan);
         this.applicationStore.update({ sdlc: this.sdlcPlan });
         this.post({ type: "SDLC_PLAN_RESULT", plan: this.sdlcPlan });
@@ -1339,6 +1396,29 @@ export class VscodeProvider {
           level: "error",
           message: error instanceof Error ? error.message : String(error)
         });
+      }
+      return;
+    }
+    if (message.type === "APPROVE_BACKLOG_STORIES") {
+      if (!this.sdlcPlan) {
+        this.post({ type: "NOTIFICATION", level: "error", message: "Create an SDLC plan first." });
+        return;
+      }
+      try {
+        this.sdlcPlan = this.sdlcEngine.approveBacklogStories(this.sdlcPlan);
+        void this.persistSdlcPlan(this.sdlcPlan);
+        this.applicationStore.update({ sdlc: this.sdlcPlan });
+        this.post({ type: "SDLC_PLAN_RESULT", plan: this.sdlcPlan });
+        this.post({
+          type: "NOTIFICATION",
+          level: "info",
+          message:
+            this.sdlcPlan.source.kind === "valueedge"
+              ? "Generated stories approved. They can now be posted to the imported ValueEdge feature."
+              : "Generated user and QA stories approved for this local intent."
+        });
+      } catch (error) {
+        this.post({ type: "NOTIFICATION", level: "error", message: error instanceof Error ? error.message : String(error) });
       }
       return;
     }
@@ -1385,7 +1465,10 @@ export class VscodeProvider {
     }
   }
 
-  private async createSdlcPlan(intent: string): Promise<void> {
+  private async createSdlcPlan(
+    intent: string,
+    enabledStages?: import("@core/workflow/sdlc/engine").SDLCWorkflowStage[]
+  ): Promise<void> {
     try {
       const task = this.applicationStore.snapshot().taskAnalysis as KeystoneTaskResult | undefined;
       if (!task?.researchDocument?.markdown)
@@ -1400,6 +1483,7 @@ export class VscodeProvider {
         { architecture?: string } | undefined;
       let plan = this.sdlcEngine.createPlan(intent, {
         intentId: task.intentId,
+        enabledStages,
         researchDocument: task.researchDocument,
         researchApproved: true,
         relevantFiles: task?.relevantFiles,
@@ -1642,6 +1726,40 @@ export class VscodeProvider {
     }
   }
 
+  private async sendValueEdgeConfig(): Promise<void> {
+    const config = vscode.workspace.getConfiguration("keystone.valueEdge");
+    const secretConfigured = Boolean(await this.extensionContext.secrets.get("keystone.valueEdge.clientSecret"));
+    this.post({ type: "VALUEEDGE_CONFIG_RESULT", config: {
+      baseUrl: String(config.get("baseUrl", "")), sharedSpaceId: String(config.get("sharedSpaceId", "")),
+      workspaceId: String(config.get("workspaceId", "")), clientId: String(config.get("clientId", "")),
+      aviatorEndpoint: String(config.get("aviatorEndpoint", "")), requestTimeoutMs: Number(config.get("requestTimeoutMs", 30000)), secretConfigured
+    }});
+  }
+
+  private async saveValueEdgeConfig(input: { baseUrl: string; sharedSpaceId: string; workspaceId: string; clientId: string; clientSecret?: string; aviatorEndpoint: string; requestTimeoutMs: number }): Promise<void> {
+    try {
+      const config = vscode.workspace.getConfiguration("keystone.valueEdge");
+      await Promise.all([
+        config.update("baseUrl", input.baseUrl.trim(), vscode.ConfigurationTarget.Workspace),
+        config.update("sharedSpaceId", input.sharedSpaceId.trim(), vscode.ConfigurationTarget.Workspace),
+        config.update("workspaceId", input.workspaceId.trim(), vscode.ConfigurationTarget.Workspace),
+        config.update("clientId", input.clientId.trim(), vscode.ConfigurationTarget.Workspace),
+        config.update("aviatorEndpoint", input.aviatorEndpoint.trim(), vscode.ConfigurationTarget.Workspace),
+        config.update("requestTimeoutMs", Math.max(1000, Math.round(input.requestTimeoutMs || 30000)), vscode.ConfigurationTarget.Workspace),
+        input.clientSecret?.trim() ? this.extensionContext.secrets.store("keystone.valueEdge.clientSecret", input.clientSecret.trim()) : Promise.resolve()
+      ]);
+      await this.sendValueEdgeConfig();
+      this.post({ type: "NOTIFICATION", level: "info", message: "ValueEdge configuration saved. The client secret remains in VS Code SecretStorage." });
+    } catch (error) { this.post({ type: "NOTIFICATION", level: "error", message: error instanceof Error ? error.message : String(error) }); }
+  }
+
+  private async testValueEdgeConfig(): Promise<void> {
+    try {
+      const result = await (await this.valueEdgeClient()).testConnection();
+      this.post({ type: "NOTIFICATION", level: "info", message: `ValueEdge connected to ${result.workspaceUrl}.` });
+    } catch (error) { this.post({ type: "NOTIFICATION", level: "error", message: error instanceof Error ? error.message : String(error) }); }
+  }
+
   async importValueEdgeFeature(featureId: string): Promise<void> {
     try {
       const client = await this.valueEdgeClient();
@@ -1649,7 +1767,6 @@ export class VscodeProvider {
       this.valueEdgeFeature = feature;
       this.applicationStore.update({ valueEdgeFeature: feature });
       this.post({ type: "VALUEEDGE_FEATURE_RESULT", feature });
-      await this.analyzeIntent([feature.name, feature.description].filter(Boolean).join("\n\n"));
     } catch (error) {
       this.post({
         type: "NOTIFICATION",
@@ -1667,8 +1784,8 @@ export class VscodeProvider {
         !this.sdlcPlan.source.featureId
       )
         throw new Error("Create and approve an SDLC plan imported from a ValueEdge feature first.");
-      if (this.sdlcPlan.specificationStatus !== "approved")
-        throw new Error("Approve the specification before publishing ValueEdge stories.");
+      if (this.sdlcPlan.backlogApproval.status !== "approved")
+        throw new Error("Explicitly approve the generated user and QA stories before posting them to ValueEdge.");
       const approved = this.sdlcPlan.backlogStories.filter((story) => story.status === "approved");
       if (!approved.length) throw new Error("There are no approved stories to publish.");
       const confirmation = await vscode.window.showWarningMessage(

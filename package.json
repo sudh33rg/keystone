@@ -226,6 +226,17 @@
           "type": "string",
           "default": "",
           "description": "ValueEdge API client ID."
+        },
+        "keystone.valueEdge.aviatorEndpoint": {
+          "type": "string",
+          "default": "",
+          "description": "Optional tenant Aviator Smart Assistant endpoint for discovery."
+        },
+        "keystone.valueEdge.requestTimeoutMs": {
+          "type": "number",
+          "default": 30000,
+          "minimum": 1000,
+          "description": "ValueEdge request timeout in milliseconds."
         }
       }
     }
@@ -258,7 +269,8 @@
   "dependencies": {
     "typescript": "5.8.3",
     "react": "16.0.0",
-    "react-dom": "16.0.0"
+    "react-dom": "16.0.0",
+    "pptxgenjs": "^3.12.0"
   },
   "devDependencies": {
     "@types/node": "25.1.0",

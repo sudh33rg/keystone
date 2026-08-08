@@ -14,6 +14,7 @@ import { selectIntentPrimaryAction } from "@core/intent/primaryAction";
 import { analyzeArtifact, enrichEcosystem } from "@core/intelligence/ecosystem/registries";
 import { detectEngineeringEntities } from "@core/intelligence/ingestion/engineeringEntityDetector";
 import { LANGUAGE_DEFINITIONS, LanguageCapabilityRegistry } from "@core/intelligence/languages/languageRegistry";
+import { analyzeLanguageFile } from "@core/intelligence/languages/languageAnalysis";
 import {
   MAX_LANGUAGE_SERVICE_SYMBOLS_PER_DOCUMENT,
   boundSemanticSymbols
@@ -44,6 +45,23 @@ test("registered major languages are identifiable with honest capability tiers",
   assert.equal(registry.identify("unknown.custom"), undefined);
   assert.equal(registry.identify("main.ts")?.capabilities.calls, "deep");
   assert.equal(registry.identify("main.py")?.capabilities.calls, "structural");
+});
+
+test("documentation is not promoted into fake program behavior", () => {
+  const documentation = analyzeLanguageFile(
+    "docs/ARCHITECTURE.md",
+    "# Architecture\n\nIf a user signs in, token = session and the service calls nothing."
+  );
+  assert.equal(documentation.calls.length, 0);
+  assert.equal(documentation.controlFlow.length, 0);
+  assert.equal(documentation.dataFlow.length, 0);
+
+  const source = analyzeLanguageFile(
+    "src/auth.ts",
+    "export function signIn(token: string) { if (token) return validate(token); }"
+  );
+  assert.ok(source.calls.some((call) => call.callee === "validate"));
+  assert.equal(source.controlFlow.length, 1);
 });
 
 test("language-service semantic queries are bounded per document", () => {

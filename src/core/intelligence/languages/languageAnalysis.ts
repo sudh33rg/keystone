@@ -56,6 +56,13 @@ export function analyzeLanguageFile(filePath: string, text: string): LanguageAna
   const typeRelationships: LanguageAnalysisResult["typeRelationships"] = [];
   const tests: LanguageAnalysisResult["tests"] = [];
   const apis: ApiEndpoint[] = [];
+  // Text, documentation, and manifest artifacts are useful for ownership and technology
+  // discovery, but punctuation in prose is not a program call/control/data flow. Keeping
+  // behavioral extraction behind the language capability prevents false graph paths such
+  // as `documentation-word → documentation-word` from polluting user-facing intelligence.
+  const supportsCalls = language.capabilities.calls !== "universal";
+  const supportsControlFlow = language.capabilities.controlFlow !== "universal";
+  const supportsDataFlow = language.capabilities.dataFlow !== "universal";
   const seenSymbols = new Set<string>();
   const seenDeps = new Set<string>();
   let currentCallable: string | undefined;
@@ -85,13 +92,13 @@ export function analyzeLanguageFile(filePath: string, text: string): LanguageAna
         dependencies.push({ from: filePath, to: normalized, kind });
       }
     }
-    for (const callee of callMatches(language.id, line))
+    for (const callee of supportsCalls ? callMatches(language.id, line) : [])
       if (
         !KEYWORDS.has(callee.toLowerCase()) &&
         !lineSymbols.some((symbol) => symbol.name === callee.split(".").at(-1))
       )
         calls.push({ caller: currentCallable, callee, line: lineNo });
-    if (
+    if (supportsControlFlow &&
       /\b(if|else\s+if|for|foreach|while|switch|case|catch|match|when|try|except|guard)\b/.test(
         stripStrings(line)
       )
@@ -102,9 +109,9 @@ export function analyzeLanguageFile(filePath: string, text: string): LanguageAna
         )?.[1] ?? "branch";
       controlFlow.push({ kind, line: lineNo });
     }
-    const assignment = stripStrings(line).match(
+    const assignment = supportsDataFlow ? stripStrings(line).match(
       /\b([A-Za-z_$][\w$]*)\s*(?:=|:=|<-|=>)\s*([A-Za-z_$][\w$]*)\b/
-    );
+    ) : undefined;
     if (assignment) dataFlow.push({ source: assignment[2], target: assignment[1], line: lineNo });
     if (isTestLine(language.id, line))
       tests.push({ name: testName(line) ?? `test@${lineNo}`, line: lineNo });

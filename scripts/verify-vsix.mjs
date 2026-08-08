@@ -18,7 +18,10 @@ for (const file of [`dist/keystone-${pkg.version}.vsix`, "dist/keystone.vsix"]) 
     "extension/dist/media/keystone.png",
     "extension/dist/media/react.production.min.js",
     "extension/dist/media/react-dom.production.min.js",
-    "extension/node_modules/typescript/lib/typescript.js"
+    "extension/media/keystone.png",
+    "extension/media/keystone.svg",
+    "extension/node_modules/typescript/lib/typescript.js",
+    "extension/node_modules/pptxgenjs/dist/pptxgen.cjs.js"
   ])
     if (!list.includes(required)) throw new Error(`${file} missing ${required}`);
   const forbidden = list.filter(

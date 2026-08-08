@@ -31,7 +31,14 @@ export class SDLCPlanStore {
       return {
         ...generated,
         ...parsed,
+        workflow: parsed.workflow ?? generated.workflow,
         source: parsed.source ?? { kind: "local" },
+        discoveryDocument: parsed.discoveryDocument ?? generated.discoveryDocument,
+        backlogApproval:
+          parsed.backlogApproval ??
+          (parsed.backlogStories?.some((story) => story.status === "approved" || story.status === "published")
+            ? { status: "approved", approvedAt: parsed.updatedAt }
+            : generated.backlogApproval),
         researchDocument,
         specificationDocument,
         backlogStories: parsed.backlogStories ?? generated.backlogStories,
@@ -47,6 +54,14 @@ export class SDLCPlanStore {
     await Promise.all([
       atomicWrite(path.join(root, "research.md"), `${plan.researchDocument.markdown}\n`),
       atomicWrite(path.join(root, "specification.md"), `${plan.specificationDocument.markdown}\n`),
+      ...(plan.discoveryDocument
+        ? [
+            atomicWrite(
+              path.join(root, "storyforge-discovery.json"),
+              `${JSON.stringify(plan.discoveryDocument, null, 2)}\n`
+            )
+          ]
+        : [fs.rm(path.join(root, "storyforge-discovery.json"), { force: true })]),
       atomicWrite(
         path.join(root, "backlog-stories.json"),
         `${JSON.stringify(plan.backlogStories, null, 2)}\n`

@@ -216,7 +216,7 @@ export function exploreOkfSnapshot(
   }
   const evidence = new Map(snapshot.evidence.map((item) => [item.id, item]));
   const ranked = units
-    .filter((unit) => !kind || unit.kind === kind)
+    .filter((unit) => matchesExplorerKind(unit.kind, kind))
     .map((unit) => ({ unit, score: explorerScore(unit, query, terms) }))
     .filter((item) => !query || item.score > 0)
     .sort(
@@ -255,6 +255,21 @@ export function exploreOkfSnapshot(
     kindCounts,
     items
   };
+}
+
+/** User-facing Explorer categories deliberately hide extraction intermediates by default. */
+function matchesExplorerKind(unitKind: string, filter: string | undefined): boolean {
+  if (!filter || filter === "all") return true;
+  const groups: Record<string, readonly string[]> = {
+    meaningful: ["repository", "workspace", "module", "package", "service", "api", "route", "component", "architecture-boundary", "database", "table", "orm-entity", "entity", "data-entity", "query", "event", "contract", "configuration", "feature-flag", "build-system", "package-manager", "documentation", "risk-area", "test"],
+    services: ["service", "controller", "handler", "client", "adapter", "repository"],
+    interfaces: ["api", "route", "contract", "event"],
+    data: ["database", "table", "orm-entity", "entity", "data-entity", "query"],
+    architecture: ["repository", "workspace", "module", "package", "component", "architecture-boundary", "configuration", "build-system", "package-manager"],
+    risks: ["risk-area"],
+    implementation: ["symbol", "file", "test"]
+  };
+  return groups[filter]?.includes(unitKind) ?? unitKind === filter;
 }
 
 interface ExplorerCursor {
@@ -564,7 +579,7 @@ function flowUnitUseful(unit: KeystoneKnowledgeUnit | undefined): boolean {
   if (unit.kind === "file") return !isNoisePath(unitPath(unit) ?? unit.name);
   if (unit.kind !== "symbol") return false;
   const name = unit.name.toLowerCase();
-  return !/^(date|error|map|set|promise|array|object|string|number|boolean|json|console|math|regexp|buffer|url|fetch|require|process|settimeout|setinterval|clearinterval|tostring|toisostring|parse|stringify|push|pop|slice|map|filter|find|reduce|foreach)$/.test(
+  return !/^(?:_|__|info|data|value|result|item|items|index|key|date|error|map|set|promise|array|object|string|number|boolean|json|console|math|regexp|buffer|url|fetch|require|process|settimeout|setinterval|clearinterval|tostring|toisostring|parse|stringify|push|pop|slice|filter|find|reduce|foreach)$/.test(
     name
   );
 }

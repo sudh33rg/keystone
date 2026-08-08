@@ -146,8 +146,10 @@ export type WebviewToExtensionMessage =
   | { type: "REINDEX_AFFECTED_AND_VALIDATE" }
   | { type: "CANCEL_INGESTION" }
   | { type: "CANCEL_ANALYSIS" }
+  | { type: "START_BACKGROUND_WORKERS" }
+  | { type: "STOP_BACKGROUND_WORKERS" }
   | { type: "CANCEL_COPILOT" }
-  | { type: "ANALYZE_INTENT"; text: string }
+  | { type: "ANALYZE_INTENT"; text: string; source?: "manual" | "valueedge" }
   | { type: "APPROVE_INTENT_RESEARCH"; intentId: string }
   | { type: "RUN_VALIDATION"; scope: "impacted" | "all"; storyId?: string }
   | { type: "COMPLETE_TASK" }
@@ -170,6 +172,9 @@ export type WebviewToExtensionMessage =
   | { type: "SAVE_SETTINGS"; settings: CockpitSettings }
   | { type: "OPEN_BROWSER_VIEW" }
   | { type: "CONFIGURE_VALUEEDGE" }
+  | { type: "LOAD_VALUEEDGE_CONFIG" }
+  | { type: "SAVE_VALUEEDGE_CONFIG"; config: { baseUrl: string; sharedSpaceId: string; workspaceId: string; clientId: string; clientSecret?: string; aviatorEndpoint: string; requestTimeoutMs: number } }
+  | { type: "TEST_VALUEEDGE_CONFIG" }
   | { type: "IMPORT_VALUEEDGE_FEATURE"; featureId: string }
   | { type: "PUBLISH_VALUEEDGE_STORIES" }
   | { type: "CREATE_TASK_HANDOFF"; passphrase: string }
@@ -179,7 +184,11 @@ export type WebviewToExtensionMessage =
       passphrase: string;
       manualSyncConfirmed: boolean;
     }
-  | { type: "CREATE_SDLC_PLAN"; intent: string }
+  | {
+      type: "CREATE_SDLC_PLAN";
+      intent: string;
+      enabledStages?: import("../../workflow/sdlc/engine").SDLCWorkflowStage[];
+    }
   | {
       type: "SDLC_TRANSITION";
       storyId: string;
@@ -189,6 +198,9 @@ export type WebviewToExtensionMessage =
       blockers?: string[];
     }
   | { type: "APPROVE_SPECIFICATION" }
+  | { type: "APPROVE_BACKLOG_STORIES" }
+  | { type: "GENERATE_DISCOVERY_PRESENTATION" }
+  | { type: "OPEN_DISCOVERY_PRESENTATION"; path: string }
   | { type: "QUERY_INTELLIGENCE"; query: string }
   | { type: "EXPLORE_INTELLIGENCE"; query?: string; kind?: string; cursor?: string }
   | {
@@ -269,6 +281,9 @@ export const WEBVIEW_COMMAND_TYPES = [
   "CREATE_SDLC_PLAN",
   "SDLC_TRANSITION",
   "APPROVE_SPECIFICATION",
+  "APPROVE_BACKLOG_STORIES",
+  "GENERATE_DISCOVERY_PRESENTATION",
+  "OPEN_DISCOVERY_PRESENTATION",
   "QUERY_INTELLIGENCE",
   "EXPLORE_INTELLIGENCE",
   "LOAD_INTELLIGENCE_GRAPH",
@@ -425,8 +440,10 @@ export type ExtensionToWebviewMessage =
     }
   | { type: "ACTIVITY_HISTORY_RESULT"; entries: WorkflowHistoryEntry[] }
   | { type: "SDLC_PLAN_RESULT"; plan: import("../../workflow/sdlc/engine").SDLCPlan }
+  | { type: "DISCOVERY_PRESENTATION_RESULT"; result: import("../../workflow/sdlc/engine").SDLCDiscoveryPresentation }
   | { type: "BROWSER_VIEW_OPENED"; url: string }
   | { type: "VALUEEDGE_FEATURE_RESULT"; feature: import("../valueedge/types").ValueEdgeFeature }
+  | { type: "VALUEEDGE_CONFIG_RESULT"; config: { baseUrl: string; sharedSpaceId: string; workspaceId: string; clientId: string; aviatorEndpoint: string; requestTimeoutMs: number; secretConfigured: boolean } }
   | {
       type: "VALUEEDGE_PUBLISH_RESULT";
       published: import("../valueedge/types").ValueEdgePublishResult[];
@@ -492,6 +509,12 @@ export interface WorkspaceSummary {
     messaging: string[];
     contracts: string[];
     confidence: number;
+  }>;
+  services?: Array<{
+    name: string;
+    path: string;
+    role: string;
+    hints: string[];
   }>;
   architecture: string;
   git: { branch: string; changedFiles: string[] };

@@ -1,6 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 
 export type SDLCStoryType =
+  | "discovery-generation"
+  | "user-story-generation"
+  | "qa-story-generation"
   | "research"
   | "specification"
   | "design"
@@ -150,6 +153,54 @@ export interface SDLCBacklogStory {
   scope: { files: string[]; symbols: string[]; interfaces: string[] };
   status: "draft" | "approved" | "published";
   externalId?: string;
+  storyPoints?: 1 | 2 | 3;
+}
+
+/** The user-selectable SDLC phases, in delivery order. */
+export type SDLCWorkflowStage =
+  | "discovery"
+  | "planning"
+  | "design"
+  | "development"
+  | "testing"
+  | "deployment";
+
+export const SDLC_WORKFLOW_STAGES: readonly SDLCWorkflowStage[] = [
+  "discovery",
+  "planning",
+  "design",
+  "development",
+  "testing",
+  "deployment"
+];
+
+export interface SDLCWorkflowConfig {
+  enabledStages: SDLCWorkflowStage[];
+}
+
+/** Repository-aware Discovery artifact adapted from StoryForge's discovery contract. */
+export interface SDLCDiscoveryDocument {
+  title: string;
+  summary: string;
+  personas: string[];
+  assumptions: string[];
+  questions: string[];
+  proposedSlices: Array<{
+    title: string;
+    value: string;
+    persona: string;
+    storyPoints: 1 | 2 | 3;
+    evidence: string[];
+  }>;
+  qualityFocus: string[];
+  risks: string[];
+  generatedAt: string;
+}
+
+export interface SDLCDiscoveryPresentation {
+  outputPath: string;
+  slideCount: number;
+  generatedAt: string;
 }
 
 export interface SDLCPlanningContext {
@@ -179,6 +230,8 @@ export interface SDLCPlanningContext {
     featureName?: string;
     featureUrl?: string;
   };
+  /** Omit any of these phases for this intent without changing the workspace default. */
+  enabledStages?: readonly SDLCWorkflowStage[];
 }
 
 export interface SDLCPlan {
@@ -192,6 +245,10 @@ export interface SDLCPlan {
     featureName?: string;
     featureUrl?: string;
   };
+  workflow: SDLCWorkflowConfig;
+  discoveryDocument?: SDLCDiscoveryDocument;
+  discoveryPresentation?: SDLCDiscoveryPresentation;
+  backlogApproval: { status: "pending" | "approved"; approvedAt?: string };
   researchDocument: SDLCResearchDocument;
   specificationDocument: SDLCSpecificationDocument;
   backlogStories: SDLCBacklogStory[];
@@ -225,6 +282,18 @@ const transitions: Record<SDLCStoryStatus, readonly SDLCStoryStatus[]> = {
 };
 
 const criteria: Record<SDLCStoryType, readonly string[]> = {
+  "discovery-generation": [
+    "Business problem, personas, assumptions, questions, slices, quality focus, and risks are recorded",
+    "Discovery is grounded in the available repository evidence"
+  ],
+  "user-story-generation": [
+    "Small user stories are generated from the Discovery slices",
+    "Each user story has acceptance criteria and linked repository evidence"
+  ],
+  "qa-story-generation": [
+    "Quality stories cover test impact, risk, and acceptance-linked validation",
+    "Each quality story has linked repository evidence"
+  ],
   research: [
     "Relevant OKF evidence is linked",
     "Affected architecture, flows, tests, risks, and constraints are identified"
@@ -293,6 +362,9 @@ const criteria: Record<SDLCStoryType, readonly string[]> = {
 
 type Definition = readonly [SDLCStoryType, string, readonly SDLCStoryType[]];
 const definitions: readonly Definition[] = [
+  ["discovery-generation", "Generate StoryForge discovery", []],
+  ["user-story-generation", "Generate StoryForge user stories", ["discovery-generation"]],
+  ["qa-story-generation", "Generate StoryForge QA stories", ["discovery-generation"]],
   ["research", "Research repository intelligence", []],
   ["specification", "Review and approve specification", ["research"]],
   ["design", "Design implementation", ["specification"]],
@@ -326,22 +398,50 @@ const definitions: readonly Definition[] = [
   ["completion", "Complete intent", ["pr-review", "documentation"]]
 ];
 
+const stageByStoryType: Record<SDLCStoryType, SDLCWorkflowStage> = {
+  "discovery-generation": "discovery",
+  "user-story-generation": "discovery",
+  "qa-story-generation": "discovery",
+  research: "planning",
+  specification: "planning",
+  design: "design",
+  development: "development",
+  "existing-test-analysis": "testing",
+  "new-test-creation": "testing",
+  "test-impact-analysis": "testing",
+  "failed-test-investigation": "testing",
+  "flaky-test-analysis": "testing",
+  "security-review": "testing",
+  "performance-review": "testing",
+  "modernization-review": "testing",
+  "code-review": "testing",
+  "pr-review": "deployment",
+  documentation: "deployment",
+  completion: "deployment"
+};
+
 export class SDLCEngine {
   createPlan(intent: string, context: SDLCPlanningContext = {}): SDLCPlan {
     const normalized = intent.trim();
     if (!normalized) throw new Error("An intent is required.");
     const intentId = context.intentId ?? randomUUID();
     const now = new Date().toISOString();
+    const enabledStages = normalizeEnabledStages(context.enabledStages);
+    const selectedDefinitions = definitions.filter(([type]) => enabledStages.includes(stageByStoryType[type]));
     const ids = new Map<SDLCStoryType, string>();
-    for (const [type] of definitions) ids.set(type, randomUUID());
-    const stories = definitions.map(([type, title, dependencies]): SDLCStory => ({
+    for (const [type] of selectedDefinitions) ids.set(type, randomUUID());
+    const stories = selectedDefinitions.map(([type, title, dependencies]): SDLCStory => {
+      const selectedDependencies = dependencies
+        .filter((dependency) => ids.has(dependency))
+        .map((dependency) => ids.get(dependency)!);
+      return {
       id: ids.get(type)!,
       intentId,
       type,
       title,
       objective: title,
-      status: type === "research" ? "ready" : "draft",
-      dependencies: dependencies.map((dependency) => ids.get(dependency)!),
+      status: selectedDependencies.length === 0 ? "ready" : "draft",
+      dependencies: selectedDependencies,
       acceptanceCriteria: [...criteria[type]],
       satisfiedCriteria: [],
       evidence: [],
@@ -351,7 +451,8 @@ export class SDLCEngine {
       findings: [],
       createdAt: now,
       updatedAt: now
-    }));
+      };
+    });
     const researchDocument =
       context.researchDocument ?? buildResearchDocument(intentId, normalized, context, now);
     const specificationDocument = buildSpecificationDocument(
@@ -361,13 +462,21 @@ export class SDLCEngine {
       researchDocument,
       now
     );
-    const backlogStories = buildBacklogStories(intentId, normalized, context);
+    const discoveryDocument = enabledStages.includes("discovery")
+      ? buildDiscoveryDocument(normalized, context, now)
+      : undefined;
+    const backlogStories = enabledStages.includes("discovery")
+      ? buildBacklogStories(intentId, normalized, context)
+      : [];
     let plan: SDLCPlan = {
       id: randomUUID(),
       intentId,
       intent: normalized,
       specificationStatus: "draft",
       source: context.source ?? { kind: "local" },
+      workflow: { enabledStages },
+      discoveryDocument,
+      backlogApproval: { status: "pending" },
       researchDocument,
       specificationDocument,
       backlogStories,
@@ -375,7 +484,7 @@ export class SDLCEngine {
       createdAt: now,
       updatedAt: now
     };
-    if (context.researchApproved) {
+    if (context.researchApproved && plan.stories.some((story) => story.type === "research")) {
       const research = this.story(plan, "research");
       plan = this.updateStory(plan, research.id, {
         ...research,
@@ -409,11 +518,23 @@ export class SDLCEngine {
     return this.unlock({
       ...updated,
       specificationStatus: "approved",
-      backlogStories: updated.backlogStories.map((story) =>
+      updatedAt: now
+    });
+  }
+
+  approveBacklogStories(plan: SDLCPlan): SDLCPlan {
+    if (!plan.backlogStories.length)
+      throw new Error("Discovery is not enabled for this intent, so there are no generated stories to approve.");
+    if (plan.backlogApproval.status === "approved") return plan;
+    const now = new Date().toISOString();
+    return {
+      ...plan,
+      backlogApproval: { status: "approved", approvedAt: now },
+      backlogStories: plan.backlogStories.map((story) =>
         story.status === "draft" ? { ...story, status: "approved" as const } : story
       ),
       updatedAt: now
-    });
+    };
   }
 
   rejectSpecification(plan: SDLCPlan, reason = "Specification rejected by user."): SDLCPlan {
@@ -950,6 +1071,58 @@ function buildResearchDocument(
   };
 }
 
+function normalizeEnabledStages(
+  stages: readonly SDLCWorkflowStage[] | undefined
+): SDLCWorkflowStage[] {
+  if (!stages) return [...SDLC_WORKFLOW_STAGES];
+  const selected = new Set(stages.filter((stage): stage is SDLCWorkflowStage =>
+    SDLC_WORKFLOW_STAGES.includes(stage)
+  ));
+  return SDLC_WORKFLOW_STAGES.filter((stage) => selected.has(stage));
+}
+
+function buildDiscoveryDocument(
+  intent: string,
+  context: SDLCPlanningContext,
+  generatedAt: string
+): SDLCDiscoveryDocument {
+  const targets = deriveBehaviorTargets(intent, context);
+  const evidence = unique([
+    ...(context.relevantFiles ?? []),
+    ...(context.relevantSymbols ?? []),
+    ...(context.evidence ?? []).map((item) => item.path ?? item.label)
+  ]).slice(0, 12);
+  const persona = "User affected by the requested workflow";
+  return {
+    title: `StoryForge Discovery: ${intent}`,
+    summary: `Repository-aware discovery for ${intent}. It frames small, independently valuable delivery slices before implementation planning.`,
+    personas: [persona],
+    assumptions: [
+      "The approved intent describes the desired business outcome.",
+      "Repository intelligence represents the current implementation boundary."
+    ],
+    questions: context.researchDocument?.unknowns ?? [],
+    proposedSlices: targets.slice(0, 5).map((target) => ({
+      title: target.title,
+      value: target.description,
+      persona,
+      storyPoints: 1,
+      evidence: target.evidence.length ? target.evidence : evidence
+    })),
+    qualityFocus: unique([
+      ...(context.qaChecklist ?? []),
+      "Acceptance-linked regression coverage",
+      ...(riskPresent(context.securityRisk) ? ["Security-sensitive paths"] : []),
+      ...(riskPresent(context.performanceRisk) ? ["Performance-sensitive paths"] : [])
+    ]),
+    risks: unique([
+      ...(riskPresent(context.securityRisk) ? [context.securityRisk!] : []),
+      ...(riskPresent(context.performanceRisk) ? [context.performanceRisk!] : [])
+    ]),
+    generatedAt
+  };
+}
+
 function researchEvidencePresentable(item: SDLCResearchEvidence): boolean {
   const value = (item.path ?? item.label).toLowerCase();
   if (/(?:^|\/)(?:node_modules|dist|build|coverage|vendor)(?:\/|$)/.test(value)) return false;
@@ -1175,7 +1348,8 @@ function buildBacklogStories(
       linkedSdlcStoryTypes: ["design", "development"],
       evidence: unique(target.evidence),
       dependencies: [],
-      scope: { files: targetFiles, symbols: targetSymbols, interfaces: target.interfaces }
+      scope: { files: targetFiles, symbols: targetSymbols, interfaces: target.interfaces },
+      storyPoints: 1
     });
   }
   if (targets.length > 1 || interfaces.length > 1) {
@@ -1191,7 +1365,8 @@ function buildBacklogStories(
       linkedSdlcStoryTypes: ["design", "development", "security-review", "performance-review"],
       evidence: unique([...(context.affectedFlows ?? []), ...interfaces]),
       dependencies: drafts.filter((item) => item.kind === "user-story").map((item) => item.title),
-      scope: { files: implementationFiles(allFiles), symbols: allSymbols, interfaces }
+      scope: { files: implementationFiles(allFiles), symbols: allSymbols, interfaces },
+      storyPoints: 2
     });
   }
   drafts.push({
@@ -1210,7 +1385,8 @@ function buildBacklogStories(
       files: unique([...(context.relatedTests ?? []), ...implementationFiles(allFiles)]),
       symbols: allSymbols,
       interfaces
-    }
+    },
+    storyPoints: 1
   });
   if ((context.missingTests?.length ?? 0) > 0 || baseAcceptance.length > 0)
     drafts.push({
@@ -1233,7 +1409,8 @@ function buildBacklogStories(
         files: unique([...(context.relatedTests ?? []), ...implementationFiles(allFiles)]),
         symbols: allSymbols,
         interfaces
-      }
+      },
+      storyPoints: 2
     });
   if (riskPresent(context.securityRisk))
     drafts.push({
@@ -1248,7 +1425,8 @@ function buildBacklogStories(
       linkedSdlcStoryTypes: ["security-review"],
       evidence: unique([context.securityRisk ?? "", ...(context.affectedFlows ?? [])]),
       dependencies: drafts.filter((item) => item.kind === "user-story").map((item) => item.title),
-      scope: { files: implementationFiles(allFiles), symbols: allSymbols, interfaces }
+      scope: { files: implementationFiles(allFiles), symbols: allSymbols, interfaces },
+      storyPoints: 2
     });
   if (riskPresent(context.performanceRisk))
     drafts.push({
@@ -1263,7 +1441,8 @@ function buildBacklogStories(
       linkedSdlcStoryTypes: ["performance-review"],
       evidence: unique([context.performanceRisk ?? "", ...(context.affectedFlows ?? [])]),
       dependencies: drafts.filter((item) => item.kind === "user-story").map((item) => item.title),
-      scope: { files: implementationFiles(allFiles), symbols: allSymbols, interfaces }
+      scope: { files: implementationFiles(allFiles), symbols: allSymbols, interfaces },
+      storyPoints: 2
     });
   if ((context.modernizationNotes?.length ?? 0) > 0)
     drafts.push({
@@ -1278,7 +1457,8 @@ function buildBacklogStories(
       linkedSdlcStoryTypes: ["modernization-review"],
       evidence: unique(context.modernizationNotes ?? []),
       dependencies: [],
-      scope: { files: allFiles, symbols: allSymbols, interfaces }
+      scope: { files: allFiles, symbols: allSymbols, interfaces },
+      storyPoints: 1
     });
   drafts.push({
     kind: "quality-story",
@@ -1292,7 +1472,8 @@ function buildBacklogStories(
     linkedSdlcStoryTypes: ["code-review", "pr-review", "documentation", "completion"],
     evidence: unique([...(context.evidence ?? []).map((item) => item.okfId ?? item.label)]),
     dependencies: drafts.map((item) => item.title),
-    scope: { files: allFiles, symbols: allSymbols, interfaces }
+    scope: { files: allFiles, symbols: allSymbols, interfaces },
+    storyPoints: 2
   });
   const ids = new Map<string, string>();
   for (const draft of drafts)

@@ -442,6 +442,20 @@ export function queryOkfSnapshot(
       if (unitScore(unit, normalized, terms, "data") > 0 || terms.length <= 2)
         add(unit.id, 6, "data model evidence");
 
+  // Broad discovery questions should return the repository's actual system concepts, not
+  // incidental symbol/path text that happens to contain a matching word.
+  const broadTechnology = intents.includes("technology") && /\b(?:architecture|services?|components?|entry points?|modules?)\b/i.test(normalized);
+  if (broadTechnology)
+    for (const unit of activeUnits.filter((item) => [
+      "repository", "workspace", "module", "package", "service", "api", "route", "component",
+      "architecture-boundary", "configuration", "contract", "event", "build-system", "package-manager"
+    ].includes(item.kind)))
+      add(unit.id, 60 - systemConceptPriority(unit.kind), "system architecture evidence");
+  const broadData = intents.includes("data") && /\b(?:data stores?|persistence|database|schema|tables?)\b/i.test(normalized);
+  if (broadData)
+    for (const unit of activeUnits.filter((item) => ["database", "table", "orm-entity", "entity", "repository", "migration", "data-entity"].includes(item.kind)))
+      add(unit.id, 60 - dataConceptPriority(unit.kind), "data and persistence evidence");
+
   const ranked = [...candidates.entries()]
     .map(([id, value]) => ({ unit: byId.get(id)!, ...value }))
     .filter((item) => resultAllowedAny(intents, item.unit))
@@ -573,7 +587,7 @@ function classifyAll(query: string): OkfQueryIntent[] {
   if (/\b(?:database|table|schema|orm|query|sql|persistence|data model)\b/.test(q)) add("data");
   if (/\bconfig|configuration|setting|environment\b/.test(q)) add("configuration");
   if (/\bdoc|documentation|readme|design\b/.test(q)) add("documentation");
-  if (/\b(?:language|framework|orm|database|messaging|contract|project|module|package ecosystem|support level)\b/.test(q)) add("technology");
+  if (/\b(?:language|framework|orm|database|messaging|contract|project|module|architecture|services?|components?|entry points?|package ecosystem|support level)\b/.test(q)) add("technology");
   if (!intents.length && /\bwhere|defined|definition|implemented|implements?\b/.test(q))
     add("definition");
   if (!intents.length) add("generic");
@@ -647,7 +661,14 @@ function resultAllowed(intent: OkfQueryIntent, unit: KeystoneKnowledgeUnit): boo
       "database",
       "contract",
       "repository",
-      "file"
+      "file",
+      "service",
+      "api",
+      "route",
+      "component",
+      "configuration",
+      "contract",
+      "event"
     ].includes(unit.kind);
   return true;
 }
@@ -715,9 +736,20 @@ function unitScore(
 }
 
 function tokenize(value: string): string[] {
-  return [...new Set(value.toLowerCase().match(/[a-z0-9_./:-]+/g) ?? [])].filter(
+  const raw = value.toLowerCase().match(/[a-z0-9_./:-]+/g) ?? [];
+  return [...new Set(raw.flatMap((term) => term.endsWith("s") && term.length > 3 ? [term, term.slice(0, -1)] : [term]))].filter(
     (term) => term.length > 1 && !STOP.has(term)
   );
+}
+function systemConceptPriority(kind: string): number {
+  const order = ["repository", "workspace", "module", "architecture-boundary", "service", "api", "route", "component", "event", "contract", "package", "configuration", "build-system", "package-manager"];
+  const index = order.indexOf(kind);
+  return index < 0 ? 20 : index;
+}
+function dataConceptPriority(kind: string): number {
+  const order = ["database", "table", "orm-entity", "entity", "repository", "migration", "data-entity"];
+  const index = order.indexOf(kind);
+  return index < 0 ? 20 : index;
 }
 function unitPath(unit: KeystoneKnowledgeUnit): string | undefined {
   const value = unit.properties.path ?? unit.properties.filePath;

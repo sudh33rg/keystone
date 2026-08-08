@@ -2889,6 +2889,15 @@ function toWorkspaceSummary(
       contracts: fingerprint.contracts,
       confidence: fingerprint.confidence
     })),
+    services: value.services
+      .map((service) => ({
+        name: service.name,
+        path: service.filePath,
+        role: service.hints[0] ?? "application component",
+        hints: service.hints
+      }))
+      .sort((left, right) => left.name.localeCompare(right.name))
+      .slice(0, 24),
     architecture:
       value.services.length > 1
         ? "service-oriented"
@@ -2972,11 +2981,18 @@ function buildQuerySuggestions(value: RepoIntelligence): string[] {
     return normalized.length > 2 && !/^(?:index|main|app|test|utils?)$/i.test(normalized);
   };
 
+  // Never make users guess exact internal symbol spellings. Broad questions have stable
+  // semantics in the query engine and are useful in every indexed repository.
+  add("Show the repository architecture", 100);
+  add("List services and application components", 98);
+  add("Show APIs and entry points", 96);
+  add("Show data stores and persistence", 94);
+  add("Show security risks", 92);
+  add("Show performance risks", 90);
   for (const service of value.services) {
-    if (!useful(service.name)) continue;
-    add(`What calls ${service.name}?`, 100);
-    add(`What tests cover ${service.name}?`, 96);
-    add(`Show ${service.name} flow`, 92);
+    if (!useful(service.name) || /^(?:client|model|service|mapper)$/i.test(service.name)) continue;
+    add(`Explain ${service.name}`, 88);
+    add(`Show ${service.name} flow`, 86);
   }
   for (const api of value.apis) {
     const target = `${api.method.toUpperCase()} ${api.path}`.trim();
@@ -2984,16 +3000,8 @@ function buildQuerySuggestions(value: RepoIntelligence): string[] {
     add(`Where is ${target} implemented?`, 88);
     add(`What tests cover ${target}?`, 84);
   }
-  for (const symbol of value.symbols) {
-    if (!useful(symbol.name)) continue;
-    const score = symbol.exportStatus === "exported" ? 82 : 72;
-    add(`Where is ${symbol.name} implemented?`, score);
-    add(`What calls ${symbol.name}?`, score - 2);
-  }
-  for (const file of value.files) {
-    if (!useful(file.path)) continue;
-    add(`What depends on ${file.path}?`, file.isTest ? 55 : 64);
-  }
+  for (const file of value.files.filter((item) => !item.isTest && /(?:service|controller|handler|repository|client|adapter)\.[^.]+$/i.test(item.path)).slice(0, 8))
+    add(`Explain ${file.path}`, 74);
   for (const pathValue of value.securitySensitiveAreas.slice(0, 5))
     if (useful(pathValue)) add(`What security risks are in ${pathValue}?`, 78);
   for (const pathValue of value.performanceSensitivePaths.slice(0, 5))

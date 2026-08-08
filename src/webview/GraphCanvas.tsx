@@ -59,6 +59,8 @@ interface CommunityGroup {
 }
 
 export class GraphCanvas extends React.Component<Props, State> {
+  private canvas?: SVGSVGElement;
+
   state: State = {
     zoom: 1,
     panX: 0,
@@ -69,6 +71,16 @@ export class GraphCanvas extends React.Component<Props, State> {
     originX: 0,
     originY: 0
   };
+
+  componentDidMount(): void {
+    // React registers wheel listeners at the document level. Registering directly on
+    // the canvas lets us prevent the browser's scroll before it reaches the webview.
+    this.canvas?.addEventListener("wheel", this.onWheel, { passive: false });
+  }
+
+  componentWillUnmount(): void {
+    this.canvas?.removeEventListener("wheel", this.onWheel);
+  }
 
   render(): JSX.Element {
     if (!this.props.nodes.length)
@@ -92,11 +104,11 @@ export class GraphCanvas extends React.Component<Props, State> {
         <svg
           className="graph-canvas"
           viewBox="0 0 1200 720"
+          ref={(element: SVGSVGElement | null) => { this.canvas = element ?? undefined; }}
           onMouseDown={(event: any) => this.begin(event)}
           onMouseMove={(event: any) => this.move(event)}
           onMouseUp={() => this.end()}
           onMouseLeave={() => this.end()}
-          onWheel={(event: any) => this.wheel(event)}
         >
           <defs>
             <marker
@@ -134,7 +146,7 @@ export class GraphCanvas extends React.Component<Props, State> {
                     markerEnd="url(#keystone-arrow)"
                   />
                   <text x={(from.x + to.x) / 2} y={(from.y + to.y) / 2 - 5} className="edge-label">
-                    {clip(edge.kind, 18)}
+                    {clip(relationshipLabel(edge.kind), 18)}
                   </text>
                   <title>{`${edge.kind}${edge.origin ? ` (${edge.origin})` : ""}${edge.confidence ? ` · ${Math.round(edge.confidence * 100)}% confidence` : ""}`}</title>
                 </g>
@@ -150,7 +162,7 @@ export class GraphCanvas extends React.Component<Props, State> {
               >
                 <rect x="-72" y="-27" width="144" height="54" rx="9" />
                 <text y="-5" textAnchor="middle" className="node-kind">
-                  {node.kind}
+                  {humanize(node.kind)}
                 </text>
                 <text y="13" textAnchor="middle" className="node-label">
                   {clip(node.label, 20)}
@@ -173,10 +185,11 @@ export class GraphCanvas extends React.Component<Props, State> {
       originY: this.state.panY
     });
   }
-  private wheel(event: any): void {
+  private readonly onWheel = (event: WheelEvent): void => {
     event.preventDefault();
+    event.stopPropagation();
     this.setState({ zoom: Math.max(0.45, Math.min(2.4, this.state.zoom + (event.deltaY < 0 ? 0.1 : -0.1))) });
-  }
+  };
   private move(event: any): void {
     if (!this.state.dragging) return;
     this.setState({
@@ -245,6 +258,14 @@ function layout(
     );
   });
   return output;
+}
+
+function humanize(value: string): string {
+  return value.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[-_./]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+function relationshipLabel(kind: string): string {
+  const labels: Record<string, string> = { CALLS: "calls", CALL: "calls", DEPENDS_ON: "depends on", IMPORTS: "imports", CONTAINS: "contains", READS: "reads from", WRITES: "writes to", FLOWS_TO: "passes data to", DATA_FLOW: "passes data to", TESTS: "is tested by", USES: "uses", DFG: "moves data", CFG: "continues to", CDG: "depends on condition", EOG: "evaluation order", AST: "code structure", REF: "references" };
+  return labels[kind.toUpperCase()] ?? humanize(kind).toLowerCase();
 }
 
 function communityGroups(nodes: Positioned[]): CommunityGroup[] {
